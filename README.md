@@ -21,6 +21,9 @@ cd frontend
 ./gradlew :app:assembleDebug
 ```
 
+See the [frontend development guide](frontend/README.md) for instructions on
+running the app alongside the local backend.
+
 ### Backend
 
 Install the .NET 9 SDK, then start the API:
