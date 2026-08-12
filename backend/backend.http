@@ -1,5 +1,11 @@
 @backend_HostAddress = http://localhost:5129
 @apiKey = 
+
+GET {{backend_HostAddress}}/health
+Accept: application/json
+
+###
+
 GET {{backend_HostAddress}}/openapi/v1.json
 Accept: application/json
 
