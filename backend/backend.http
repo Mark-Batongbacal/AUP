@@ -4,3 +4,17 @@ GET {{backend_HostAddress}}/openapi/v1.json
 Accept: application/json
 
 ###
+
+POST {{backend_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "userName": "{{$processEnv Login__InitialUserName}}",
+  "password": "{{$processEnv Login__InitialPassword}}"
+}
+
+###
+
+# Set apiKey to the value returned by /api/auth/login before sending this request.
+GET {{backend_HostAddress}}/api/auth/me
+X-Api-Key: {{apiKey}}

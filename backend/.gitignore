@@ -1,0 +1,6 @@
+# .NET build artifacts
+[Bb]in/
+[Oo]bj/
+
+# Local development configuration may contain credentials.
+appsettings.Development.json
