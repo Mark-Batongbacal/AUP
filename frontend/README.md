@@ -17,39 +17,8 @@ configuration. To build from a terminal instead:
 
 ## Run and test the backend
 
-The API is in the sibling `backend/` directory. Start it in a second terminal:
+The backend API is currently hosted at https://aup-0mjy.onrender.com/
 
-```bash
-cd ../backend
-dotnet restore
-dotnet run --launch-profile http
-```
+You can test your connection to the API by running https://aup-0mjy.onrender.com/health
 
-The development server listens on `http://localhost:5129`. Confirm that it is
-running by requesting its OpenAPI document:
-
-```bash
-curl http://localhost:5129/openapi/v1.json
-```
-
-You can also open `backend/backend.http` in a JetBrains IDE or VS Code REST
-Client extension and send its request. It uses the same local server address.
-
-## Connect the Android app to the local API
-
-The current app is a UI-only scaffold; it does not make backend requests yet.
-When adding API calls, use the address that matches where the app runs:
-
-| App target | API base URL |
-| --- | --- |
-| Android Emulator | `http://10.0.2.2:5129` |
-| Physical device | `http://<your-computer-LAN-IP>:5129` |
-| Backend tested from the same computer | `http://localhost:5129` |
-
-Before the app can call an HTTP API, add the Android `INTERNET` permission and
-configure the backend's CORS policy for the client. For a physical device,
-ensure the phone and computer are on the same network and that the firewall
-permits the API port.
-
-For production, use HTTPS and do not rely on the emulator-only `10.0.2.2`
-address.
+It should return OK
