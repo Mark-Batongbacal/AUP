@@ -42,8 +42,7 @@ Login__Users__2__Password=<secure-password>
 Login__Users__3__UserName=<fourth-user-name>
 Login__Users__3__Password=<secure-password>
 NVIDIA_API_KEY=<your-nvidia-api-key>
-Supabase__Url=https://your-project-ref.supabase.co
-Supabase__Key=<your-server-side-supabase-key>
+ConnectionStrings__Supabase=Host=<supabase-host>;Port=5432;Database=postgres;Username=postgres;Password=<database-password>
 ```
 
 Never commit real passwords or API keys. `appsettings.json` contains only non-secret defaults; `appsettings.Development.json` and `.env` are ignored.
