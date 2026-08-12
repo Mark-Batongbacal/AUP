@@ -1,5 +1,5 @@
 @backend_HostAddress = http://localhost:5129
-
+@apiKey = 
 GET {{backend_HostAddress}}/openapi/v1.json
 Accept: application/json
 
@@ -9,8 +9,8 @@ POST {{backend_HostAddress}}/api/auth/login
 Content-Type: application/json
 
 {
-  "userName": "{{$processEnv Login__InitialUserName}}",
-  "password": "{{$processEnv Login__InitialPassword}}"
+  "userName": "{{$processEnv Login__Users__0__UserName}}",
+  "password": "{{$processEnv Login__Users__0__Password}}"
 }
 
 ###
@@ -18,3 +18,30 @@ Content-Type: application/json
 # Set apiKey to the value returned by /api/auth/login before sending this request.
 GET {{backend_HostAddress}}/api/auth/me
 X-Api-Key: {{apiKey}}
+
+###
+
+# NVIDIA NIM Nemotron test. Set NVIDIA_API_KEY in your terminal/IDE environment.
+POST https://integrate.api.nvidia.com/v1/chat/completions
+Authorization: Bearer {{$dotenv NVIDIA_API_KEY}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Give a short greeting for the AUP mobile app."
+    }
+  ],
+  "temperature": 1,
+  "top_p": 0.95,
+  "max_tokens": 512,
+  "extra_body": {
+    "chat_template_kwargs": {
+      "enable_thinking": true
+    },
+    "reasoning_budget": 512
+  }
+}
