@@ -4,3 +4,4 @@
 
 # Local development configuration may contain credentials.
 appsettings.Development.json
+.env
