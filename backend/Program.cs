@@ -1,7 +1,15 @@
 using backend.Authentication;
 using backend.Services;
 
+LoadDevelopmentEnvironmentFile();
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Render assigns the listening port through the PORT environment variable.
+if (int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var port))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
 
 // Add services to the container.
 
@@ -38,7 +46,11 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 }
 
-app.UseHttpsRedirection();
+// Render terminates HTTPS at its proxy and forwards requests to this container over HTTP.
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseCors("Frontend");
 app.UseAuthentication();
@@ -47,3 +59,42 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static void LoadDevelopmentEnvironmentFile()
+{
+    if (!string.Equals(
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+            Environments.Development,
+            StringComparison.OrdinalIgnoreCase))
+    {
+        return;
+    }
+
+    var environmentFile = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+    if (!File.Exists(environmentFile))
+    {
+        return;
+    }
+
+    foreach (var line in File.ReadLines(environmentFile))
+    {
+        var trimmedLine = line.Trim();
+        if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith('#'))
+        {
+            continue;
+        }
+
+        var separatorIndex = trimmedLine.IndexOf('=');
+        if (separatorIndex <= 0)
+        {
+            continue;
+        }
+
+        var key = trimmedLine[..separatorIndex].Trim();
+        var value = trimmedLine[(separatorIndex + 1)..].Trim();
+        if (Environment.GetEnvironmentVariable(key) is null)
+        {
+            Environment.SetEnvironmentVariable(key, value);
+        }
+    }
+}
