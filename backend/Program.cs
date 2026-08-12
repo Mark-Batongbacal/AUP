@@ -1,5 +1,6 @@
 using backend.Authentication;
 using backend.Services;
+using System.Diagnostics;
 
 LoadDevelopmentEnvironmentFile();
 
@@ -53,6 +54,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("Frontend");
+app.Use(async (context, next) =>
+{
+    context.Items["RequestStartTimestamp"] = Stopwatch.GetTimestamp();
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 
