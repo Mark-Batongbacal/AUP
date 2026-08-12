@@ -135,3 +135,8 @@ git add <files-you-changed>
 git commit -m "Describe your change"
 git push -u origin <your-branch>
 ```
+
+See the [frontend development guide](frontend/README.md) for instructions on
+running the app alongside the local backend.
+
+
