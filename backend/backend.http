@@ -1,6 +1,12 @@
 @backend_HostAddress = http://localhost:5129
 @apiKey = 
+
 YOUR_API_KEY
+Accept: application/json
+
+###
+
+GET {{backend_HostAddress}}/openapi/v1.json
 Accept: application/json
 
 ###
