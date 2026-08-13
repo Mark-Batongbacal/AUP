@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for route segments. Route segment sequences are ordered by segment_order.
 /// </summary>
-public sealed class RouteSegmentRepository(SupabaseDbContext context)
+public sealed class RouteSegmentRepository(SupabaseDbContext context) : IRouteSegmentRepository
 {
     private readonly SupabaseDbContext _context = context;
 

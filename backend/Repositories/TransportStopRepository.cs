@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for transport stops. Missing stop lookups return null.
 /// </summary>
-public sealed class TransportStopRepository(SupabaseDbContext context)
+public sealed class TransportStopRepository(SupabaseDbContext context) : ITransportStopRepository
 {
     private readonly SupabaseDbContext _context = context;
 

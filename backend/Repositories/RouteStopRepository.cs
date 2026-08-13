@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for route-stop relationships. Route sequences are always ordered by stop_order.
 /// </summary>
-public sealed class RouteStopRepository(SupabaseDbContext context)
+public sealed class RouteStopRepository(SupabaseDbContext context) : IRouteStopRepository
 {
     private readonly SupabaseDbContext _context = context;
 

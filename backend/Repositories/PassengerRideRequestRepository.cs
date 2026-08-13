@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for passenger ride requests. Active ride requests are rows with SEARCHING status.
 /// </summary>
-public sealed class PassengerRideRequestRepository(SupabaseDbContext context)
+public sealed class PassengerRideRequestRepository(SupabaseDbContext context) : IPassengerRideRequestRepository
 {
     private readonly SupabaseDbContext _context = context;
     private const string SearchingStatus = "SEARCHING";

@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for passenger trips. Missing trip lookups return null.
 /// </summary>
-public sealed class PassengerTripRepository(SupabaseDbContext context)
+public sealed class PassengerTripRepository(SupabaseDbContext context) : IPassengerTripRepository
 {
     private readonly SupabaseDbContext _context = context;
 

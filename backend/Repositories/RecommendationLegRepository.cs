@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for individual recommendation legs. Leg sequences are ordered by leg_order.
 /// </summary>
-public sealed class RecommendationLegRepository(SupabaseDbContext context)
+public sealed class RecommendationLegRepository(SupabaseDbContext context) : IRecommendationLegRepository
 {
     private readonly SupabaseDbContext _context = context;
 

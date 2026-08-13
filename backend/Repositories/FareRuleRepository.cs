@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for fare rules only. This repository does not calculate passenger fares.
 /// </summary>
-public sealed class FareRuleRepository(SupabaseDbContext context)
+public sealed class FareRuleRepository(SupabaseDbContext context) : IFareRuleRepository
 {
     private readonly SupabaseDbContext _context = context;
 

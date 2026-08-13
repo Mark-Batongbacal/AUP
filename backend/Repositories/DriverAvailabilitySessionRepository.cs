@@ -7,7 +7,7 @@ namespace backend.Repositories;
 /// Data access for driver availability sessions. Available sessions are active rows whose status is
 /// AVAILABLE.
 /// </summary>
-public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext context)
+public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext context) : IDriverAvailabilitySessionRepository
 {
     private readonly SupabaseDbContext _context = context;
     private const string AvailableStatus = "AVAILABLE";
