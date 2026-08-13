@@ -1,5 +1,8 @@
 using backend.Authentication;
+using backend.Models.Database;
 using backend.Services;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Diagnostics;
 
 LoadDevelopmentEnvironmentFile();
@@ -25,6 +28,15 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
         .AllowAnyMethod();
 }));
 builder.Services.Configure<LoginOptions>(builder.Configuration.GetSection(LoginOptions.SectionName));
+var supabaseConnectionString = builder.Configuration.GetConnectionString("Supabase")
+    ?? throw new InvalidOperationException("Missing ConnectionStrings:Supabase configuration. Set ConnectionStrings__Supabase.");
+var supabaseConnectionStringBuilder = new NpgsqlConnectionStringBuilder(supabaseConnectionString)
+{
+    // Supabase installed PostGIS in this custom schema. It lets EF resolve geography types.
+    SearchPath = "public,gis"
+};
+builder.Services.AddDbContext<SupabaseDbContext>(options =>
+    options.UseNpgsql(supabaseConnectionStringBuilder.ConnectionString, npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
