@@ -75,7 +75,7 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
-builder.Services.AddScoped<NemotronAIHelper>();
+
 
 var app = builder.Build();
 
