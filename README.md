@@ -138,3 +138,15 @@ git push -u origin <your-branch>
 ```
 See the [frontend development guide](frontend/README.md) for instructions on
 running the app alongside the local backend.
+
+## Google Maps API key
+
+The frontend reads the Maps SDK for Android key from `frontend/local.properties`,
+which is excluded from Git. Add your own key there before running the map:
+
+```properties
+MAPS_API_KEY=YOUR_API_KEY
+```
+
+`frontend/local.defaults.properties` only contains a non-secret placeholder so
+the project can build without committing a real API key.
