@@ -17,7 +17,6 @@ public sealed class AIController : ControllerBase
     }
 
     [HttpPost("ask")]
-    [AllowAnonymous]
     public async Task<IActionResult> Ask([FromBody] AIRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Message))
