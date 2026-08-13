@@ -45,7 +45,7 @@ X-Api-Key: {{apiKey}}
 GET {{backend_HostAddress}}/api/auth/me
 X-Api-Key: {{apiKey}}
 
-###
+### 
 
 # Temporary map route endpoint for frontend HTTP integration testing.
 # Method: GET
