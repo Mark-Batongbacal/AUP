@@ -1,5 +1,6 @@
-@backend_HostAddress = https://aup-0mjy.onrender.com
-@apiKey = 
+# @backend_HostAddress = https://aup-0mjy.onrender.com
+@backend_HostAddress = http://localhost:5129
+@apiKey = input api key here
 
 GET {{backend_HostAddress}}/health
 Accept: application/json
@@ -17,37 +18,26 @@ Content-Type: application/json
 {
   // Enter a user configured in the backend's Login__Users__<index> settings.
   // The HTTP client cannot read the backend's .env file automatically.
-  "userName": "",
-  "password": ""
+  "userName": "UserName",
+  "password": "Password"
 }
+###
+POST {{backend_HostAddress}}/api/AI/ask
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
 
+{
+  "message": "Give a short greeting"
+}
+###
+GET http://localhost:5129/test
+X-Api-Key: {{apiKey}}
 ###
 
 # Set apiKey to the value returned by /api/auth/login before sending this request.
 GET {{backend_HostAddress}}/api/auth/me
 X-Api-Key: {{apiKey}}
-
-###
-
-# NVIDIA NIM Nemotron test. Set NVIDIA_API_KEY in your terminal/IDE environment.
-POST https://integrate.api.nvidia.com/v1/chat/completions
-Authorization: Bearer {{$dotenv NVIDIA_API_KEY}}
-Content-Type: application/json
-Accept: application/json
-
-{
-  "model": "nvidia/nemotron-3-ultra-550b-a55b",
-  "messages": [
-    {
-      "role": "user",
-      "content": "Give a short greeting for the AUP mobile app."
-    }
-  ],
-  "temperature": 2,
-  "top_p": 0.95,
-  "max_tokens": 512,
-  "reasoning_budget": 512
-}
 
 ###
 
@@ -62,5 +52,5 @@ Accept: application/json
 # come from Supabase through the backend database/repository layer.
 GET {{backend_HostAddress}}/api/routes/sample
 Accept: application/json
-
+X-Api-Key: {{apiKey}}
 ###
