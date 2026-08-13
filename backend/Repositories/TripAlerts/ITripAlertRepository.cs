@@ -4,9 +4,9 @@ namespace backend.Repositories;
 
 public interface ITripAlertRepository
 {
-    Task<List<trip_alert>> GetByPassengerTripAsync(Guid passengerTripId, CancellationToken cancellationToken = default);
+    Task<List<TripAlert>> GetByPassengerTripAsync(Guid passengerTripId, CancellationToken cancellationToken = default);
 
-    Task<List<trip_alert>> GetUntriggeredAsync(CancellationToken cancellationToken = default);
+    Task<List<TripAlert>> GetUntriggeredAsync(CancellationToken cancellationToken = default);
 
     Task<bool> UpdateTriggerStateAsync(
         Guid alertId,
@@ -14,5 +14,5 @@ public interface ITripAlertRepository
         DateTime? triggeredAt = null,
         CancellationToken cancellationToken = default);
 
-    Task<trip_alert> AddAsync(trip_alert alert, CancellationToken cancellationToken = default);
+    Task<TripAlert> AddAsync(TripAlert alert, CancellationToken cancellationToken = default);
 }

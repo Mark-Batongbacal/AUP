@@ -10,22 +10,22 @@ public sealed class TripAlertRepository(SupabaseDbContext context) : ITripAlertR
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<trip_alert>> GetByPassengerTripAsync(Guid passengerTripId, CancellationToken cancellationToken = default) =>
-        _context.trip_alerts
+    public Task<List<TripAlert>> GetByPassengerTripAsync(Guid passengerTripId, CancellationToken cancellationToken = default) =>
+        _context.TripAlerts
             .AsNoTracking()
-            .Include(alert => alert.leg)
-            .Include(alert => alert.target_stop)
-            .Where(alert => alert.passenger_trip_id == passengerTripId)
-            .OrderBy(alert => alert.created_at)
+            .Include(alert => alert.Leg)
+            .Include(alert => alert.TargetStop)
+            .Where(alert => alert.PassengerTripId == passengerTripId)
+            .OrderBy(alert => alert.CreatedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<List<trip_alert>> GetUntriggeredAsync(CancellationToken cancellationToken = default) =>
-        _context.trip_alerts
+    public Task<List<TripAlert>> GetUntriggeredAsync(CancellationToken cancellationToken = default) =>
+        _context.TripAlerts
             .AsNoTracking()
-            .Include(alert => alert.passenger_trip)
-            .Include(alert => alert.target_stop)
-            .Where(alert => !alert.is_triggered)
-            .OrderBy(alert => alert.created_at)
+            .Include(alert => alert.PassengerTrip)
+            .Include(alert => alert.TargetStop)
+            .Where(alert => !alert.IsTriggered)
+            .OrderBy(alert => alert.CreatedAt)
             .ToListAsync(cancellationToken);
 
     public async Task<bool> UpdateTriggerStateAsync(
@@ -34,21 +34,21 @@ public sealed class TripAlertRepository(SupabaseDbContext context) : ITripAlertR
         DateTime? triggeredAt = null,
         CancellationToken cancellationToken = default)
     {
-        var alert = await _context.trip_alerts.FirstOrDefaultAsync(alert => alert.alert_id == alertId, cancellationToken);
+        var alert = await _context.TripAlerts.FirstOrDefaultAsync(alert => alert.AlertId == alertId, cancellationToken);
         if (alert is null)
         {
             return false;
         }
 
-        alert.is_triggered = isTriggered;
-        alert.triggered_at = isTriggered ? triggeredAt ?? DateTime.UtcNow : null;
+        alert.IsTriggered = isTriggered;
+        alert.TriggeredAt = isTriggered ? triggeredAt ?? DateTime.UtcNow : null;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<trip_alert> AddAsync(trip_alert alert, CancellationToken cancellationToken = default)
+    public async Task<TripAlert> AddAsync(TripAlert alert, CancellationToken cancellationToken = default)
     {
-        await _context.trip_alerts.AddAsync(alert, cancellationToken);
+        await _context.TripAlerts.AddAsync(alert, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         return alert;
     }

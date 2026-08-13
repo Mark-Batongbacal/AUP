@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Repositories;
 
 /// <summary>
-/// Data access for driver availability sessions. Available sessions are active rows whose status is
+/// Data access for Driver availability sessions. Available sessions are active rows whose Status is
 /// AVAILABLE.
 /// </summary>
 public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext context) : IDriverAvailabilitySessionRepository
@@ -13,63 +13,63 @@ public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext contex
     private const string AvailableStatus = "AVAILABLE";
     private const string EndedStatus = "ENDED";
 
-    public Task<driver_availability_session?> GetActiveByDriverAsync(Guid driverId, CancellationToken cancellationToken = default) =>
-        _context.driver_availability_sessions
+    public Task<DriverAvailabilitySession?> GetActiveByDriverAsync(Guid driverId, CancellationToken cancellationToken = default) =>
+        _context.DriverAvailabilitySessions
             .AsNoTracking()
-            .Include(session => session.vehicle)
-            .Include(session => session.destination_stop)
+            .Include(Session => Session.Vehicle)
+            .Include(Session => Session.DestinationStop)
             .FirstOrDefaultAsync(
-                session => session.driver_id == driverId && session.status == AvailableStatus && session.ended_at == null,
+                Session => Session.DriverId == driverId && Session.Status == AvailableStatus && Session.EndedAt == null,
                 cancellationToken);
 
-    public Task<List<driver_availability_session>> GetAvailableSessionsAsync(CancellationToken cancellationToken = default) =>
-        _context.driver_availability_sessions
+    public Task<List<DriverAvailabilitySession>> GetAvailableSessionsAsync(CancellationToken cancellationToken = default) =>
+        _context.DriverAvailabilitySessions
             .AsNoTracking()
-            .Include(session => session.driver)
-            .Include(session => session.vehicle)
-            .Include(session => session.destination_stop)
-            .Where(session => session.status == AvailableStatus && session.ended_at == null)
-            .OrderBy(session => session.started_at)
+            .Include(Session => Session.Driver)
+            .Include(Session => Session.Vehicle)
+            .Include(Session => Session.DestinationStop)
+            .Where(Session => Session.Status == AvailableStatus && Session.EndedAt == null)
+            .OrderBy(Session => Session.StartedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<driver_availability_session?> GetByIdAsync(Guid sessionId, CancellationToken cancellationToken = default) =>
-        _context.driver_availability_sessions
+    public Task<DriverAvailabilitySession?> GetByIdAsync(Guid sessionId, CancellationToken cancellationToken = default) =>
+        _context.DriverAvailabilitySessions
             .AsNoTracking()
-            .Include(session => session.driver)
-            .Include(session => session.vehicle)
-            .Include(session => session.destination_stop)
-            .FirstOrDefaultAsync(session => session.session_id == sessionId, cancellationToken);
+            .Include(Session => Session.Driver)
+            .Include(Session => Session.Vehicle)
+            .Include(Session => Session.DestinationStop)
+            .FirstOrDefaultAsync(Session => Session.SessionId == sessionId, cancellationToken);
 
-    public async Task<driver_availability_session> AddAsync(driver_availability_session session, CancellationToken cancellationToken = default)
+    public async Task<DriverAvailabilitySession> AddAsync(DriverAvailabilitySession Session, CancellationToken cancellationToken = default)
     {
-        await _context.driver_availability_sessions.AddAsync(session, cancellationToken);
+        await _context.DriverAvailabilitySessions.AddAsync(Session, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        return session;
+        return Session;
     }
 
-    public async Task<bool> UpdateStatusAsync(Guid sessionId, string status, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateStatusAsync(Guid sessionId, string Status, CancellationToken cancellationToken = default)
     {
-        var session = await _context.driver_availability_sessions.FirstOrDefaultAsync(session => session.session_id == sessionId, cancellationToken);
-        if (session is null)
+        var Session = await _context.DriverAvailabilitySessions.FirstOrDefaultAsync(Session => Session.SessionId == sessionId, cancellationToken);
+        if (Session is null)
         {
             return false;
         }
 
-        session.status = status;
+        Session.Status = Status;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
     public async Task<bool> EndSessionAsync(Guid sessionId, DateTime? endedAt = null, CancellationToken cancellationToken = default)
     {
-        var session = await _context.driver_availability_sessions.FirstOrDefaultAsync(session => session.session_id == sessionId, cancellationToken);
-        if (session is null)
+        var Session = await _context.DriverAvailabilitySessions.FirstOrDefaultAsync(Session => Session.SessionId == sessionId, cancellationToken);
+        if (Session is null)
         {
             return false;
         }
 
-        session.status = EndedStatus;
-        session.ended_at = endedAt ?? DateTime.UtcNow;
+        Session.Status = EndedStatus;
+        Session.EndedAt = endedAt ?? DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }

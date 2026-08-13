@@ -10,25 +10,25 @@ public sealed class TransportModeRepository(SupabaseDbContext context) : ITransp
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<transport_mode>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
-        _context.transport_modes
+    public Task<List<TransportMode>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
+        _context.TransportModes
             .AsNoTracking()
-            .Where(mode => mode.is_active)
-            .OrderBy(mode => mode.name)
+            .Where(mode => mode.IsActive)
+            .OrderBy(mode => mode.Name)
             .ToListAsync(cancellationToken);
 
-    public Task<transport_mode?> GetByIdAsync(short transportModeId, CancellationToken cancellationToken = default) =>
-        _context.transport_modes
+    public Task<TransportMode?> GetByIdAsync(short transportModeId, CancellationToken cancellationToken = default) =>
+        _context.TransportModes
             .AsNoTracking()
-            .FirstOrDefaultAsync(mode => mode.transport_mode_id == transportModeId, cancellationToken);
+            .FirstOrDefaultAsync(mode => mode.TransportModeId == transportModeId, cancellationToken);
 
-    public Task<transport_mode?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) =>
-        _context.transport_modes
+    public Task<TransportMode?> GetByCodeAsync(string Code, CancellationToken cancellationToken = default) =>
+        _context.TransportModes
             .AsNoTracking()
-            .FirstOrDefaultAsync(mode => mode.code == code, cancellationToken);
+            .FirstOrDefaultAsync(mode => mode.Code == Code, cancellationToken);
 
-    public Task<transport_mode?> GetByNameAsync(string name, CancellationToken cancellationToken = default) =>
-        _context.transport_modes
+    public Task<TransportMode?> GetByNameAsync(string Name, CancellationToken cancellationToken = default) =>
+        _context.TransportModes
             .AsNoTracking()
-            .FirstOrDefaultAsync(mode => mode.name == name, cancellationToken);
+            .FirstOrDefaultAsync(mode => mode.Name == Name, cancellationToken);
 }

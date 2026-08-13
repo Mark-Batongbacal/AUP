@@ -4,52 +4,52 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Repositories;
 
 /// <summary>
-/// Data access for passenger ride requests. Active ride requests are rows with SEARCHING status.
+/// Data access for passenger ride requests. Active ride requests are rows with SEARCHING Status.
 /// </summary>
 public sealed class PassengerRideRequestRepository(SupabaseDbContext context) : IPassengerRideRequestRepository
 {
     private readonly SupabaseDbContext _context = context;
     private const string SearchingStatus = "SEARCHING";
 
-    public Task<passenger_ride_request?> GetByIdAsync(Guid requestId, CancellationToken cancellationToken = default) =>
-        _context.passenger_ride_requests
+    public Task<PassengerRideRequest?> GetByIdAsync(Guid requestId, CancellationToken cancellationToken = default) =>
+        _context.PassengerRideRequests
             .AsNoTracking()
-            .Include(request => request.transport_mode)
-            .FirstOrDefaultAsync(request => request.request_id == requestId, cancellationToken);
+            .Include(Request => Request.TransportMode)
+            .FirstOrDefaultAsync(Request => Request.RequestId == requestId, cancellationToken);
 
-    public Task<List<passenger_ride_request>> GetByPassengerAsync(Guid passengerUserId, CancellationToken cancellationToken = default) =>
-        _context.passenger_ride_requests
+    public Task<List<PassengerRideRequest>> GetByPassengerAsync(Guid passengerUserId, CancellationToken cancellationToken = default) =>
+        _context.PassengerRideRequests
             .AsNoTracking()
-            .Include(request => request.transport_mode)
-            .Where(request => request.passenger_user_id == passengerUserId)
-            .OrderByDescending(request => request.requested_at)
+            .Include(Request => Request.TransportMode)
+            .Where(Request => Request.PassengerUserId == passengerUserId)
+            .OrderByDescending(Request => Request.RequestedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<List<passenger_ride_request>> GetActiveSearchingAsync(CancellationToken cancellationToken = default) =>
-        _context.passenger_ride_requests
+    public Task<List<PassengerRideRequest>> GetActiveSearchingAsync(CancellationToken cancellationToken = default) =>
+        _context.PassengerRideRequests
             .AsNoTracking()
-            .Include(request => request.transport_mode)
-            .Where(request => request.status == SearchingStatus && (request.expires_at == null || request.expires_at > DateTime.UtcNow))
-            .OrderBy(request => request.requested_at)
+            .Include(Request => Request.TransportMode)
+            .Where(Request => Request.Status == SearchingStatus && (Request.ExpiresAt == null || Request.ExpiresAt > DateTime.UtcNow))
+            .OrderBy(Request => Request.RequestedAt)
             .ToListAsync(cancellationToken);
 
-    public async Task<passenger_ride_request> AddAsync(passenger_ride_request request, CancellationToken cancellationToken = default)
+    public async Task<PassengerRideRequest> AddAsync(PassengerRideRequest Request, CancellationToken cancellationToken = default)
     {
-        await _context.passenger_ride_requests.AddAsync(request, cancellationToken);
+        await _context.PassengerRideRequests.AddAsync(Request, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        return request;
+        return Request;
     }
 
-    public async Task<bool> UpdateStatusAsync(Guid requestId, string status, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateStatusAsync(Guid requestId, string Status, CancellationToken cancellationToken = default)
     {
-        var request = await _context.passenger_ride_requests.FirstOrDefaultAsync(request => request.request_id == requestId, cancellationToken);
-        if (request is null)
+        var Request = await _context.PassengerRideRequests.FirstOrDefaultAsync(Request => Request.RequestId == requestId, cancellationToken);
+        if (Request is null)
         {
             return false;
         }
 
-        request.status = status;
-        request.updated_at = DateTime.UtcNow;
+        Request.Status = Status;
+        Request.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }

@@ -10,46 +10,46 @@ public sealed class PassengerTripRepository(SupabaseDbContext context) : IPassen
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<passenger_trip?> GetByIdAsync(Guid passengerTripId, CancellationToken cancellationToken = default) =>
-        _context.passenger_trips
+    public Task<PassengerTrip?> GetByIdAsync(Guid passengerTripId, CancellationToken cancellationToken = default) =>
+        _context.PassengerTrips
             .AsNoTracking()
-            .Include(trip => trip.recommendation)
-            .FirstOrDefaultAsync(trip => trip.passenger_trip_id == passengerTripId, cancellationToken);
+            .Include(trip => trip.Recommendation)
+            .FirstOrDefaultAsync(trip => trip.PassengerTripId == passengerTripId, cancellationToken);
 
-    public Task<List<passenger_trip>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
-        _context.passenger_trips
+    public Task<List<PassengerTrip>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        _context.PassengerTrips
             .AsNoTracking()
-            .Include(trip => trip.recommendation)
-            .Where(trip => trip.user_id == userId)
-            .OrderByDescending(trip => trip.created_at)
+            .Include(trip => trip.Recommendation)
+            .Where(trip => trip.UserId == userId)
+            .OrderByDescending(trip => trip.CreatedAt)
             .ToListAsync(cancellationToken);
 
     public async Task<bool> UpdateStatusAndCurrentLegAsync(
         Guid passengerTripId,
-        string status,
+        string Status,
         int? currentLegOrder = null,
         CancellationToken cancellationToken = default)
     {
-        var trip = await _context.passenger_trips.FirstOrDefaultAsync(trip => trip.passenger_trip_id == passengerTripId, cancellationToken);
+        var trip = await _context.PassengerTrips.FirstOrDefaultAsync(trip => trip.PassengerTripId == passengerTripId, cancellationToken);
         if (trip is null)
         {
             return false;
         }
 
-        trip.status = status;
+        trip.Status = Status;
         if (currentLegOrder.HasValue)
         {
-            trip.current_leg_order = currentLegOrder.Value;
+            trip.CurrentLegOrder = currentLegOrder.Value;
         }
 
-        trip.updated_at = DateTime.UtcNow;
+        trip.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<passenger_trip> AddAsync(passenger_trip trip, CancellationToken cancellationToken = default)
+    public async Task<PassengerTrip> AddAsync(PassengerTrip trip, CancellationToken cancellationToken = default)
     {
-        await _context.passenger_trips.AddAsync(trip, cancellationToken);
+        await _context.PassengerTrips.AddAsync(trip, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         return trip;
     }

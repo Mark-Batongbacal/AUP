@@ -4,56 +4,56 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Repositories;
 
 /// <summary>
-/// Data access for stored route recommendations. This repository does not rank recommendations.
+/// Data access for stored Route recommendations. This repository does not rank recommendations.
 /// </summary>
 public sealed class RouteRecommendationRepository(SupabaseDbContext context) : IRouteRecommendationRepository
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<route_recommendation>> GetByTripSearchAsync(Guid tripSearchId, CancellationToken cancellationToken = default) =>
-        _context.route_recommendations
+    public Task<List<RouteRecommendation>> GetByTripSearchAsync(Guid tripSearchId, CancellationToken cancellationToken = default) =>
+        _context.RouteRecommendations
             .AsNoTracking()
-            .Where(recommendation => recommendation.trip_search_id == tripSearchId)
-            .OrderBy(recommendation => recommendation.recommendation_type)
-            .ThenBy(recommendation => recommendation.rank_number)
+            .Where(Recommendation => Recommendation.TripSearchId == tripSearchId)
+            .OrderBy(Recommendation => Recommendation.RecommendationType)
+            .ThenBy(Recommendation => Recommendation.RankNumber)
             .ToListAsync(cancellationToken);
 
-    public Task<route_recommendation?> GetByIdAsync(Guid recommendationId, CancellationToken cancellationToken = default) =>
-        _context.route_recommendations
+    public Task<RouteRecommendation?> GetByIdAsync(Guid recommendationId, CancellationToken cancellationToken = default) =>
+        _context.RouteRecommendations
             .AsNoTracking()
-            .FirstOrDefaultAsync(recommendation => recommendation.recommendation_id == recommendationId, cancellationToken);
+            .FirstOrDefaultAsync(Recommendation => Recommendation.RecommendationId == recommendationId, cancellationToken);
 
     /// <summary>
-    /// Includes recommendation legs with related routes, stops, and transport modes.
+    /// Includes Recommendation legs with related routes, stops, and transport modes.
     /// </summary>
-    public Task<route_recommendation?> GetWithLegsAsync(Guid recommendationId, CancellationToken cancellationToken = default) =>
-        _context.route_recommendations
+    public Task<RouteRecommendation?> GetWithLegsAsync(Guid recommendationId, CancellationToken cancellationToken = default) =>
+        _context.RouteRecommendations
             .AsNoTracking()
-            .Include(recommendation => recommendation.recommendation_legs)
-                .ThenInclude(leg => leg.transport_mode)
-            .Include(recommendation => recommendation.recommendation_legs)
-                .ThenInclude(leg => leg.route)
-            .Include(recommendation => recommendation.recommendation_legs)
-                .ThenInclude(leg => leg.from_stop)
-            .Include(recommendation => recommendation.recommendation_legs)
-                .ThenInclude(leg => leg.to_stop)
-            .FirstOrDefaultAsync(recommendation => recommendation.recommendation_id == recommendationId, cancellationToken);
+            .Include(Recommendation => Recommendation.RecommendationLegs)
+                .ThenInclude(Leg => Leg.TransportMode)
+            .Include(Recommendation => Recommendation.RecommendationLegs)
+                .ThenInclude(Leg => Leg.Route)
+            .Include(Recommendation => Recommendation.RecommendationLegs)
+                .ThenInclude(Leg => Leg.FromStop)
+            .Include(Recommendation => Recommendation.RecommendationLegs)
+                .ThenInclude(Leg => Leg.ToStop)
+            .FirstOrDefaultAsync(Recommendation => Recommendation.RecommendationId == recommendationId, cancellationToken);
 
-    public Task<List<recommendation_leg>> GetOrderedLegsAsync(Guid recommendationId, CancellationToken cancellationToken = default) =>
-        _context.recommendation_legs
+    public Task<List<RecommendationLeg>> GetOrderedLegsAsync(Guid recommendationId, CancellationToken cancellationToken = default) =>
+        _context.RecommendationLegs
             .AsNoTracking()
-            .Include(leg => leg.transport_mode)
-            .Include(leg => leg.route)
-            .Include(leg => leg.from_stop)
-            .Include(leg => leg.to_stop)
-            .Where(leg => leg.recommendation_id == recommendationId)
-            .OrderBy(leg => leg.leg_order)
+            .Include(Leg => Leg.TransportMode)
+            .Include(Leg => Leg.Route)
+            .Include(Leg => Leg.FromStop)
+            .Include(Leg => Leg.ToStop)
+            .Where(Leg => Leg.RecommendationId == recommendationId)
+            .OrderBy(Leg => Leg.LegOrder)
             .ToListAsync(cancellationToken);
 
-    public async Task<route_recommendation> AddAsync(route_recommendation recommendation, CancellationToken cancellationToken = default)
+    public async Task<RouteRecommendation> AddAsync(RouteRecommendation Recommendation, CancellationToken cancellationToken = default)
     {
-        await _context.route_recommendations.AddAsync(recommendation, cancellationToken);
+        await _context.RouteRecommendations.AddAsync(Recommendation, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        return recommendation;
+        return Recommendation;
     }
 }

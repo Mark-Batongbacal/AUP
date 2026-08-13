@@ -5,55 +5,55 @@ using NetTopologySuite.Geometries;
 namespace backend.Repositories;
 
 /// <summary>
-/// Data access for the current location row per driver. This repository does not perform route
+/// Data access for the current Location row per Driver. This repository does not perform Route
 /// matching.
 /// </summary>
 public sealed class DriverLocationRepository(SupabaseDbContext context) : IDriverLocationRepository
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<driver_location?> GetByDriverAsync(Guid driverId, CancellationToken cancellationToken = default) =>
-        _context.driver_locations
+    public Task<DriverLocation?> GetByDriverAsync(Guid driverId, CancellationToken cancellationToken = default) =>
+        _context.DriverLocations
             .AsNoTracking()
-            .FirstOrDefaultAsync(location => location.driver_id == driverId, cancellationToken);
+            .FirstOrDefaultAsync(Location => Location.DriverId == driverId, cancellationToken);
 
-    public async Task<driver_location> AddOrUpdateAsync(driver_location location, CancellationToken cancellationToken = default)
+    public async Task<DriverLocation> AddOrUpdateAsync(DriverLocation Location, CancellationToken cancellationToken = default)
     {
-        var existing = await _context.driver_locations.FirstOrDefaultAsync(
-            currentLocation => currentLocation.driver_id == location.driver_id,
+        var existing = await _context.DriverLocations.FirstOrDefaultAsync(
+            currentLocation => currentLocation.DriverId == Location.DriverId,
             cancellationToken);
 
         if (existing is null)
         {
-            await _context.driver_locations.AddAsync(location, cancellationToken);
+            await _context.DriverLocations.AddAsync(Location, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
-            return location;
+            return Location;
         }
 
-        existing.latitude = location.latitude;
-        existing.longitude = location.longitude;
-        existing.location = location.location;
-        existing.heading_degrees = location.heading_degrees;
-        existing.speed_kph = location.speed_kph;
-        existing.accuracy_meters = location.accuracy_meters;
-        existing.updated_at = location.updated_at;
+        existing.Latitude = Location.Latitude;
+        existing.Longitude = Location.Longitude;
+        existing.Location = Location.Location;
+        existing.HeadingDegrees = Location.HeadingDegrees;
+        existing.SpeedKph = Location.SpeedKph;
+        existing.AccuracyMeters = Location.AccuracyMeters;
+        existing.UpdatedAt = Location.UpdatedAt;
         await _context.SaveChangesAsync(cancellationToken);
         return existing;
     }
 
     public async Task<bool> UpdateLocationAsync(
         Guid driverId,
-        double latitude,
-        double longitude,
-        Point? location = null,
+        double Latitude,
+        double Longitude,
+        Point? Location = null,
         decimal? headingDegrees = null,
         decimal? speedKph = null,
         decimal? accuracyMeters = null,
         DateTime? updatedAt = null,
         CancellationToken cancellationToken = default)
     {
-        var driverLocation = await _context.driver_locations.FirstOrDefaultAsync(
-            currentLocation => currentLocation.driver_id == driverId,
+        var driverLocation = await _context.DriverLocations.FirstOrDefaultAsync(
+            currentLocation => currentLocation.DriverId == driverId,
             cancellationToken);
 
         if (driverLocation is null)
@@ -61,13 +61,13 @@ public sealed class DriverLocationRepository(SupabaseDbContext context) : IDrive
             return false;
         }
 
-        driverLocation.latitude = latitude;
-        driverLocation.longitude = longitude;
-        driverLocation.location = location;
-        driverLocation.heading_degrees = headingDegrees;
-        driverLocation.speed_kph = speedKph;
-        driverLocation.accuracy_meters = accuracyMeters;
-        driverLocation.updated_at = updatedAt ?? DateTime.UtcNow;
+        driverLocation.Latitude = Latitude;
+        driverLocation.Longitude = Longitude;
+        driverLocation.Location = Location;
+        driverLocation.HeadingDegrees = headingDegrees;
+        driverLocation.SpeedKph = speedKph;
+        driverLocation.AccuracyMeters = accuracyMeters;
+        driverLocation.UpdatedAt = updatedAt ?? DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }

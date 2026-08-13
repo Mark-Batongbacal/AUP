@@ -10,46 +10,46 @@ public sealed class RideMatchRepository(SupabaseDbContext context) : IRideMatchR
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<ride_match>> GetByRequestAsync(Guid requestId, CancellationToken cancellationToken = default) =>
-        _context.ride_matches
+    public Task<List<RideMatch>> GetByRequestAsync(Guid requestId, CancellationToken cancellationToken = default) =>
+        _context.RideMatches
             .AsNoTracking()
-            .Include(match => match.driver)
-            .Include(match => match.session)
-            .Include(match => match.vehicle)
-            .Where(match => match.request_id == requestId)
-            .OrderByDescending(match => match.match_score)
-            .ThenBy(match => match.offered_at)
+            .Include(match => match.Driver)
+            .Include(match => match.Session)
+            .Include(match => match.Vehicle)
+            .Where(match => match.RequestId == requestId)
+            .OrderByDescending(match => match.MatchScore)
+            .ThenBy(match => match.OfferedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<List<ride_match>> GetByDriverAsync(Guid driverId, CancellationToken cancellationToken = default) =>
-        _context.ride_matches
+    public Task<List<RideMatch>> GetByDriverAsync(Guid driverId, CancellationToken cancellationToken = default) =>
+        _context.RideMatches
             .AsNoTracking()
-            .Include(match => match.request)
-            .Include(match => match.session)
-            .Include(match => match.vehicle)
-            .Where(match => match.driver_id == driverId)
-            .OrderByDescending(match => match.offered_at)
+            .Include(match => match.Request)
+            .Include(match => match.Session)
+            .Include(match => match.Vehicle)
+            .Where(match => match.DriverId == driverId)
+            .OrderByDescending(match => match.OfferedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<ride_match?> GetByIdAsync(Guid matchId, CancellationToken cancellationToken = default) =>
-        _context.ride_matches
+    public Task<RideMatch?> GetByIdAsync(Guid matchId, CancellationToken cancellationToken = default) =>
+        _context.RideMatches
             .AsNoTracking()
-            .Include(match => match.driver)
-            .Include(match => match.request)
-            .Include(match => match.session)
-            .Include(match => match.vehicle)
-            .FirstOrDefaultAsync(match => match.match_id == matchId, cancellationToken);
+            .Include(match => match.Driver)
+            .Include(match => match.Request)
+            .Include(match => match.Session)
+            .Include(match => match.Vehicle)
+            .FirstOrDefaultAsync(match => match.MatchId == matchId, cancellationToken);
 
-    public async Task<ride_match> AddAsync(ride_match match, CancellationToken cancellationToken = default)
+    public async Task<RideMatch> AddAsync(RideMatch match, CancellationToken cancellationToken = default)
     {
-        await _context.ride_matches.AddAsync(match, cancellationToken);
+        await _context.RideMatches.AddAsync(match, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         return match;
     }
 
-    public async Task<ride_match> UpdateAsync(ride_match match, CancellationToken cancellationToken = default)
+    public async Task<RideMatch> UpdateAsync(RideMatch match, CancellationToken cancellationToken = default)
     {
-        _context.ride_matches.Update(match);
+        _context.RideMatches.Update(match);
         await _context.SaveChangesAsync(cancellationToken);
         return match;
     }
