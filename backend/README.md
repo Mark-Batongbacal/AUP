@@ -32,6 +32,7 @@ var students = await database.Students
 ```
 
 Rerun the scaffold command when the Supabase schema changes. Generated models can be overwritten, so keep custom query logic in services or partial classes rather than editing generated files directly.
+The current C# model layer uses PascalCase entity and property names with explicit EF Core mapping back to Supabase's snake_case tables and columns. Future database-first scaffolding may regenerate database-style names and should be reviewed carefully before replacing these files.
 
 Supabase's PostGIS extension is installed in the `gis` schema. The spatial columns that EF cannot
 scaffold are mapped manually in `Models/Database/SpatialProperties.cs` as NetTopologySuite `Point`

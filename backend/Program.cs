@@ -1,8 +1,10 @@
 using backend.Authentication;
 using backend.Models.Database;
+using backend.Repositories;
 using backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using backend.Helpers;
 using System.Diagnostics;
 
 LoadDevelopmentEnvironmentFile();
@@ -37,7 +39,29 @@ var supabaseConnectionStringBuilder = new NpgsqlConnectionStringBuilder(supabase
 };
 builder.Services.AddDbContext<SupabaseDbContext>(options =>
     options.UseNpgsql(supabaseConnectionStringBuilder.ConnectionString, npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
+builder.Services.AddScoped<IChatConversationRepository, ChatConversationRepository>();
+builder.Services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
+builder.Services.AddScoped<IDriverAvailabilitySessionRepository, DriverAvailabilitySessionRepository>();
+builder.Services.AddScoped<IDriverLocationRepository, DriverLocationRepository>();
+builder.Services.AddScoped<IDriverRepository, DriverRepository>();
+builder.Services.AddScoped<IDriverVehicleRepository, DriverVehicleRepository>();
+builder.Services.AddScoped<IFareRuleRepository, FareRuleRepository>();
+builder.Services.AddScoped<IPassengerRideRequestRepository, PassengerRideRequestRepository>();
+builder.Services.AddScoped<IPassengerTripRepository, PassengerTripRepository>();
+builder.Services.AddScoped<IRecommendationLegRepository, RecommendationLegRepository>();
+builder.Services.AddScoped<IRideMatchRepository, RideMatchRepository>();
+builder.Services.AddScoped<IRouteRecommendationRepository, RouteRecommendationRepository>();
+builder.Services.AddScoped<IRouteSegmentRepository, RouteSegmentRepository>();
+builder.Services.AddScoped<IRouteStopRepository, RouteStopRepository>();
+builder.Services.AddScoped<ITransportModeRepository, TransportModeRepository>();
+builder.Services.AddScoped<ITransportRouteRepository, TransportRouteRepository>();
+builder.Services.AddScoped<ITransportStopRepository, TransportStopRepository>();
+builder.Services.AddScoped<ITripAlertRepository, TripAlertRepository>();
+builder.Services.AddScoped<ITripSearchRepository, TripSearchRepository>();
+builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
+builder.Services.AddScoped<NemotronAIHelper>();
+
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
@@ -50,6 +74,7 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
+
 
 var app = builder.Build();
 
@@ -75,7 +100,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
+app.MapGet("/test", () => "Backend is alive");
 app.Run();
 
 static void LoadDevelopmentEnvironmentFile()
