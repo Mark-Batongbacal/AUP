@@ -51,3 +51,19 @@ Accept: application/json
     "reasoning_budget": 512
   }
 }
+
+###
+
+# Temporary map route endpoint for frontend HTTP integration testing.
+# Method: GET
+# URL: /api/routes/sample
+# Parameters: none
+# Response fields:
+# - routeName: label for the sample route
+# - points: ordered latitude/longitude coordinates for Kotlin to convert to LatLng
+# The returned coordinates are mock/test data only. Real route data will later
+# come from Supabase through the backend database/repository layer.
+GET {{backend_HostAddress}}/api/routes/sample
+Accept: application/json
+
+###
