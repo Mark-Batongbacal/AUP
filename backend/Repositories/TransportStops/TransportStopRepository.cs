@@ -4,60 +4,60 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Repositories;
 
 /// <summary>
-/// Data access for transport stops. Missing stop lookups return null.
+/// Data access for transport stops. Missing Stop lookups return null.
 /// </summary>
 public sealed class TransportStopRepository(SupabaseDbContext context) : ITransportStopRepository
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<transport_stop>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
-        _context.transport_stops
+    public Task<List<TransportStop>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
+        _context.TransportStops
             .AsNoTracking()
-            .Where(stop => stop.is_active)
-            .OrderBy(stop => stop.name)
+            .Where(Stop => Stop.IsActive)
+            .OrderBy(Stop => Stop.Name)
             .ToListAsync(cancellationToken);
 
-    public Task<transport_stop?> GetByIdAsync(Guid stopId, CancellationToken cancellationToken = default) =>
-        _context.transport_stops
+    public Task<TransportStop?> GetByIdAsync(Guid stopId, CancellationToken cancellationToken = default) =>
+        _context.TransportStops
             .AsNoTracking()
-            .FirstOrDefaultAsync(stop => stop.stop_id == stopId, cancellationToken);
+            .FirstOrDefaultAsync(Stop => Stop.StopId == stopId, cancellationToken);
 
-    public Task<transport_stop?> GetByStopCodeAsync(string stopCode, CancellationToken cancellationToken = default) =>
-        _context.transport_stops
+    public Task<TransportStop?> GetByStopCodeAsync(string stopCode, CancellationToken cancellationToken = default) =>
+        _context.TransportStops
             .AsNoTracking()
-            .FirstOrDefaultAsync(stop => stop.stop_code == stopCode, cancellationToken);
+            .FirstOrDefaultAsync(Stop => Stop.StopCode == stopCode, cancellationToken);
 
-    public Task<List<transport_stop>> SearchByNameAsync(string name, CancellationToken cancellationToken = default) =>
-        _context.transport_stops
+    public Task<List<TransportStop>> SearchByNameAsync(string Name, CancellationToken cancellationToken = default) =>
+        _context.TransportStops
             .AsNoTracking()
-            .Where(stop => stop.is_active && EF.Functions.ILike(stop.name, $"%{name}%"))
-            .OrderBy(stop => stop.name)
+            .Where(Stop => Stop.IsActive && EF.Functions.ILike(Stop.Name, $"%{Name}%"))
+            .OrderBy(Stop => Stop.Name)
             .ToListAsync(cancellationToken);
 
-    public async Task<transport_stop> AddAsync(transport_stop stop, CancellationToken cancellationToken = default)
+    public async Task<TransportStop> AddAsync(TransportStop Stop, CancellationToken cancellationToken = default)
     {
-        await _context.transport_stops.AddAsync(stop, cancellationToken);
+        await _context.TransportStops.AddAsync(Stop, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        return stop;
+        return Stop;
     }
 
-    public async Task<transport_stop> UpdateAsync(transport_stop stop, CancellationToken cancellationToken = default)
+    public async Task<TransportStop> UpdateAsync(TransportStop Stop, CancellationToken cancellationToken = default)
     {
-        _context.transport_stops.Update(stop);
+        _context.TransportStops.Update(Stop);
         await _context.SaveChangesAsync(cancellationToken);
-        return stop;
+        return Stop;
     }
 
     public async Task<bool> DeactivateAsync(Guid stopId, CancellationToken cancellationToken = default)
     {
-        var stop = await _context.transport_stops.FirstOrDefaultAsync(stop => stop.stop_id == stopId, cancellationToken);
-        if (stop is null)
+        var Stop = await _context.TransportStops.FirstOrDefaultAsync(Stop => Stop.StopId == stopId, cancellationToken);
+        if (Stop is null)
         {
             return false;
         }
 
-        stop.is_active = false;
-        stop.updated_at = DateTime.UtcNow;
+        Stop.IsActive = false;
+        Stop.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }

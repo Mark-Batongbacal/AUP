@@ -10,22 +10,22 @@ public sealed class TripSearchRepository(SupabaseDbContext context) : ITripSearc
 {
     private readonly SupabaseDbContext _context = context;
 
-    public async Task<trip_search> AddAsync(trip_search tripSearch, CancellationToken cancellationToken = default)
+    public async Task<TripSearch> AddAsync(TripSearch tripSearch, CancellationToken cancellationToken = default)
     {
-        await _context.trip_searches.AddAsync(tripSearch, cancellationToken);
+        await _context.TripSearches.AddAsync(tripSearch, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         return tripSearch;
     }
 
-    public Task<trip_search?> GetByIdAsync(Guid tripSearchId, CancellationToken cancellationToken = default) =>
-        _context.trip_searches
+    public Task<TripSearch?> GetByIdAsync(Guid tripSearchId, CancellationToken cancellationToken = default) =>
+        _context.TripSearches
             .AsNoTracking()
-            .FirstOrDefaultAsync(search => search.trip_search_id == tripSearchId, cancellationToken);
+            .FirstOrDefaultAsync(search => search.TripSearchId == tripSearchId, cancellationToken);
 
-    public Task<List<trip_search>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
-        _context.trip_searches
+    public Task<List<TripSearch>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        _context.TripSearches
             .AsNoTracking()
-            .Where(search => search.user_id == userId)
-            .OrderByDescending(search => search.requested_at)
+            .Where(search => search.UserId == userId)
+            .OrderByDescending(search => search.RequestedAt)
             .ToListAsync(cancellationToken);
 }

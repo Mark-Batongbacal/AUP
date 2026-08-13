@@ -4,44 +4,44 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Repositories;
 
 /// <summary>
-/// Data access for chat conversations. AI request handling belongs outside repositories.
+/// Data access for chat conversations. AI Request handling belongs outside repositories.
 /// </summary>
 public sealed class ChatConversationRepository(SupabaseDbContext context) : IChatConversationRepository
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<chat_conversation>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
-        _context.chat_conversations
+    public Task<List<ChatConversation>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        _context.ChatConversations
             .AsNoTracking()
-            .Where(conversation => conversation.user_id == userId)
-            .OrderByDescending(conversation => conversation.updated_at)
+            .Where(Conversation => Conversation.UserId == userId)
+            .OrderByDescending(Conversation => Conversation.UpdatedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<chat_conversation?> GetByIdAsync(Guid conversationId, CancellationToken cancellationToken = default) =>
-        _context.chat_conversations
+    public Task<ChatConversation?> GetByIdAsync(Guid conversationId, CancellationToken cancellationToken = default) =>
+        _context.ChatConversations
             .AsNoTracking()
-            .FirstOrDefaultAsync(conversation => conversation.conversation_id == conversationId, cancellationToken);
+            .FirstOrDefaultAsync(Conversation => Conversation.ConversationId == conversationId, cancellationToken);
 
-    public async Task<chat_conversation> AddAsync(chat_conversation conversation, CancellationToken cancellationToken = default)
+    public async Task<ChatConversation> AddAsync(ChatConversation Conversation, CancellationToken cancellationToken = default)
     {
-        await _context.chat_conversations.AddAsync(conversation, cancellationToken);
+        await _context.ChatConversations.AddAsync(Conversation, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        return conversation;
+        return Conversation;
     }
 
-    public async Task<bool> UpdateTitleAsync(Guid conversationId, string? title, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateTitleAsync(Guid conversationId, string? Title, CancellationToken cancellationToken = default)
     {
-        var conversation = await _context.chat_conversations.FirstOrDefaultAsync(
-            conversation => conversation.conversation_id == conversationId,
+        var Conversation = await _context.ChatConversations.FirstOrDefaultAsync(
+            Conversation => Conversation.ConversationId == conversationId,
             cancellationToken);
 
-        if (conversation is null)
+        if (Conversation is null)
         {
             return false;
         }
 
-        conversation.title = title;
-        conversation.updated_at = DateTime.UtcNow;
+        Conversation.Title = Title;
+        Conversation.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }

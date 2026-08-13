@@ -4,28 +4,28 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Repositories;
 
 /// <summary>
-/// Data access for chat messages. Message retrieval for a conversation is ordered by created_at.
+/// Data access for chat messages. Message retrieval for a Conversation is ordered by CreatedAt.
 /// </summary>
 public sealed class ChatMessageRepository(SupabaseDbContext context) : IChatMessageRepository
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<chat_message>> GetByConversationAsync(Guid conversationId, CancellationToken cancellationToken = default) =>
-        _context.chat_messages
+    public Task<List<ChatMessage>> GetByConversationAsync(Guid conversationId, CancellationToken cancellationToken = default) =>
+        _context.ChatMessages
             .AsNoTracking()
-            .Where(message => message.conversation_id == conversationId)
-            .OrderBy(message => message.created_at)
+            .Where(Message => Message.ConversationId == conversationId)
+            .OrderBy(Message => Message.CreatedAt)
             .ToListAsync(cancellationToken);
 
-    public async Task<chat_message> AddAsync(chat_message message, CancellationToken cancellationToken = default)
+    public async Task<ChatMessage> AddAsync(ChatMessage Message, CancellationToken cancellationToken = default)
     {
-        await _context.chat_messages.AddAsync(message, cancellationToken);
+        await _context.ChatMessages.AddAsync(Message, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        return message;
+        return Message;
     }
 
-    public Task<chat_message?> GetByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
-        _context.chat_messages
+    public Task<ChatMessage?> GetByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+        _context.ChatMessages
             .AsNoTracking()
-            .FirstOrDefaultAsync(message => message.message_id == messageId, cancellationToken);
+            .FirstOrDefaultAsync(Message => Message.MessageId == messageId, cancellationToken);
 }

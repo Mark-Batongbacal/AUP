@@ -10,36 +10,36 @@ public sealed class FareRuleRepository(SupabaseDbContext context) : IFareRuleRep
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<fare_rule>> GetActiveAsync(CancellationToken cancellationToken = default) =>
-        _context.fare_rules
+    public Task<List<FareRule>> GetActiveAsync(CancellationToken cancellationToken = default) =>
+        _context.FareRules
             .AsNoTracking()
-            .Include(rule => rule.route)
-            .Include(rule => rule.transport_mode)
-            .Where(rule => rule.is_active)
-            .OrderBy(rule => rule.rule_name)
+            .Include(rule => rule.Route)
+            .Include(rule => rule.TransportMode)
+            .Where(rule => rule.IsActive)
+            .OrderBy(rule => rule.RuleName)
             .ToListAsync(cancellationToken);
 
-    public Task<List<fare_rule>> GetActiveByRouteAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.fare_rules
+    public Task<List<FareRule>> GetActiveByRouteAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.FareRules
             .AsNoTracking()
-            .Include(rule => rule.transport_mode)
-            .Where(rule => rule.route_id == routeId && rule.is_active)
-            .OrderByDescending(rule => rule.effective_from)
+            .Include(rule => rule.TransportMode)
+            .Where(rule => rule.RouteId == routeId && rule.IsActive)
+            .OrderByDescending(rule => rule.EffectiveFrom)
             .ToListAsync(cancellationToken);
 
-    public Task<List<fare_rule>> GetActiveByTransportModeAsync(short transportModeId, CancellationToken cancellationToken = default) =>
-        _context.fare_rules
+    public Task<List<FareRule>> GetActiveByTransportModeAsync(short transportModeId, CancellationToken cancellationToken = default) =>
+        _context.FareRules
             .AsNoTracking()
-            .Include(rule => rule.route)
-            .Where(rule => rule.transport_mode_id == transportModeId && rule.is_active)
-            .OrderByDescending(rule => rule.effective_from)
+            .Include(rule => rule.Route)
+            .Where(rule => rule.TransportModeId == transportModeId && rule.IsActive)
+            .OrderByDescending(rule => rule.EffectiveFrom)
             .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Returns the active fare rule effective on the supplied date. Route-specific rules can be
     /// requested with routeId; pass null for mode-level rules.
     /// </summary>
-    public Task<fare_rule?> GetCurrentlyEffectiveAsync(
+    public Task<FareRule?> GetCurrentlyEffectiveAsync(
         short transportModeId,
         Guid? routeId = null,
         DateOnly? effectiveOn = null,
@@ -47,24 +47,24 @@ public sealed class FareRuleRepository(SupabaseDbContext context) : IFareRuleRep
     {
         var targetDate = effectiveOn ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
-        return _context.fare_rules
+        return _context.FareRules
             .AsNoTracking()
-            .Include(rule => rule.route)
-            .Include(rule => rule.transport_mode)
+            .Include(rule => rule.Route)
+            .Include(rule => rule.TransportMode)
             .Where(rule =>
-                rule.transport_mode_id == transportModeId &&
-                rule.route_id == routeId &&
-                rule.is_active &&
-                rule.effective_from <= targetDate &&
-                (rule.effective_to == null || rule.effective_to >= targetDate))
-            .OrderByDescending(rule => rule.effective_from)
+                rule.TransportModeId == transportModeId &&
+                rule.RouteId == routeId &&
+                rule.IsActive &&
+                rule.EffectiveFrom <= targetDate &&
+                (rule.EffectiveTo == null || rule.EffectiveTo >= targetDate))
+            .OrderByDescending(rule => rule.EffectiveFrom)
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public Task<fare_rule?> GetByIdAsync(Guid fareRuleId, CancellationToken cancellationToken = default) =>
-        _context.fare_rules
+    public Task<FareRule?> GetByIdAsync(Guid fareRuleId, CancellationToken cancellationToken = default) =>
+        _context.FareRules
             .AsNoTracking()
-            .Include(rule => rule.route)
-            .Include(rule => rule.transport_mode)
-            .FirstOrDefaultAsync(rule => rule.fare_rule_id == fareRuleId, cancellationToken);
+            .Include(rule => rule.Route)
+            .Include(rule => rule.TransportMode)
+            .FirstOrDefaultAsync(rule => rule.FareRuleId == fareRuleId, cancellationToken);
 }

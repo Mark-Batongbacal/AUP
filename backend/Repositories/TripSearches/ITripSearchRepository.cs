@@ -4,9 +4,9 @@ namespace backend.Repositories;
 
 public interface ITripSearchRepository
 {
-    Task<trip_search> AddAsync(trip_search tripSearch, CancellationToken cancellationToken = default);
+    Task<TripSearch> AddAsync(TripSearch tripSearch, CancellationToken cancellationToken = default);
 
-    Task<trip_search?> GetByIdAsync(Guid tripSearchId, CancellationToken cancellationToken = default);
+    Task<TripSearch?> GetByIdAsync(Guid tripSearchId, CancellationToken cancellationToken = default);
 
-    Task<List<trip_search>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<List<TripSearch>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default);
 }

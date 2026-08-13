@@ -4,66 +4,66 @@ using Microsoft.EntityFrameworkCore;
 namespace backend.Repositories;
 
 /// <summary>
-/// Data access for route-stop relationships. Route sequences are always ordered by stop_order.
+/// Data access for Route-Stop relationships. Route sequences are always ordered by StopOrder.
 /// </summary>
 public sealed class RouteStopRepository(SupabaseDbContext context) : IRouteStopRepository
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<route_stop>> GetOrderedStopsForRouteAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.route_stops
+    public Task<List<RouteStop>> GetOrderedStopsForRouteAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.RouteStops
             .AsNoTracking()
-            .Include(routeStop => routeStop.stop)
-            .Where(routeStop => routeStop.route_id == routeId)
-            .OrderBy(routeStop => routeStop.stop_order)
+            .Include(routeStop => routeStop.Stop)
+            .Where(routeStop => routeStop.RouteId == routeId)
+            .OrderBy(routeStop => routeStop.StopOrder)
             .ToListAsync(cancellationToken);
 
-    public Task<List<route_stop>> GetRoutesForStopAsync(Guid stopId, CancellationToken cancellationToken = default) =>
-        _context.route_stops
+    public Task<List<RouteStop>> GetRoutesForStopAsync(Guid stopId, CancellationToken cancellationToken = default) =>
+        _context.RouteStops
             .AsNoTracking()
-            .Include(routeStop => routeStop.route)
-                .ThenInclude(route => route.transport_mode)
-            .Where(routeStop => routeStop.stop_id == stopId)
-            .OrderBy(routeStop => routeStop.route.route_name)
-            .ThenBy(routeStop => routeStop.stop_order)
+            .Include(routeStop => routeStop.Route)
+                .ThenInclude(Route => Route.TransportMode)
+            .Where(routeStop => routeStop.StopId == stopId)
+            .OrderBy(routeStop => routeStop.Route.RouteName)
+            .ThenBy(routeStop => routeStop.StopOrder)
             .ToListAsync(cancellationToken);
 
-    public Task<route_stop?> GetByIdAsync(Guid routeStopId, CancellationToken cancellationToken = default) =>
-        _context.route_stops
+    public Task<RouteStop?> GetByIdAsync(Guid routeStopId, CancellationToken cancellationToken = default) =>
+        _context.RouteStops
             .AsNoTracking()
-            .Include(routeStop => routeStop.route)
-            .Include(routeStop => routeStop.stop)
-            .FirstOrDefaultAsync(routeStop => routeStop.route_stop_id == routeStopId, cancellationToken);
+            .Include(routeStop => routeStop.Route)
+            .Include(routeStop => routeStop.Stop)
+            .FirstOrDefaultAsync(routeStop => routeStop.RouteStopId == routeStopId, cancellationToken);
 
-    public async Task<route_stop> AddAsync(route_stop routeStop, CancellationToken cancellationToken = default)
+    public async Task<RouteStop> AddAsync(RouteStop routeStop, CancellationToken cancellationToken = default)
     {
-        await _context.route_stops.AddAsync(routeStop, cancellationToken);
+        await _context.RouteStops.AddAsync(routeStop, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         return routeStop;
     }
 
     public async Task<bool> UpdateStopOrderAsync(Guid routeStopId, int stopOrder, CancellationToken cancellationToken = default)
     {
-        var routeStop = await _context.route_stops.FirstOrDefaultAsync(routeStop => routeStop.route_stop_id == routeStopId, cancellationToken);
+        var routeStop = await _context.RouteStops.FirstOrDefaultAsync(routeStop => routeStop.RouteStopId == routeStopId, cancellationToken);
         if (routeStop is null)
         {
             return false;
         }
 
-        routeStop.stop_order = stopOrder;
+        routeStop.StopOrder = stopOrder;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
     public async Task<bool> RemoveAsync(Guid routeStopId, CancellationToken cancellationToken = default)
     {
-        var routeStop = await _context.route_stops.FirstOrDefaultAsync(routeStop => routeStop.route_stop_id == routeStopId, cancellationToken);
+        var routeStop = await _context.RouteStops.FirstOrDefaultAsync(routeStop => routeStop.RouteStopId == routeStopId, cancellationToken);
         if (routeStop is null)
         {
             return false;
         }
 
-        _context.route_stops.Remove(routeStop);
+        _context.RouteStops.Remove(routeStop);
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }

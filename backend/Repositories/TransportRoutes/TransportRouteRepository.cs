@@ -5,124 +5,124 @@ namespace backend.Repositories;
 
 /// <summary>
 /// Data access for transport routes. Methods that include navigation properties return null when
-/// the requested route does not exist.
+/// the requested Route does not exist.
 /// </summary>
 public sealed class TransportRouteRepository(SupabaseDbContext context) : ITransportRouteRepository
 {
     private readonly SupabaseDbContext _context = context;
 
-    public Task<List<transport_route>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
-        _context.transport_routes
+    public Task<List<TransportRoute>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
             .AsNoTracking()
-            .Where(route => route.is_active)
-            .OrderBy(route => route.route_name)
+            .Where(Route => Route.IsActive)
+            .OrderBy(Route => Route.RouteName)
             .ToListAsync(cancellationToken);
 
-    public Task<transport_route?> GetByIdAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.transport_routes
+    public Task<TransportRoute?> GetByIdAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
             .AsNoTracking()
-            .FirstOrDefaultAsync(route => route.route_id == routeId, cancellationToken);
+            .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    public Task<transport_route?> GetByRouteCodeAsync(string routeCode, CancellationToken cancellationToken = default) =>
-        _context.transport_routes
+    public Task<TransportRoute?> GetByRouteCodeAsync(string routeCode, CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
             .AsNoTracking()
-            .FirstOrDefaultAsync(route => route.route_code == routeCode, cancellationToken);
+            .FirstOrDefaultAsync(Route => Route.RouteCode == routeCode, cancellationToken);
 
-    public Task<List<transport_route>> GetByTransportModeAsync(short transportModeId, CancellationToken cancellationToken = default) =>
-        _context.transport_routes
+    public Task<List<TransportRoute>> GetByTransportModeAsync(short transportModeId, CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
             .AsNoTracking()
-            .Where(route => route.transport_mode_id == transportModeId && route.is_active)
-            .OrderBy(route => route.route_name)
+            .Where(Route => Route.TransportModeId == transportModeId && Route.IsActive)
+            .OrderBy(Route => Route.RouteName)
             .ToListAsync(cancellationToken);
 
     /// <summary>
-    /// Includes the route's start stop, end stop, and transport mode.
+    /// Includes the Route's start Stop, end Stop, and transport mode.
     /// </summary>
-    public Task<transport_route?> GetWithEndpointsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.transport_routes
+    public Task<TransportRoute?> GetWithEndpointsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
             .AsNoTracking()
-            .Include(route => route.start_stop)
-            .Include(route => route.end_stop)
-            .Include(route => route.transport_mode)
-            .FirstOrDefaultAsync(route => route.route_id == routeId, cancellationToken);
+            .Include(Route => Route.StartStop)
+            .Include(Route => Route.EndStop)
+            .Include(Route => Route.TransportMode)
+            .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
     /// <summary>
-    /// Includes route-stop rows and each stop. Use GetOrderedRouteStopsAsync when ordered sequence
+    /// Includes Route-Stop rows and each Stop. Use GetOrderedRouteStopsAsync when ordered sequence
     /// materialization is required.
     /// </summary>
-    public Task<transport_route?> GetWithRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.transport_routes
+    public Task<TransportRoute?> GetWithRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
             .AsNoTracking()
-            .Include(route => route.route_stops)
-                .ThenInclude(routeStop => routeStop.stop)
-            .FirstOrDefaultAsync(route => route.route_id == routeId, cancellationToken);
+            .Include(Route => Route.RouteStops)
+                .ThenInclude(routeStop => routeStop.Stop)
+            .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
     /// <summary>
-    /// Includes route-stop rows and stops ordered by stop_order.
+    /// Includes Route-Stop rows and stops ordered by StopOrder.
     /// </summary>
-    public Task<transport_route?> GetWithOrderedRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.transport_routes
+    public Task<TransportRoute?> GetWithOrderedRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
             .AsNoTracking()
-            .Include(route => route.route_stops.OrderBy(routeStop => routeStop.stop_order))
-                .ThenInclude(routeStop => routeStop.stop)
-            .FirstOrDefaultAsync(route => route.route_id == routeId, cancellationToken);
+            .Include(Route => Route.RouteStops.OrderBy(routeStop => routeStop.StopOrder))
+                .ThenInclude(routeStop => routeStop.Stop)
+            .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    public Task<List<route_stop>> GetOrderedRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.route_stops
+    public Task<List<RouteStop>> GetOrderedRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.RouteStops
             .AsNoTracking()
-            .Include(routeStop => routeStop.stop)
-            .Where(routeStop => routeStop.route_id == routeId)
-            .OrderBy(routeStop => routeStop.stop_order)
+            .Include(routeStop => routeStop.Stop)
+            .Where(routeStop => routeStop.RouteId == routeId)
+            .OrderBy(routeStop => routeStop.StopOrder)
             .ToListAsync(cancellationToken);
 
     /// <summary>
-    /// Includes active route segments and their from/to stops ordered by segment_order.
+    /// Includes active Route segments and their from/to stops ordered by SegmentOrder.
     /// </summary>
-    public Task<transport_route?> GetWithRouteSegmentsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.transport_routes
+    public Task<TransportRoute?> GetWithRouteSegmentsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
             .AsNoTracking()
-            .Include(route => route.route_segments.Where(segment => segment.is_active).OrderBy(segment => segment.segment_order))
-                .ThenInclude(segment => segment.from_stop)
-            .Include(route => route.route_segments.Where(segment => segment.is_active).OrderBy(segment => segment.segment_order))
-                .ThenInclude(segment => segment.to_stop)
-            .FirstOrDefaultAsync(route => route.route_id == routeId, cancellationToken);
+            .Include(Route => Route.RouteSegments.Where(segment => segment.IsActive).OrderBy(segment => segment.SegmentOrder))
+                .ThenInclude(segment => segment.FromStop)
+            .Include(Route => Route.RouteSegments.Where(segment => segment.IsActive).OrderBy(segment => segment.SegmentOrder))
+                .ThenInclude(segment => segment.ToStop)
+            .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
     /// <summary>
-    /// Returns active route segments and their from/to stops ordered by segment_order.
+    /// Returns active Route segments and their from/to stops ordered by SegmentOrder.
     /// </summary>
-    public Task<List<route_segment>> GetOrderedRouteSegmentsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
-        _context.route_segments
+    public Task<List<RouteSegment>> GetOrderedRouteSegmentsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+        _context.RouteSegments
             .AsNoTracking()
-            .Include(segment => segment.from_stop)
-            .Include(segment => segment.to_stop)
-            .Where(segment => segment.route_id == routeId && segment.is_active)
-            .OrderBy(segment => segment.segment_order)
+            .Include(segment => segment.FromStop)
+            .Include(segment => segment.ToStop)
+            .Where(segment => segment.RouteId == routeId && segment.IsActive)
+            .OrderBy(segment => segment.SegmentOrder)
             .ToListAsync(cancellationToken);
 
-    public async Task<transport_route> AddAsync(transport_route route, CancellationToken cancellationToken = default)
+    public async Task<TransportRoute> AddAsync(TransportRoute Route, CancellationToken cancellationToken = default)
     {
-        await _context.transport_routes.AddAsync(route, cancellationToken);
+        await _context.TransportRoutes.AddAsync(Route, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
-        return route;
+        return Route;
     }
 
-    public async Task<transport_route> UpdateAsync(transport_route route, CancellationToken cancellationToken = default)
+    public async Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default)
     {
-        _context.transport_routes.Update(route);
+        _context.TransportRoutes.Update(Route);
         await _context.SaveChangesAsync(cancellationToken);
-        return route;
+        return Route;
     }
 
     public async Task<bool> DeactivateAsync(Guid routeId, CancellationToken cancellationToken = default)
     {
-        var route = await _context.transport_routes.FirstOrDefaultAsync(route => route.route_id == routeId, cancellationToken);
-        if (route is null)
+        var Route = await _context.TransportRoutes.FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
+        if (Route is null)
         {
             return false;
         }
 
-        route.is_active = false;
-        route.updated_at = DateTime.UtcNow;
+        Route.IsActive = false;
+        Route.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }

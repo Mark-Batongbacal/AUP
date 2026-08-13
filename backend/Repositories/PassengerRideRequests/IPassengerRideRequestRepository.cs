@@ -4,13 +4,13 @@ namespace backend.Repositories;
 
 public interface IPassengerRideRequestRepository
 {
-    Task<passenger_ride_request?> GetByIdAsync(Guid requestId, CancellationToken cancellationToken = default);
+    Task<PassengerRideRequest?> GetByIdAsync(Guid requestId, CancellationToken cancellationToken = default);
 
-    Task<List<passenger_ride_request>> GetByPassengerAsync(Guid passengerUserId, CancellationToken cancellationToken = default);
+    Task<List<PassengerRideRequest>> GetByPassengerAsync(Guid passengerUserId, CancellationToken cancellationToken = default);
 
-    Task<List<passenger_ride_request>> GetActiveSearchingAsync(CancellationToken cancellationToken = default);
+    Task<List<PassengerRideRequest>> GetActiveSearchingAsync(CancellationToken cancellationToken = default);
 
-    Task<passenger_ride_request> AddAsync(passenger_ride_request request, CancellationToken cancellationToken = default);
+    Task<PassengerRideRequest> AddAsync(PassengerRideRequest Request, CancellationToken cancellationToken = default);
 
-    Task<bool> UpdateStatusAsync(Guid requestId, string status, CancellationToken cancellationToken = default);
+    Task<bool> UpdateStatusAsync(Guid requestId, string Status, CancellationToken cancellationToken = default);
 }
