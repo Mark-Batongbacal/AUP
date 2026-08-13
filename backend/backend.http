@@ -14,6 +14,7 @@ Accept: application/json
 
 GET {{backend_HostAddress}}/api/test/transport-routes
 Accept: application/json
+X-Api-Key: {{apiKey}}
 
 ###
 

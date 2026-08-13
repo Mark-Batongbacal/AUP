@@ -60,6 +60,9 @@ builder.Services.AddScoped<ITripAlertRepository, TripAlertRepository>();
 builder.Services.AddScoped<ITripSearchRepository, TripSearchRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
+builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
+builder.Services.AddScoped<NemotronAIHelper>();
+
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
