@@ -42,6 +42,7 @@ Login__Users__2__Password=<secure-password>
 Login__Users__3__UserName=<fourth-user-name>
 Login__Users__3__Password=<secure-password>
 NVIDIA_API_KEY=<your-nvidia-api-key>
+ConnectionStrings__Supabase=Host=<supabase-host>;Port=5432;Database=postgres;Username=postgres;Password=<database-password>
 ```
 
 Never commit real passwords or API keys. `appsettings.json` contains only non-secret defaults; `appsettings.Development.json` and `.env` are ignored.
@@ -135,7 +136,6 @@ git add <files-you-changed>
 git commit -m "Describe your change"
 git push -u origin <your-branch>
 ```
-
 See the [frontend development guide](frontend/README.md) for instructions on
 running the app alongside the local backend.
 
