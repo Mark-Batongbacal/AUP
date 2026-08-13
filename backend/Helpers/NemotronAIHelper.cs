@@ -1,26 +1,36 @@
-// from openai import OpenAI
+using OpenAI;
+using OpenAI.Chat;
 
-// client = OpenAI(
-//   base_url = "https://integrate.api.nvidia.com/v1",
-//   api_key = os.environ["NVIDIA_API_KEY"]
-// )
+namespace backend.Helpers;
 
+public class NemotronAIHelper
+{
+    private readonly ChatClient _client;
 
-// completion = client.chat.completions.create(
-//   model="nvidia/nemotron-3-ultra-550b-a55b",
-//   messages=[{"role":"user","content":""}],
-//   temperature=1,
-//   top_p=0.95,
-//   max_tokens=16384,
-//   extra_body={"chat_template_kwargs":{"enable_thinking":True},"reasoning_budget":16384},
-//   stream=True
-// )
+    public NemotronAIHelper(IConfiguration configuration)
+    {
+        var apiKey = configuration["NVIDIA_API_KEY"];
 
-// for chunk in completion:
-//   if not chunk.choices:
-//     continue
-//   reasoning = getattr(chunk.choices[0].delta, "reasoning_content", None)
-//   if reasoning:
-//     print(reasoning, end="")
-//   if chunk.choices[0].delta.content is not None:
-//     print(chunk.choices[0].delta.content, end="")
+        if (string.IsNullOrEmpty(apiKey))
+            throw new InvalidOperationException("NVIDIA_API_KEY is not configured.");
+
+        _client = new ChatClient(
+            model: "nvidia/nemotron-3-ultra-550b-a55b",
+            credential: new System.ClientModel.ApiKeyCredential(apiKey),
+            options: new OpenAIClientOptions
+            {
+                Endpoint = new Uri("https://integrate.api.nvidia.com/v1")
+            }
+        );
+    }
+
+    public async Task<string> AskAsync(string message)
+    {
+        var response = await _client.CompleteChatAsync(
+        [
+            new UserChatMessage(message)
+        ]);
+
+        return response.Value.Content[0].Text;
+    }
+}
