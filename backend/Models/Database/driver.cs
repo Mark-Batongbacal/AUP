@@ -1,39 +1,39 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace backend.Models.Database;
 
-public partial class driver
+public partial class Driver
 {
-    public Guid driver_id { get; set; }
+    public Guid DriverId { get; set; }
 
-    public Guid user_id { get; set; }
+    public Guid UserId { get; set; }
 
-    public string? license_number { get; set; }
+    public string? LicenseNumber { get; set; }
 
-    public string verification_status { get; set; } = null!;
+    public string VerificationStatus { get; set; } = null!;
 
-    public Guid? home_terminal_id { get; set; }
+    public Guid? HomeTerminalId { get; set; }
 
-    public decimal? average_rating { get; set; }
+    public decimal? AverageRating { get; set; }
 
-    public int rating_count { get; set; }
+    public int RatingCount { get; set; }
 
-    public bool is_available { get; set; }
+    public bool IsAvailable { get; set; }
 
-    public DateTime created_at { get; set; }
+    public DateTime CreatedAt { get; set; }
 
-    public DateTime updated_at { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
-    public virtual ICollection<driver_availability_session> driver_availability_sessions { get; set; } = new List<driver_availability_session>();
+    public virtual ICollection<DriverAvailabilitySession> DriverAvailabilitySessions { get; set; } = new List<DriverAvailabilitySession>();
 
-    public virtual driver_location? driver_location { get; set; }
+    public virtual DriverLocation? DriverLocation { get; set; }
 
-    public virtual ICollection<driver_vehicle> driver_vehicles { get; set; } = new List<driver_vehicle>();
+    public virtual ICollection<DriverVehicle> DriverVehicles { get; set; } = new List<DriverVehicle>();
 
-    public virtual transport_stop? home_terminal { get; set; }
+    public virtual TransportStop? HomeTerminal { get; set; }
 
-    public virtual ICollection<ride_match> ride_matches { get; set; } = new List<ride_match>();
+    public virtual ICollection<RideMatch> RideMatches { get; set; } = new List<RideMatch>();
 
-    public virtual user_profile user { get; set; } = null!;
+    public virtual UserProfile User { get; set; } = null!;
 }

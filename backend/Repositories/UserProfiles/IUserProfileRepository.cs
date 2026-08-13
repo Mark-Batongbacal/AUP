@@ -1,0 +1,14 @@
+using backend.Models.Database;
+
+namespace backend.Repositories;
+
+public interface IUserProfileRepository
+{
+    Task<UserProfile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<UserProfile?> GetActiveByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<UserProfile> AddOrUpdateAsync(UserProfile profile, CancellationToken cancellationToken = default);
+
+    Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default);
+}

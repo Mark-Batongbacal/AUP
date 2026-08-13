@@ -12,6 +12,11 @@ Accept: application/json
 
 ###
 
+GET {{backend_HostAddress}}/api/test/transport-routes
+Accept: application/json
+
+###
+
 POST {{backend_HostAddress}}/api/auth/login
 Content-Type: application/json
 

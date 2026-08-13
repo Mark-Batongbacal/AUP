@@ -8,74 +8,74 @@ namespace backend.Models.Database;
  * the custom gis schema. Keep these properties here instead of the generated entity files so a
  * future scaffold does not remove them.
  *
- * Point uses X = longitude and Y = latitude. SRID 4326 is the standard GPS coordinate system.
+ * Point uses X = Longitude and Y = Latitude. SRID 4326 is the standard GPS coordinate system.
  */
-public partial class transport_stop
+public partial class TransportStop
 {
-    public Point? location { get; set; }
+    public Point? Location { get; set; }
 }
 
-public partial class route_segment
+public partial class RouteSegment
 {
-    public LineString? geometry { get; set; }
+    public LineString? Geometry { get; set; }
 }
 
-public partial class trip_search
+public partial class TripSearch
 {
-    public Point? origin_location { get; set; }
-    public Point? destination_location { get; set; }
+    public Point? OriginLocation { get; set; }
+    public Point? DestinationLocation { get; set; }
 }
 
-public partial class driver_location
+public partial class DriverLocation
 {
-    public Point? location { get; set; }
+    public Point? Location { get; set; }
 }
 
-public partial class driver_availability_session
+public partial class DriverAvailabilitySession
 {
-    public LineString? route_geometry { get; set; }
+    public LineString? RouteGeometry { get; set; }
 }
 
-public partial class passenger_ride_request
+public partial class PassengerRideRequest
 {
-    public Point? pickup_location { get; set; }
-    public Point? dropoff_location { get; set; }
+    public Point? PickupLocation { get; set; }
+    public Point? DropoffLocation { get; set; }
 }
 
 public partial class SupabaseDbContext
 {
     // This implements the partial hook generated at the end of SupabaseDbContext.cs.
-    // Use an unqualified type name because Program.cs adds gis to the database search path.
+    // Use an unqualified type Name because Program.cs adds gis to the database search path.
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<transport_stop>()
-            .Property(entity => entity.location)
+        modelBuilder.Entity<TransportStop>()
+            .Property(entity => entity.Location)
             .HasColumnType("geography(Point,4326)");
 
-        modelBuilder.Entity<route_segment>()
-            .Property(entity => entity.geometry)
+        modelBuilder.Entity<RouteSegment>()
+            .Property(entity => entity.Geometry)
             .HasColumnType("geography(LineString,4326)");
 
-        modelBuilder.Entity<trip_search>()
-            .Property(entity => entity.origin_location)
+        modelBuilder.Entity<TripSearch>()
+            .Property(entity => entity.OriginLocation)
             .HasColumnType("geography(Point,4326)");
-        modelBuilder.Entity<trip_search>()
-            .Property(entity => entity.destination_location)
-            .HasColumnType("geography(Point,4326)");
-
-        modelBuilder.Entity<driver_location>()
-            .Property(entity => entity.location)
+        modelBuilder.Entity<TripSearch>()
+            .Property(entity => entity.DestinationLocation)
             .HasColumnType("geography(Point,4326)");
 
-        modelBuilder.Entity<driver_availability_session>()
-            .Property(entity => entity.route_geometry)
+        modelBuilder.Entity<DriverLocation>()
+            .Property(entity => entity.Location)
+            .HasColumnType("geography(Point,4326)");
+
+        modelBuilder.Entity<DriverAvailabilitySession>()
+            .Property(entity => entity.RouteGeometry)
             .HasColumnType("geography(LineString,4326)");
 
-        modelBuilder.Entity<passenger_ride_request>()
-            .Property(entity => entity.pickup_location)
+        modelBuilder.Entity<PassengerRideRequest>()
+            .Property(entity => entity.PickupLocation)
             .HasColumnType("geography(Point,4326)");
-        modelBuilder.Entity<passenger_ride_request>()
-            .Property(entity => entity.dropoff_location)
+        modelBuilder.Entity<PassengerRideRequest>()
+            .Property(entity => entity.DropoffLocation)
             .HasColumnType("geography(Point,4326)");
     }
 }
