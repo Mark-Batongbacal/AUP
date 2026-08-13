@@ -9,16 +9,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
@@ -51,7 +50,7 @@ class MainActivity : ComponentActivity() {
 @PreviewScreenSizes
 @Composable
 fun FrontendApp() {
-    var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.HOME) }
+    var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.MAP) }
 
     NavigationSuiteScaffold(
         navigationSuiteItems = {
@@ -83,7 +82,7 @@ enum class AppDestinations(
     val label: String,
     val icon: Int,
 ) {
-    HOME("Home", R.drawable.ic_home),
+    MAP("Map", R.drawable.ic_map),
     FAVORITES("Favorites", R.drawable.ic_favorite),
     PROFILE("Profile", R.drawable.ic_account_box),
 }
@@ -103,26 +102,16 @@ private fun DestinationContent(destination: AppDestinations, modifier: Modifier 
         )
 
         when (destination) {
-            AppDestinations.HOME -> HomeScreen()
+            AppDestinations.MAP -> MapScreen(
+                routePoints = TemporaryMapSamples.routePoints,
+                modifier = Modifier.weight(1f)
+            ) {
+                TemporaryMapSampleMarker()
+            }
             AppDestinations.FAVORITES -> FavoritesScreen()
             AppDestinations.PROFILE -> ProfileScreen()
         }
     }
-}
-
-@Composable
-private fun HomeScreen() {
-    Text(
-        text = "Welcome back",
-        style = MaterialTheme.typography.titleLarge
-    )
-    Text(
-        text = "Here is a quick overview of what needs your attention.",
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(4.dp))
-    SummaryCard(title = "Upcoming", value = "3", detail = "Items scheduled this week")
-    SummaryCard(title = "Saved", value = "12", detail = "Items ready to revisit")
 }
 
 @Composable
