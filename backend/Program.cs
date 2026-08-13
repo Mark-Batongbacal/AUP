@@ -4,6 +4,7 @@ using backend.Repositories;
 using backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using backend.Helpers;
 using System.Diagnostics;
 
 LoadDevelopmentEnvironmentFile();
@@ -71,6 +72,7 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
+builder.Services.AddScoped<NemotronAIHelper>();
 
 var app = builder.Build();
 
@@ -96,7 +98,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
+app.MapGet("/test", () => "Backend is alive");
 app.Run();
 
 static void LoadDevelopmentEnvironmentFile()
