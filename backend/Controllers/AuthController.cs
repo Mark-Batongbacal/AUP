@@ -42,9 +42,8 @@ public sealed class AuthController(IApiKeyService apiKeyService, IOptions<LoginO
 }
 
 public sealed record LoginRequest(
-    [property: Required, StringLength(256)] string UserName,
-    [property: Required, StringLength(256, MinimumLength = 8)] string Password);
-
+    [Required, StringLength(256)] string UserName,
+    [Required, StringLength(256, MinimumLength = 8)] string Password);
 public sealed record LoginResponse(string ApiKey, DateTimeOffset ExpiresAt)
 {
     public string AuthenticationScheme { get; init; } = ApiKeyAuthenticationHandler.SchemeName;

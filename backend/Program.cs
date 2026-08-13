@@ -4,6 +4,7 @@ using backend.Repositories;
 using backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using backend.Helpers;
 using System.Diagnostics;
 
 LoadDevelopmentEnvironmentFile();
@@ -59,6 +60,8 @@ builder.Services.AddScoped<ITripAlertRepository, TripAlertRepository>();
 builder.Services.AddScoped<ITripSearchRepository, TripSearchRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
+builder.Services.AddScoped<NemotronAIHelper>();
+
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
@@ -71,6 +74,7 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
+
 
 var app = builder.Build();
 
@@ -96,7 +100,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
+app.MapGet("/test", () => "Backend is alive");
 app.Run();
 
 static void LoadDevelopmentEnvironmentFile()
