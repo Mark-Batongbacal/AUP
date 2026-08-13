@@ -21,20 +21,15 @@ public sealed class AuthController(IApiKeyService apiKeyService, IOptions<LoginO
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<LoginResponse> Login(LoginRequest request)
     {
-        var user = _options.ConfiguredUsers.FirstOrDefault(user =>
-            !string.IsNullOrWhiteSpace(user.UserName) &&
-            !string.IsNullOrEmpty(user.Password) &&
-            string.Equals(request.UserName, user.UserName, StringComparison.Ordinal) &&
-            CryptographicOperations.FixedTimeEquals(
+        if (!string.Equals(request.UserName, _options.InitialUserName, StringComparison.Ordinal) ||
+            !CryptographicOperations.FixedTimeEquals(
                 Encoding.UTF8.GetBytes(request.Password),
-                Encoding.UTF8.GetBytes(user.Password)));
-
-        if (user is null)
+                Encoding.UTF8.GetBytes(_options.InitialPassword)))
         {
             return Unauthorized(new { message = "Invalid username or password." });
         }
 
-        var issuedKey = apiKeyService.Create(user.UserName);
+        var issuedKey = apiKeyService.Create(_options.InitialUserName);
         return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
     }
 
@@ -44,8 +39,8 @@ public sealed class AuthController(IApiKeyService apiKeyService, IOptions<LoginO
 }
 
 public sealed record LoginRequest(
-    [Required, StringLength(256)] string UserName,
-    [Required, StringLength(256, MinimumLength = 8)] string Password);
+    [property: Required, StringLength(256)] string UserName,
+    [property: Required, StringLength(256, MinimumLength = 8)] string Password);
 
 public sealed record LoginResponse(string ApiKey, DateTimeOffset ExpiresAt)
 {
