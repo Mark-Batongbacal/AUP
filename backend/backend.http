@@ -1,6 +1,6 @@
 # @backend_HostAddress = https://aup-0mjy.onrender.com
 @backend_HostAddress = http://localhost:5129
-@apiKey = 
+@apiKey = YOUR_API_KEY
 
 GET {{backend_HostAddress}}/health
 Accept: application/json
