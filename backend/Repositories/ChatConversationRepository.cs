@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for chat conversations. AI request handling belongs outside repositories.
 /// </summary>
-public sealed class ChatConversationRepository(SupabaseDbContext context)
+public sealed class ChatConversationRepository(SupabaseDbContext context) : IChatConversationRepository
 {
     private readonly SupabaseDbContext _context = context;
 

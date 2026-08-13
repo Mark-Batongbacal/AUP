@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for stored ride matches. This repository does not perform matching algorithms.
 /// </summary>
-public sealed class RideMatchRepository(SupabaseDbContext context)
+public sealed class RideMatchRepository(SupabaseDbContext context) : IRideMatchRepository
 {
     private readonly SupabaseDbContext _context = context;
 

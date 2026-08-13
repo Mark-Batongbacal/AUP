@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for transport modes. Missing mode lookups return null.
 /// </summary>
-public sealed class TransportModeRepository(SupabaseDbContext context)
+public sealed class TransportModeRepository(SupabaseDbContext context) : ITransportModeRepository
 {
     private readonly SupabaseDbContext _context = context;
 

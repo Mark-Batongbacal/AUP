@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for driver profiles and driver status fields.
 /// </summary>
-public sealed class DriverRepository(SupabaseDbContext context)
+public sealed class DriverRepository(SupabaseDbContext context) : IDriverRepository
 {
     private readonly SupabaseDbContext _context = context;
 

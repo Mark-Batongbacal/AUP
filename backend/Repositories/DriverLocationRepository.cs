@@ -8,7 +8,7 @@ namespace backend.Repositories;
 /// Data access for the current location row per driver. This repository does not perform route
 /// matching.
 /// </summary>
-public sealed class DriverLocationRepository(SupabaseDbContext context)
+public sealed class DriverLocationRepository(SupabaseDbContext context) : IDriverLocationRepository
 {
     private readonly SupabaseDbContext _context = context;
 

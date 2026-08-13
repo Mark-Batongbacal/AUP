@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for vehicles registered to drivers.
 /// </summary>
-public sealed class DriverVehicleRepository(SupabaseDbContext context)
+public sealed class DriverVehicleRepository(SupabaseDbContext context) : IDriverVehicleRepository
 {
     private readonly SupabaseDbContext _context = context;
 

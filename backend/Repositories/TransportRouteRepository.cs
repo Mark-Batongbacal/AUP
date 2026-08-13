@@ -7,7 +7,7 @@ namespace backend.Repositories;
 /// Data access for transport routes. Methods that include navigation properties return null when
 /// the requested route does not exist.
 /// </summary>
-public sealed class TransportRouteRepository(SupabaseDbContext context)
+public sealed class TransportRouteRepository(SupabaseDbContext context) : ITransportRouteRepository
 {
     private readonly SupabaseDbContext _context = context;
 

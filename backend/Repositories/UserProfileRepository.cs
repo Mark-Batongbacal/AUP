@@ -7,7 +7,7 @@ namespace backend.Repositories;
 /// Data access for application user profiles only. Authentication and password handling stay
 /// outside this repository.
 /// </summary>
-public sealed class UserProfileRepository(SupabaseDbContext context)
+public sealed class UserProfileRepository(SupabaseDbContext context) : IUserProfileRepository
 {
     private readonly SupabaseDbContext _context = context;
 

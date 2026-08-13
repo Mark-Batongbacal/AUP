@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for chat messages. Message retrieval for a conversation is ordered by created_at.
 /// </summary>
-public sealed class ChatMessageRepository(SupabaseDbContext context)
+public sealed class ChatMessageRepository(SupabaseDbContext context) : IChatMessageRepository
 {
     private readonly SupabaseDbContext _context = context;
 

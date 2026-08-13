@@ -6,7 +6,7 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for stored route recommendations. This repository does not rank recommendations.
 /// </summary>
-public sealed class RouteRecommendationRepository(SupabaseDbContext context)
+public sealed class RouteRecommendationRepository(SupabaseDbContext context) : IRouteRecommendationRepository
 {
     private readonly SupabaseDbContext _context = context;
 
