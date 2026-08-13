@@ -1,5 +1,6 @@
 using backend.Authentication;
 using backend.Models.Database;
+using backend.Repositories;
 using backend.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -37,6 +38,26 @@ var supabaseConnectionStringBuilder = new NpgsqlConnectionStringBuilder(supabase
 };
 builder.Services.AddDbContext<SupabaseDbContext>(options =>
     options.UseNpgsql(supabaseConnectionStringBuilder.ConnectionString, npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
+builder.Services.AddScoped<ChatConversationRepository>();
+builder.Services.AddScoped<ChatMessageRepository>();
+builder.Services.AddScoped<DriverAvailabilitySessionRepository>();
+builder.Services.AddScoped<DriverLocationRepository>();
+builder.Services.AddScoped<DriverRepository>();
+builder.Services.AddScoped<DriverVehicleRepository>();
+builder.Services.AddScoped<FareRuleRepository>();
+builder.Services.AddScoped<PassengerRideRequestRepository>();
+builder.Services.AddScoped<PassengerTripRepository>();
+builder.Services.AddScoped<RecommendationLegRepository>();
+builder.Services.AddScoped<RideMatchRepository>();
+builder.Services.AddScoped<RouteRecommendationRepository>();
+builder.Services.AddScoped<RouteSegmentRepository>();
+builder.Services.AddScoped<RouteStopRepository>();
+builder.Services.AddScoped<TransportModeRepository>();
+builder.Services.AddScoped<TransportRouteRepository>();
+builder.Services.AddScoped<TransportStopRepository>();
+builder.Services.AddScoped<TripAlertRepository>();
+builder.Services.AddScoped<TripSearchRepository>();
+builder.Services.AddScoped<UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
