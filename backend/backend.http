@@ -1,4 +1,4 @@
-@backend_HostAddress = https://aup-0mjy.onrender.com/
+@backend_HostAddress = https://aup-0mjy.onrender.com
 @apiKey = 
 
 GET {{backend_HostAddress}}/health
@@ -15,8 +15,10 @@ POST {{backend_HostAddress}}/api/auth/login
 Content-Type: application/json
 
 {
-  "userName": "{{$processEnv Login__Users__0__UserName}}",
-  "password": "{{$processEnv Login__Users__0__Password}}"
+  // Enter a user configured in the backend's Login__Users__<index> settings.
+  // The HTTP client cannot read the backend's .env file automatically.
+  "userName": "",
+  "password": ""
 }
 
 ###
