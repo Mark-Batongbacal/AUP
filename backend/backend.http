@@ -41,15 +41,10 @@ Accept: application/json
       "content": "Give a short greeting for the AUP mobile app."
     }
   ],
-  "temperature": 1,
+  "temperature": 2,
   "top_p": 0.95,
   "max_tokens": 512,
-  "extra_body": {
-    "chat_template_kwargs": {
-      "enable_thinking": true
-    },
-    "reasoning_budget": 512
-  }
+  "reasoning_budget": 512
 }
 
 ###
