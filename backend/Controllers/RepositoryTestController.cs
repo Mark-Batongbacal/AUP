@@ -1,5 +1,6 @@
 using backend.Repositories;
 using Microsoft.AspNetCore.Mvc;
+using backend.Models.Database;
 
 namespace backend.Controllers;
 
@@ -8,11 +9,14 @@ namespace backend.Controllers;
 public class RepositoryTestController : ControllerBase
 {
     private readonly ITransportRouteRepository _transportRouteRepository;
+    private readonly IUserProfileRepository _userProfileRepository;
 
     public RepositoryTestController(
-        ITransportRouteRepository transportRouteRepository)
+        ITransportRouteRepository transportRouteRepository,
+        IUserProfileRepository userProfileRepository)
     {
         _transportRouteRepository = transportRouteRepository;
+        _userProfileRepository = userProfileRepository;
     }
 
     /// <summary>
@@ -36,5 +40,17 @@ public class RepositoryTestController : ControllerBase
         });
 
         return Ok(result);
+    }
+
+    [HttpPost("new-user-profile")]
+    public async Task<IActionResult> CreateUserProfile([FromBody] UserProfile userProfile)
+    {
+        if (userProfile == null)
+        {
+            return BadRequest("UserProfile cannot be null.");
+        }
+
+        await _userProfileRepository.AddOrUpdateAsync(userProfile);
+        return CreatedAtAction(nameof(CreateUserProfile), new { id = userProfile.UserId }, userProfile);
     }
 }
