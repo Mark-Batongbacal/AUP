@@ -1,6 +1,6 @@
 # @backend_HostAddress = https://aup-0mjy.onrender.com
 @backend_HostAddress = http://localhost:5129
-@apiKey = input api key here
+@apiKey = YOUR_API_KEY
 
 GET {{backend_HostAddress}}/health
 Accept: application/json
@@ -14,6 +14,7 @@ Accept: application/json
 
 GET {{backend_HostAddress}}/api/test/transport-routes
 Accept: application/json
+X-Api-Key: {{apiKey}}
 
 ###
 
