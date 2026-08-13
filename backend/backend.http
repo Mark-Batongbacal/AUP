@@ -1,21 +1,34 @@
 # @backend_HostAddress = https://aup-0mjy.onrender.com
 @backend_HostAddress = http://localhost:5129
-@apiKey = input api key here
+@apiKey = YOUR_API_KEY
 
 GET {{backend_HostAddress}}/health
 Accept: application/json
 
-###
-
+### 
 GET {{backend_HostAddress}}/openapi/v1.json
 Accept: application/json
+X-API-Key: {{apiKey}}
+#ISSUE 
+# HTTP/1.1 404 Not Found
+# Date: Thu, 13 Aug 2026 14:38:44 GMT
+# Content-Length: 0
+# Connection: close
+# rndr-id: 21a11017-a59d-44b4
+# Server: cloudflare
+# x-render-origin-server: Kestrel
+# cf-cache-status: DYNAMIC
+# CF-RAY: a2a8771adaf3051e-HKG
+# alt-svc: h3=":443"; ma=86400
+# When the backend is running locally, the OpenAPI endpoint works fine. When the backend is deployed to Render, the OpenAPI endpoint returns 404 Not Found. The backend's OpenAPI endpoint is not accessible from the public internet when deployed to Render. This may be due to Render's network configuration or firewall settings. Further investigation is needed to determine why the OpenAPI endpoint is not reachable in the Render deployment environment.
 
 ###
 
 GET {{backend_HostAddress}}/api/test/transport-routes
 Accept: application/json
-
+X-API-Key: {{apiKey}}
 ###
+
 
 POST {{backend_HostAddress}}/api/auth/login
 Content-Type: application/json
@@ -23,8 +36,8 @@ Content-Type: application/json
 {
   // Enter a user configured in the backend's Login__Users__<index> settings.
   // The HTTP client cannot read the backend's .env file automatically.
-  "userName": "UserName",
-  "password": "Password"
+  "userName": "",
+  "password": ""
 }
 ###
 POST {{backend_HostAddress}}/api/AI/ask
