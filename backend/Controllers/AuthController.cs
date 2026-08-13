@@ -21,15 +21,18 @@ public sealed class AuthController(IApiKeyService apiKeyService, IOptions<LoginO
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<LoginResponse> Login(LoginRequest request)
     {
-        if (!string.Equals(request.UserName, _options.InitialUserName, StringComparison.Ordinal) ||
+        var configuredUser = _options.ConfiguredUsers.FirstOrDefault(user =>
+            string.Equals(request.UserName, user.UserName, StringComparison.Ordinal));
+
+        if (configuredUser is null ||
             !CryptographicOperations.FixedTimeEquals(
                 Encoding.UTF8.GetBytes(request.Password),
-                Encoding.UTF8.GetBytes(_options.InitialPassword)))
+                Encoding.UTF8.GetBytes(configuredUser.Password)))
         {
             return Unauthorized(new { message = "Invalid username or password." });
         }
 
-        var issuedKey = apiKeyService.Create(_options.InitialUserName);
+        var issuedKey = apiKeyService.Create(configuredUser.UserName);
         return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
     }
 
