@@ -60,6 +60,7 @@ builder.Services.AddScoped<ITripAlertRepository, TripAlertRepository>();
 builder.Services.AddScoped<ITripSearchRepository, TripSearchRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
+builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();
 builder.Services.AddScoped<ITripService, TripService>();
