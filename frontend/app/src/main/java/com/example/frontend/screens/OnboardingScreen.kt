@@ -34,9 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -98,13 +95,8 @@ fun OnboardingScreen(
             Spacer(modifier = Modifier.height(38.dp))
 
             Text(
-                text = buildAnnotatedString {
-                    append("Commute ")
-                    withStyle(style = SpanStyle(color = TukiOrange)) {
-                        append("smarter.")
-                    }
-                },
-                color = Color.White, // Default color for unstyled parts ("Commute ")
+                text = "Commute smarter.",
+                color = Color.White,
                 fontSize = 21.sp
             )
 
