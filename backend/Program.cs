@@ -61,6 +61,7 @@ builder.Services.AddScoped<ITripSearchRepository, TripSearchRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
+builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();
 builder.Services.AddScoped<ITripService, TripService>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<NemotronAIHelper>();
