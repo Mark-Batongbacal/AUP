@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import androidx.compose.foundation.clickable
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.LaunchedEffect
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -48,7 +50,8 @@ private val TukiGray = Color(0xFF9AA6A9)
 @Composable
 fun LoginScreen(
     onBack: () -> Unit = {},
-    onSignUpClick: () -> Unit = {}
+    onSignUpClick: () -> Unit = {},
+    onLoginSuccess: () -> Unit = {}
 ) {
     var email by remember {
         mutableStateOf("")
@@ -60,6 +63,18 @@ fun LoginScreen(
 
     var passwordVisible by remember {
         mutableStateOf(false)
+    }
+
+    var isSocialLoggingIn by remember {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(isSocialLoggingIn) {
+        if (isSocialLoggingIn) {
+            delay(1000)
+            onLoginSuccess()
+            isSocialLoggingIn = false
+        }
     }
 
     Column(
@@ -197,7 +212,7 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(28.dp))
 
         Button(
-            onClick = {},
+            onClick = onLoginSuccess,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(60.dp),
@@ -250,7 +265,9 @@ fun LoginScreen(
             horizontalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             OutlinedButton(
-                onClick = {},
+                onClick = {
+                    isSocialLoggingIn = true
+                },
                 modifier = Modifier
                     .weight(1f)
                     .height(76.dp),
@@ -260,16 +277,30 @@ fun LoginScreen(
                     Color(0xFFE8E8E8)
                 )
             ) {
-                Text(
-                    text = "G Google",
-                    color = TukiDark,
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.google_logo),
+                        contentDescription = "Google",
+                        modifier = Modifier.size(24.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = "Google",
+                        color = TukiDark,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             OutlinedButton(
-                onClick = {},
+                onClick = {
+                    isSocialLoggingIn = true
+                },
                 modifier = Modifier
                     .weight(1f)
                     .height(76.dp),
@@ -279,12 +310,24 @@ fun LoginScreen(
                     Color(0xFFE8E8E8)
                 )
             ) {
-                Text(
-                    text = "f Facebook",
-                    color = TukiDark,
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.facebook_logo),
+                        contentDescription = "Facebook",
+                        modifier = Modifier.size(24.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = "Facebook",
+                        color = TukiDark,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
@@ -305,7 +348,7 @@ fun LoginScreen(
                 color = TukiOrange,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable{ onSignUpClick() }
+                modifier = Modifier.clickable { onSignUpClick() }
             )
         }
     }
