@@ -1,6 +1,6 @@
 # @backend_HostAddress = https://aup-0mjy.onrender.com
 @backend_HostAddress = http://localhost:5129
-@apiKey = YOUR_API_KEY_HERE
+@apiKey = YOUR_API_KEY
 
 ###
 
@@ -30,7 +30,8 @@ X-Api-Key: {{apiKey}}
 POST {{backend_HostAddress}}/api/auth/login
 Content-Type: application/json
 
-{// Change the number in the index to select a different user from the .env file
+{
+  // Change the number in the index to select a different user from the .env file
   "userName": "{{$dotenv Login__Users__0__UserName}}",
   "password": "{{$dotenv Login__Users__0__Password}}"
 }
@@ -56,3 +57,22 @@ Accept: application/json
 X-Api-Key: {{apiKey}}
 
 ###
+
+
+
+### Test Valhalla
+GET {{backend_HostAddress}}/api/test/valhalla/route?startLat=15.117457040686096&startLon=120.57201173134979&endLat=15.117214198401593&endLon=120.56861291663807
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+###
+
+GET {{backend_HostAddress}}/api/test/jeepney/nearby?lat=15.109996&lon=120.582100
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+###
+
+GET {{backend_HostAddress}}/api/test/jeepney/nearby?lat=15.141025980008507&lon=120.52094205653685
+Accept: application/json
+X-Api-Key: {{apiKey}}

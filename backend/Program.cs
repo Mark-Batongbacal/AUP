@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using backend.Helpers;
 using System.Diagnostics;
+using backend.Services.Route;
 
 LoadDevelopmentEnvironmentFile();
 
@@ -29,6 +30,15 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
         .AllowAnyHeader()
         .AllowAnyMethod();
 }));
+
+builder.Services.AddHttpClient<IValhallaService, ValhallaService>(
+    client =>
+    {
+        client.BaseAddress = new Uri(
+            builder.Configuration["Valhalla:BaseUrl"]!
+        );
+    });
+
 builder.Services.Configure<LoginOptions>(builder.Configuration.GetSection(LoginOptions.SectionName));
 var supabaseConnectionString = builder.Configuration.GetConnectionString("Supabase")
     ?? throw new InvalidOperationException("Missing ConnectionStrings:Supabase configuration. Set ConnectionStrings__Supabase.");
@@ -66,7 +76,7 @@ builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();
 builder.Services.AddScoped<ITripService, TripService>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<NemotronAIHelper>();
-
+builder.Services.AddScoped<IJeepneyRoutingService, JeepneyRoutingService>();
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
