@@ -15,7 +15,7 @@ public class NemotronAIHelper
             throw new InvalidOperationException("NVIDIA_API_KEY is not configured.");
 
         _client = new ChatClient(
-            model: "meta/muse-glimmer-30b",
+            model: "nvidia/nemotron-3.5-lightning-30b-a3b",
             credential: new System.ClientModel.ApiKeyCredential(apiKey),
             options: new OpenAIClientOptions
             {
