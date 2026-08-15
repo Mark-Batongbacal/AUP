@@ -47,7 +47,8 @@ private val TukiGray = Color(0xFF9AA6A9)
 @Composable
 fun SignupScreen(
     onBack: () -> Unit = {},
-    onLoginClick: () -> Unit = {}
+    onLoginClick: () -> Unit = {},
+    onLoginSuccess: () -> Unit = {}
 ) {
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
