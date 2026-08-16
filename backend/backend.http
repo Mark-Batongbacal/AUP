@@ -1,6 +1,6 @@
 # @backend_HostAddress = https://aup-0mjy.onrender.com
 @backend_HostAddress = http://localhost:5129
-@apiKey = YOUR_API_KEY
+@apiKey = API-KEY
 
 ###
 
@@ -27,14 +27,6 @@ X-Api-Key: {{apiKey}}
 ###
 
 
-POST {{backend_HostAddress}}/api/auth/login
-Content-Type: application/json
-
-{
-  // Change the number in the index to select a different user from the .env file
-  "userName": "{{$dotenv Login__Users__0__UserName}}",
-  "password": "{{$dotenv Login__Users__0__Password}}"
-}
 
 
 ###
@@ -58,10 +50,10 @@ X-Api-Key: {{apiKey}}
 
 ###
 
-
+#15.133571860629802, 120.5918348033621, 15.135000550179296, 120.59286188742757, 15.135949438010659, 120.59146345506142,15.145651633568074, 120.59514537259685
 
 ### Test Valhalla
-GET {{backend_HostAddress}}/api/test/valhalla/route?startLat=15.117457040686096&startLon=120.57201173134979&endLat=15.117214198401593&endLon=120.56861291663807
+GET {{backend_HostAddress}}/api/test/valhalla/route?startLat=15.135949438010659&startLon=120.59146345506142&endLat=15.145651633568074&endLon=120.59514537259685
 Accept: application/json
 X-Api-Key: {{apiKey}}
 
@@ -76,3 +68,27 @@ X-Api-Key: {{apiKey}}
 GET {{backend_HostAddress}}/api/test/jeepney/nearby?lat=15.141025980008507&lon=120.52094205653685
 Accept: application/json
 X-Api-Key: {{apiKey}}
+
+
+
+###
+
+@apiKey = API-KEY
+
+###originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
+###originLat=15.139582098206548&originLon=120.60108373338038&destinationLat=15.109698583445889&destinationLon=120.58240903543013
+#15.108412470090252, 120.59402071981998
+GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.108412470090252&destinationLon=120.59402071981998
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+###
+
+POST {{backend_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  // Change the number in the index to select a different user from the .env file
+  "userName": "{{$dotenv Login__Users__0__UserName}}",
+  "password": "{{$dotenv Login__Users__0__Password}}"
+}

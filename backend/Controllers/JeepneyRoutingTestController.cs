@@ -14,6 +14,7 @@ public class JeepneyRoutingTestController : ControllerBase
     {
         _jeepneyRoutingService = jeepneyRoutingService;
     }
+    
 
     [HttpGet("nearby")]
     public async Task<IActionResult> FindNearby(
@@ -28,5 +29,24 @@ public class JeepneyRoutingTestController : ControllerBase
                 cancellationToken);
 
         return Ok(results);
+    }
+
+    [HttpGet("plan")]
+    public async Task<IActionResult> PlanRoute(
+        [FromQuery] double originLat,
+        [FromQuery] double originLon,
+        [FromQuery] double destinationLat,
+        [FromQuery] double destinationLon,
+        CancellationToken cancellationToken)
+    {
+        var result =
+            await _jeepneyRoutingService.PlanTripsAsync(
+                originLat,
+                originLon,
+                destinationLat,
+                destinationLon,
+                cancellationToken);
+
+        return Ok(result);
     }
 }
