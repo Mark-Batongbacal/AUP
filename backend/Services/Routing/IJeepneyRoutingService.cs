@@ -1,6 +1,6 @@
 using backend.Models.Routing;
 
-namespace backend.Services.Route;
+namespace backend.Services.Routing;
 
 public interface IJeepneyRoutingService
 {

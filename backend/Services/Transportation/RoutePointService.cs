@@ -1,7 +1,7 @@
 using backend.Models.Database;
 using backend.Repositories;
 
-namespace backend.Services;
+namespace backend.Services.Transportation;
 
 public sealed class RoutePointService(
     IRoutePointRepository routePointRepository,

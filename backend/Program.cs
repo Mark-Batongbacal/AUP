@@ -2,10 +2,11 @@ using backend.Authentication;
 using backend.Models.Database;
 using backend.Repositories;
 using backend.Services;
+using backend.Services.Transportation;
 using Microsoft.EntityFrameworkCore;
 using backend.Helpers;
 using System.Diagnostics;
-using backend.Services.Route;
+using backend.Services.Routing;
 
 LoadDevelopmentEnvironmentFile();
 
@@ -69,6 +70,8 @@ builder.Services.AddScoped<ITransportRouteRepository, TransportRouteRepository>(
 builder.Services.AddScoped<ITransportStopRepository, TransportStopRepository>();
 builder.Services.AddScoped<ITripAlertRepository, TripAlertRepository>();
 builder.Services.AddScoped<ITripSearchRepository, TripSearchRepository>();
+builder.Services.AddScoped<ITransferConnectionRepository, TransferConnectionRepository>();
+builder.Services.AddScoped<ITricyclePointRepository, TricyclePointRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
 builder.Services.AddScoped<IChatService, ChatService>();
@@ -76,6 +79,8 @@ builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();
 builder.Services.AddScoped<ITripService, TripService>();
 builder.Services.AddScoped<IRoutePointService, RoutePointService>();
+builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
+builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<NemotronAIHelper>();
 builder.Services.AddScoped<IJeepneyRoutingService, JeepneyRoutingService>();

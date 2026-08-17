@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using backend.Helpers;
 using backend.Models.Valhalla;
 
-namespace backend.Services.Route;
+namespace backend.Services.Routing;
 
 public class ValhallaService : IValhallaService
 {
