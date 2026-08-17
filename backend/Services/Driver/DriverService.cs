@@ -1,6 +1,6 @@
 using backend.Models.Database;
 using backend.Repositories;
-using NetTopologySuite.Geometries;
+using backend.Services.Transportation;
 
 namespace backend.Services;
 
@@ -11,8 +11,6 @@ public sealed class DriverService(
     IDriverAvailabilitySessionRepository availabilitySessionRepository) : IDriverService
 {
     private const string AvailableStatus = "AVAILABLE";
-    private const int Wgs84Srid = 4326;
-
     private readonly IDriverRepository _driverRepository = driverRepository;
     private readonly IDriverVehicleRepository _driverVehicleRepository = driverVehicleRepository;
     private readonly IDriverLocationRepository _driverLocationRepository = driverLocationRepository;
@@ -109,9 +107,9 @@ public sealed class DriverService(
         Guid driverId,
         double latitude,
         double longitude,
-        decimal? headingDegrees = null,
-        decimal? speedKph = null,
-        decimal? accuracyMeters = null,
+        double? headingDegrees = null,
+        double? speedKph = null,
+        double? accuracyMeters = null,
         DateTime? updatedAt = null,
         CancellationToken cancellationToken = default)
     {
@@ -131,7 +129,6 @@ public sealed class DriverService(
             DriverId = driverId,
             Latitude = latitude,
             Longitude = longitude,
-            Location = CreatePoint(latitude, longitude),
             HeadingDegrees = headingDegrees,
             SpeedKph = speedKph,
             AccuracyMeters = accuracyMeters,
@@ -156,7 +153,7 @@ public sealed class DriverService(
     public async Task<DriverAvailabilitySession?> StartAvailabilitySessionAsync(
         Guid driverId,
         Guid? vehicleId = null,
-        Guid? destinationStopId = null,
+        long? destinationStopId = null,
         string? destinationName = null,
         double? destinationLatitude = null,
         double? destinationLongitude = null,
@@ -366,9 +363,6 @@ public sealed class DriverService(
                 stop.Address,
                 stop.Latitude,
                 stop.Longitude);
-
-    private static Point CreatePoint(double latitude, double longitude) =>
-        new(longitude, latitude) { SRID = Wgs84Srid };
 
     private static bool IsValidCoordinate(double latitude, double longitude) =>
         latitude is >= -90 and <= 90 &&

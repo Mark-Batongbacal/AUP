@@ -1,6 +1,6 @@
 using backend.Models.Database;
 using backend.Repositories;
-using NetTopologySuite.Geometries;
+using backend.Services.Transportation;
 
 namespace backend.Services;
 
@@ -19,8 +19,6 @@ public sealed class RideMatchingService(
     private const string AcceptedMatchStatus = "ACCEPTED";
     private const string RejectedMatchStatus = "REJECTED";
     private const string CancelledMatchStatus = "CANCELLED";
-    private const int Wgs84Srid = 4326;
-
     private readonly IPassengerRideRequestRepository _rideRequestRepository = rideRequestRepository;
     private readonly IRideMatchRepository _rideMatchRepository = rideMatchRepository;
     private readonly IDriverRepository _driverRepository = driverRepository;
@@ -65,7 +63,7 @@ public sealed class RideMatchingService(
         double dropoffLatitude,
         double dropoffLongitude,
         int passengerCount = 1,
-        short? transportModeId = null,
+        int? transportModeId = null,
         decimal? maxBudget = null,
         DateTime? requestedAt = null,
         DateTime? expiresAt = null,
@@ -94,11 +92,9 @@ public sealed class RideMatchingService(
             PickupName = normalizedPickup,
             PickupLatitude = pickupLatitude,
             PickupLongitude = pickupLongitude,
-            PickupLocation = CreatePoint(pickupLatitude, pickupLongitude),
             DropoffName = normalizedDropoff,
             DropoffLatitude = dropoffLatitude,
             DropoffLongitude = dropoffLongitude,
-            DropoffLocation = CreatePoint(dropoffLatitude, dropoffLongitude),
             PassengerCount = passengerCount,
             MaxBudget = maxBudget,
             Status = SearchingRequestStatus,
@@ -485,7 +481,7 @@ public sealed class RideMatchingService(
         return true;
     }
 
-    private async Task<bool> IsValidTransportModeAsync(short? transportModeId, CancellationToken cancellationToken)
+    private async Task<bool> IsValidTransportModeAsync(int? transportModeId, CancellationToken cancellationToken)
     {
         if (!transportModeId.HasValue)
         {
@@ -635,9 +631,6 @@ public sealed class RideMatchingService(
                 stop.Address,
                 stop.Latitude,
                 stop.Longitude);
-
-    private static Point CreatePoint(double latitude, double longitude) =>
-        new(longitude, latitude) { SRID = Wgs84Srid };
 
     private static bool IsValidCoordinate(double latitude, double longitude) =>
         latitude is >= -90 and <= 90 &&

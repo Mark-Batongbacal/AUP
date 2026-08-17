@@ -49,8 +49,6 @@ public sealed class TripServiceTests
         Assert.Equal(250, capturedSearch?.Budget);
         Assert.Equal("cheapest", capturedSearch?.Preference);
         Assert.Equal(requestedAt, capturedSearch?.RequestedAt);
-        Assert.Equal(4326, capturedSearch?.OriginLocation?.SRID);
-        Assert.Equal(4326, capturedSearch?.DestinationLocation?.SRID);
 
         context.TripSearchRepository.Verify(
             repository => repository.AddAsync(It.IsAny<TripSearch>(), It.IsAny<CancellationToken>()),

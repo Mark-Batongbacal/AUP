@@ -5,17 +5,19 @@ namespace backend.Models.Database;
 
 public partial class DriverLocation
 {
+    public long DriverLocationId { get; set; }
+
     public Guid DriverId { get; set; }
 
     public double Latitude { get; set; }
 
     public double Longitude { get; set; }
 
-    public decimal? HeadingDegrees { get; set; }
+    public double? HeadingDegrees { get; set; }
 
-    public decimal? SpeedKph { get; set; }
+    public double? SpeedKph { get; set; }
 
-    public decimal? AccuracyMeters { get; set; }
+    public double? AccuracyMeters { get; set; }
 
     public DateTime UpdatedAt { get; set; }
 

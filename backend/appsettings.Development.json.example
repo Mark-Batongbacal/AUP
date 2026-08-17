@@ -9,7 +9,10 @@
     "ApiKeyLifetimeHours": 8
   },
   "ConnectionStrings": {
-    "Supabase": "Host=your-host;Port=5432;Database=postgres;Username=postgres;Password=your-password"
+    "TukiDbConnection": ""
+  },
+  "Valhalla": {
+    "BaseUrl": ""
   },
   "Cors": {
     "AllowedOrigins": [

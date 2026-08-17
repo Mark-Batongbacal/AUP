@@ -1,0 +1,31 @@
+
+[
+  {
+    "id": "TRIKE-001",
+    "name": "MIDDLE TODA",
+    "latitude": 15.114140862463048,
+    "longitude": 120.57780297140543
+  },
+  {
+    "id": "TRIKE-002",
+    "name": "HIGHWAY TODA",
+    "latitude": 15.117194003450775,
+    "longitude": 120.56865405408182
+  },
+  {
+    "id": "TRIKE-004",
+    "name": "7/11 TODA",
+    "latitude": 15.143120276044128,
+    "longitude": 120.59707466915364
+  },
+  {
+    "id": "TRIKE-005",
+    "name": "GAS STATION TODA",
+    "latitude": 15.1424831737159,
+    "longitude": 120.59627809367697
+  }
+
+]
+
+
+

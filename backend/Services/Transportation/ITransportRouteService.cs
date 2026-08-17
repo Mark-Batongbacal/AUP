@@ -1,33 +1,73 @@
 using backend.Models.Database;
 
-namespace backend.Services;
+namespace backend.Services.Transportation;
 
 public interface ITransportRouteService
 {
     Task<List<TransportRoute>> GetAllActiveRoutesAsync(CancellationToken cancellationToken = default);
 
-    Task<TransportRoute?> GetRouteByIdAsync(Guid routeId, CancellationToken cancellationToken = default);
+    Task<TransportRoute?> GetRouteByIdAsync(long routeId, CancellationToken cancellationToken = default);
 
     Task<TransportRoute?> GetRouteByCodeAsync(string routeCode, CancellationToken cancellationToken = default);
 
-    Task<List<TransportRoute>> GetRoutesByTransportModeAsync(short transportModeId, CancellationToken cancellationToken = default);
+    Task<TransportRoute?> GetLatestRouteWithPolylineAsync(CancellationToken cancellationToken = default);
 
-    Task<TransportRouteDetailsDto?> GetRouteDetailsAsync(Guid routeId, CancellationToken cancellationToken = default);
+    Task<List<TransportRoute>> GetRoutesByTransportModeAsync(int transportModeId, CancellationToken cancellationToken = default);
 
-    Task<List<RouteStop>> GetRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default);
+    Task<TransportRouteDetailsDto?> GetRouteDetailsAsync(long routeId, CancellationToken cancellationToken = default);
 
-    Task<List<RouteSegment>> GetRouteSegmentsAsync(Guid routeId, CancellationToken cancellationToken = default);
+    Task<List<RouteStop>> GetRouteStopsAsync(long routeId, CancellationToken cancellationToken = default);
+
+    Task<List<RouteSegment>> GetRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default);
+
+    Task<TransportRouteCreationResult> CreateJeepneyRouteAsync(
+        CreateJeepneyRouteCommand command,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record CreateJeepneyRouteCommand(
+    string? RouteCode,
+    string? RouteName,
+    string? OriginName,
+    string? DestinationName,
+    List<List<double>>? Points,
+    string? Description = null,
+    decimal? BaseFare = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<List<double>>? Waypoints { get; init; }
+}
+
+public enum TransportRouteCreationStatus
+{
+    Success,
+    ValidationFailed,
+    DuplicateRouteCode,
+    JeepneyModeNotFound,
+}
+
+public sealed record TransportRouteCreationResult(
+    TransportRouteCreationStatus Status,
+    IReadOnlyList<string> Errors,
+    TransportRoute? Route)
+{
+    public static TransportRouteCreationResult Success(TransportRoute route) =>
+        new(TransportRouteCreationStatus.Success, [], route);
+
+    public static TransportRouteCreationResult Failure(
+        TransportRouteCreationStatus status,
+        params string[] errors) => new(status, errors, null);
 }
 
 public sealed record TransportRouteDetailsDto(
-    Guid RouteId,
+    long RouteId,
     string RouteCode,
     string RouteName,
-    short TransportModeId,
+    int TransportModeId,
     TransportModeSummaryDto? TransportMode,
-    Guid? StartStopId,
+    long? StartStopId,
     TransportStopSummaryDto? StartStop,
-    Guid? EndStopId,
+    long? EndStopId,
     TransportStopSummaryDto? EndStop,
     string? RouteDescription,
     decimal? BaseFare,
@@ -47,7 +87,7 @@ public sealed record TransportRouteDetailsDto(
     IReadOnlyList<FareRuleDto> FareRules);
 
 public sealed record TransportModeSummaryDto(
-    short TransportModeId,
+    int TransportModeId,
     string Code,
     string Name,
     bool IsMotorized,
@@ -55,7 +95,7 @@ public sealed record TransportModeSummaryDto(
     string? IconName);
 
 public sealed record TransportStopSummaryDto(
-    Guid StopId,
+    long StopId,
     string? StopCode,
     string Name,
     string? Description,
@@ -65,8 +105,8 @@ public sealed record TransportStopSummaryDto(
     double Longitude);
 
 public sealed record RouteStopDto(
-    Guid RouteStopId,
-    Guid StopId,
+    long RouteStopId,
+    long StopId,
     int StopOrder,
     int? EstimatedMinutesFromStart,
     bool CanBoard,
@@ -75,23 +115,22 @@ public sealed record RouteStopDto(
 
 public sealed record RouteSegmentDto(
     long SegmentId,
-    Guid FromStopId,
+    long FromStopId,
     TransportStopSummaryDto? FromStop,
-    Guid ToStopId,
+    long ToStopId,
     TransportStopSummaryDto? ToStop,
     int SegmentOrder,
-    decimal DistanceMeters,
-    decimal EstimatedMinutes,
-    decimal EstimatedFare,
-    bool IsBidirectional);
+    int? DistanceMeters,
+    int? EstimatedDurationSeconds,
+    decimal? SegmentFare);
 
 public sealed record FareRuleDto(
-    Guid FareRuleId,
-    short TransportModeId,
-    Guid? RouteId,
+    long FareRuleId,
+    int TransportModeId,
+    long RouteId,
     string RuleName,
     decimal BaseFare,
-    decimal? BaseDistanceKm,
+    int? IncludedDistanceMeters,
     decimal? AdditionalFarePerKm,
     decimal? MinimumFare,
     decimal? MaximumFare,

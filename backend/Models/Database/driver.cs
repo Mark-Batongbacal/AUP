@@ -13,7 +13,7 @@ public partial class Driver
 
     public string VerificationStatus { get; set; } = null!;
 
-    public Guid? HomeTerminalId { get; set; }
+    public long? HomeTerminalId { get; set; }
 
     public decimal? AverageRating { get; set; }
 
@@ -23,9 +23,11 @@ public partial class Driver
 
     public DateTime CreatedAt { get; set; }
 
-    public DateTime UpdatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 
     public virtual ICollection<DriverAvailabilitySession> DriverAvailabilitySessions { get; set; } = new List<DriverAvailabilitySession>();
+
+    public virtual ICollection<DriverLocation> DriverLocations { get; set; } = new List<DriverLocation>();
 
     public virtual DriverLocation? DriverLocation { get; set; }
 

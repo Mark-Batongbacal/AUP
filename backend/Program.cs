@@ -2,11 +2,12 @@ using backend.Authentication;
 using backend.Models.Database;
 using backend.Repositories;
 using backend.Services;
+using backend.Services.Transportation;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using backend.Helpers;
 using System.Diagnostics;
-using backend.Services.Route;
+using backend.Services.Routing;
+using Microsoft.Extensions.Options;
 
 LoadDevelopmentEnvironmentFile();
 
@@ -31,24 +32,36 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
         .AllowAnyMethod();
 }));
 
-builder.Services.AddHttpClient<IValhallaService, ValhallaService>(
-    client =>
-    {
-        client.BaseAddress = new Uri(
-            builder.Configuration["Valhalla:BaseUrl"]!
-        );
-    });
+var valhallaBaseUrl = builder.Configuration["Valhalla:BaseUrl"];
+if (!Uri.TryCreate(valhallaBaseUrl, UriKind.Absolute, out var valhallaUri) ||
+    (valhallaUri.Scheme != Uri.UriSchemeHttp && valhallaUri.Scheme != Uri.UriSchemeHttps))
+{
+    throw new InvalidOperationException(
+        "Valhalla:BaseUrl must be an absolute HTTP or HTTPS URL. " +
+        "Set Valhalla__BaseUrl in the environment.");
+}
+
+builder.Services.AddHttpClient<IValhallaService, ValhallaService>(client =>
+{
+    client.BaseAddress = valhallaUri;
+});
+
+builder.Services.AddOptions<RoutingOptions>()
+    .Bind(builder.Configuration.GetSection(RoutingOptions.SectionName))
+    .Validate(options => options.IsValid(out _), "Routing configuration is invalid.")
+    .ValidateOnStart();
+
+var connectionString =
+    builder.Configuration.GetConnectionString("TukiDbConnection")
+    ?? throw new InvalidOperationException(
+        "The TukiDbConnection connection string is missing.");
+
 
 builder.Services.Configure<LoginOptions>(builder.Configuration.GetSection(LoginOptions.SectionName));
-var supabaseConnectionString = builder.Configuration.GetConnectionString("Supabase")
-    ?? throw new InvalidOperationException("Missing ConnectionStrings:Supabase configuration. Set ConnectionStrings__Supabase.");
-var supabaseConnectionStringBuilder = new NpgsqlConnectionStringBuilder(supabaseConnectionString)
-{
-    // Supabase installed PostGIS in this custom schema. It lets EF resolve geography types.
-    SearchPath = "public,gis"
-};
-builder.Services.AddDbContext<SupabaseDbContext>(options =>
-    options.UseNpgsql(supabaseConnectionStringBuilder.ConnectionString, npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
+
+builder.Services.AddDbContext<TukiDbContext>(options =>
+    options.UseSqlServer(connectionString));
+
 builder.Services.AddScoped<IChatConversationRepository, ChatConversationRepository>();
 builder.Services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
 builder.Services.AddScoped<IDriverAvailabilitySessionRepository, DriverAvailabilitySessionRepository>();
@@ -61,6 +74,7 @@ builder.Services.AddScoped<IPassengerTripRepository, PassengerTripRepository>();
 builder.Services.AddScoped<IRecommendationLegRepository, RecommendationLegRepository>();
 builder.Services.AddScoped<IRideMatchRepository, RideMatchRepository>();
 builder.Services.AddScoped<IRouteRecommendationRepository, RouteRecommendationRepository>();
+builder.Services.AddScoped<IRoutePointRepository, RoutePointRepository>();
 builder.Services.AddScoped<IRouteSegmentRepository, RouteSegmentRepository>();
 builder.Services.AddScoped<IRouteStopRepository, RouteStopRepository>();
 builder.Services.AddScoped<ITransportModeRepository, TransportModeRepository>();
@@ -68,15 +82,21 @@ builder.Services.AddScoped<ITransportRouteRepository, TransportRouteRepository>(
 builder.Services.AddScoped<ITransportStopRepository, TransportStopRepository>();
 builder.Services.AddScoped<ITripAlertRepository, TripAlertRepository>();
 builder.Services.AddScoped<ITripSearchRepository, TripSearchRepository>();
+builder.Services.AddScoped<ITransferConnectionRepository, TransferConnectionRepository>();
+builder.Services.AddScoped<ITricyclePointRepository, TricyclePointRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();
 builder.Services.AddScoped<ITripService, TripService>();
+builder.Services.AddScoped<IRoutePointService, RoutePointService>();
+builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
+builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
+builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
 builder.Services.AddScoped<NemotronAIHelper>();
-builder.Services.AddScoped<IJeepneyRoutingService, JeepneyRoutingService>();
+builder.Services.AddScoped<IRoutingService, RoutingService>();
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(

@@ -5,13 +5,15 @@ namespace backend.Models.Database;
 
 public partial class DriverAvailabilitySession
 {
-    public Guid SessionId { get; set; }
+    public long SessionId { get; set; }
 
     public Guid DriverId { get; set; }
 
     public Guid? VehicleId { get; set; }
 
-    public Guid? DestinationStopId { get; set; }
+    public long? DestinationStopId { get; set; }
+
+    public long? TricyclePointId { get; set; }
 
     public string? DestinationName { get; set; }
 
@@ -34,6 +36,8 @@ public partial class DriverAvailabilitySession
     public virtual Driver Driver { get; set; } = null!;
 
     public virtual ICollection<RideMatch> RideMatches { get; set; } = new List<RideMatch>();
+
+    public virtual TricyclePoint? TricyclePoint { get; set; }
 
     public virtual DriverVehicle? Vehicle { get; set; }
 }

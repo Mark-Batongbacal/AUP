@@ -1,4 +1,5 @@
 using backend.Models.Database;
+using backend.Services.Transportation;
 
 namespace backend.Services;
 
@@ -59,7 +60,7 @@ public interface ITripService
         string alertType,
         string message,
         Guid? legId = null,
-        Guid? targetStopId = null,
+        long? targetStopId = null,
         string? title = null,
         decimal? triggerDistanceMeters = null,
         CancellationToken cancellationToken = default);
@@ -89,13 +90,13 @@ public sealed record RecommendationLegDto(
     Guid LegId,
     Guid RecommendationId,
     int LegOrder,
-    short TransportModeId,
+    int TransportModeId,
     TransportModeSummaryDto? TransportMode,
-    Guid? RouteId,
+    long? RouteId,
     TransportRouteSummaryDto? Route,
-    Guid? FromStopId,
+    long? FromStopId,
     TransportStopSummaryDto? FromStop,
-    Guid? ToStopId,
+    long? ToStopId,
     TransportStopSummaryDto? ToStop,
     string? FromName,
     string? ToName,
@@ -110,10 +111,10 @@ public sealed record RecommendationLegDto(
     DateTime CreatedAt);
 
 public sealed record TransportRouteSummaryDto(
-    Guid RouteId,
+    long RouteId,
     string RouteCode,
     string RouteName,
-    short TransportModeId,
+    int TransportModeId,
     decimal? BaseFare,
     int? EstimatedTotalMinutes,
     bool IsActive);
@@ -135,7 +136,7 @@ public sealed record TripAlertDto(
     Guid AlertId,
     Guid PassengerTripId,
     Guid? LegId,
-    Guid? TargetStopId,
+    long? TargetStopId,
     TransportStopSummaryDto? TargetStop,
     string AlertType,
     string? Title,

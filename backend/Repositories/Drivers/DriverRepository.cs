@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for Driver profiles and Driver Status fields.
 /// </summary>
-public sealed class DriverRepository(SupabaseDbContext context) : IDriverRepository
+public sealed class DriverRepository(TukiDbContext context) : IDriverRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<Driver?> GetByIdAsync(Guid driverId, CancellationToken cancellationToken = default) =>
         _context.Drivers

@@ -1,6 +1,6 @@
-# @backend_HostAddress = https://aup-0mjy.onrender.com
-@backend_HostAddress = http://localhost:5129
-@apiKey = YOUR_API_KEY
+@backend_HostAddress = http://tuki-api.japaneast.cloudapp.azure.com:5129
+# @backend_HostAddress = http://localhost:5129
+@apiKey = API-KEY
 
 ###
 
@@ -12,9 +12,11 @@ Accept: application/json
 ###
 
 
-GET {{backend_HostAddress}}/api/test/transport-routes
+GET {{backend_HostAddress}}/api/transport-routes
 Accept: application/json
 X-API-Key: {{apiKey}}
+
+
 
 
 ###
@@ -27,14 +29,6 @@ X-Api-Key: {{apiKey}}
 ###
 
 
-POST {{backend_HostAddress}}/api/auth/login
-Content-Type: application/json
-
-{
-  // Change the number in the index to select a different user from the .env file
-  "userName": "{{$dotenv Login__Users__0__UserName}}",
-  "password": "{{$dotenv Login__Users__0__Password}}"
-}
 
 
 ###
@@ -58,10 +52,10 @@ X-Api-Key: {{apiKey}}
 
 ###
 
-
+#15.133571860629802, 120.5918348033621, 15.135000550179296, 120.59286188742757, 15.135949438010659, 120.59146345506142,15.145651633568074, 120.59514537259685
 
 ### Test Valhalla
-GET {{backend_HostAddress}}/api/test/valhalla/route?startLat=15.117457040686096&startLon=120.57201173134979&endLat=15.117214198401593&endLon=120.56861291663807
+GET {{backend_HostAddress}}/api/test/valhalla/route?startLat=15.135949438010659&startLon=120.59146345506142&endLat=15.145651633568074&endLon=120.59514537259685
 Accept: application/json
 X-Api-Key: {{apiKey}}
 
@@ -76,3 +70,89 @@ X-Api-Key: {{apiKey}}
 GET {{backend_HostAddress}}/api/test/jeepney/nearby?lat=15.141025980008507&lon=120.52094205653685
 Accept: application/json
 X-Api-Key: {{apiKey}}
+
+
+
+###
+
+@apiKey = API_KEY
+
+###porac -> diegs originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
+###diegs -> porac originLat=15.139582098206548&originLon=120.60108373338038&destinationLat=15.109698583445889&destinationLon=120.58240903543013
+#15.108412470090252, 120.59402071981998
+GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+###15.109215294463528, 120.59148114230783
+
+# Direct-route candidate test: walk and walk-to-trike should be returned with
+# jeepney options and ranked by generalized cost.
+GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.110100&destinationLon=120.582900
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+###
+
+POST {{backend_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  // Change the number in the index to select a different user from the .env file
+  "userName": "{{$dotenv Login__Users__0__UserName}}",
+  "password": "{{$dotenv Login__Users__0__Password}}"
+}
+
+###
+
+### Generate each consecutive waypoint segment through Valhalla, then create
+### the jeepney route and its ordered geometry in one database write
+POST {{backend_HostAddress}}/api/transport-routes
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "routeCode": "JEEP-SAMPLE-01",
+  "routeName": "Sample Jeepney Route",
+  "originName": "Sample Origin",
+  "destinationName": "Sample Destination",
+  "description": "Generated through Valhalla from ordered waypoints",
+  "baseFare": 13,
+  "points": [
+  [15.169377198609359, 120.58742919718586],
+  [15.153593638458716, 120.59199321409343],
+  [15.137020841985489, 120.58648839309423],
+  [15.13352281646842, 120.59193626047843],
+  [15.135054463843517, 120.59296855755103],
+  [15.135977137640078, 120.59153481161687],
+  [15.145740649615238, 120.5951524696042],
+  [15.168376954929752, 120.58433902456976],
+  [15.166732688251642, 120.57944465448676],
+  [15.166258325465854, 120.57740906289526]
+]
+}
+
+###
+
+### Add a validated tricycle pickup/service point
+POST {{backend_HostAddress}}/api/tricycle-points
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "pointCode": "TRIKE-SAMPLE-04",
+  "pointName": "Sample TODA Terminal",
+  "description": "Main tricycle pickup point",
+  "address": "Angeles, Pampanga",
+  "operatorName": "Sample TODA",
+  "coordinates": [15.143206444551234, 120.59700895122185],
+  "radiusMeters": 500,
+  "baseFare": 35,
+  "farePerKilometer": 15,
+  "averageWaitingTimeSeconds": 300,
+  "serviceStartTime": "05:00:00",
+  "serviceEndTime": "23:00:00",
+  "isActive": true
+}

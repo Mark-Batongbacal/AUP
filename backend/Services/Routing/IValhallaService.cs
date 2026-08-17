@@ -1,6 +1,6 @@
 using backend.Models.Valhalla;
 
-namespace backend.Services.Route;
+namespace backend.Services.Routing;
 
 public interface IValhallaService
 {
@@ -17,4 +17,5 @@ public interface IValhallaService
         IReadOnlyList<ValhallaLocation> targets,
         string costing = "pedestrian",
         CancellationToken cancellationToken = default);
+
 }

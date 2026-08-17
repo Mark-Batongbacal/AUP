@@ -5,17 +5,23 @@ namespace backend.Models.Database;
 
 public partial class FareRule
 {
-    public Guid FareRuleId { get; set; }
+    public long FareRuleId { get; set; }
 
-    public short TransportModeId { get; set; }
+    public int TransportModeId { get; set; }
 
-    public Guid? RouteId { get; set; }
+    public long RouteId { get; set; }
+
+    public string PassengerType { get; set; } = null!;
+
+    public string FareType { get; set; } = null!;
 
     public string RuleName { get; set; } = null!;
 
     public decimal BaseFare { get; set; }
 
     public decimal? BaseDistanceKm { get; set; }
+
+    public int? IncludedDistanceMeters { get; set; }
 
     public decimal? AdditionalFarePerKm { get; set; }
 
@@ -31,7 +37,7 @@ public partial class FareRule
 
     public DateTime CreatedAt { get; set; }
 
-    public virtual TransportRoute? Route { get; set; }
+    public virtual TransportRoute Route { get; set; } = null!;
 
     public virtual TransportMode TransportMode { get; set; } = null!;
 }

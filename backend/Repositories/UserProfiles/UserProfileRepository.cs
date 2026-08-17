@@ -7,9 +7,9 @@ namespace backend.Repositories;
 /// Data access for application User profiles only. Authentication and password handling stay
 /// outside this repository.
 /// </summary>
-public sealed class UserProfileRepository(SupabaseDbContext context) : IUserProfileRepository
+public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<UserProfile?> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default) =>
         _context.UserProfiles

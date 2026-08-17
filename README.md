@@ -6,6 +6,7 @@ Android frontend and ASP.NET backend for the AUP project.
 
 - `frontend/` — Android app built with Jetpack Compose.
 - `backend/` — ASP.NET Core API.
+- `database/` — SQL Server schema script and local database setup notes.
 - `Dockerfile` — Render container build for the backend; it must remain at the repository root.
 
 ## Prerequisites
@@ -42,10 +43,12 @@ Login__Users__2__Password=<secure-password>
 Login__Users__3__UserName=<fourth-user-name>
 Login__Users__3__Password=<secure-password>
 NVIDIA_API_KEY=<your-nvidia-api-key>
-ConnectionStrings__Supabase=Host=<supabase-host>;Port=5432;Database=postgres;Username=postgres;Password=<database-password>
+ConnectionStrings__TukiDbConnection=<sql-server-connection-string>
 ```
 
 Never commit real passwords or API keys. `appsettings.json` contains only non-secret defaults; `appsettings.Development.json` and `.env` are ignored.
+
+The SQL Server schema is tracked in `database/TukiDbSchema.sql`; run it against `TukiDb` in SSMS when setting up or reconciling a local database.
 
 Start the backend in Windows PowerShell:
 
