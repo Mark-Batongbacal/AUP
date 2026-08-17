@@ -5,7 +5,7 @@ namespace backend.Models.Database;
 
 public partial class TransportStop
 {
-    public Guid StopId { get; set; }
+    public long StopId { get; set; }
 
     public string? StopCode { get; set; }
 
@@ -25,7 +25,7 @@ public partial class TransportStop
 
     public DateTime CreatedAt { get; set; }
 
-    public DateTime UpdatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 
     public virtual ICollection<DriverAvailabilitySession> DriverAvailabilitySessions { get; set; } = new List<DriverAvailabilitySession>();
 
@@ -40,6 +40,12 @@ public partial class TransportStop
     public virtual ICollection<RouteSegment> SegmentsEndingHere { get; set; } = new List<RouteSegment>();
 
     public virtual ICollection<RouteStop> RouteStops { get; set; } = new List<RouteStop>();
+
+    public virtual ICollection<TransferConnection> TransferConnectionsFromStop { get; set; } = new List<TransferConnection>();
+
+    public virtual ICollection<TransferConnection> TransferConnectionsToStop { get; set; } = new List<TransferConnection>();
+
+    public virtual TricyclePoint? TricyclePoint { get; set; }
 
     public virtual ICollection<TransportRoute> RoutesEndingHere { get; set; } = new List<TransportRoute>();
 

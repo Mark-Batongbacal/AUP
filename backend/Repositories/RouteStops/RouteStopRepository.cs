@@ -6,11 +6,11 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for Route-Stop relationships. Route sequences are always ordered by StopOrder.
 /// </summary>
-public sealed class RouteStopRepository(SupabaseDbContext context) : IRouteStopRepository
+public sealed class RouteStopRepository(TukiDbContext context) : IRouteStopRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
-    public Task<List<RouteStop>> GetOrderedStopsForRouteAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<List<RouteStop>> GetOrderedStopsForRouteAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.RouteStops
             .AsNoTracking()
             .Include(routeStop => routeStop.Stop)
@@ -18,7 +18,7 @@ public sealed class RouteStopRepository(SupabaseDbContext context) : IRouteStopR
             .OrderBy(routeStop => routeStop.StopOrder)
             .ToListAsync(cancellationToken);
 
-    public Task<List<RouteStop>> GetRoutesForStopAsync(Guid stopId, CancellationToken cancellationToken = default) =>
+    public Task<List<RouteStop>> GetRoutesForStopAsync(long stopId, CancellationToken cancellationToken = default) =>
         _context.RouteStops
             .AsNoTracking()
             .Include(routeStop => routeStop.Route)
@@ -28,7 +28,7 @@ public sealed class RouteStopRepository(SupabaseDbContext context) : IRouteStopR
             .ThenBy(routeStop => routeStop.StopOrder)
             .ToListAsync(cancellationToken);
 
-    public Task<RouteStop?> GetByIdAsync(Guid routeStopId, CancellationToken cancellationToken = default) =>
+    public Task<RouteStop?> GetByIdAsync(long routeStopId, CancellationToken cancellationToken = default) =>
         _context.RouteStops
             .AsNoTracking()
             .Include(routeStop => routeStop.Route)
@@ -42,7 +42,7 @@ public sealed class RouteStopRepository(SupabaseDbContext context) : IRouteStopR
         return routeStop;
     }
 
-    public async Task<bool> UpdateStopOrderAsync(Guid routeStopId, int stopOrder, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateStopOrderAsync(long routeStopId, int stopOrder, CancellationToken cancellationToken = default)
     {
         var routeStop = await _context.RouteStops.FirstOrDefaultAsync(routeStop => routeStop.RouteStopId == routeStopId, cancellationToken);
         if (routeStop is null)
@@ -55,7 +55,7 @@ public sealed class RouteStopRepository(SupabaseDbContext context) : IRouteStopR
         return true;
     }
 
-    public async Task<bool> RemoveAsync(Guid routeStopId, CancellationToken cancellationToken = default)
+    public async Task<bool> RemoveAsync(long routeStopId, CancellationToken cancellationToken = default)
     {
         var routeStop = await _context.RouteStops.FirstOrDefaultAsync(routeStop => routeStop.RouteStopId == routeStopId, cancellationToken);
         if (routeStop is null)

@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for chat conversations. AI Request handling belongs outside repositories.
 /// </summary>
-public sealed class ChatConversationRepository(SupabaseDbContext context) : IChatConversationRepository
+public sealed class ChatConversationRepository(TukiDbContext context) : IChatConversationRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<ChatConversation>> GetByUserAsync(Guid userId, CancellationToken cancellationToken = default) =>
         _context.ChatConversations

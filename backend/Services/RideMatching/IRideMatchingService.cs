@@ -21,7 +21,7 @@ public interface IRideMatchingService
         double dropoffLatitude,
         double dropoffLongitude,
         int passengerCount = 1,
-        short? transportModeId = null,
+        int? transportModeId = null,
         decimal? maxBudget = null,
         DateTime? requestedAt = null,
         DateTime? expiresAt = null,
@@ -62,7 +62,7 @@ public interface IRideMatchingService
 public sealed record RideRequestDetailsDto(
     Guid RequestId,
     Guid PassengerUserId,
-    short? TransportModeId,
+    int? TransportModeId,
     TransportModeSummaryDto? TransportMode,
     string? PickupName,
     double PickupLatitude,
@@ -92,7 +92,7 @@ public sealed record RideMatchDetailsDto(
     Guid MatchId,
     Guid RequestId,
     Guid DriverId,
-    Guid? SessionId,
+    long? SessionId,
     Guid? VehicleId,
     decimal? PickupDistanceMeters,
     decimal? DetourDistanceMeters,
@@ -114,9 +114,9 @@ public sealed record DriverSummaryDto(
     Guid UserId,
     string? LicenseNumber,
     string VerificationStatus,
-    Guid? HomeTerminalId,
+    long? HomeTerminalId,
     decimal? AverageRating,
     int RatingCount,
     bool IsAvailable,
     DateTime CreatedAt,
-    DateTime UpdatedAt);
+    DateTime? UpdatedAt);

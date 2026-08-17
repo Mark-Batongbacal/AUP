@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for transport stops. Missing Stop lookups return null.
 /// </summary>
-public sealed class TransportStopRepository(SupabaseDbContext context) : ITransportStopRepository
+public sealed class TransportStopRepository(TukiDbContext context) : ITransportStopRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<TransportStop>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
         _context.TransportStops
@@ -17,7 +17,7 @@ public sealed class TransportStopRepository(SupabaseDbContext context) : ITransp
             .OrderBy(Stop => Stop.Name)
             .ToListAsync(cancellationToken);
 
-    public Task<TransportStop?> GetByIdAsync(Guid stopId, CancellationToken cancellationToken = default) =>
+    public Task<TransportStop?> GetByIdAsync(long stopId, CancellationToken cancellationToken = default) =>
         _context.TransportStops
             .AsNoTracking()
             .FirstOrDefaultAsync(Stop => Stop.StopId == stopId, cancellationToken);
@@ -30,7 +30,7 @@ public sealed class TransportStopRepository(SupabaseDbContext context) : ITransp
     public Task<List<TransportStop>> SearchByNameAsync(string Name, CancellationToken cancellationToken = default) =>
         _context.TransportStops
             .AsNoTracking()
-            .Where(Stop => Stop.IsActive && EF.Functions.ILike(Stop.Name, $"%{Name}%"))
+            .Where(Stop => Stop.IsActive && EF.Functions.Like(Stop.Name, $"%{Name}%"))
             .OrderBy(Stop => Stop.Name)
             .ToListAsync(cancellationToken);
 
@@ -48,7 +48,7 @@ public sealed class TransportStopRepository(SupabaseDbContext context) : ITransp
         return Stop;
     }
 
-    public async Task<bool> DeactivateAsync(Guid stopId, CancellationToken cancellationToken = default)
+    public async Task<bool> DeactivateAsync(long stopId, CancellationToken cancellationToken = default)
     {
         var Stop = await _context.TransportStops.FirstOrDefaultAsync(Stop => Stop.StopId == stopId, cancellationToken);
         if (Stop is null)

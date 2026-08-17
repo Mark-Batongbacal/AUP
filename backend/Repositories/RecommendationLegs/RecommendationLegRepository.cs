@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for individual Recommendation legs. Leg sequences are ordered by LegOrder.
 /// </summary>
-public sealed class RecommendationLegRepository(SupabaseDbContext context) : IRecommendationLegRepository
+public sealed class RecommendationLegRepository(TukiDbContext context) : IRecommendationLegRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<RecommendationLeg>> GetOrderedByRecommendationAsync(Guid recommendationId, CancellationToken cancellationToken = default) =>
         _context.RecommendationLegs

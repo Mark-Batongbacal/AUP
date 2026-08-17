@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for vehicles registered to Drivers.
 /// </summary>
-public sealed class DriverVehicleRepository(SupabaseDbContext context) : IDriverVehicleRepository
+public sealed class DriverVehicleRepository(TukiDbContext context) : IDriverVehicleRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<DriverVehicle>> GetByDriverAsync(Guid driverId, CancellationToken cancellationToken = default) =>
         _context.DriverVehicles

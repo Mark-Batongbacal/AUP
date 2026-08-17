@@ -12,7 +12,7 @@ Accept: application/json
 ###
 
 
-GET {{backend_HostAddress}}/api/test/transport-routes
+GET {{backend_HostAddress}}/api/transport-routes
 Accept: application/json
 X-API-Key: {{apiKey}}
 
@@ -32,8 +32,8 @@ Content-Type: application/json
 
 {
   // Change the number in the index to select a different user from the .env file
-  "userName": "{{$dotenv Login__Users__0__UserName}}",
-  "password": "{{$dotenv Login__Users__0__Password}}"
+  "userName": "UserName",
+  "password": "Password"
 }
 
 

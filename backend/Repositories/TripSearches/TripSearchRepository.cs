@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for passenger trip searches. Missing search lookups return null.
 /// </summary>
-public sealed class TripSearchRepository(SupabaseDbContext context) : ITripSearchRepository
+public sealed class TripSearchRepository(TukiDbContext context) : ITripSearchRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public async Task<TripSearch> AddAsync(TripSearch tripSearch, CancellationToken cancellationToken = default)
     {

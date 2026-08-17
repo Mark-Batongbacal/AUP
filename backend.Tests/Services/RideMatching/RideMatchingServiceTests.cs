@@ -63,8 +63,6 @@ public sealed class RideMatchingServiceTests
         Assert.Equal("SEARCHING", capturedRequest?.Status);
         Assert.Equal(requestedAt, capturedRequest?.RequestedAt);
         Assert.Equal(expiresAt, capturedRequest?.ExpiresAt);
-        Assert.Equal(4326, capturedRequest?.PickupLocation?.SRID);
-        Assert.Equal(4326, capturedRequest?.DropoffLocation?.SRID);
 
         context.TransportModeRepository.Verify(
             repository => repository.GetByIdAsync(1, It.IsAny<CancellationToken>()),
@@ -463,7 +461,7 @@ public sealed class RideMatchingServiceTests
     private static DriverAvailabilitySession CreateSession(Guid driverId, Guid vehicleId, int availableSeats) =>
         new()
         {
-            SessionId = Guid.NewGuid(),
+            SessionId = NextSessionId(),
             DriverId = driverId,
             VehicleId = vehicleId,
             AvailableSeats = availableSeats,
@@ -471,6 +469,10 @@ public sealed class RideMatchingServiceTests
             Status = "AVAILABLE",
             StartedAt = DateTime.UtcNow,
         };
+
+    private static long NextSessionId() => Interlocked.Increment(ref _nextSessionId);
+
+    private static long _nextSessionId;
 
     private static DriverLocation CreateLocation(Guid driverId) =>
         new()

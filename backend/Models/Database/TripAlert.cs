@@ -11,7 +11,7 @@ public partial class TripAlert
 
     public Guid? LegId { get; set; }
 
-    public Guid? TargetStopId { get; set; }
+    public long? TargetStopId { get; set; }
 
     public string AlertType { get; set; } = null!;
 

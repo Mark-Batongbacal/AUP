@@ -11,7 +11,7 @@ public partial class RideMatch
 
     public Guid DriverId { get; set; }
 
-    public Guid? SessionId { get; set; }
+    public long? SessionId { get; set; }
 
     public Guid? VehicleId { get; set; }
 
@@ -25,13 +25,19 @@ public partial class RideMatch
 
     public decimal? EstimatedFare { get; set; }
 
+    public decimal? OfferedFare { get; set; }
+
     public decimal? MatchScore { get; set; }
 
     public string Status { get; set; } = null!;
 
     public DateTime OfferedAt { get; set; }
 
+    public DateTime MatchedAt { get; set; }
+
     public DateTime? AcceptedAt { get; set; }
+
+    public DateTime? RespondedAt { get; set; }
 
     public DateTime? CompletedAt { get; set; }
 
