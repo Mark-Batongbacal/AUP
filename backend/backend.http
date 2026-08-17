@@ -1,5 +1,5 @@
-# @backend_HostAddress = https://aup-0mjy.onrender.com
-@backend_HostAddress = http://localhost:5129
+@backend_HostAddress = http://tuki-api.japaneast.cloudapp.azure.com:5129
+# @backend_HostAddress = http://localhost:5129
 @apiKey = API-KEY
 
 ###
@@ -15,6 +15,8 @@ Accept: application/json
 GET {{backend_HostAddress}}/api/transport-routes
 Accept: application/json
 X-API-Key: {{apiKey}}
+
+
 
 
 ###
@@ -99,4 +101,34 @@ Content-Type: application/json
   // Change the number in the index to select a different user from the .env file
   "userName": "{{$dotenv Login__Users__0__UserName}}",
   "password": "{{$dotenv Login__Users__0__Password}}"
+}
+
+###
+
+### Generate each consecutive waypoint segment through Valhalla, then create
+### the jeepney route and its ordered geometry in one database write
+POST {{backend_HostAddress}}/api/transport-routes
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "routeCode": "JEEP-SAMPLE-01",
+  "routeName": "Sample Jeepney Route",
+  "originName": "Sample Origin",
+  "destinationName": "Sample Destination",
+  "description": "Generated through Valhalla from ordered waypoints",
+  "baseFare": 13,
+  "points": [
+  [15.169377198609359, 120.58742919718586],
+  [15.153593638458716, 120.59199321409343],
+  [15.137020841985489, 120.58648839309423],
+  [15.13352281646842, 120.59193626047843],
+  [15.135054463843517, 120.59296855755103],
+  [15.135977137640078, 120.59153481161687],
+  [15.145740649615238, 120.5951524696042],
+  [15.168376954929752, 120.58433902456976],
+  [15.166732688251642, 120.57944465448676],
+  [15.166258325465854, 120.57740906289526]
+]
 }

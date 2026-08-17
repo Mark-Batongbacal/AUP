@@ -7,6 +7,7 @@ export Login__Users__0__UserName='admin@aup.edu'
 export Login__Users__0__Password='your-login-password'
 export NVIDIA_API_KEY='your-nvidia-api-key'
 export ConnectionStrings__TukiDbConnection='<sql-server-connection-string>'
+export Valhalla__BaseUrl='https://your-valhalla-instance.example.com'
 ```
 
 Both `.env` and `appsettings.Development.json` are intentionally ignored by Git. Never put API keys, passwords, database connection strings, or issued API keys in `.http` request files.
