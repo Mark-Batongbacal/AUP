@@ -79,6 +79,7 @@ BEGIN TRY
             DirectionName nvarchar(100) NULL,
             OperatorName nvarchar(200) NULL,
             Description nvarchar(1000) NULL,
+            EncodedPolyline nvarchar(max) NULL,
             BaseFare decimal(10, 2) NULL,
             EstimatedDistanceMeters int NULL,
             EstimatedDurationSeconds int NULL,
@@ -130,6 +131,20 @@ BEGIN TRY
             CanAlight bit NOT NULL CONSTRAINT DF_RouteStops_CanAlight DEFAULT (1),
             CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_RouteStops_CreatedAt DEFAULT (sysutcdatetime()),
             CONSTRAINT PK_RouteStops PRIMARY KEY (RouteStopId)
+        );
+    END;
+
+    IF OBJECT_ID(N'dbo.RouteWaypoints', N'U') IS NULL
+    BEGIN
+        CREATE TABLE dbo.RouteWaypoints
+        (
+            RouteWaypointId bigint IDENTITY(1, 1) NOT NULL,
+            TransportRouteId bigint NOT NULL,
+            WaypointOrder int NOT NULL,
+            Latitude float NOT NULL,
+            Longitude float NOT NULL,
+            CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_RouteWaypoints_CreatedAt DEFAULT (sysutcdatetime()),
+            CONSTRAINT PK_RouteWaypoints PRIMARY KEY (RouteWaypointId)
         );
     END;
 
@@ -488,6 +503,7 @@ BEGIN TRY
     IF COL_LENGTH(N'dbo.TransportRoutes', N'StartTransportStopId') IS NULL ALTER TABLE dbo.TransportRoutes ADD StartTransportStopId bigint NULL;
     IF COL_LENGTH(N'dbo.TransportRoutes', N'EndTransportStopId') IS NULL ALTER TABLE dbo.TransportRoutes ADD EndTransportStopId bigint NULL;
     IF COL_LENGTH(N'dbo.TransportRoutes', N'BaseFare') IS NULL ALTER TABLE dbo.TransportRoutes ADD BaseFare decimal(10, 2) NULL;
+    IF COL_LENGTH(N'dbo.TransportRoutes', N'EncodedPolyline') IS NULL ALTER TABLE dbo.TransportRoutes ADD EncodedPolyline nvarchar(max) NULL;
     IF COL_LENGTH(N'dbo.TransportRoutes', N'EstimatedTotalMinutes') IS NULL ALTER TABLE dbo.TransportRoutes ADD EstimatedTotalMinutes int NULL;
     IF COL_LENGTH(N'dbo.TransportRoutes', N'AverageHeadwayMinutes') IS NULL ALTER TABLE dbo.TransportRoutes ADD AverageHeadwayMinutes int NULL;
     IF COL_LENGTH(N'dbo.TransportRoutes', N'OperatesMonday') IS NULL ALTER TABLE dbo.TransportRoutes ADD OperatesMonday bit NOT NULL CONSTRAINT DF_TransportRoutes_OperatesMonday_Add DEFAULT (1) WITH VALUES;
@@ -664,6 +680,11 @@ BEGIN TRY
        AND COL_LENGTH(N'dbo.RoutePoints', N'PointOrder') IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.RoutePoints') AND name = N'UQ_RoutePoints_RouteAndOrder')
         EXEC sys.sp_executesql N'CREATE UNIQUE INDEX UQ_RoutePoints_RouteAndOrder ON dbo.RoutePoints (TransportRouteId, PointOrder);';
+
+    IF COL_LENGTH(N'dbo.RouteWaypoints', N'TransportRouteId') IS NOT NULL
+       AND COL_LENGTH(N'dbo.RouteWaypoints', N'WaypointOrder') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.RouteWaypoints') AND name = N'UQ_RouteWaypoints_RouteAndOrder')
+        EXEC sys.sp_executesql N'CREATE UNIQUE INDEX UQ_RouteWaypoints_RouteAndOrder ON dbo.RouteWaypoints (TransportRouteId, WaypointOrder);';
 
     IF COL_LENGTH(N'dbo.RouteStops', N'TransportStopId') IS NOT NULL
        AND COL_LENGTH(N'dbo.RouteStops', N'TransportRouteId') IS NOT NULL
@@ -894,6 +915,10 @@ BEGIN TRY
        AND COL_LENGTH(N'dbo.TransportRoutes', N'TransportRouteId') IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_RoutePoints_TransportRoutes')
         EXEC sys.sp_executesql N'ALTER TABLE dbo.RoutePoints WITH NOCHECK ADD CONSTRAINT FK_RoutePoints_TransportRoutes FOREIGN KEY (TransportRouteId) REFERENCES dbo.TransportRoutes (TransportRouteId);';
+    IF COL_LENGTH(N'dbo.RouteWaypoints', N'TransportRouteId') IS NOT NULL
+       AND COL_LENGTH(N'dbo.TransportRoutes', N'TransportRouteId') IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_RouteWaypoints_TransportRoutes')
+        EXEC sys.sp_executesql N'ALTER TABLE dbo.RouteWaypoints WITH NOCHECK ADD CONSTRAINT FK_RouteWaypoints_TransportRoutes FOREIGN KEY (TransportRouteId) REFERENCES dbo.TransportRoutes (TransportRouteId) ON DELETE CASCADE;';
     IF COL_LENGTH(N'dbo.RouteStops', N'TransportRouteId') IS NOT NULL
        AND COL_LENGTH(N'dbo.TransportRoutes', N'TransportRouteId') IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'FK_RouteStops_TransportRoutes')

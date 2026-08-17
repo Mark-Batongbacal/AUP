@@ -6,9 +6,14 @@ public interface ITransportRouteRepository
 {
     Task<List<TransportRoute>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 
+    Task<List<TransportRoute>> GetAllActiveWithOrderedPointsAsync(
+        CancellationToken cancellationToken = default);
+
     Task<TransportRoute?> GetByIdAsync(long routeId, CancellationToken cancellationToken = default);
 
     Task<TransportRoute?> GetByRouteCodeAsync(string routeCode, CancellationToken cancellationToken = default);
+
+    Task<TransportRoute?> GetLatestWithPolylineAsync(CancellationToken cancellationToken = default);
 
     Task<List<TransportRoute>> GetByTransportModeAsync(int transportModeId, CancellationToken cancellationToken = default);
 
@@ -25,6 +30,8 @@ public interface ITransportRouteRepository
     Task<List<RouteSegment>> GetOrderedRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default);
 
     Task<TransportRoute> AddAsync(TransportRoute Route, CancellationToken cancellationToken = default);
+
+    Task<TransportRoute> ReplaceAsync(long routeId, TransportRoute replacement, CancellationToken cancellationToken = default);
 
     Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default);
 

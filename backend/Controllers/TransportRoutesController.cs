@@ -7,7 +7,8 @@ namespace backend.Controllers;
 [Route("api/transport-routes")]
 public sealed class TransportRoutesController(
     ITransportRouteService transportRouteService,
-    IRoutePointService routePointService) : ControllerBase
+    IRoutePointService routePointService,
+    IRouteGeneratorService routeGeneratorService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<TransportRouteListItemDto>>> GetActiveRoutes(
@@ -23,6 +24,93 @@ public sealed class TransportRoutesController(
             .ToList();
 
         return Ok(result);
+    }
+
+    [HttpGet("latest/polyline")]
+    public async Task<ActionResult<TransportRoutePolylineDto>> GetLatestPolyline(
+        CancellationToken cancellationToken)
+    {
+        var route = await transportRouteService.GetLatestRouteWithPolylineAsync(cancellationToken);
+        if (route is null)
+        {
+            return NotFound(new RoutePointErrorResponseDto(["No route with a polyline was found."]));
+        }
+
+        return Ok(new TransportRoutePolylineDto(
+            route.RouteId,
+            route.RouteCode,
+            route.RouteName,
+            6,
+            route.EncodedPolyline!));
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<CreatedTransportRouteDto>> CreateRoute(
+        [FromBody] CreateJeepneyRouteCommand command,
+        CancellationToken cancellationToken)
+    {
+        TransportRouteCreationResult result;
+        try
+        {
+            var generatedPoints = command.Points is { Count: >= 2 }
+                ? await routeGeneratorService.GenerateAsync(command.Points, cancellationToken)
+                : command.Points;
+
+            result = await transportRouteService.CreateJeepneyRouteAsync(
+                command with
+                {
+                    Points = generatedPoints?.ToList(),
+                    Waypoints = command.Points
+                },
+                cancellationToken);
+        }
+        catch (HttpRequestException exception)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new RoutePointErrorResponseDto(
+                [$"Valhalla could not generate the route: {exception.Message}"]));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new RoutePointErrorResponseDto(
+                [exception.Message]));
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new RoutePointErrorResponseDto([exception.Message]));
+        }
+
+        if (result.Status == TransportRouteCreationStatus.Success)
+        {
+            var route = result.Route!;
+            var response = new CreatedTransportRouteDto(
+                route.RouteId,
+                route.RouteCode,
+                route.RouteName,
+                route.OriginName,
+                route.DestinationName,
+                route.EncodedPolyline,
+                route.RoutePoints.OrderBy(point => point.PointOrder)
+                    .Select(point => new RoutePointResponseDto(
+                        point.RoutePointId,
+                        point.PointOrder,
+                        point.Latitude,
+                        point.Longitude))
+                    .ToList());
+
+            return CreatedAtAction(
+                nameof(GetRoutePoints),
+                new { routeId = route.RouteId },
+                response);
+        }
+
+        var error = new RoutePointErrorResponseDto(result.Errors);
+        return result.Status switch
+        {
+            TransportRouteCreationStatus.DuplicateRouteCode => Conflict(error),
+            TransportRouteCreationStatus.JeepneyModeNotFound =>
+                StatusCode(StatusCodes.Status503ServiceUnavailable, error),
+            _ => BadRequest(error)
+        };
     }
 
     [HttpGet("{routeId:long}/points")]
@@ -70,6 +158,22 @@ public sealed record TransportRouteListItemDto(
     string RouteCode,
     string RouteName,
     bool IsActive);
+
+public sealed record TransportRoutePolylineDto(
+    long RouteId,
+    string RouteCode,
+    string RouteName,
+    int Precision,
+    string Polyline);
+
+public sealed record CreatedTransportRouteDto(
+    long RouteId,
+    string RouteCode,
+    string RouteName,
+    string OriginName,
+    string DestinationName,
+    string? EncodedPolyline,
+    IReadOnlyList<RoutePointResponseDto> Points);
 
 public sealed record RoutePointsResponseDto(
     long RouteId,

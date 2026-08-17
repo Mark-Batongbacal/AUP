@@ -11,6 +11,9 @@
   "ConnectionStrings": {
     "TukiDbConnection": ""
   },
+  "Valhalla": {
+    "BaseUrl": ""
+  },
   "Cors": {
     "AllowedOrigins": [
       "http://localhost:3000",

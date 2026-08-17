@@ -10,6 +10,8 @@ public interface ITransportRouteService
 
     Task<TransportRoute?> GetRouteByCodeAsync(string routeCode, CancellationToken cancellationToken = default);
 
+    Task<TransportRoute?> GetLatestRouteWithPolylineAsync(CancellationToken cancellationToken = default);
+
     Task<List<TransportRoute>> GetRoutesByTransportModeAsync(int transportModeId, CancellationToken cancellationToken = default);
 
     Task<TransportRouteDetailsDto?> GetRouteDetailsAsync(long routeId, CancellationToken cancellationToken = default);
@@ -17,6 +19,44 @@ public interface ITransportRouteService
     Task<List<RouteStop>> GetRouteStopsAsync(long routeId, CancellationToken cancellationToken = default);
 
     Task<List<RouteSegment>> GetRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default);
+
+    Task<TransportRouteCreationResult> CreateJeepneyRouteAsync(
+        CreateJeepneyRouteCommand command,
+        CancellationToken cancellationToken = default);
+}
+
+public sealed record CreateJeepneyRouteCommand(
+    string? RouteCode,
+    string? RouteName,
+    string? OriginName,
+    string? DestinationName,
+    List<List<double>>? Points,
+    string? Description = null,
+    decimal? BaseFare = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<List<double>>? Waypoints { get; init; }
+}
+
+public enum TransportRouteCreationStatus
+{
+    Success,
+    ValidationFailed,
+    DuplicateRouteCode,
+    JeepneyModeNotFound,
+}
+
+public sealed record TransportRouteCreationResult(
+    TransportRouteCreationStatus Status,
+    IReadOnlyList<string> Errors,
+    TransportRoute? Route)
+{
+    public static TransportRouteCreationResult Success(TransportRoute route) =>
+        new(TransportRouteCreationStatus.Success, [], route);
+
+    public static TransportRouteCreationResult Failure(
+        TransportRouteCreationStatus status,
+        params string[] errors) => new(status, errors, null);
 }
 
 public sealed record TransportRouteDetailsDto(

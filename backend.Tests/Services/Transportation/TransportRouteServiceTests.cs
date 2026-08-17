@@ -110,6 +110,131 @@ public sealed class TransportRouteServiceTests
     }
 
     [Fact]
+    public async Task CreateJeepneyRouteAsync_WithPoints_PersistsRouteAndOrderedGeometryTogether()
+    {
+        var context = CreateContext();
+        var mode = new TransportMode
+        {
+            TransportModeId = 2,
+            Code = "JEEPNEY",
+            Name = "Jeepney",
+            IsActive = true
+        };
+        TransportRoute? captured = null;
+
+        context.TransportRouteRepository
+            .Setup(repository => repository.GetByRouteCodeAsync(
+                "JEEP-NEW",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TransportRoute?)null);
+        context.TransportModeRepository
+            .Setup(repository => repository.GetByCodeAsync(
+                "JEEPNEY",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mode);
+        context.TransportRouteRepository
+            .Setup(repository => repository.AddAsync(
+                It.IsAny<TransportRoute>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<TransportRoute, CancellationToken>((route, _) =>
+            {
+                route.RouteId = 123;
+                captured = route;
+            })
+            .ReturnsAsync((TransportRoute route, CancellationToken _) => route);
+
+        var result = await context.Service.CreateJeepneyRouteAsync(new(
+            " JEEP-NEW ",
+            "New Route",
+            "Origin",
+            "Destination",
+            [[15.1, 120.5], [15.2, 120.6], [15.3, 120.7]],
+            BaseFare: 13));
+
+        Assert.Equal(TransportRouteCreationStatus.Success, result.Status);
+        Assert.Equal(123, result.Route?.RouteId);
+        Assert.Equal(2, captured?.TransportModeId);
+        Assert.Equal([1, 2, 3], captured?.RoutePoints.Select(point => point.PointOrder));
+        Assert.Equal(15.1, captured?.RoutePoints.First().Latitude);
+        Assert.Equal(120.7, captured?.RoutePoints.Last().Longitude);
+    }
+
+    [Fact]
+    public async Task CreateJeepneyRouteAsync_WithInvalidPoints_DoesNotAccessDatabase()
+    {
+        var context = CreateContext();
+
+        var result = await context.Service.CreateJeepneyRouteAsync(new(
+            "JEEP-NEW",
+            "New Route",
+            "Origin",
+            "Destination",
+            [[120.5, 15.1]]));
+
+        Assert.Equal(TransportRouteCreationStatus.ValidationFailed, result.Status);
+        Assert.Contains("At least 2 route points are required.", result.Errors);
+        context.TransportRouteRepository.VerifyNoOtherCalls();
+        context.TransportModeRepository.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CreateJeepneyRouteAsync_WithExistingCode_ReplacesGeometryAndStoresWaypoints()
+    {
+        var context = CreateContext();
+        var existing = new TransportRoute
+        {
+            RouteId = 42,
+            RouteCode = "JEEP-EXISTING",
+            RouteName = "Old route",
+            TransportModeId = 2
+        };
+        var mode = new TransportMode
+        {
+            TransportModeId = 2,
+            Code = "JEEPNEY",
+            Name = "Jeepney",
+            IsActive = true
+        };
+        TransportRoute? captured = null;
+
+        context.TransportRouteRepository
+            .Setup(repository => repository.GetByRouteCodeAsync(
+                "JEEP-EXISTING", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existing);
+        context.TransportModeRepository
+            .Setup(repository => repository.GetByCodeAsync(
+                "JEEPNEY", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(mode);
+        context.TransportRouteRepository
+            .Setup(repository => repository.ReplaceAsync(
+                42, It.IsAny<TransportRoute>(), It.IsAny<CancellationToken>()))
+            .Callback<long, TransportRoute, CancellationToken>((_, route, _) => captured = route)
+            .ReturnsAsync((long routeId, TransportRoute route, CancellationToken _) =>
+            {
+                route.RouteId = routeId;
+                return route;
+            });
+
+        var command = new CreateJeepneyRouteCommand(
+            "JEEP-EXISTING", "New route", "Origin", "Destination",
+            [[15.10, 120.10], [15.15, 120.15], [15.20, 120.20]])
+        {
+            Waypoints = [[15.10, 120.10], [15.20, 120.20]]
+        };
+        var result = await context.Service.CreateJeepneyRouteAsync(command);
+
+        Assert.Equal(TransportRouteCreationStatus.Success, result.Status);
+        Assert.Equal(42, result.Route?.RouteId);
+        Assert.Equal(3, captured?.RoutePoints.Count);
+        Assert.Equal(2, captured?.RouteWaypoints.Count);
+        Assert.Equal([1, 2], captured?.RouteWaypoints.Select(point => point.WaypointOrder));
+        context.TransportRouteRepository.Verify(
+            repository => repository.AddAsync(
+                It.IsAny<TransportRoute>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task GetRouteDetailsAsync_WhenRouteExists_ReturnsCombinedRouteDetails()
     {
         // Arrange
@@ -295,6 +420,7 @@ public sealed class TransportRouteServiceTests
     private static TestContext CreateContext()
     {
         var transportRouteRepository = new Mock<ITransportRouteRepository>(MockBehavior.Strict);
+        var transportModeRepository = new Mock<ITransportModeRepository>(MockBehavior.Strict);
         var routeStopRepository = new Mock<IRouteStopRepository>(MockBehavior.Strict);
         var routeSegmentRepository = new Mock<IRouteSegmentRepository>(MockBehavior.Strict);
         var fareRuleRepository = new Mock<IFareRuleRepository>(MockBehavior.Strict);
@@ -302,10 +428,12 @@ public sealed class TransportRouteServiceTests
         return new TestContext(
             new TransportRouteService(
                 transportRouteRepository.Object,
+                transportModeRepository.Object,
                 routeStopRepository.Object,
                 routeSegmentRepository.Object,
                 fareRuleRepository.Object),
             transportRouteRepository,
+            transportModeRepository,
             routeStopRepository,
             routeSegmentRepository,
             fareRuleRepository);
@@ -328,6 +456,7 @@ public sealed class TransportRouteServiceTests
     private sealed record TestContext(
         TransportRouteService Service,
         Mock<ITransportRouteRepository> TransportRouteRepository,
+        Mock<ITransportModeRepository> TransportModeRepository,
         Mock<IRouteStopRepository> RouteStopRepository,
         Mock<IRouteSegmentRepository> RouteSegmentRepository,
         Mock<IFareRuleRepository> FareRuleRepository);

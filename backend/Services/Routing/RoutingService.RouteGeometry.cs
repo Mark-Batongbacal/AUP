@@ -5,7 +5,7 @@ namespace backend.Services.Routing;
 
 public partial class RoutingService
 {
-    private static Dictionary<string, List<RouteInterchange>>
+    private Dictionary<string, List<RouteInterchange>>
         BuildInterchangeGraph(
             Dictionary<string,
                 List<(double Latitude, double Longitude)>> routeSamples,
@@ -166,9 +166,8 @@ public partial class RoutingService
         double Longitude)>
         SampleRoutePoints(
             IReadOnlyList<double[]> routeCoordinates,
-            double sampleIntervalMeters =
-                DefaultSampleIntervalMeters,
-            int maxSamples = MaxRouteSamples)
+            double sampleIntervalMeters,
+            int maxSamples)
     {
         if (routeCoordinates.Count == 0)
             yield break;
@@ -299,6 +298,136 @@ public partial class RoutingService
     }
 
     // -------------------------------------------------------------------
+    // Authoritative full-geometry route progress
+    // -------------------------------------------------------------------
+
+    private static FullRouteGeometry BuildFullRouteGeometry(
+        IReadOnlyList<double[]> coordinates)
+    {
+        var points = coordinates
+            .Select(point => (Latitude: point[1], Longitude: point[0]))
+            .ToList();
+        var cumulative = new double[points.Count];
+
+        for (var index = 1; index < points.Count; index++)
+        {
+            cumulative[index] = cumulative[index - 1] + ApproximateDistanceMeters(
+                points[index - 1].Latitude,
+                points[index - 1].Longitude,
+                points[index].Latitude,
+                points[index].Longitude);
+        }
+
+        return new FullRouteGeometry(points, cumulative);
+    }
+
+    private List<RouteAnchor> BuildSearchAnchors(
+        string routeId,
+        IReadOnlyList<(double Latitude, double Longitude)> samples)
+    {
+        var anchors = new List<RouteAnchor>(samples.Count);
+        var minimumSegmentIndex = 0;
+
+        foreach (var sample in samples)
+        {
+            var anchor = ProjectOntoFullRoute(routeId, sample, minimumSegmentIndex);
+            anchors.Add(anchor);
+            minimumSegmentIndex = anchor.SegmentIndex;
+        }
+
+        return anchors;
+    }
+
+    private RouteAnchor GetRouteAnchor(
+        string routeId,
+        int? sampleIndex,
+        (double Latitude, double Longitude) point) =>
+        sampleIndex is { } index &&
+        _routeSearchAnchors.TryGetValue(routeId, out var anchors) &&
+        index >= 0 && index < anchors.Count
+            ? anchors[index]
+            : ProjectOntoFullRoute(routeId, point, 0);
+
+    private RouteAnchor ProjectOntoFullRoute(
+        string routeId,
+        (double Latitude, double Longitude) point,
+        int minimumSegmentIndex,
+        int? maximumSegmentIndex = null)
+    {
+        var geometry = _routeGeometries[routeId];
+        var bestDistance = double.PositiveInfinity;
+        RouteAnchor? best = null;
+
+        for (var segmentIndex = minimumSegmentIndex;
+             segmentIndex < Math.Min(
+                 geometry.Points.Count - 1,
+                 maximumSegmentIndex ?? geometry.Points.Count - 1);
+             segmentIndex++)
+        {
+            var from = geometry.Points[segmentIndex];
+            var to = geometry.Points[segmentIndex + 1];
+            var referenceLatitude = (from.Latitude + to.Latitude) / 2;
+            var longitudeScale = 111_000 * Math.Cos(referenceLatitude * Math.PI / 180);
+            var x = (point.Longitude - from.Longitude) * longitudeScale;
+            var y = (point.Latitude - from.Latitude) * 111_000;
+            var segmentX = (to.Longitude - from.Longitude) * longitudeScale;
+            var segmentY = (to.Latitude - from.Latitude) * 111_000;
+            var segmentSquared = segmentX * segmentX + segmentY * segmentY;
+            var fraction = segmentSquared <= 0 ? 0 : Math.Clamp(
+                (x * segmentX + y * segmentY) / segmentSquared,
+                0,
+                1);
+            var latitude = from.Latitude + (to.Latitude - from.Latitude) * fraction;
+            var longitude = from.Longitude + (to.Longitude - from.Longitude) * fraction;
+            var distance = ApproximateDistanceMeters(
+                point.Latitude, point.Longitude, latitude, longitude);
+
+            if (distance >= bestDistance)
+                continue;
+
+            var segmentLength = geometry.CumulativeMeters[segmentIndex + 1] -
+                geometry.CumulativeMeters[segmentIndex];
+            bestDistance = distance;
+            best = new RouteAnchor(
+                routeId,
+                segmentIndex,
+                fraction,
+                latitude,
+                longitude,
+                geometry.CumulativeMeters[segmentIndex] + segmentLength * fraction);
+        }
+
+        return best ?? throw new InvalidOperationException(
+            $"Route {routeId} has no usable full-geometry segment.");
+    }
+
+    private RouteAnchor ProjectOntoSearchRegion(
+        string routeId,
+        int sampleIndex,
+        (double Latitude, double Longitude) point)
+    {
+        var anchors = _routeSearchAnchors[routeId];
+        var geometry = _routeGeometries[routeId];
+        var minimumSegment = sampleIndex == 0
+            ? 0
+            : anchors[sampleIndex - 1].SegmentIndex;
+        var maximumSegment = sampleIndex == anchors.Count - 1
+            ? geometry.Points.Count - 1
+            : anchors[sampleIndex + 1].SegmentIndex + 1;
+
+        return ProjectOntoFullRoute(
+            routeId,
+            point,
+            minimumSegment,
+            maximumSegment);
+    }
+
+    private static double RouteDistanceBetweenAnchors(
+        RouteAnchor from,
+        RouteAnchor to) =>
+        Math.Max(0, to.DistanceFromRouteStartMeters - from.DistanceFromRouteStartMeters);
+
+    // -------------------------------------------------------------------
     // Internal models
     // -------------------------------------------------------------------
 
@@ -306,16 +435,26 @@ public partial class RoutingService
         string RouteId,
         NearbyJeepneyResponse Response);
 
+    private sealed record FullRouteGeometry(
+        List<(double Latitude, double Longitude)> Points,
+        double[] CumulativeMeters);
+
+    private sealed record RouteAnchor(
+        string RouteId,
+        int SegmentIndex,
+        double SegmentFraction,
+        double Latitude,
+        double Longitude,
+        double DistanceFromRouteStartMeters);
+
     private sealed record RouteConnectionCandidate(
         string RouteId,
         string RouteName,
         AccessCandidate BoardAccess,
-        AccessCandidate AlightAccess)
-    {
-        public double TotalGeneralizedCostPesos =>
-            BoardAccess.GeneralizedCostPesos +
-            AlightAccess.GeneralizedCostPesos;
-    }
+        AccessCandidate AlightAccess,
+        int BoardIndex,
+        int AlightIndex,
+        double TotalGeneralizedCostPesos);
 
     private sealed record InterchangePairCandidate(
         int IndexA,
@@ -333,7 +472,11 @@ public partial class RoutingService
         string RouteId,
         string RouteName,
         (double Latitude, double Longitude) Board,
-        (double Latitude, double Longitude) Alight);
+        (double Latitude, double Longitude) Alight,
+        int? BoardIndex = null,
+        int? AlightIndex = null,
+        RouteAnchor? BoardFullRouteAnchor = null,
+        RouteAnchor? AlightFullRouteAnchor = null);
 
     private sealed record WalkSegmentCandidate(
         (double Latitude, double Longitude) From,
@@ -348,16 +491,7 @@ public partial class RoutingService
         double? ProvisionalJourneyCostPesos = null)
     {
         public double TotalGeneralizedCostPesos =>
-            ProvisionalJourneyCostPesos ??
-            (
-                OriginAccess.GeneralizedCostPesos +
-                DestinationAccess.GeneralizedCostPesos +
-                TransferWalkSegments.Sum(segment =>
-                    GeneralizedCostFromTimeAndFare(
-                        segment.StraightLineMeters /
-                        WalkingSpeedMetersPerSecond,
-                        0))
-            );
+            ProvisionalJourneyCostPesos ?? double.PositiveInfinity;
 
         public int TransferCount =>
             Legs.Count - 1;
@@ -375,8 +509,16 @@ public partial class RoutingService
         TrikePoint? TrikePoint,
         double? TrikeRideDistanceMeters,
         double? TrikeRideTimeSeconds,
-        double? TrikeFarePesos)
+        double? TrikeFarePesos,
+        double ValueOfTimePesosPerMinute,
+        double WalkingFatiguePesosPerKilometer,
+        int? RouteSampleIndex = null,
+        RouteAnchor? FullRouteAnchor = null,
+        IReadOnlyList<AccessCandidate>? Alternatives = null)
     {
+        public IReadOnlyList<AccessCandidate> AllAlternatives =>
+            Alternatives ?? [this];
+
         public double TotalTimeSeconds =>
             WalkTimeSeconds +
             (TrikeRideTimeSeconds ?? 0);
@@ -385,9 +527,9 @@ public partial class RoutingService
             TrikeFarePesos ?? 0;
 
         public double GeneralizedCostPesos =>
-            GeneralizedCostFromTimeAndFare(
-                TotalTimeSeconds,
-                FarePesos);
+            FarePesos +
+            TotalTimeSeconds / 60.0 * ValueOfTimePesosPerMinute +
+            WalkDistanceMeters / 1_000 * WalkingFatiguePesosPerKilometer;
     }
 
     private static double ApproximateDistanceMeters(

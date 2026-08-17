@@ -1,7 +1,7 @@
 namespace backend.Models.Routing;
 
 /// <summary>
-/// A fixed tricycle terminal loaded from TestData/trike-points.json.
+/// A tricycle terminal used by the routing engine.
 /// </summary>
 public sealed record TrikePoint(
     string Id,
@@ -79,6 +79,12 @@ public sealed class JeepneyTripLeg
 
 public sealed class JeepneyTripPlan
 {
+    /// <summary>
+    /// Why this plan was selected: "efficient", "cheapest", "fastest", or
+    /// "alternative". A plan may win more than one objective; in that case
+    /// the objectives are comma-separated.
+    /// </summary>
+    public string RecommendationType { get; set; } = "alternative";
     public List<JeepneyTripLeg> Legs { get; init; } = [];
     public required JeepneyAccessSegment OriginAccess { get; init; }
     public required JeepneyAccessSegment DestinationAccess { get; init; }

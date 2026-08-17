@@ -33,6 +33,8 @@ public partial class TukiDbContext : DbContext
 
     public virtual DbSet<RoutePoint> RoutePoints { get; set; }
 
+    public virtual DbSet<RouteWaypoint> RouteWaypoints { get; set; }
+
     public virtual DbSet<RouteRecommendation> RouteRecommendations { get; set; }
 
     public virtual DbSet<RouteSegment> RouteSegments { get; set; }
@@ -64,6 +66,7 @@ public partial class TukiDbContext : DbContext
         ConfigureTransportStops(modelBuilder);
         ConfigureTransportRoutes(modelBuilder);
         ConfigureRoutePoints(modelBuilder);
+        ConfigureRouteWaypoints(modelBuilder);
         ConfigureRouteStops(modelBuilder);
         ConfigureRouteSegments(modelBuilder);
         ConfigureFareRules(modelBuilder);
@@ -181,6 +184,7 @@ public partial class TukiDbContext : DbContext
             entity.Property(e => e.DirectionName).HasMaxLength(100);
             entity.Property(e => e.OperatorName).HasMaxLength(200);
             entity.Property(e => e.RouteDescription).HasColumnName("Description").HasMaxLength(1000);
+            entity.Property(e => e.EncodedPolyline).HasColumnType("nvarchar(max)");
             entity.Property(e => e.BaseFare).HasColumnType("decimal(10, 2)");
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
@@ -231,6 +235,24 @@ public partial class TukiDbContext : DbContext
                 .HasForeignKey(e => e.RouteId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("FK_RoutePoints_TransportRoutes");
+        });
+    }
+
+    private static void ConfigureRouteWaypoints(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<RouteWaypoint>(entity =>
+        {
+            entity.ToTable("RouteWaypoints", "dbo");
+            entity.HasKey(e => e.RouteWaypointId);
+            entity.HasIndex(e => new { e.RouteId, e.WaypointOrder }, "UQ_RouteWaypoints_RouteAndOrder")
+                .IsUnique();
+            entity.Property(e => e.RouteId).HasColumnName("TransportRouteId");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.HasOne(e => e.Route)
+                .WithMany(e => e.RouteWaypoints)
+                .HasForeignKey(e => e.RouteId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_RouteWaypoints_TransportRoutes");
         });
     }
 

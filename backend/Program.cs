@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using backend.Helpers;
 using System.Diagnostics;
 using backend.Services.Routing;
+using Microsoft.Extensions.Options;
 
 LoadDevelopmentEnvironmentFile();
 
@@ -31,13 +32,24 @@ builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
         .AllowAnyMethod();
 }));
 
-builder.Services.AddHttpClient<IValhallaService, ValhallaService>(
-    client =>
-    {
-        client.BaseAddress = new Uri(
-            builder.Configuration["Valhalla:BaseUrl"]!
-        );
-    });
+var valhallaBaseUrl = builder.Configuration["Valhalla:BaseUrl"];
+if (!Uri.TryCreate(valhallaBaseUrl, UriKind.Absolute, out var valhallaUri) ||
+    (valhallaUri.Scheme != Uri.UriSchemeHttp && valhallaUri.Scheme != Uri.UriSchemeHttps))
+{
+    throw new InvalidOperationException(
+        "Valhalla:BaseUrl must be an absolute HTTP or HTTPS URL. " +
+        "Set Valhalla__BaseUrl in the environment.");
+}
+
+builder.Services.AddHttpClient<IValhallaService, ValhallaService>(client =>
+{
+    client.BaseAddress = valhallaUri;
+});
+
+builder.Services.AddOptions<RoutingOptions>()
+    .Bind(builder.Configuration.GetSection(RoutingOptions.SectionName))
+    .Validate(options => options.IsValid(out _), "Routing configuration is invalid.")
+    .ValidateOnStart();
 
 var connectionString =
     builder.Configuration.GetConnectionString("TukiDbConnection")
@@ -82,6 +94,7 @@ builder.Services.AddScoped<IRoutePointService, RoutePointService>();
 builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
+builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
 builder.Services.AddScoped<NemotronAIHelper>();
 builder.Services.AddScoped<IRoutingService, RoutingService>();
 builder.Services

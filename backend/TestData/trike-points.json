@@ -2,23 +2,16 @@
 [
   {
     "id": "TRIKE-001",
-    "name": "HIGHWAY TODA",
+    "name": "MIDDLE TODA",
     "latitude": 15.114140862463048,
     "longitude": 120.57780297140543
   },
   {
     "id": "TRIKE-002",
-    "name": "MIDDLE TODA",
+    "name": "HIGHWAY TODA",
     "latitude": 15.117194003450775,
     "longitude": 120.56865405408182
   },
-  {
-    "id": "TRIKE-003",
-    "name": "RIGHT OUTSIDE TODA",
-    "latitude": 15.112713006866759,
-    "longitude": 120.58224818421392
-  }
-  ,
   {
     "id": "TRIKE-004",
     "name": "7/11 TODA",
