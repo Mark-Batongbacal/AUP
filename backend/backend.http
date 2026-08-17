@@ -132,3 +132,27 @@ X-API-Key: {{apiKey}}
   [15.166258325465854, 120.57740906289526]
 ]
 }
+
+###
+
+### Add a validated tricycle pickup/service point
+POST {{backend_HostAddress}}/api/tricycle-points
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "pointCode": "TRIKE-SAMPLE-04",
+  "pointName": "Sample TODA Terminal",
+  "description": "Main tricycle pickup point",
+  "address": "Angeles, Pampanga",
+  "operatorName": "Sample TODA",
+  "coordinates": [15.143206444551234, 120.59700895122185],
+  "radiusMeters": 500,
+  "baseFare": 35,
+  "farePerKilometer": 15,
+  "averageWaitingTimeSeconds": 300,
+  "serviceStartTime": "05:00:00",
+  "serviceEndTime": "23:00:00",
+  "isActive": true
+}
