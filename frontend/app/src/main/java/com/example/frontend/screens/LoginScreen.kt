@@ -51,7 +51,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 fun LoginScreen(
     onBack: () -> Unit = {},
     onSignUpClick: () -> Unit = {},
-    onLoginSuccess: () -> Unit = {}
+    onLoginSuccess: () -> Unit = {},
 ) {
     var email by remember {
         mutableStateOf("")

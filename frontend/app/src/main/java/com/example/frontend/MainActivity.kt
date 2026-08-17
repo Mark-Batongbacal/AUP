@@ -14,6 +14,9 @@ import com.example.frontend.screens.OnboardingScreen
 import com.example.frontend.screens.SignupScreen
 import com.example.frontend.ui.theme.FrontendTheme
 import com.example.frontend.screens.RouteResultsScreen
+import com.example.frontend.screens.RecentScreen
+import com.example.frontend.screens.FavoritesScreen
+import com.example.frontend.screens.ProfileScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -95,10 +98,55 @@ fun TukiApp() {
                     selectedCommute = commute
                     currentScreen = AppScreen.COMMUTE_DETAIL
                 },
-                onRecentClick = {},
-                onFavoritesClick = {},
-                onProfileClick = {},
+                onRecentClick = {currentScreen = AppScreen.RECENT},
+                onFavoritesClick = {currentScreen = AppScreen.FAVORITES},
+                onProfileClick = {currentScreen = AppScreen.PROFILE},
                 onNewHereClick = {}
+            )
+        }
+
+        AppScreen.RECENT -> {
+            RecentScreen(
+                onHomeClick = {
+                    currentScreen = AppScreen.HOME
+                },
+                onFavoritesClick = {
+                    currentScreen = AppScreen.FAVORITES
+                },
+                onProfileClick = {
+                    currentScreen = AppScreen.PROFILE
+                }
+            )
+        }
+
+        AppScreen.FAVORITES -> {
+            FavoritesScreen(
+                onHomeClick = {
+                    currentScreen = AppScreen.HOME
+                },
+                onRecentClick = {
+                    currentScreen = AppScreen.RECENT
+                },
+                onProfileClick = {
+                    currentScreen = AppScreen.PROFILE
+                }
+            )
+        }
+
+        AppScreen.PROFILE -> {
+            ProfileScreen(
+                onBack = {
+                    currentScreen = AppScreen.HOME
+                },
+                onHomeClick = {
+                    currentScreen = AppScreen.HOME
+                },
+                onRecentClick = {
+                    currentScreen = AppScreen.RECENT
+                },
+                onFavoritesClick = {
+                    currentScreen = AppScreen.FAVORITES
+                }
             )
         }
 
