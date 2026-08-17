@@ -6,6 +6,7 @@ data class RecentCommute(
     val destination: String,
     val legs: Int,      // number of rides/transfers
     val minutes: Int,   // estimated total travel time
+    val dateGroup: String = "",
     val steps: List<CommuteStep> = emptyList()
 )
 

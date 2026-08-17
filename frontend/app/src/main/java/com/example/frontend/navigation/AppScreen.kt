@@ -5,6 +5,9 @@ enum class AppScreen {
     LOGIN,
     SIGNUP,
     HOME,
+    RECENT,
+    FAVORITES,
+    PROFILE,
     COMMUTE_DETAIL,
     ROUTE_RESULTS
 }
