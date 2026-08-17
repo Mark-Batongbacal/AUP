@@ -6,15 +6,17 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for Route segments. Route segment sequences are ordered by SegmentOrder.
 /// </summary>
-public sealed class RouteSegmentRepository(SupabaseDbContext context) : IRouteSegmentRepository
+public sealed class RouteSegmentRepository(TukiDbContext context) : IRouteSegmentRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
-    public Task<List<RouteSegment>> GetOrderedSegmentsForRouteAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<List<RouteSegment>> GetOrderedSegmentsForRouteAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.RouteSegments
             .AsNoTracking()
-            .Include(segment => segment.FromStop)
-            .Include(segment => segment.ToStop)
+            .Include(segment => segment.FromRouteStop)
+                .ThenInclude(routeStop => routeStop.Stop)
+            .Include(segment => segment.ToRouteStop)
+                .ThenInclude(routeStop => routeStop.Stop)
             .Where(segment => segment.RouteId == routeId && segment.IsActive)
             .OrderBy(segment => segment.SegmentOrder)
             .ToListAsync(cancellationToken);
@@ -23,26 +25,30 @@ public sealed class RouteSegmentRepository(SupabaseDbContext context) : IRouteSe
         _context.RouteSegments
             .AsNoTracking()
             .Include(segment => segment.Route)
-            .Include(segment => segment.FromStop)
-            .Include(segment => segment.ToStop)
+            .Include(segment => segment.FromRouteStop)
+                .ThenInclude(routeStop => routeStop.Stop)
+            .Include(segment => segment.ToRouteStop)
+                .ThenInclude(routeStop => routeStop.Stop)
             .FirstOrDefaultAsync(segment => segment.SegmentId == segmentId, cancellationToken);
 
-    public Task<List<RouteSegment>> GetFromStopAsync(Guid stopId, CancellationToken cancellationToken = default) =>
+    public Task<List<RouteSegment>> GetFromStopAsync(long stopId, CancellationToken cancellationToken = default) =>
         _context.RouteSegments
             .AsNoTracking()
             .Include(segment => segment.Route)
-            .Include(segment => segment.ToStop)
-            .Where(segment => segment.FromStopId == stopId && segment.IsActive)
+            .Include(segment => segment.ToRouteStop)
+                .ThenInclude(routeStop => routeStop.Stop)
+            .Where(segment => segment.FromRouteStop.StopId == stopId && segment.IsActive)
             .OrderBy(segment => segment.Route.RouteName)
             .ThenBy(segment => segment.SegmentOrder)
             .ToListAsync(cancellationToken);
 
-    public Task<List<RouteSegment>> GetToStopAsync(Guid stopId, CancellationToken cancellationToken = default) =>
+    public Task<List<RouteSegment>> GetToStopAsync(long stopId, CancellationToken cancellationToken = default) =>
         _context.RouteSegments
             .AsNoTracking()
             .Include(segment => segment.Route)
-            .Include(segment => segment.FromStop)
-            .Where(segment => segment.ToStopId == stopId && segment.IsActive)
+            .Include(segment => segment.FromRouteStop)
+                .ThenInclude(routeStop => routeStop.Stop)
+            .Where(segment => segment.ToRouteStop.StopId == stopId && segment.IsActive)
             .OrderBy(segment => segment.Route.RouteName)
             .ThenBy(segment => segment.SegmentOrder)
             .ToListAsync(cancellationToken);

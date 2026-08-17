@@ -7,9 +7,9 @@ namespace backend.Repositories;
 /// Data access for transport routes. Methods that include navigation properties return null when
 /// the requested Route does not exist.
 /// </summary>
-public sealed class TransportRouteRepository(SupabaseDbContext context) : ITransportRouteRepository
+public sealed class TransportRouteRepository(TukiDbContext context) : ITransportRouteRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<TransportRoute>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
@@ -18,7 +18,7 @@ public sealed class TransportRouteRepository(SupabaseDbContext context) : ITrans
             .OrderBy(Route => Route.RouteName)
             .ToListAsync(cancellationToken);
 
-    public Task<TransportRoute?> GetByIdAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<TransportRoute?> GetByIdAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
@@ -28,7 +28,7 @@ public sealed class TransportRouteRepository(SupabaseDbContext context) : ITrans
             .AsNoTracking()
             .FirstOrDefaultAsync(Route => Route.RouteCode == routeCode, cancellationToken);
 
-    public Task<List<TransportRoute>> GetByTransportModeAsync(short transportModeId, CancellationToken cancellationToken = default) =>
+    public Task<List<TransportRoute>> GetByTransportModeAsync(int transportModeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .Where(Route => Route.TransportModeId == transportModeId && Route.IsActive)
@@ -38,11 +38,9 @@ public sealed class TransportRouteRepository(SupabaseDbContext context) : ITrans
     /// <summary>
     /// Includes the Route's start Stop, end Stop, and transport mode.
     /// </summary>
-    public Task<TransportRoute?> GetWithEndpointsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<TransportRoute?> GetWithEndpointsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
-            .Include(Route => Route.StartStop)
-            .Include(Route => Route.EndStop)
             .Include(Route => Route.TransportMode)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
@@ -50,7 +48,7 @@ public sealed class TransportRouteRepository(SupabaseDbContext context) : ITrans
     /// Includes Route-Stop rows and each Stop. Use GetOrderedRouteStopsAsync when ordered sequence
     /// materialization is required.
     /// </summary>
-    public Task<TransportRoute?> GetWithRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<TransportRoute?> GetWithRouteStopsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .Include(Route => Route.RouteStops)
@@ -60,14 +58,14 @@ public sealed class TransportRouteRepository(SupabaseDbContext context) : ITrans
     /// <summary>
     /// Includes Route-Stop rows and stops ordered by StopOrder.
     /// </summary>
-    public Task<TransportRoute?> GetWithOrderedRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<TransportRoute?> GetWithOrderedRouteStopsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .Include(Route => Route.RouteStops.OrderBy(routeStop => routeStop.StopOrder))
                 .ThenInclude(routeStop => routeStop.Stop)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    public Task<List<RouteStop>> GetOrderedRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<List<RouteStop>> GetOrderedRouteStopsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.RouteStops
             .AsNoTracking()
             .Include(routeStop => routeStop.Stop)
@@ -78,23 +76,27 @@ public sealed class TransportRouteRepository(SupabaseDbContext context) : ITrans
     /// <summary>
     /// Includes active Route segments and their from/to stops ordered by SegmentOrder.
     /// </summary>
-    public Task<TransportRoute?> GetWithRouteSegmentsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<TransportRoute?> GetWithRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .Include(Route => Route.RouteSegments.Where(segment => segment.IsActive).OrderBy(segment => segment.SegmentOrder))
-                .ThenInclude(segment => segment.FromStop)
+                .ThenInclude(segment => segment.FromRouteStop)
+                    .ThenInclude(routeStop => routeStop.Stop)
             .Include(Route => Route.RouteSegments.Where(segment => segment.IsActive).OrderBy(segment => segment.SegmentOrder))
-                .ThenInclude(segment => segment.ToStop)
+                .ThenInclude(segment => segment.ToRouteStop)
+                    .ThenInclude(routeStop => routeStop.Stop)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
     /// <summary>
     /// Returns active Route segments and their from/to stops ordered by SegmentOrder.
     /// </summary>
-    public Task<List<RouteSegment>> GetOrderedRouteSegmentsAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<List<RouteSegment>> GetOrderedRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.RouteSegments
             .AsNoTracking()
-            .Include(segment => segment.FromStop)
-            .Include(segment => segment.ToStop)
+            .Include(segment => segment.FromRouteStop)
+                .ThenInclude(routeStop => routeStop.Stop)
+            .Include(segment => segment.ToRouteStop)
+                .ThenInclude(routeStop => routeStop.Stop)
             .Where(segment => segment.RouteId == routeId && segment.IsActive)
             .OrderBy(segment => segment.SegmentOrder)
             .ToListAsync(cancellationToken);
@@ -113,7 +115,7 @@ public sealed class TransportRouteRepository(SupabaseDbContext context) : ITrans
         return Route;
     }
 
-    public async Task<bool> DeactivateAsync(Guid routeId, CancellationToken cancellationToken = default)
+    public async Task<bool> DeactivateAsync(long routeId, CancellationToken cancellationToken = default)
     {
         var Route = await _context.TransportRoutes.FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
         if (Route is null)

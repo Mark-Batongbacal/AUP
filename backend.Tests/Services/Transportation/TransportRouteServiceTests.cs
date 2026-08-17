@@ -7,6 +7,8 @@ namespace backend.Tests.Services.Transportation;
 
 public sealed class TransportRouteServiceTests
 {
+    private static long _nextId;
+
     [Fact]
     public async Task GetAllActiveRoutesAsync_WhenRepositoryReturnsRoutes_ReturnsRoutesAndCallsRepositoryOnce()
     {
@@ -14,8 +16,8 @@ public sealed class TransportRouteServiceTests
         var context = CreateContext();
         var routes = new List<TransportRoute>
         {
-            new() { RouteId = Guid.NewGuid(), RouteCode = "R1", RouteName = "Route 1", TransportModeId = 1 },
-            new() { RouteId = Guid.NewGuid(), RouteCode = "R2", RouteName = "Route 2", TransportModeId = 1 },
+            new() { RouteId = NextId(), RouteCode = "R1", RouteName = "Route 1", TransportModeId = 1 },
+            new() { RouteId = NextId(), RouteCode = "R2", RouteName = "Route 2", TransportModeId = 1 },
         };
 
         context.TransportRouteRepository
@@ -37,7 +39,7 @@ public sealed class TransportRouteServiceTests
     {
         // Arrange
         var context = CreateContext();
-        var routeId = Guid.NewGuid();
+        var routeId = NextId();
         var route = new TransportRoute { RouteId = routeId, RouteCode = "BUS-01", RouteName = "Loop", TransportModeId = 1 };
 
         context.TransportRouteRepository
@@ -61,12 +63,12 @@ public sealed class TransportRouteServiceTests
         var context = CreateContext();
 
         // Act
-        var result = await context.Service.GetRouteByIdAsync(Guid.Empty);
+        var result = await context.Service.GetRouteByIdAsync(0);
 
         // Assert
         Assert.Null(result);
         context.TransportRouteRepository.Verify(
-            repository => repository.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            repository => repository.GetByIdAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -75,7 +77,7 @@ public sealed class TransportRouteServiceTests
     {
         // Arrange
         var context = CreateContext();
-        var route = new TransportRoute { RouteId = Guid.NewGuid(), RouteCode = "A1", RouteName = "Airport", TransportModeId = 1 };
+        var route = new TransportRoute { RouteId = NextId(), RouteCode = "A1", RouteName = "Airport", TransportModeId = 1 };
 
         context.TransportRouteRepository
             .Setup(repository => repository.GetByRouteCodeAsync("A1", It.IsAny<CancellationToken>()))
@@ -112,7 +114,7 @@ public sealed class TransportRouteServiceTests
     {
         // Arrange
         var context = CreateContext();
-        var routeId = Guid.NewGuid();
+        var routeId = NextId();
         var startStop = CreateStop("START", "Central", 14.6, 121.0);
         var endStop = CreateStop("END", "Terminal", 14.7, 121.1);
         var mode = new TransportMode
@@ -147,8 +149,8 @@ public sealed class TransportRouteServiceTests
         };
         var routeStops = new List<RouteStop>
         {
-            new() { RouteStopId = Guid.NewGuid(), RouteId = routeId, StopId = startStop.StopId, Stop = startStop, StopOrder = 1, CanBoard = true, CanAlight = false },
-            new() { RouteStopId = Guid.NewGuid(), RouteId = routeId, StopId = endStop.StopId, Stop = endStop, StopOrder = 2, CanBoard = false, CanAlight = true },
+            new() { RouteStopId = NextId(), RouteId = routeId, StopId = startStop.StopId, Stop = startStop, StopOrder = 1, CanBoard = true, CanAlight = false },
+            new() { RouteStopId = NextId(), RouteId = routeId, StopId = endStop.StopId, Stop = endStop, StopOrder = 2, CanBoard = false, CanAlight = true },
         };
         var routeSegments = new List<RouteSegment>
         {
@@ -156,22 +158,21 @@ public sealed class TransportRouteServiceTests
             {
                 SegmentId = 10,
                 RouteId = routeId,
-                FromStopId = startStop.StopId,
-                FromStop = startStop,
-                ToStopId = endStop.StopId,
-                ToStop = endStop,
+                FromRouteStopId = routeStops[0].RouteStopId,
+                FromRouteStop = routeStops[0],
+                ToRouteStopId = routeStops[1].RouteStopId,
+                ToRouteStop = routeStops[1],
                 SegmentOrder = 1,
                 DistanceMeters = 1200,
-                EstimatedMinutes = 8,
-                EstimatedFare = 15,
-                IsBidirectional = false,
+                EstimatedDurationSeconds = 480,
+                SegmentFare = 15,
             },
         };
         var fareRules = new List<FareRule>
         {
             new()
             {
-                FareRuleId = Guid.NewGuid(),
+                FareRuleId = NextId(),
                 RouteId = routeId,
                 TransportModeId = mode.TransportModeId,
                 RuleName = "Base fare",
@@ -228,7 +229,7 @@ public sealed class TransportRouteServiceTests
     {
         // Arrange
         var context = CreateContext();
-        var routeId = Guid.NewGuid();
+        var routeId = NextId();
 
         context.TransportRouteRepository
             .Setup(repository => repository.GetWithEndpointsAsync(routeId, It.IsAny<CancellationToken>()))
@@ -240,13 +241,13 @@ public sealed class TransportRouteServiceTests
         // Assert
         Assert.Null(result);
         context.RouteStopRepository.Verify(
-            repository => repository.GetOrderedStopsForRouteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            repository => repository.GetOrderedStopsForRouteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()),
             Times.Never);
         context.RouteSegmentRepository.Verify(
-            repository => repository.GetOrderedSegmentsForRouteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            repository => repository.GetOrderedSegmentsForRouteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()),
             Times.Never);
         context.FareRuleRepository.Verify(
-            repository => repository.GetActiveByRouteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            repository => repository.GetActiveByRouteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -255,10 +256,10 @@ public sealed class TransportRouteServiceTests
     {
         // Arrange
         var context = CreateContext();
-        var routeId = Guid.NewGuid();
+        var routeId = NextId();
         var stops = new List<RouteStop>
         {
-            new() { RouteStopId = Guid.NewGuid(), RouteId = routeId, StopId = Guid.NewGuid(), StopOrder = 1 },
+            new() { RouteStopId = NextId(), RouteId = routeId, StopId = NextId(), StopOrder = 1 },
         };
 
         context.RouteStopRepository
@@ -282,12 +283,12 @@ public sealed class TransportRouteServiceTests
         var context = CreateContext();
 
         // Act
-        var result = await context.Service.GetRouteSegmentsAsync(Guid.Empty);
+        var result = await context.Service.GetRouteSegmentsAsync(0);
 
         // Assert
         Assert.Empty(result);
         context.RouteSegmentRepository.Verify(
-            repository => repository.GetOrderedSegmentsForRouteAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            repository => repository.GetOrderedSegmentsForRouteAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -313,7 +314,7 @@ public sealed class TransportRouteServiceTests
     private static TransportStop CreateStop(string code, string name, double latitude, double longitude) =>
         new()
         {
-            StopId = Guid.NewGuid(),
+            StopId = NextId(),
             StopCode = code,
             Name = name,
             StopType = "TERMINAL",
@@ -321,6 +322,8 @@ public sealed class TransportRouteServiceTests
             Longitude = longitude,
             IsActive = true,
         };
+
+    private static long NextId() => Interlocked.Increment(ref _nextId);
 
     private sealed record TestContext(
         TransportRouteService Service,

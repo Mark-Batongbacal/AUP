@@ -6,7 +6,7 @@ public interface ITransportModeRepository
 {
     Task<List<TransportMode>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 
-    Task<TransportMode?> GetByIdAsync(short transportModeId, CancellationToken cancellationToken = default);
+    Task<TransportMode?> GetByIdAsync(int transportModeId, CancellationToken cancellationToken = default);
 
     Task<TransportMode?> GetByCodeAsync(string Code, CancellationToken cancellationToken = default);
 

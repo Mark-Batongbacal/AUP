@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for stored Route recommendations. This repository does not rank recommendations.
 /// </summary>
-public sealed class RouteRecommendationRepository(SupabaseDbContext context) : IRouteRecommendationRepository
+public sealed class RouteRecommendationRepository(TukiDbContext context) : IRouteRecommendationRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<RouteRecommendation>> GetByTripSearchAsync(Guid tripSearchId, CancellationToken cancellationToken = default) =>
         _context.RouteRecommendations

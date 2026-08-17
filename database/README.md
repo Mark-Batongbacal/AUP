@@ -1,0 +1,27 @@
+# TukiDb SQL Server Schema
+
+This folder contains the additive SQL Server schema script for the backend database.
+
+## Create or Select the Database
+
+In SQL Server Management Studio, connect to your local SQL Server instance. Create the database if it does not already exist:
+
+```sql
+CREATE DATABASE TukiDb;
+```
+
+Open a query window with `TukiDb` selected before running the schema script.
+
+## Run the Schema
+
+Open `TukiDbSchema.sql` in SSMS and execute it against `TukiDb`.
+
+The script uses the `dbo` schema, creates missing tables, adds missing columns, adds indexes and constraints when absent, and seeds only stable lookup transport modes: `WALK`, `JEEPNEY`, and `TRICYCLE`.
+
+## Secrets
+
+Application secrets do not belong in this folder or any tracked source file. Set connection strings, passwords, and API keys through environment variables such as `ConnectionStrings__TukiDbConnection`.
+
+## Data
+
+`TukiDbSchema.sql` contains schema and stable lookup data only. Temporary, local, imported, or verified transportation datasets are managed separately and should not be added to this script unless they become approved seed data.

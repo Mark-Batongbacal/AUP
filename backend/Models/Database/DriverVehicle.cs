@@ -9,7 +9,11 @@ public partial class DriverVehicle
 
     public Guid DriverId { get; set; }
 
-    public short TransportModeId { get; set; }
+    public int TransportModeId { get; set; }
+
+    public long? TricyclePointId { get; set; }
+
+    public string VehicleType { get; set; } = null!;
 
     public string? PlateNumber { get; set; }
 
@@ -30,4 +34,6 @@ public partial class DriverVehicle
     public virtual ICollection<RideMatch> RideMatches { get; set; } = new List<RideMatch>();
 
     public virtual TransportMode TransportMode { get; set; } = null!;
+
+    public virtual TricyclePoint? TricyclePoint { get; set; }
 }

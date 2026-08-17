@@ -1,6 +1,5 @@
 using backend.Models.Database;
 using Microsoft.EntityFrameworkCore;
-using NetTopologySuite.Geometries;
 
 namespace backend.Repositories;
 
@@ -8,9 +7,9 @@ namespace backend.Repositories;
 /// Data access for the current Location row per Driver. This repository does not perform Route
 /// matching.
 /// </summary>
-public sealed class DriverLocationRepository(SupabaseDbContext context) : IDriverLocationRepository
+public sealed class DriverLocationRepository(TukiDbContext context) : IDriverLocationRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<DriverLocation?> GetByDriverAsync(Guid driverId, CancellationToken cancellationToken = default) =>
         _context.DriverLocations
@@ -32,7 +31,6 @@ public sealed class DriverLocationRepository(SupabaseDbContext context) : IDrive
 
         existing.Latitude = Location.Latitude;
         existing.Longitude = Location.Longitude;
-        existing.Location = Location.Location;
         existing.HeadingDegrees = Location.HeadingDegrees;
         existing.SpeedKph = Location.SpeedKph;
         existing.AccuracyMeters = Location.AccuracyMeters;
@@ -45,10 +43,9 @@ public sealed class DriverLocationRepository(SupabaseDbContext context) : IDrive
         Guid driverId,
         double Latitude,
         double Longitude,
-        Point? Location = null,
-        decimal? headingDegrees = null,
-        decimal? speedKph = null,
-        decimal? accuracyMeters = null,
+        double? headingDegrees = null,
+        double? speedKph = null,
+        double? accuracyMeters = null,
         DateTime? updatedAt = null,
         CancellationToken cancellationToken = default)
     {
@@ -63,7 +60,6 @@ public sealed class DriverLocationRepository(SupabaseDbContext context) : IDrive
 
         driverLocation.Latitude = Latitude;
         driverLocation.Longitude = Longitude;
-        driverLocation.Location = Location;
         driverLocation.HeadingDegrees = headingDegrees;
         driverLocation.SpeedKph = speedKph;
         driverLocation.AccuracyMeters = accuracyMeters;

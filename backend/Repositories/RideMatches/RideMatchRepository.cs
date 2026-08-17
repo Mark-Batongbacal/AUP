@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for stored ride matches. This repository does not perform matching algorithms.
 /// </summary>
-public sealed class RideMatchRepository(SupabaseDbContext context) : IRideMatchRepository
+public sealed class RideMatchRepository(TukiDbContext context) : IRideMatchRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<RideMatch>> GetByRequestAsync(Guid requestId, CancellationToken cancellationToken = default) =>
         _context.RideMatches

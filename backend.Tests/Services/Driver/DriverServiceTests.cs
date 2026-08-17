@@ -53,7 +53,7 @@ public sealed class DriverServiceTests
         };
         var session = new DriverAvailabilitySession
         {
-            SessionId = Guid.NewGuid(),
+            SessionId = NextSessionId(),
             DriverId = driverId,
             VehicleId = vehicle.VehicleId,
             Vehicle = vehicle,
@@ -163,7 +163,6 @@ public sealed class DriverServiceTests
         Assert.Equal(120.9842, capturedLocation?.Longitude);
         Assert.Equal(90, capturedLocation?.HeadingDegrees);
         Assert.Equal(updatedAt, capturedLocation?.UpdatedAt);
-        Assert.Equal(4326, capturedLocation?.Location?.SRID);
 
         context.DriverRepository.Verify(
             repository => repository.GetByIdAsync(driverId, It.IsAny<CancellationToken>()),
@@ -197,7 +196,7 @@ public sealed class DriverServiceTests
             .Callback<DriverAvailabilitySession, CancellationToken>((session, _) => capturedSession = session)
             .ReturnsAsync((DriverAvailabilitySession session, CancellationToken _) =>
             {
-                session.SessionId = Guid.NewGuid();
+                session.SessionId = NextSessionId();
                 return session;
             });
         context.DriverRepository
@@ -277,7 +276,7 @@ public sealed class DriverServiceTests
             .Setup(repository => repository.GetActiveByDriverAsync(driverId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new DriverAvailabilitySession
             {
-                SessionId = Guid.NewGuid(),
+                SessionId = NextSessionId(),
                 DriverId = driverId,
                 AvailableSeats = 1,
                 MaximumDetourMeters = 1000,
@@ -301,7 +300,7 @@ public sealed class DriverServiceTests
         // Arrange
         var context = CreateContext();
         var driverId = Guid.NewGuid();
-        var sessionId = Guid.NewGuid();
+        var sessionId = NextSessionId();
         var endedAt = new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Utc);
 
         context.AvailabilitySessionRepository
@@ -353,7 +352,7 @@ public sealed class DriverServiceTests
         Assert.False(result);
         context.AvailabilitySessionRepository.Verify(
             repository => repository.EndSessionAsync(
-                It.IsAny<Guid>(),
+                It.IsAny<long>(),
                 It.IsAny<DateTime?>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
@@ -408,7 +407,7 @@ public sealed class DriverServiceTests
     private static TransportStop CreateStop(string code, string name) =>
         new()
         {
-            StopId = Guid.NewGuid(),
+            StopId = NextSessionId(),
             StopCode = code,
             Name = name,
             StopType = "TERMINAL",
@@ -416,6 +415,10 @@ public sealed class DriverServiceTests
             Longitude = 121.0,
             IsActive = true,
         };
+
+    private static long NextSessionId() => Interlocked.Increment(ref _nextSessionId);
+
+    private static long _nextSessionId;
 
     private sealed record TestContext(
         DriverService Service,

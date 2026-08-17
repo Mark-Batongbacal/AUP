@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for passenger ride requests. Active ride requests are rows with SEARCHING Status.
 /// </summary>
-public sealed class PassengerRideRequestRepository(SupabaseDbContext context) : IPassengerRideRequestRepository
+public sealed class PassengerRideRequestRepository(TukiDbContext context) : IPassengerRideRequestRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
     private const string SearchingStatus = "SEARCHING";
 
     public Task<PassengerRideRequest?> GetByIdAsync(Guid requestId, CancellationToken cancellationToken = default) =>

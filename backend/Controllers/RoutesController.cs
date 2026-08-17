@@ -17,7 +17,7 @@ public sealed class RoutesController : ControllerBase
     ///
     /// These coordinates are temporary mock/test data only. Replace this later
     /// with real route data from the database/repository layer; do not add
-    /// Supabase queries or route recommendation logic here yet.
+    /// database queries or route recommendation logic here yet.
     /// </summary>
     [HttpGet("sample")]
     public ActionResult<RouteDto> GetSampleRoute()
