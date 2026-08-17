@@ -2,7 +2,7 @@ using backend.Models.Routing;
 
 namespace backend.Services.Routing;
 
-public interface IJeepneyRoutingService
+public interface IRoutingService
 {
     Task<List<NearbyJeepneyResponse>> FindNearbyRoutesAsync(
         double latitude,

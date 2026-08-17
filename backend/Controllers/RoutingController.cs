@@ -5,14 +5,14 @@ namespace backend.Controllers.Test;
 
 [ApiController]
 [Route("api/test/jeepney")]
-public class JeepneyRoutingTestController : ControllerBase
+public class RoutingController : ControllerBase
 {
-    private readonly IJeepneyRoutingService _jeepneyRoutingService;
+    private readonly IRoutingService _routingService;
 
-    public JeepneyRoutingTestController(
-        IJeepneyRoutingService jeepneyRoutingService)
+    public RoutingController(
+        IRoutingService routingService)
     {
-        _jeepneyRoutingService = jeepneyRoutingService;
+        _routingService = routingService;
     }
 
 
@@ -23,7 +23,7 @@ public class JeepneyRoutingTestController : ControllerBase
         CancellationToken cancellationToken)
     {
         var results =
-            await _jeepneyRoutingService.FindNearbyRoutesAsync(
+            await _routingService.FindNearbyRoutesAsync(
                 lat,
                 lon,
                 cancellationToken);
@@ -39,7 +39,7 @@ public class JeepneyRoutingTestController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result =
-            await _jeepneyRoutingService.PlanTripsAsync(
+            await _routingService.PlanTripsAsync(
                 originLat,
                 originLon,
                 destinationLat,
