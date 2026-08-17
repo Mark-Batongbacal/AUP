@@ -1,6 +1,6 @@
 using backend.Models.Database;
 using backend.Repositories;
-using backend.Services;
+using backend.Services.Transportation;
 using Moq;
 
 namespace backend.Tests.Services.Transportation;

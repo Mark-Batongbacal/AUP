@@ -1,4 +1,4 @@
-using backend.Services.Route;
+using backend.Services.Routing;
 using Microsoft.AspNetCore.Mvc;
 
 namespace backend.Controllers.Test;
@@ -14,7 +14,7 @@ public class JeepneyRoutingTestController : ControllerBase
     {
         _jeepneyRoutingService = jeepneyRoutingService;
     }
-    
+
 
     [HttpGet("nearby")]
     public async Task<IActionResult> FindNearby(
@@ -30,7 +30,6 @@ public class JeepneyRoutingTestController : ControllerBase
 
         return Ok(results);
     }
-
     [HttpGet("plan")]
     public async Task<IActionResult> PlanRoute(
         [FromQuery] double originLat,

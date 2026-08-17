@@ -3,7 +3,7 @@ using backend.Models.Routing;
 using backend.Models.Valhalla;
 using Microsoft.Extensions.Logging;
 
-namespace backend.Services.Route;
+namespace backend.Services.Routing;
 
 public class JeepneyRoutingService : IJeepneyRoutingService
 {

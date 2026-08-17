@@ -1,6 +1,6 @@
 using backend.Models.Database;
 
-namespace backend.Services;
+namespace backend.Services.Transportation;
 
 public interface ITransportRouteService
 {

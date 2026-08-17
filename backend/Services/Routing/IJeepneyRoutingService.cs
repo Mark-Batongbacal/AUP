@@ -1,6 +1,6 @@
 using backend.Models.Routing;
 
-namespace backend.Services.Route;
+namespace backend.Services.Routing;
 
 public interface IJeepneyRoutingService
 {
@@ -8,7 +8,6 @@ public interface IJeepneyRoutingService
         double latitude,
         double longitude,
         CancellationToken cancellationToken = default);
-
     Task<List<JeepneyTripPlan>> PlanTripsAsync(
         double originLatitude,
         double originLongitude,
