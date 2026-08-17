@@ -135,6 +135,9 @@ fun TukiApp() {
 
         AppScreen.PROFILE -> {
             ProfileScreen(
+                onBack = {
+                    currentScreen = AppScreen.HOME
+                },
                 onHomeClick = {
                     currentScreen = AppScreen.HOME
                 },
