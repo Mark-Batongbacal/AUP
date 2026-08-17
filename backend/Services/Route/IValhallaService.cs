@@ -17,4 +17,5 @@ public interface IValhallaService
         IReadOnlyList<ValhallaLocation> targets,
         string costing = "pedestrian",
         CancellationToken cancellationToken = default);
+
 }
