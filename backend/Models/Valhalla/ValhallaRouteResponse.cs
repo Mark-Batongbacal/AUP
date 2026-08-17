@@ -23,17 +23,8 @@ public class ValhallaSummary
 
 public class ValhallaLeg
 {
-    // Valhalla sends its route geometry in this property.  It is retained for
-    // decoding, but deliberately omitted from API responses in favour of Points.
-    [JsonIgnore]
-    public string Shape { get; private set; } = string.Empty;
-
     [JsonPropertyName("shape")]
-    public string EncodedShape
-    {
-        set => Shape = value ?? string.Empty;
-    }
+    public string Shape { get; set; } = string.Empty;
 
-    // Coordinates use [longitude, latitude], matching jeepney-routes.json.
     public List<double[]> Points { get; set; } = [];
 }

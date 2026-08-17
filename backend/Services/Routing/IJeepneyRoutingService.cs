@@ -8,4 +8,10 @@ public interface IJeepneyRoutingService
         double latitude,
         double longitude,
         CancellationToken cancellationToken = default);
+    Task<List<JeepneyTripPlan>> PlanTripsAsync(
+        double originLatitude,
+        double originLongitude,
+        double destinationLatitude,
+        double destinationLongitude,
+        CancellationToken cancellationToken = default);
 }
