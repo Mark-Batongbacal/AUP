@@ -18,6 +18,16 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
             .OrderBy(Route => Route.RouteName)
             .ToListAsync(cancellationToken);
 
+    public Task<List<TransportRoute>> GetAllActiveWithOrderedPointsAsync(
+        CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
+            .AsNoTracking()
+            .Include(route => route.TransportMode)
+            .Include(route => route.RoutePoints.OrderBy(point => point.PointOrder))
+            .Where(route => route.IsActive)
+            .OrderBy(route => route.RouteName)
+            .ToListAsync(cancellationToken);
+
     public Task<TransportRoute?> GetByIdAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
@@ -27,6 +37,14 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
         _context.TransportRoutes
             .AsNoTracking()
             .FirstOrDefaultAsync(Route => Route.RouteCode == routeCode, cancellationToken);
+
+    public Task<TransportRoute?> GetLatestWithPolylineAsync(CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
+            .AsNoTracking()
+            .Where(route => route.EncodedPolyline != null)
+            .OrderByDescending(route => route.CreatedAt)
+            .ThenByDescending(route => route.RouteId)
+            .FirstOrDefaultAsync(cancellationToken);
 
     public Task<List<TransportRoute>> GetByTransportModeAsync(int transportModeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
@@ -106,6 +124,35 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
         await _context.TransportRoutes.AddAsync(Route, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         return Route;
+    }
+
+    public async Task<TransportRoute> ReplaceAsync(
+        long routeId,
+        TransportRoute replacement,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.TransportRoutes
+            .Include(route => route.RoutePoints)
+            .Include(route => route.RouteWaypoints)
+            .SingleAsync(route => route.RouteId == routeId, cancellationToken);
+
+        _context.RoutePoints.RemoveRange(existing.RoutePoints);
+        _context.RouteWaypoints.RemoveRange(existing.RouteWaypoints);
+
+        existing.RouteName = replacement.RouteName;
+        existing.TransportModeId = replacement.TransportModeId;
+        existing.OriginName = replacement.OriginName;
+        existing.DestinationName = replacement.DestinationName;
+        existing.RouteDescription = replacement.RouteDescription;
+        existing.EncodedPolyline = replacement.EncodedPolyline;
+        existing.BaseFare = replacement.BaseFare;
+        existing.IsActive = replacement.IsActive;
+        existing.UpdatedAt = DateTime.UtcNow;
+        existing.RoutePoints = replacement.RoutePoints;
+        existing.RouteWaypoints = replacement.RouteWaypoints;
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return existing;
     }
 
     public async Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default)

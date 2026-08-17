@@ -27,6 +27,8 @@ public partial class TransportRoute
 
     public string? RouteDescription { get; set; }
 
+    public string? EncodedPolyline { get; set; }
+
     public decimal? BaseFare { get; set; }
 
     public int? EstimatedDistanceMeters { get; set; }
@@ -70,6 +72,8 @@ public partial class TransportRoute
     public virtual ICollection<RecommendationLeg> RecommendationLegs { get; set; } = new List<RecommendationLeg>();
 
     public virtual ICollection<RoutePoint> RoutePoints { get; set; } = new List<RoutePoint>();
+
+    public virtual ICollection<RouteWaypoint> RouteWaypoints { get; set; } = new List<RouteWaypoint>();
 
     public virtual ICollection<RouteSegment> RouteSegments { get; set; } = new List<RouteSegment>();
 
