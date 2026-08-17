@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for fare rules only. This repository does not calculate passenger fares.
 /// </summary>
-public sealed class FareRuleRepository(SupabaseDbContext context) : IFareRuleRepository
+public sealed class FareRuleRepository(TukiDbContext context) : IFareRuleRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<FareRule>> GetActiveAsync(CancellationToken cancellationToken = default) =>
         _context.FareRules
@@ -19,19 +19,19 @@ public sealed class FareRuleRepository(SupabaseDbContext context) : IFareRuleRep
             .OrderBy(rule => rule.RuleName)
             .ToListAsync(cancellationToken);
 
-    public Task<List<FareRule>> GetActiveByRouteAsync(Guid routeId, CancellationToken cancellationToken = default) =>
+    public Task<List<FareRule>> GetActiveByRouteAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.FareRules
             .AsNoTracking()
-            .Include(rule => rule.TransportMode)
+            .Include(rule => rule.Route)
             .Where(rule => rule.RouteId == routeId && rule.IsActive)
             .OrderByDescending(rule => rule.EffectiveFrom)
             .ToListAsync(cancellationToken);
 
-    public Task<List<FareRule>> GetActiveByTransportModeAsync(short transportModeId, CancellationToken cancellationToken = default) =>
+    public Task<List<FareRule>> GetActiveByTransportModeAsync(int transportModeId, CancellationToken cancellationToken = default) =>
         _context.FareRules
             .AsNoTracking()
             .Include(rule => rule.Route)
-            .Where(rule => rule.TransportModeId == transportModeId && rule.IsActive)
+            .Where(rule => rule.Route.TransportModeId == transportModeId && rule.IsActive)
             .OrderByDescending(rule => rule.EffectiveFrom)
             .ToListAsync(cancellationToken);
 
@@ -40,8 +40,8 @@ public sealed class FareRuleRepository(SupabaseDbContext context) : IFareRuleRep
     /// requested with routeId; pass null for mode-level rules.
     /// </summary>
     public Task<FareRule?> GetCurrentlyEffectiveAsync(
-        short transportModeId,
-        Guid? routeId = null,
+        int transportModeId,
+        long? routeId = null,
         DateOnly? effectiveOn = null,
         CancellationToken cancellationToken = default)
     {
@@ -50,9 +50,9 @@ public sealed class FareRuleRepository(SupabaseDbContext context) : IFareRuleRep
         return _context.FareRules
             .AsNoTracking()
             .Include(rule => rule.Route)
-            .Include(rule => rule.TransportMode)
+            .Include(rule => rule.Route)
             .Where(rule =>
-                rule.TransportModeId == transportModeId &&
+                rule.Route.TransportModeId == transportModeId &&
                 rule.RouteId == routeId &&
                 rule.IsActive &&
                 rule.EffectiveFrom <= targetDate &&
@@ -61,10 +61,9 @@ public sealed class FareRuleRepository(SupabaseDbContext context) : IFareRuleRep
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public Task<FareRule?> GetByIdAsync(Guid fareRuleId, CancellationToken cancellationToken = default) =>
+    public Task<FareRule?> GetByIdAsync(long fareRuleId, CancellationToken cancellationToken = default) =>
         _context.FareRules
             .AsNoTracking()
             .Include(rule => rule.Route)
-            .Include(rule => rule.TransportMode)
             .FirstOrDefaultAsync(rule => rule.FareRuleId == fareRuleId, cancellationToken);
 }

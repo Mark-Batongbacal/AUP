@@ -6,7 +6,7 @@ public interface ITransportStopRepository
 {
     Task<List<TransportStop>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 
-    Task<TransportStop?> GetByIdAsync(Guid stopId, CancellationToken cancellationToken = default);
+    Task<TransportStop?> GetByIdAsync(long stopId, CancellationToken cancellationToken = default);
 
     Task<TransportStop?> GetByStopCodeAsync(string stopCode, CancellationToken cancellationToken = default);
 
@@ -16,5 +16,5 @@ public interface ITransportStopRepository
 
     Task<TransportStop> UpdateAsync(TransportStop Stop, CancellationToken cancellationToken = default);
 
-    Task<bool> DeactivateAsync(Guid stopId, CancellationToken cancellationToken = default);
+    Task<bool> DeactivateAsync(long stopId, CancellationToken cancellationToken = default);
 }

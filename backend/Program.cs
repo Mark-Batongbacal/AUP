@@ -3,7 +3,6 @@ using backend.Models.Database;
 using backend.Repositories;
 using backend.Services;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using backend.Helpers;
 using System.Diagnostics;
 using backend.Services.Route;
@@ -39,16 +38,17 @@ builder.Services.AddHttpClient<IValhallaService, ValhallaService>(
         );
     });
 
+var connectionString =
+    builder.Configuration.GetConnectionString("TukiDbConnection")
+    ?? throw new InvalidOperationException(
+        "The TukiDbConnection connection string is missing.");
+
+
 builder.Services.Configure<LoginOptions>(builder.Configuration.GetSection(LoginOptions.SectionName));
-var supabaseConnectionString = builder.Configuration.GetConnectionString("Supabase")
-    ?? throw new InvalidOperationException("Missing ConnectionStrings:Supabase configuration. Set ConnectionStrings__Supabase.");
-var supabaseConnectionStringBuilder = new NpgsqlConnectionStringBuilder(supabaseConnectionString)
-{
-    // Supabase installed PostGIS in this custom schema. It lets EF resolve geography types.
-    SearchPath = "public,gis"
-};
-builder.Services.AddDbContext<SupabaseDbContext>(options =>
-    options.UseNpgsql(supabaseConnectionStringBuilder.ConnectionString, npgsqlOptions => npgsqlOptions.UseNetTopologySuite()));
+
+builder.Services.AddDbContext<TukiDbContext>(options =>
+    options.UseSqlServer(connectionString));
+
 builder.Services.AddScoped<IChatConversationRepository, ChatConversationRepository>();
 builder.Services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
 builder.Services.AddScoped<IDriverAvailabilitySessionRepository, DriverAvailabilitySessionRepository>();

@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for passenger trip alerts and trigger state.
 /// </summary>
-public sealed class TripAlertRepository(SupabaseDbContext context) : ITripAlertRepository
+public sealed class TripAlertRepository(TukiDbContext context) : ITripAlertRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<TripAlert>> GetByPassengerTripAsync(Guid passengerTripId, CancellationToken cancellationToken = default) =>
         _context.TripAlerts

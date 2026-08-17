@@ -17,9 +17,9 @@ public sealed class TransportRouteService(
     public Task<List<TransportRoute>> GetAllActiveRoutesAsync(CancellationToken cancellationToken = default) =>
         _transportRouteRepository.GetAllActiveAsync(cancellationToken);
 
-    public Task<TransportRoute?> GetRouteByIdAsync(Guid routeId, CancellationToken cancellationToken = default)
+    public Task<TransportRoute?> GetRouteByIdAsync(long routeId, CancellationToken cancellationToken = default)
     {
-        if (routeId == Guid.Empty)
+        if (routeId <= 0)
         {
             return Task.FromResult<TransportRoute?>(null);
         }
@@ -37,7 +37,7 @@ public sealed class TransportRouteService(
         return _transportRouteRepository.GetByRouteCodeAsync(routeCode.Trim(), cancellationToken);
     }
 
-    public Task<List<TransportRoute>> GetRoutesByTransportModeAsync(short transportModeId, CancellationToken cancellationToken = default)
+    public Task<List<TransportRoute>> GetRoutesByTransportModeAsync(int transportModeId, CancellationToken cancellationToken = default)
     {
         if (transportModeId <= 0)
         {
@@ -47,9 +47,9 @@ public sealed class TransportRouteService(
         return _transportRouteRepository.GetByTransportModeAsync(transportModeId, cancellationToken);
     }
 
-    public async Task<TransportRouteDetailsDto?> GetRouteDetailsAsync(Guid routeId, CancellationToken cancellationToken = default)
+    public async Task<TransportRouteDetailsDto?> GetRouteDetailsAsync(long routeId, CancellationToken cancellationToken = default)
     {
-        if (routeId == Guid.Empty)
+        if (routeId <= 0)
         {
             return null;
         }
@@ -68,9 +68,9 @@ public sealed class TransportRouteService(
         return MapRouteDetails(route, routeStops, routeSegments, fareRules);
     }
 
-    public Task<List<RouteStop>> GetRouteStopsAsync(Guid routeId, CancellationToken cancellationToken = default)
+    public Task<List<RouteStop>> GetRouteStopsAsync(long routeId, CancellationToken cancellationToken = default)
     {
-        if (routeId == Guid.Empty)
+        if (routeId <= 0)
         {
             return Task.FromResult(new List<RouteStop>());
         }
@@ -79,9 +79,9 @@ public sealed class TransportRouteService(
         return _routeStopRepository.GetOrderedStopsForRouteAsync(routeId, cancellationToken);
     }
 
-    public Task<List<RouteSegment>> GetRouteSegmentsAsync(Guid routeId, CancellationToken cancellationToken = default)
+    public Task<List<RouteSegment>> GetRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default)
     {
-        if (routeId == Guid.Empty)
+        if (routeId <= 0)
         {
             return Task.FromResult(new List<RouteSegment>());
         }
@@ -159,15 +159,14 @@ public sealed class TransportRouteService(
     private static RouteSegmentDto MapRouteSegment(RouteSegment segment) =>
         new(
             segment.SegmentId,
-            segment.FromStopId,
-            MapTransportStop(segment.FromStop),
-            segment.ToStopId,
-            MapTransportStop(segment.ToStop),
+            segment.FromRouteStop.StopId,
+            MapTransportStop(segment.FromRouteStop.Stop),
+            segment.ToRouteStop.StopId,
+            MapTransportStop(segment.ToRouteStop.Stop),
             segment.SegmentOrder,
             segment.DistanceMeters,
-            segment.EstimatedMinutes,
-            segment.EstimatedFare,
-            segment.IsBidirectional);
+            segment.EstimatedDurationSeconds,
+            segment.SegmentFare);
 
     private static FareRuleDto MapFareRule(FareRule fareRule) =>
         new(
@@ -176,7 +175,7 @@ public sealed class TransportRouteService(
             fareRule.RouteId,
             fareRule.RuleName,
             fareRule.BaseFare,
-            fareRule.BaseDistanceKm,
+            fareRule.IncludedDistanceMeters,
             fareRule.AdditionalFarePerKm,
             fareRule.MinimumFare,
             fareRule.MaximumFare,

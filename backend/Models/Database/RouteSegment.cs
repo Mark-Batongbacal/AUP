@@ -7,19 +7,23 @@ public partial class RouteSegment
 {
     public long SegmentId { get; set; }
 
-    public Guid RouteId { get; set; }
+    public long RouteId { get; set; }
 
-    public Guid FromStopId { get; set; }
+    public long FromStopId { get; set; }
 
-    public Guid ToStopId { get; set; }
+    public long ToStopId { get; set; }
+
+    public long FromRouteStopId { get; set; }
+
+    public long ToRouteStopId { get; set; }
 
     public int SegmentOrder { get; set; }
 
-    public decimal DistanceMeters { get; set; }
+    public int? DistanceMeters { get; set; }
 
-    public decimal EstimatedMinutes { get; set; }
+    public int? EstimatedDurationSeconds { get; set; }
 
-    public decimal EstimatedFare { get; set; }
+    public decimal? SegmentFare { get; set; }
 
     public bool IsBidirectional { get; set; }
 
@@ -31,7 +35,11 @@ public partial class RouteSegment
 
     public virtual TransportStop FromStop { get; set; } = null!;
 
+    public virtual RouteStop FromRouteStop { get; set; } = null!;
+
     public virtual TransportRoute Route { get; set; } = null!;
 
     public virtual TransportStop ToStop { get; set; } = null!;
+
+    public virtual RouteStop ToRouteStop { get; set; } = null!;
 }

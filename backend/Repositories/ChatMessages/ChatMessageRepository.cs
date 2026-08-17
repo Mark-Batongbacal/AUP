@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for chat messages. Message retrieval for a Conversation is ordered by CreatedAt.
 /// </summary>
-public sealed class ChatMessageRepository(SupabaseDbContext context) : IChatMessageRepository
+public sealed class ChatMessageRepository(TukiDbContext context) : IChatMessageRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<ChatMessage>> GetByConversationAsync(Guid conversationId, CancellationToken cancellationToken = default) =>
         _context.ChatMessages

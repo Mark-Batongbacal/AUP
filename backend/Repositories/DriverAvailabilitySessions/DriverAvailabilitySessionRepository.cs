@@ -7,9 +7,9 @@ namespace backend.Repositories;
 /// Data access for Driver availability sessions. Available sessions are active rows whose Status is
 /// AVAILABLE.
 /// </summary>
-public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext context) : IDriverAvailabilitySessionRepository
+public sealed class DriverAvailabilitySessionRepository(TukiDbContext context) : IDriverAvailabilitySessionRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
     private const string AvailableStatus = "AVAILABLE";
     private const string EndedStatus = "ENDED";
 
@@ -17,7 +17,6 @@ public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext contex
         _context.DriverAvailabilitySessions
             .AsNoTracking()
             .Include(Session => Session.Vehicle)
-            .Include(Session => Session.DestinationStop)
             .FirstOrDefaultAsync(
                 Session => Session.DriverId == driverId && Session.Status == AvailableStatus && Session.EndedAt == null,
                 cancellationToken);
@@ -27,17 +26,15 @@ public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext contex
             .AsNoTracking()
             .Include(Session => Session.Driver)
             .Include(Session => Session.Vehicle)
-            .Include(Session => Session.DestinationStop)
             .Where(Session => Session.Status == AvailableStatus && Session.EndedAt == null)
             .OrderBy(Session => Session.StartedAt)
             .ToListAsync(cancellationToken);
 
-    public Task<DriverAvailabilitySession?> GetByIdAsync(Guid sessionId, CancellationToken cancellationToken = default) =>
+    public Task<DriverAvailabilitySession?> GetByIdAsync(long sessionId, CancellationToken cancellationToken = default) =>
         _context.DriverAvailabilitySessions
             .AsNoTracking()
             .Include(Session => Session.Driver)
             .Include(Session => Session.Vehicle)
-            .Include(Session => Session.DestinationStop)
             .FirstOrDefaultAsync(Session => Session.SessionId == sessionId, cancellationToken);
 
     public async Task<DriverAvailabilitySession> AddAsync(DriverAvailabilitySession Session, CancellationToken cancellationToken = default)
@@ -47,7 +44,7 @@ public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext contex
         return Session;
     }
 
-    public async Task<bool> UpdateStatusAsync(Guid sessionId, string Status, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateStatusAsync(long sessionId, string Status, CancellationToken cancellationToken = default)
     {
         var Session = await _context.DriverAvailabilitySessions.FirstOrDefaultAsync(Session => Session.SessionId == sessionId, cancellationToken);
         if (Session is null)
@@ -60,7 +57,7 @@ public sealed class DriverAvailabilitySessionRepository(SupabaseDbContext contex
         return true;
     }
 
-    public async Task<bool> EndSessionAsync(Guid sessionId, DateTime? endedAt = null, CancellationToken cancellationToken = default)
+    public async Task<bool> EndSessionAsync(long sessionId, DateTime? endedAt = null, CancellationToken cancellationToken = default)
     {
         var Session = await _context.DriverAvailabilitySessions.FirstOrDefaultAsync(Session => Session.SessionId == sessionId, cancellationToken);
         if (Session is null)

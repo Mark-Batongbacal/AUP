@@ -7,9 +7,15 @@ public partial class UserProfile
 {
     public Guid UserId { get; set; }
 
+    public string? ExternalAuthProvider { get; set; }
+
+    public string? ExternalAuthId { get; set; }
+
     public string? FirstName { get; set; }
 
     public string? LastName { get; set; }
+
+    public string Email { get; set; } = null!;
 
     public string? PhoneNumber { get; set; }
 
@@ -21,7 +27,7 @@ public partial class UserProfile
 
     public DateTime CreatedAt { get; set; }
 
-    public DateTime UpdatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 
     public virtual ICollection<ChatConversation> ChatConversations { get; set; } = new List<ChatConversation>();
 

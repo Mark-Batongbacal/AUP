@@ -5,7 +5,7 @@ namespace backend.Models.Database;
 
 public partial class TransportMode
 {
-    public short TransportModeId { get; set; }
+    public int TransportModeId { get; set; }
 
     public string Code { get; set; } = null!;
 

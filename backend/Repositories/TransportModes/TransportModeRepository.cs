@@ -6,9 +6,9 @@ namespace backend.Repositories;
 /// <summary>
 /// Data access for transport modes. Missing mode lookups return null.
 /// </summary>
-public sealed class TransportModeRepository(SupabaseDbContext context) : ITransportModeRepository
+public sealed class TransportModeRepository(TukiDbContext context) : ITransportModeRepository
 {
-    private readonly SupabaseDbContext _context = context;
+    private readonly TukiDbContext _context = context;
 
     public Task<List<TransportMode>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
         _context.TransportModes
@@ -17,7 +17,7 @@ public sealed class TransportModeRepository(SupabaseDbContext context) : ITransp
             .OrderBy(mode => mode.Name)
             .ToListAsync(cancellationToken);
 
-    public Task<TransportMode?> GetByIdAsync(short transportModeId, CancellationToken cancellationToken = default) =>
+    public Task<TransportMode?> GetByIdAsync(int transportModeId, CancellationToken cancellationToken = default) =>
         _context.TransportModes
             .AsNoTracking()
             .FirstOrDefaultAsync(mode => mode.TransportModeId == transportModeId, cancellationToken);

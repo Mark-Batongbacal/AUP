@@ -1,6 +1,5 @@
 using backend.Models.Database;
 using backend.Repositories;
-using NetTopologySuite.Geometries;
 
 namespace backend.Services;
 
@@ -13,8 +12,6 @@ public sealed class TripService(
 {
     private const string InProgressStatus = "IN_PROGRESS";
     private const int InitialLegOrder = 1;
-    private const int Wgs84Srid = 4326;
-
     private readonly ITripSearchRepository _tripSearchRepository = tripSearchRepository;
     private readonly IRouteRecommendationRepository _routeRecommendationRepository = routeRecommendationRepository;
     private readonly IRecommendationLegRepository _recommendationLegRepository = recommendationLegRepository;
@@ -74,11 +71,9 @@ public sealed class TripService(
             OriginName = normalizedOrigin,
             OriginLatitude = originLatitude,
             OriginLongitude = originLongitude,
-            OriginLocation = CreatePoint(originLatitude, originLongitude),
             DestinationName = normalizedDestination,
             DestinationLatitude = destinationLatitude,
             DestinationLongitude = destinationLongitude,
-            DestinationLocation = CreatePoint(destinationLatitude, destinationLongitude),
             PassengerCount = passengerCount,
             Budget = budget,
             Preference = NormalizeOptionalText(preference),
@@ -277,7 +272,7 @@ public sealed class TripService(
         string alertType,
         string message,
         Guid? legId = null,
-        Guid? targetStopId = null,
+        long? targetStopId = null,
         string? title = null,
         decimal? triggerDistanceMeters = null,
         CancellationToken cancellationToken = default)
@@ -288,7 +283,7 @@ public sealed class TripService(
             normalizedAlertType is null ||
             normalizedMessage is null ||
             (legId.HasValue && legId.Value == Guid.Empty) ||
-            (targetStopId.HasValue && targetStopId.Value == Guid.Empty) ||
+            (targetStopId.HasValue && targetStopId.Value <= 0) ||
             triggerDistanceMeters < 0)
         {
             return null;
@@ -453,9 +448,6 @@ public sealed class TripService(
                 stop.Address,
                 stop.Latitude,
                 stop.Longitude);
-
-    private static Point CreatePoint(double latitude, double longitude) =>
-        new(longitude, latitude) { SRID = Wgs84Srid };
 
     private static bool IsValidCoordinate(double latitude, double longitude) =>
         latitude is >= -90 and <= 90 &&

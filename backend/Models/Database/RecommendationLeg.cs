@@ -11,13 +11,13 @@ public partial class RecommendationLeg
 
     public int LegOrder { get; set; }
 
-    public short TransportModeId { get; set; }
+    public int TransportModeId { get; set; }
 
-    public Guid? RouteId { get; set; }
+    public long? RouteId { get; set; }
 
-    public Guid? FromStopId { get; set; }
+    public long? FromStopId { get; set; }
 
-    public Guid? ToStopId { get; set; }
+    public long? ToStopId { get; set; }
 
     public string? FromName { get; set; }
 

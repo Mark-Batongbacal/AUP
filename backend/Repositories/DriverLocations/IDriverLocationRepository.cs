@@ -1,5 +1,4 @@
 using backend.Models.Database;
-using NetTopologySuite.Geometries;
 
 namespace backend.Repositories;
 
@@ -13,10 +12,9 @@ public interface IDriverLocationRepository
         Guid driverId,
         double Latitude,
         double Longitude,
-        Point? Location = null,
-        decimal? headingDegrees = null,
-        decimal? speedKph = null,
-        decimal? accuracyMeters = null,
+        double? headingDegrees = null,
+        double? speedKph = null,
+        double? accuracyMeters = null,
         DateTime? updatedAt = null,
         CancellationToken cancellationToken = default);
 }
