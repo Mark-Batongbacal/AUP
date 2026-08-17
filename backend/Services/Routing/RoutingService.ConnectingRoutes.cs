@@ -12,6 +12,8 @@ public partial class RoutingService
         double destinationLongitude,
         CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
+
         var candidates = new List<RouteConnectionCandidate>();
 
         foreach (var route in _routes)
@@ -82,8 +84,14 @@ public partial class RoutingService
 
                     AlightAccess = alight,
 
+                    // This lower-level single-route lookup uses the same
+                    // one-wait/one-fare jeepney accounting as trip planning.
                     TotalTimeSeconds =
                         board.TotalTimeSeconds +
+                        GetJeepneyLegTimeSeconds(
+                            candidate.RouteId,
+                            candidate.BoardIndex,
+                            candidate.AlightIndex) +
                         alight.TotalTimeSeconds,
 
                     TotalFarePesos =
@@ -93,8 +101,13 @@ public partial class RoutingService
 
                     GeneralizedCostPesos =
                         board.GeneralizedCostPesos +
-                        alight.GeneralizedCostPesos +
-                        JeepneyBaseFarePesos
+                        GeneralizedCostFromTimeAndFare(
+                            GetJeepneyLegTimeSeconds(
+                                candidate.RouteId,
+                                candidate.BoardIndex,
+                                candidate.AlightIndex),
+                            JeepneyBaseFarePesos) +
+                        alight.GeneralizedCostPesos
                 };
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -114,6 +127,9 @@ public partial class RoutingService
             .Where(option => option is not null)
             .Select(option => option!)
             .OrderBy(option => option.GeneralizedCostPesos)
+            .ThenBy(option => option.TotalTimeSeconds)
+            .ThenBy(option => option.TotalFarePesos)
+            .ThenBy(option => option.RouteId)
             .Take(MaxTripOptions)
             .ToList();
     }
@@ -132,12 +148,14 @@ public partial class RoutingService
 
         var boardAccessOptions =
             ComputeBoardAccessOptions(
+                route.RouteId,
                 samples,
                 originLatitude,
                 originLongitude);
 
         var alightAccessOptions =
             ComputeAlightAccessOptions(
+                route.RouteId,
                 samples,
                 destinationLatitude,
                 destinationLongitude);
@@ -156,14 +174,29 @@ public partial class RoutingService
             if (boardPrefixAccess[i] is null)
                 continue;
 
-            var boardIndex = GetNearestSampleIndex(
-                samples,
-                boardPrefixAccess[i]!.Anchor);
+            var boardIndex = boardPrefixAccess[i]!.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, boardPrefixAccess[i]!.Anchor);
+
+            var boardAnchor = boardPrefixAccess[i]!.FullRouteAnchor ??
+                GetRouteAnchor(route.RouteId, boardIndex, boardPrefixAccess[i]!.Anchor);
+            var alightAnchor = alightAccessOptions[i].FullRouteAnchor ??
+                GetRouteAnchor(route.RouteId, i, alightAccessOptions[i].Anchor);
+
+            if (alightAnchor.DistanceFromRouteStartMeters <=
+                boardAnchor.DistanceFromRouteStartMeters)
+            {
+                continue;
+            }
 
             var jeepneyTime =
                 JeepneyBoardingWaitTimeSeconds +
-                RouteDistanceBetweenSamples(samples, boardIndex, i) /
+                RouteDistanceBetweenAnchors(boardAnchor, alightAnchor) /
                 JeepneySpeedMetersPerSecond;
+
+            // Strict index ordering alone is not useful for repeated/zero
+            // length geometry; do not return a jeepney leg with no progress.
+            if (RouteDistanceBetweenAnchors(boardAnchor, alightAnchor) <= 0)
+                continue;
 
             var total =
                 boardPrefixCost[i] +
@@ -190,7 +223,12 @@ public partial class RoutingService
             route.RouteId,
             route.RouteName,
             chosenBoardAccess,
-            chosenAlightAccess);
+            chosenAlightAccess,
+            chosenBoardAccess.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, chosenBoardAccess.Anchor),
+            chosenAlightAccess.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, chosenAlightAccess.Anchor),
+            bestTotal);
     }
 
     // -------------------------------------------------------------------

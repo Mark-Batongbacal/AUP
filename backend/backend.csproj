@@ -16,16 +16,4 @@
     <PackageReference Include="OpenAI" Version="2.13.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="TestData\jeepney-routes.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="TestData\tricycle-points.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
 </Project>

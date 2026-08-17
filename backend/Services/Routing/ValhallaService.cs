@@ -9,7 +9,7 @@ public class ValhallaService : IValhallaService
 {
     private readonly HttpClient _httpClient;
 
-    private readonly SemaphoreSlim _semaphore = new(2);
+    private readonly SemaphoreSlim _semaphore = new(5);
 
     public ValhallaService(HttpClient httpClient)
     {

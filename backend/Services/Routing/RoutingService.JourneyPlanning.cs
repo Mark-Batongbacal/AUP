@@ -12,6 +12,8 @@ public partial class RoutingService
         double destinationLongitude,
         CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
+
         var boardAccessPrefixByRoute =
             new Dictionary<string,
                 (double[] Cost, AccessCandidate?[] Access)>();
@@ -24,12 +26,9 @@ public partial class RoutingService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            _logger.LogWarning(
-            "TRIKE DEBUG: ComputeBoardAccessOptions called for route {RouteId}",
-            routeId);
-
             var boardOptions =
                 ComputeBoardAccessOptions(
+                    routeId,
                     samples,
                     originLatitude,
                     originLongitude);
@@ -39,6 +38,7 @@ public partial class RoutingService
 
             var alightOptions =
                 ComputeAlightAccessOptions(
+                    routeId,
                     samples,
                     destinationLatitude,
                     destinationLongitude);
@@ -71,7 +71,11 @@ public partial class RoutingService
                     direct.RouteId,
                     direct.RouteName,
                     direct.BoardAccess.Anchor,
-                    direct.AlightAccess.Anchor)
+                    direct.AlightAccess.Anchor,
+                    direct.BoardIndex,
+                    direct.AlightIndex,
+                    direct.BoardAccess.FullRouteAnchor,
+                    direct.AlightAccess.FullRouteAnchor)
             };
 
             candidates.Add(new JourneyCandidate(
@@ -192,17 +196,41 @@ public partial class RoutingService
                             route.RouteId,
                             route.RouteName,
                             boardAccess.Anchor,
-                            transferFromA),
+                            transferFromA,
+                            boardAccess.RouteSampleIndex,
+                            edge1.OwnIndex,
+                            boardAccess.FullRouteAnchor,
+                            GetRouteAnchor(
+                                route.RouteId,
+                                edge1.OwnIndex,
+                                transferFromA)),
                         new(
                             edge1.OtherRouteId,
                             edge1.OtherRouteName,
                             transferToB,
-                            transferFromB),
+                            transferFromB,
+                            edge1.OtherIndex,
+                            edge2.OwnIndex,
+                            GetRouteAnchor(
+                                edge1.OtherRouteId,
+                                edge1.OtherIndex,
+                                transferToB),
+                            GetRouteAnchor(
+                                edge1.OtherRouteId,
+                                edge2.OwnIndex,
+                                transferFromB)),
                         new(
                             edge2.OtherRouteId,
                             edge2.OtherRouteName,
                             transferToC,
-                            alightAccessC.Anchor)
+                            alightAccessC.Anchor,
+                            edge2.OtherIndex,
+                            alightAccessC.RouteSampleIndex,
+                            GetRouteAnchor(
+                                edge2.OtherRouteId,
+                                edge2.OtherIndex,
+                                transferToC),
+                            alightAccessC.FullRouteAnchor)
                     };
 
                     candidates.Add(new JourneyCandidate(
@@ -222,14 +250,14 @@ public partial class RoutingService
                         ],
                         boardAccess.GeneralizedCostPesos +
                         alightAccessC.GeneralizedCostPesos +
-                        GeneralizedCostFromTimeAndFare(
+                        GeneralizedCostFromWalking(
                             edge1.DistanceMeters /
                             WalkingSpeedMetersPerSecond,
-                            0) +
-                        GeneralizedCostFromTimeAndFare(
+                            edge1.DistanceMeters) +
+                        GeneralizedCostFromWalking(
                             edge2.DistanceMeters /
                             WalkingSpeedMetersPerSecond,
-                            0) +
+                            edge2.DistanceMeters) +
                         GeneralizedCostFromTimeAndFare(
                             EstimateJeepneyTravelTimeSeconds(legs),
                             legs.Count * JeepneyBaseFarePesos)));
@@ -237,11 +265,22 @@ public partial class RoutingService
             }
         }
 
-        var ranked = candidates
-            .OrderBy(candidate =>
-                candidate.TotalGeneralizedCostPesos)
-            .Take(MaxCandidatesToConfirm)
+        // Access generation stores walking and tricycle choices together on
+        // one route anchor. Expand them before ranking; otherwise confirmation
+        // accepts only the first valid choice and useful multimodal variants
+        // (for example trike -> jeepney -> trike) disappear.
+        var expandedCandidates = candidates
+            .SelectMany(ExpandAccessAlternatives)
             .ToList();
+
+        var distinctCandidates = expandedCandidates
+            .GroupBy(GetJourneyCandidateKey, StringComparer.Ordinal)
+            .Select(group => group
+                .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
+                .First())
+            .ToList();
+
+        var ranked = SelectCandidatesToConfirm(distinctCandidates);
 
         var confirmed =
             await ConfirmJourneyCandidatesAsync(
@@ -260,12 +299,185 @@ public partial class RoutingService
                 destinationLongitude,
                 cancellationToken);
 
-        return confirmed
+        var distinctPlans = confirmed
             .Concat(directPlans)
-            .OrderBy(plan => plan.GeneralizedCostPesos)
-            .Take(MaxTripOptions)
+            .GroupBy(GetPlanKey, StringComparer.Ordinal)
+            .Select(group => group
+                .OrderBy(plan => plan.GeneralizedCostPesos)
+                .ThenBy(plan => plan.TotalTimeSeconds)
+                .First())
             .ToList();
+
+        return SelectObjectivePlans(distinctPlans);
     }
+
+    private static IEnumerable<JourneyCandidate> ExpandAccessAlternatives(
+        JourneyCandidate candidate)
+    {
+        foreach (var origin in candidate.OriginAccess.AllAlternatives)
+        foreach (var destination in candidate.DestinationAccess.AllAlternatives)
+        {
+            var standaloneOrigin = origin with { Alternatives = null };
+            var standaloneDestination = destination with { Alternatives = null };
+            var adjustedCost = candidate.TotalGeneralizedCostPesos
+                - candidate.OriginAccess.GeneralizedCostPesos
+                - candidate.DestinationAccess.GeneralizedCostPesos
+                + standaloneOrigin.GeneralizedCostPesos
+                + standaloneDestination.GeneralizedCostPesos;
+
+            yield return candidate with
+            {
+                OriginAccess = standaloneOrigin,
+                DestinationAccess = standaloneDestination,
+                ProvisionalJourneyCostPesos = adjustedCost
+            };
+        }
+    }
+
+    private List<JourneyCandidate> SelectCandidatesToConfirm(
+        List<JourneyCandidate> candidates)
+    {
+        if (candidates.Count <= MaxCandidatesToConfirm)
+            return candidates;
+
+        var selected = new List<JourneyCandidate>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var perObjective = Math.Max(1, MaxCandidatesToConfirm / 3);
+
+        Add(candidates.OrderBy(candidate => candidate.TotalGeneralizedCostPesos));
+        Add(candidates.OrderBy(EstimateCandidateFarePesos)
+            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos));
+        Add(candidates.OrderBy(EstimateCandidateTimeSeconds)
+            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos));
+
+        if (selected.Count < MaxCandidatesToConfirm)
+            Add(candidates.OrderBy(candidate => candidate.TotalGeneralizedCostPesos),
+                MaxCandidatesToConfirm - selected.Count);
+
+        return selected;
+
+        void Add(IEnumerable<JourneyCandidate> source, int? limit = null)
+        {
+            var added = 0;
+            foreach (var candidate in source)
+            {
+                if (added >= (limit ?? perObjective) ||
+                    selected.Count >= MaxCandidatesToConfirm)
+                    break;
+                if (!seen.Add(GetJourneyCandidateKey(candidate)))
+                    continue;
+                selected.Add(candidate);
+                added++;
+            }
+        }
+    }
+
+    private double EstimateCandidateTimeSeconds(JourneyCandidate candidate) =>
+        candidate.OriginAccess.TotalTimeSeconds +
+        candidate.DestinationAccess.TotalTimeSeconds +
+        candidate.TransferWalkSegments.Sum(segment =>
+            segment.StraightLineMeters / WalkingSpeedMetersPerSecond) +
+        EstimateJeepneyTravelTimeSeconds(candidate.Legs);
+
+    private double EstimateCandidateFarePesos(JourneyCandidate candidate) =>
+        candidate.OriginAccess.FarePesos +
+        candidate.DestinationAccess.FarePesos +
+        candidate.Legs.Count * JeepneyBaseFarePesos;
+
+    private List<JeepneyTripPlan> SelectObjectivePlans(
+        List<JeepneyTripPlan> plans)
+    {
+        if (plans.Count == 0)
+            return [];
+
+        var cheapest = plans
+            .OrderBy(plan => plan.TotalFarePesos)
+            .ThenBy(plan => plan.GeneralizedCostPesos)
+            .ThenBy(plan => plan.TotalTimeSeconds)
+            .First();
+
+        var fastest = plans
+            .OrderBy(plan => plan.TotalTimeSeconds)
+            .ThenBy(plan => plan.GeneralizedCostPesos)
+            .ThenBy(plan => plan.TotalFarePesos)
+            .First();
+
+        // "Efficient" is the balanced choice. Normalizing time, fare, and
+        // walking prevents pesos or seconds from dominating merely because
+        // their numeric scales differ.
+        var minTime = plans.Min(plan => plan.TotalTimeSeconds);
+        var maxTime = plans.Max(plan => plan.TotalTimeSeconds);
+        var minFare = plans.Min(plan => plan.TotalFarePesos);
+        var maxFare = plans.Max(plan => plan.TotalFarePesos);
+        var walking = plans.ToDictionary(
+            plan => plan,
+            plan => plan.Legs.Where(leg => leg.Mode == AccessMode.Walk)
+                .Sum(leg => leg.DistanceMeters));
+        var minWalk = walking.Values.Min();
+        var maxWalk = walking.Values.Max();
+
+        static double Normalize(double value, double min, double max) =>
+            max <= min ? 0 : (value - min) / (max - min);
+
+        var efficient = plans
+            .OrderBy(plan =>
+                Normalize(plan.TotalTimeSeconds, minTime, maxTime) +
+                Normalize(plan.TotalFarePesos, minFare, maxFare) +
+                Normalize(walking[plan], minWalk, maxWalk))
+            .ThenBy(plan => plan.GeneralizedCostPesos)
+            .First();
+
+        var selected = new List<JeepneyTripPlan>();
+        AddObjective(efficient, "efficient");
+        AddObjective(cheapest, "cheapest");
+        AddObjective(fastest, "fastest");
+
+        foreach (var alternative in plans
+                     .Except(selected)
+                     .OrderBy(plan => plan.GeneralizedCostPesos)
+                     .ThenBy(plan => plan.TotalTimeSeconds))
+        {
+            if (selected.Count >= MaxTripOptions)
+                break;
+            selected.Add(alternative);
+        }
+
+        return selected;
+
+        void AddObjective(JeepneyTripPlan plan, string objective)
+        {
+            if (selected.Contains(plan))
+            {
+                plan.RecommendationType += $",{objective}";
+                return;
+            }
+
+            plan.RecommendationType = objective;
+            selected.Add(plan);
+        }
+    }
+
+    private static string GetJourneyCandidateKey(JourneyCandidate candidate) =>
+        string.Join('|', candidate.Legs.Select(leg => string.Join(':',
+            leg.RouteId,
+            leg.BoardIndex ?? -1,
+            leg.AlightIndex ?? -1,
+            Math.Round(leg.Board.Latitude, 6),
+            Math.Round(leg.Board.Longitude, 6),
+            Math.Round(leg.Alight.Latitude, 6),
+            Math.Round(leg.Alight.Longitude, 6)))) +
+        $"|{candidate.OriginAccess.Mode}:{candidate.OriginAccess.TrikePoint?.Id}" +
+        $"|{candidate.DestinationAccess.Mode}:{candidate.DestinationAccess.TrikePoint?.Id}";
+
+    private static string GetPlanKey(JeepneyTripPlan plan) =>
+        string.Join('|', plan.Legs.Select(leg => string.Join(':',
+            leg.Mode,
+            leg.RouteId ?? string.Empty,
+            Math.Round(leg.OriginLatitude, 6),
+            Math.Round(leg.OriginLongitude, 6),
+            Math.Round(leg.DestinationLatitude, 6),
+            Math.Round(leg.DestinationLongitude, 6),
+            leg.TrikePointId ?? string.Empty)));
 
     private async Task<List<JeepneyTripPlan>>
         ConfirmDirectTripCandidatesAsync(
@@ -342,15 +554,13 @@ public partial class RoutingService
                 (originLatitude, originLongitude),
                 (destinationLatitude, destinationLongitude));
 
-            return new JeepneyTripPlan
-            {
-                Legs = legs,
-                OriginAccess = access,
-                DestinationAccess = EmptyAccessSegment(),
-                TotalTimeSeconds = access.TotalTimeSeconds,
-                TotalFarePesos = access.TotalFarePesos,
-                GeneralizedCostPesos = access.GeneralizedCostPesos
-            };
+            if (!IsWithinTotalWalkingLimit(legs))
+                return null;
+
+            return CreateTripPlan(
+                legs,
+                access,
+                EmptyAccessSegment());
         });
 
         var results = await Task.WhenAll(tasks);
@@ -436,9 +646,9 @@ public partial class RoutingService
         var provisionalCost =
             originAccess.GeneralizedCostPesos +
             destinationAccess.GeneralizedCostPesos +
-            GeneralizedCostFromTimeAndFare(
+            GeneralizedCostFromWalking(
                 transferWalkTime,
-                0) +
+                interchange.DistanceMeters) +
             GeneralizedCostFromTimeAndFare(
                 rideTime +
                 2 * JeepneyBoardingWaitTimeSeconds,
@@ -450,13 +660,27 @@ public partial class RoutingService
                     firstRoute.RouteId,
                     firstRoute.RouteName,
                     originAccess.Anchor,
-                    firstSamples[interchange.OwnIndex]),
+                    firstSamples[interchange.OwnIndex],
+                    originAccess.RouteSampleIndex,
+                    interchange.OwnIndex,
+                    originAccess.FullRouteAnchor,
+                    GetRouteAnchor(
+                        firstRoute.RouteId,
+                        interchange.OwnIndex,
+                        firstSamples[interchange.OwnIndex])),
 
                 new JourneyLegCandidate(
                     interchange.OtherRouteId,
                     interchange.OtherRouteName,
                     secondSamples[interchange.OtherIndex],
-                    destinationAccess.Anchor)
+                    destinationAccess.Anchor,
+                    interchange.OtherIndex,
+                    destinationAccess.RouteSampleIndex,
+                    GetRouteAnchor(
+                        interchange.OtherRouteId,
+                        interchange.OtherIndex,
+                        secondSamples[interchange.OtherIndex]),
+                    destinationAccess.FullRouteAnchor)
             ],
             originAccess,
             destinationAccess,

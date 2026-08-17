@@ -10,6 +10,8 @@ public partial class RoutingService
         double longitude,
         CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
+
         var candidates = new List<SampledRoutePoint>();
 
         foreach (var route in _routes)
@@ -110,7 +112,7 @@ public partial class RoutingService
 
             index = chunkEnd;
 
-            var matrixResults = await _valhallaService.GetMatrixAsync(
+            var matrixResults = await GetMatrixAsync(
                 new ValhallaLocation
                 {
                     Lat = latitude,

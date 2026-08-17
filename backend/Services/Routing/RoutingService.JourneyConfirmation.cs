@@ -35,7 +35,7 @@ public partial class RoutingService
                         .Select(async segment =>
                         {
                             var results =
-                                await _valhallaService.GetMatrixAsync(
+                                await GetMatrixAsync(
                                     new ValhallaLocation
                                     {
                                         Lat = segment.From.Latitude,
@@ -78,7 +78,8 @@ public partial class RoutingService
 
                 if (origin is null ||
                     destination is null ||
-                    transfers.Any(t => t is null))
+                    transfers.Any(t => t is null) ||
+                    transfers.Any(t => t!.Value.Distance > MaxTransferWalkMeters))
                 {
                     return null;
                 }
@@ -93,28 +94,6 @@ public partial class RoutingService
                         .Select(t => t!.Value.Time)
                         .ToList();
 
-                var totalTime =
-                    origin.TotalTimeSeconds +
-                    destination.TotalTimeSeconds +
-                    transferTimes.Sum() +
-                    EstimateJeepneyTravelTimeSeconds(candidate.Legs);
-
-                var totalFare =
-                    origin.TotalFarePesos +
-                    destination.TotalFarePesos +
-                    candidate.Legs.Count * JeepneyBaseFarePesos;
-
-                var totalCost =
-                    origin.GeneralizedCostPesos +
-                    destination.GeneralizedCostPesos +
-                    transferTimes.Sum(time =>
-                        GeneralizedCostFromTimeAndFare(
-                            time,
-                            0)) +
-                    GeneralizedCostFromTimeAndFare(
-                        EstimateJeepneyTravelTimeSeconds(candidate.Legs),
-                        candidate.Legs.Count * JeepneyBaseFarePesos);
-
                 var routeLegs = BuildCompleteLegs(
                     candidate,
                     origin,
@@ -123,23 +102,15 @@ public partial class RoutingService
                     (originLatitude, originLongitude),
                     (destinationLatitude, destinationLongitude));
 
-                return new JeepneyTripPlan
-                {
-                    Legs = routeLegs,
+                if (!IsWithinTotalWalkingLimit(routeLegs))
+                    return null;
 
-                    OriginAccess = origin,
-                    DestinationAccess = destination,
-
-                    TransferWalkDistancesMeters =
-                        transferDistances,
-
-                    TransferWalkTimesSeconds =
-                        transferTimes,
-
-                    TotalTimeSeconds = totalTime,
-                    TotalFarePesos = totalFare,
-                    GeneralizedCostPesos = totalCost
-                };
+                return CreateTripPlan(
+                    routeLegs,
+                    origin,
+                    destination,
+                    transferDistances,
+                    transferTimes);
             }
             catch (Exception ex)
                 when (ex is not OperationCanceledException)
@@ -170,16 +141,59 @@ public partial class RoutingService
             if (!_routeSamples.TryGetValue(leg.RouteId, out var samples))
                 continue;
 
-            var boardIndex = GetNearestSampleIndex(samples, leg.Board);
-            var alightIndex = GetNearestSampleIndex(samples, leg.Alight);
+            var boardIndex = leg.BoardIndex ?? GetNearestSampleIndex(samples, leg.Board);
+            var alightIndex = leg.AlightIndex ?? GetNearestSampleIndex(samples, leg.Alight);
+            var boardAnchor = leg.BoardFullRouteAnchor ??
+                GetRouteAnchor(leg.RouteId, boardIndex, leg.Board);
+            var alightAnchor = leg.AlightFullRouteAnchor ??
+                GetRouteAnchor(leg.RouteId, alightIndex, leg.Alight);
 
             time += JeepneyBoardingWaitTimeSeconds +
-                RouteDistanceBetweenSamples(samples, boardIndex, alightIndex) /
+                RouteDistanceBetweenAnchors(boardAnchor, alightAnchor) /
                 JeepneySpeedMetersPerSecond;
         }
 
         return time;
     }
+
+    private double GetJeepneyLegTimeSeconds(
+        string routeId,
+        int boardIndex,
+        int alightIndex,
+        RouteAnchor? boardFullRouteAnchor = null,
+        RouteAnchor? alightFullRouteAnchor = null)
+    {
+        var samples = _routeSamples[routeId];
+        var boardAnchor = boardFullRouteAnchor ??
+            GetRouteAnchor(routeId, boardIndex, samples[boardIndex]);
+        var alightAnchor = alightFullRouteAnchor ??
+            GetRouteAnchor(routeId, alightIndex, samples[alightIndex]);
+        return JeepneyBoardingWaitTimeSeconds +
+            RouteDistanceBetweenAnchors(boardAnchor, alightAnchor) /
+            JeepneySpeedMetersPerSecond;
+    }
+
+    private JeepneyTripPlan CreateTripPlan(
+        List<JeepneyTripLeg> legs,
+        JeepneyAccessSegment originAccess,
+        JeepneyAccessSegment destinationAccess,
+        List<double>? transferDistances = null,
+        List<double>? transferTimes = null) =>
+        new()
+        {
+            Legs = legs,
+            OriginAccess = originAccess,
+            DestinationAccess = destinationAccess,
+            TransferWalkDistancesMeters = transferDistances ?? [],
+            TransferWalkTimesSeconds = transferTimes ?? [],
+            TotalTimeSeconds = legs.Sum(leg => leg.DurationSeconds),
+            TotalFarePesos = legs.Sum(leg => leg.FarePesos),
+            GeneralizedCostPesos = legs.Sum(leg => leg.GeneralizedCostPesos)
+        };
+
+    private bool IsWithinTotalWalkingLimit(IEnumerable<JeepneyTripLeg> legs) =>
+        legs.Where(leg => leg.Mode == AccessMode.Walk)
+            .Sum(leg => leg.DistanceMeters) <= MaxTotalWalkingMetersPerJourney;
 
     private List<JeepneyTripLeg> BuildCompleteLegs(
         JourneyCandidate candidate,
@@ -224,11 +238,13 @@ public partial class RoutingService
     {
         if (access.Mode == AccessMode.Walk)
         {
-            return [BuildWalkLeg(
-                from,
-                to,
-                access.WalkDistanceMeters,
-                access.WalkTimeSeconds)];
+            return access.WalkDistanceMeters <= 0
+                ? []
+                : [BuildWalkLeg(
+                    from,
+                    to,
+                    access.WalkDistanceMeters,
+                    access.WalkTimeSeconds)];
         }
 
         var trikePoint = (
@@ -271,9 +287,13 @@ public partial class RoutingService
     private JeepneyTripLeg BuildJeepneyLeg(JourneyLegCandidate leg)
     {
         var samples = _routeSamples[leg.RouteId];
-        var boardIndex = GetNearestSampleIndex(samples, leg.Board);
-        var alightIndex = GetNearestSampleIndex(samples, leg.Alight);
-        var distance = RouteDistanceBetweenSamples(samples, boardIndex, alightIndex);
+        var boardIndex = leg.BoardIndex ?? GetNearestSampleIndex(samples, leg.Board);
+        var alightIndex = leg.AlightIndex ?? GetNearestSampleIndex(samples, leg.Alight);
+        var boardAnchor = leg.BoardFullRouteAnchor ??
+            GetRouteAnchor(leg.RouteId, boardIndex, leg.Board);
+        var alightAnchor = leg.AlightFullRouteAnchor ??
+            GetRouteAnchor(leg.RouteId, alightIndex, leg.Alight);
+        var distance = RouteDistanceBetweenAnchors(boardAnchor, alightAnchor);
         var time = JeepneyBoardingWaitTimeSeconds +
             distance / JeepneySpeedMetersPerSecond;
 
@@ -301,7 +321,7 @@ public partial class RoutingService
         };
     }
 
-    private static JeepneyTripLeg BuildWalkLeg(
+    private JeepneyTripLeg BuildWalkLeg(
         (double Latitude, double Longitude) from,
         (double Latitude, double Longitude) to,
         double distance,
@@ -315,7 +335,7 @@ public partial class RoutingService
             DestinationLongitude = to.Longitude,
             DistanceMeters = distance,
             DurationSeconds = time,
-            GeneralizedCostPesos = GeneralizedCostFromTimeAndFare(time, 0),
+            GeneralizedCostPesos = GeneralizedCostFromWalking(time, distance),
             WalkDistanceMeters = distance,
             WalkTimeSeconds = time
         };
@@ -324,26 +344,55 @@ public partial class RoutingService
     // Trike-aware access
     // -------------------------------------------------------------------
 
+    private async Task<JeepneyAccessSegment?> ConfirmAccessAsync(
+        AccessCandidate candidate,
+        (double Latitude, double Longitude) walkAnchorPoint,
+        (double Latitude, double Longitude) rideTargetPoint,
+        CancellationToken cancellationToken)
+    {
+        var alternativeIndex = 0;
+        foreach (var alternative in candidate.AllAlternatives)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var confirmed = await ConfirmSingleAccessAsync(
+                alternative,
+                walkAnchorPoint,
+                rideTargetPoint,
+                alternativeIndex > 0 && alternative.Mode == AccessMode.Walk
+                    ? MaxWalkAccessDistanceMeters
+                    : null,
+                cancellationToken);
+
+            if (confirmed is not null)
+                return confirmed;
+
+            alternativeIndex++;
+        }
+
+        return null;
+    }
+
     private async Task<JeepneyAccessSegment?>
-        ConfirmAccessAsync(
+        ConfirmSingleAccessAsync(
             AccessCandidate candidate,
             (double Latitude, double Longitude) walkAnchorPoint,
             (double Latitude, double Longitude) rideTargetPoint,
-        CancellationToken cancellationToken)
+            double? fallbackWalkMaximumDistanceMeters,
+            CancellationToken cancellationToken)
     {
         if (candidate.Mode == AccessMode.Walk)
         {
             return await ConfirmWalkingAccessAsync(
                 walkAnchorPoint,
                 rideTargetPoint,
-                null,
+                fallbackWalkMaximumDistanceMeters,
                 cancellationToken);
         }
 
         var trikePoint = candidate.TrikePoint!;
 
         var walkTask =
-            _valhallaService.GetMatrixAsync(
+            GetMatrixAsync(
                 new ValhallaLocation
                 {
                     Lat = walkAnchorPoint.Latitude,
@@ -360,7 +409,7 @@ public partial class RoutingService
                 cancellationToken);
 
         var rideTask =
-            _valhallaService.GetMatrixAsync(
+            GetMatrixAsync(
                 new ValhallaLocation
                 {
                     Lat = trikePoint.Latitude,
@@ -391,25 +440,25 @@ public partial class RoutingService
             r.Time is not null);
 
         if (walkResult is null || rideResult is null)
-        {
-            // A geometric trike candidate is not proof of road-network
-            // reachability. Recover only with an explicitly walking segment.
-            return await ConfirmWalkingAccessAsync(
-                walkAnchorPoint,
-                rideTargetPoint,
-                MaxWalkAccessDistanceMeters,
-                cancellationToken);
-        }
+            return null;
 
         var walkDistance =
             walkResult.Distance!.Value * 1_000;
 
         var walkTime = walkResult.Time!.Value;
 
+        // Geometric proximity is only candidate generation. Validate the
+        // actual pedestrian route to the terminal before accepting a trike.
+        if (walkDistance > MaxWalkToTrikePointMeters)
+            return null;
+
         var rideDistance =
             rideResult.Distance!.Value * 1_000;
 
         var rideTime = rideResult.Time!.Value;
+
+        if (rideDistance <= 0)
+            return null;
 
         var fare = ComputeTrikeFarePesos(rideDistance);
 
@@ -431,7 +480,8 @@ public partial class RoutingService
             GeneralizedCostPesos =
                 GeneralizedCostFromTimeAndFare(
                     totalTime,
-                    fare)
+                    fare) +
+                walkDistance / 1_000 * WalkingFatiguePesosPerKilometer
         };
     }
 
@@ -441,7 +491,7 @@ public partial class RoutingService
         double? maximumDistanceMeters,
         CancellationToken cancellationToken)
     {
-        var results = await _valhallaService.GetMatrixAsync(
+        var results = await GetMatrixAsync(
             new ValhallaLocation { Lat = from.Latitude, Lon = from.Longitude },
             [new ValhallaLocation { Lat = to.Latitude, Lon = to.Longitude }],
             "pedestrian",
@@ -471,34 +521,31 @@ public partial class RoutingService
             WalkTimeSeconds = time,
             TotalTimeSeconds = time,
             TotalFarePesos = 0,
-            GeneralizedCostPesos = GeneralizedCostFromTimeAndFare(time, 0)
+            GeneralizedCostPesos = GeneralizedCostFromWalking(time, distance)
         };
     }
 
     private AccessCandidate[] ComputeBoardAccessOptions(
+        string routeId,
         List<(double Latitude, double Longitude)> samples,
         double originLatitude,
         double originLongitude)
     {
-        _logger.LogWarning(
-            "TRIKE DEBUG: ENTERED ComputeBoardAccessOptions. Origin={Lat},{Lon}, Samples={Count}",
-            originLatitude,
-            originLongitude,
-            samples.Count);
         var trikeCandidates =
             FindNearbyTrikePoints(
                 originLatitude,
                 originLongitude);
-        _logger.LogWarning(
-    "TRIKE DEBUG: Found {Count} trike candidates",
-    trikeCandidates.Count);
 
         var options =
             new AccessCandidate[samples.Count];
 
         for (var i = 0; i < samples.Count; i++)
         {
-            var anchor = samples[i];
+            var fullAnchor = ProjectOntoSearchRegion(
+                routeId,
+                i,
+                (originLatitude, originLongitude));
+            var anchor = (fullAnchor.Latitude, fullAnchor.Longitude);
 
             var directDistance =
                 ApproximateDistanceMeters(
@@ -507,8 +554,10 @@ public partial class RoutingService
                     anchor.Latitude,
                     anchor.Longitude);
 
-            var best =
-                WalkAccess(anchor, directDistance);
+            var alternatives = new List<AccessCandidate>
+            {
+                WalkAccess(anchor, directDistance, i, fullAnchor)
+            };
 
             // Trike points are candidates only. The geometric ranking here is
             // deliberately cheap; the selected option is confirmed through
@@ -534,24 +583,21 @@ public partial class RoutingService
                         anchor,
                         candidate,
                         walkToTrikeMeters,
-                        rideDistance);
+                        rideDistance,
+                        i,
+                        fullAnchor);
 
-                
-
-                if (trikeOption.GeneralizedCostPesos <
-                    best.GeneralizedCostPesos)
-                {
-                    best = trikeOption;
-                }
+                alternatives.Add(trikeOption);
             }
 
-            options[i] = best;
+            options[i] = WithAlternatives(alternatives);
         }
 
         return options;
     }
 
     private AccessCandidate[] ComputeAlightAccessOptions(
+        string routeId,
         List<(double Latitude, double Longitude)> samples,
         double destinationLatitude,
         double destinationLongitude)
@@ -561,7 +607,11 @@ public partial class RoutingService
 
         for (var i = 0; i < samples.Count; i++)
         {
-            var anchor = samples[i];
+            var fullAnchor = ProjectOntoSearchRegion(
+                routeId,
+                i,
+                (destinationLatitude, destinationLongitude));
+            var anchor = (fullAnchor.Latitude, fullAnchor.Longitude);
 
             var directDistance =
                 ApproximateDistanceMeters(
@@ -570,8 +620,10 @@ public partial class RoutingService
                     destinationLatitude,
                     destinationLongitude);
 
-            var best =
-                WalkAccess(anchor, directDistance);
+            var alternatives = new List<AccessCandidate>
+            {
+                WalkAccess(anchor, directDistance, i, fullAnchor)
+            };
 
             var trikeCandidates =
                 FindNearbyTrikePoints(
@@ -599,16 +651,14 @@ public partial class RoutingService
                         anchor,
                         trikePoint,
                         walkToTrikeMeters,
-                        rideDistance);
+                        rideDistance,
+                        i,
+                        fullAnchor);
 
-                if (trikeOption.GeneralizedCostPesos <
-                    best.GeneralizedCostPesos)
-                {
-                    best = trikeOption;
-                }
+                alternatives.Add(trikeOption);
             }
 
-            options[i] = best;
+            options[i] = WithAlternatives(alternatives);
         }
 
         return options;
@@ -637,9 +687,21 @@ public partial class RoutingService
             .ToList();
     }
 
-    private static AccessCandidate WalkAccess(
+    private AccessCandidate WithAlternatives(List<AccessCandidate> alternatives)
+    {
+        var ordered = alternatives
+            .OrderBy(candidate => candidate.GeneralizedCostPesos)
+            .ThenBy(candidate => candidate.Mode)
+            .ToList();
+
+        return ordered[0] with { Alternatives = ordered };
+    }
+
+    private AccessCandidate WalkAccess(
         (double Latitude, double Longitude) anchor,
-        double distanceMeters)
+        double distanceMeters,
+        int? routeSampleIndex = null,
+        RouteAnchor? fullRouteAnchor = null)
     {
         var time =
             distanceMeters /
@@ -653,14 +715,20 @@ public partial class RoutingService
             null,
             null,
             null,
-            null);
+            null,
+            ValueOfTimePesosPerMinute,
+            WalkingFatiguePesosPerKilometer,
+            routeSampleIndex,
+            fullRouteAnchor);
     }
 
-    private static AccessCandidate TrikeAccess(
+    private AccessCandidate TrikeAccess(
         (double Latitude, double Longitude) anchor,
         TrikePoint trikePoint,
         double walkToTrikeMeters,
-        double rideDistanceMeters)
+        double rideDistanceMeters,
+        int? routeSampleIndex = null,
+        RouteAnchor? fullRouteAnchor = null)
     {
         var walkTime =
             walkToTrikeMeters /
@@ -681,10 +749,14 @@ public partial class RoutingService
             trikePoint,
             rideDistanceMeters,
             rideTime,
-            fare);
+            fare,
+            ValueOfTimePesosPerMinute,
+            WalkingFatiguePesosPerKilometer,
+            routeSampleIndex,
+            fullRouteAnchor);
     }
 
-    private static double ComputeTrikeFarePesos(
+    private double ComputeTrikeFarePesos(
         double distanceMeters)
     {
         if (distanceMeters <= TrikeBaseDistanceMeters)
@@ -700,12 +772,18 @@ public partial class RoutingService
                TrikePerAdditionalKmPesos;
     }
 
-    private static double GeneralizedCostFromTimeAndFare(
+    internal double GeneralizedCostFromTimeAndFare(
         double timeSeconds,
         double farePesos) =>
         farePesos +
         timeSeconds / 60.0 *
         ValueOfTimePesosPerMinute;
+
+    internal double GeneralizedCostFromWalking(
+        double timeSeconds,
+        double distanceMeters) =>
+        GeneralizedCostFromTimeAndFare(timeSeconds, 0) +
+        distanceMeters / 1_000 * WalkingFatiguePesosPerKilometer;
 
     // prefix[i] = cheapest access strictly before i.
     private static (
