@@ -73,12 +73,20 @@ X-Api-Key: {{apiKey}}
 
 ###
 
-@apiKey = API-KEY
+@apiKey = API_KEY
 
-###originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
-###originLat=15.139582098206548&originLon=120.60108373338038&destinationLat=15.109698583445889&destinationLon=120.58240903543013
+###porac -> diegs originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
+###diegs -> porac originLat=15.139582098206548&originLon=120.60108373338038&destinationLat=15.109698583445889&destinationLon=120.58240903543013
 #15.108412470090252, 120.59402071981998
-GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.108412470090252&destinationLon=120.59402071981998
+GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+###15.109215294463528, 120.59148114230783
+
+# Direct-route candidate test: walk and walk-to-trike should be returned with
+# jeepney options and ranked by generalized cost.
+GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.110100&destinationLon=120.582900
 Accept: application/json
 X-API-Key: {{apiKey}}
 

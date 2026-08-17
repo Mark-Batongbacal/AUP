@@ -83,7 +83,7 @@ builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<NemotronAIHelper>();
-builder.Services.AddScoped<IJeepneyRoutingService, JeepneyRoutingService>();
+builder.Services.AddScoped<IRoutingService, RoutingService>();
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
