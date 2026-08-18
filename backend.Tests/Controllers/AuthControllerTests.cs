@@ -1,4 +1,6 @@
 using backend.Controllers;
+using backend.Models.Database;
+using backend.Repositories;
 using backend.Services;
 using Google.Apis.Auth;
 using Microsoft.AspNetCore.Http;
@@ -128,6 +130,7 @@ public sealed class AuthControllerTests
         GoogleOptions? googleOptions = null) =>
         new(
             apiKeys ?? new RecordingApiKeyService(),
+            new RecordingUserProfileRepository(),
             Options.Create(loginOptions ?? new LoginOptions
             {
                 Users =
@@ -144,6 +147,40 @@ public sealed class AuthControllerTests
                 ClientId = "google-client-id"
             }),
             googleTokens ?? new StubGoogleIdTokenValidator());
+
+    private sealed class RecordingUserProfileRepository : IUserProfileRepository
+    {
+        private readonly Dictionary<string, UserProfile> _profiles = [];
+
+        public Task<UserProfile?> GetByUserIdAsync(
+            Guid userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_profiles.Values.FirstOrDefault(profile => profile.UserId == userId));
+
+        public Task<UserProfile?> GetActiveByUserIdAsync(
+            Guid userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_profiles.Values.FirstOrDefault(
+                profile => profile.UserId == userId && profile.IsActive));
+
+        public Task<UserProfile?> GetActiveByEmailAsync(
+            string email, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_profiles.GetValueOrDefault(email) is { IsActive: true } profile
+                ? profile
+                : null);
+
+        public Task<UserProfile?> GetByEmailAsync(
+            string email, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_profiles.GetValueOrDefault(email));
+
+        public Task<UserProfile> AddOrUpdateAsync(
+            UserProfile profile, CancellationToken cancellationToken = default)
+        {
+            _profiles[profile.Email] = profile;
+            return Task.FromResult(profile);
+        }
+
+        public Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_profiles.Values.Any(profile => profile.UserId == userId));
+    }
 
     private sealed class RecordingApiKeyService : IApiKeyService
     {

@@ -38,4 +38,5 @@ public partial class UserProfile
     public virtual ICollection<PassengerTrip> PassengerTrips { get; set; } = new List<PassengerTrip>();
 
     public virtual ICollection<TripSearch> TripSearches { get; set; } = new List<TripSearch>();
+    public virtual ICollection<TripSession> TripSessions { get; set; } = new List<TripSession>();
 }

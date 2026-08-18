@@ -2,6 +2,7 @@
 using System.Net.Http.Json;
 using backend.Helpers;
 using backend.Models.Valhalla;
+using backend.Services.Telemetry;
 
 namespace backend.Services.Routing;
 
@@ -11,9 +12,12 @@ public class ValhallaService : IValhallaService
 
     private readonly SemaphoreSlim _semaphore = new(5);
 
-    public ValhallaService(HttpClient httpClient)
+    private readonly ITukiTelemetry _telemetry;
+
+    public ValhallaService(HttpClient httpClient, ITukiTelemetry? telemetry = null)
     {
         _httpClient = httpClient;
+        _telemetry = telemetry ?? NullTukiTelemetry.Instance;
     }
 
     public async Task<ValhallaRouteResponse> GetRouteAsync(
@@ -156,6 +160,7 @@ public class ValhallaService : IValhallaService
         T request,
         CancellationToken cancellationToken)
     {
+        using var measurement = _telemetry.Measure($"Valhalla{endpoint}");
         await _semaphore.WaitAsync(cancellationToken);
 
         try

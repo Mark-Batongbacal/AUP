@@ -44,9 +44,15 @@ Login__Users__3__UserName=<fourth-user-name>
 Login__Users__3__Password=<secure-password>
 NVIDIA_API_KEY=<your-nvidia-api-key>
 ConnectionStrings__TukiDbConnection=<sql-server-connection-string>
+Valhalla__BaseUrl=<your-valhalla-base-url>
+Pelias__BaseUrl=<your-pelias-base-url>
 ```
 
 Never commit real passwords or API keys. `appsettings.json` contains only non-secret defaults; `appsettings.Development.json` and `.env` are ignored.
+
+For Azure Container Apps, configure ingress with target port `8080`. Add all
+credentials and service URLs as Container App secrets/environment variables;
+the production container does not load `backend/.env`.
 
 The SQL Server schema is tracked in `database/TukiDbSchema.sql`; run it against `TukiDb` in SSMS when setting up or reconciling a local database.
 

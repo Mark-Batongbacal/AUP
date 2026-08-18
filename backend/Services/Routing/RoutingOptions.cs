@@ -28,6 +28,7 @@ public sealed class RoutingOptions
     public double ServiceAreaMaxLatitude { get; init; } = 15.35;
     public double ServiceAreaMinLongitude { get; init; } = 120.35;
     public double ServiceAreaMaxLongitude { get; init; } = 120.9;
+    public double MaxSupportedTripStraightLineMeters { get; init; } = 75_000;
     public double TrikeBaseFarePesos { get; init; } = 35;
     public double TrikeBaseDistanceMeters { get; init; } = 1_000;
     public double TrikePerAdditionalKmPesos { get; init; } = 15;
@@ -41,12 +42,14 @@ public sealed class RoutingOptions
     public double JeepneyBaseFarePesos { get; init; } = 13;
     public string TrikeCostingModel { get; init; } = "auto";
     public int MaxCandidatesToConfirm { get; init; } = 100;
+    public int MaxTransfers { get; init; } = 3;
 
     public bool IsValid(out string error)
     {
         if (MaxNearbyRoutes <= 0 || MaxTripOptions <= 0 || MaxRouteSamples < 2 ||
             MatrixMaxTargets <= 0 || MaxInterchangesPerRoutePair <= 0 ||
-            MaxNearbyTrikeCandidates < 0 || MaxCandidatesToConfirm <= 0)
+            MaxNearbyTrikeCandidates < 0 || MaxCandidatesToConfirm <= 0 ||
+            MaxTransfers is < 0 or > 5)
         {
             error = "Routing count limits must be positive (except MaxNearbyTrikeCandidates, which may be zero).";
             return false;
@@ -57,6 +60,7 @@ public sealed class RoutingOptions
             MaxTransferWalkMeters < 0 || MaxWalkToTrikePointMeters < 0 ||
             MaxWalkOnlyTripDistanceMeters < 0 || MaxWalkTrikeTripDistanceMeters < 0 ||
             MaxWalkAccessDistanceMeters < 0 || TrikeBaseFarePesos < 0 ||
+            MaxSupportedTripStraightLineMeters <= 0 ||
             TrikeBaseDistanceMeters < 0 || TrikePerAdditionalKmPesos < 0 ||
             ValueOfTimePesosPerMinute < 0 || WalkingFatiguePesosPerKilometer < 0 ||
             JeepneyBoardingWaitTimeSeconds < 0 ||
