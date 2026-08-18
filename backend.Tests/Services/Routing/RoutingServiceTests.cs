@@ -120,6 +120,53 @@ public sealed class RoutingServiceTests
     }
 
     [Fact]
+    public async Task PlanTripsAsync_GraphSearchFindsLegitimateThreeTransferJourney()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"tuki-three-transfer-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "TestData"));
+        try
+        {
+            var routes = new List<StaticJeepneyRoute>
+            {
+                Route("A", (15.0000, 120.5000), (15.0000, 120.5100)),
+                Route("B", (15.0000, 120.5100), (15.0100, 120.5100)),
+                Route("C", (15.0100, 120.5100), (15.0100, 120.5200)),
+                Route("D", (15.0100, 120.5200), (15.0200, 120.5200))
+            };
+            File.WriteAllText(Path.Combine(root, "TestData", "jeepney-routes.json"),
+                JsonSerializer.Serialize(routes));
+            var service = CreateService(
+                new FakeValhallaService((source, target, _) => DistanceMeters(source, target)),
+                root,
+                new RoutingOptions
+                {
+                    MaxTransfers = 3,
+                    MaxWalkAccessDistanceMeters = 150,
+                    MaxTransferWalkMeters = 100,
+                    MaxWalkOnlyTripDistanceMeters = 100,
+                    MaxWalkTrikeTripDistanceMeters = 100,
+                    MaxRouteSamples = 20,
+                    DefaultSampleIntervalMeters = 100
+                });
+            var plans = await service.PlanTripsAsync(
+                15.0000, 120.5000, 15.0200, 120.5200);
+            Assert.Contains(plans, plan => plan.TransferCount == 3 &&
+                plan.Legs.Count(leg => leg.Mode == AccessMode.Jeepney) == 4);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+
+        static StaticJeepneyRoute Route(string id,
+            (double Lat, double Lon) from, (double Lat, double Lon) to) => new()
+        {
+            RouteId = id, RouteName = id,
+            Coordinates = [[from.Lon, from.Lat], [to.Lon, to.Lat]]
+        };
+    }
+
+    [Fact]
     public async Task FindConnectingRoutesAsync_IncludesJeepneyTimeAndFareInFinalCost()
     {
         var service = CreateService(new FakeValhallaService((source, target, _) =>

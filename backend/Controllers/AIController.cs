@@ -1,48 +1,20 @@
-using backend.Helpers;
+using backend.Services.Assistant;
 using Microsoft.AspNetCore.Mvc;
-using System.Diagnostics;
-using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace backend.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public sealed class AIController : ControllerBase
+public sealed class AIController(ITukiAssistantService assistant) : ControllerBase
 {
-    private readonly NemotronAIHelper _aiHelper;
-
-    public AIController(NemotronAIHelper aiHelper)
-    {
-        _aiHelper = aiHelper;
-    }
-
     [HttpPost("ask")]
-    public async Task<IActionResult> Ask([FromBody] AIRequest request)
+    public async Task<IActionResult> Ask(
+        [FromBody] AssistantRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Message))
-            return BadRequest("Message cannot be empty.");
-
-        try
-        {
-            var response = await _aiHelper.AskAsync(request.Message);
-
-            return Ok(new
-            {
-                response
-            });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new
-            {
-                error = "An error occurred while communicating with the AI.",
-                details = ex.Message
-            });
-        }
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+            return Unauthorized();
+        var response = await assistant.RespondAsync(userId, request, cancellationToken);
+        return response.Status == "INVALID_REQUEST" ? BadRequest(response) : Ok(response);
     }
-}
-
-public class AIRequest
-{
-    public string Message { get; set; } = string.Empty;
 }

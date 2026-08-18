@@ -8,10 +8,17 @@
   "Login": {
     "ApiKeyLifetimeHours": 8
   },
+  "Facebook": {
+    "AppId": "",
+    "AppSecret": ""
+  },
   "ConnectionStrings": {
     "TukiDbConnection": ""
   },
   "Valhalla": {
+    "BaseUrl": ""
+  },
+  "Pelias": {
     "BaseUrl": ""
   },
   "Cors": {

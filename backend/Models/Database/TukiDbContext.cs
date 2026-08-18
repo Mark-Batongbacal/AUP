@@ -26,6 +26,8 @@ public partial class TukiDbContext : DbContext
     public virtual DbSet<PassengerRideRequest> PassengerRideRequests { get; set; }
 
     public virtual DbSet<PassengerTrip> PassengerTrips { get; set; }
+    public virtual DbSet<NavigationInstruction> NavigationInstructions { get; set; }
+    public virtual DbSet<TripLandmarkCandidate> TripLandmarkCandidates { get; set; }
 
     public virtual DbSet<RecommendationLeg> RecommendationLegs { get; set; }
 
@@ -54,6 +56,7 @@ public partial class TukiDbContext : DbContext
     public virtual DbSet<TripAlert> TripAlerts { get; set; }
 
     public virtual DbSet<TripSearch> TripSearches { get; set; }
+    public virtual DbSet<TripSession> TripSessions { get; set; }
 
     public virtual DbSet<UserProfile> UserProfiles { get; set; }
 
@@ -79,6 +82,9 @@ public partial class TukiDbContext : DbContext
         ConfigurePassengerRideRequests(modelBuilder);
         ConfigureRideMatches(modelBuilder);
         ConfigureTripSearches(modelBuilder);
+        ConfigureTripSessions(modelBuilder);
+        ConfigureNavigationInstructions(modelBuilder);
+        ConfigureTripLandmarkCandidates(modelBuilder);
         ConfigureRouteRecommendations(modelBuilder);
         ConfigureRecommendationLegs(modelBuilder);
         ConfigurePassengerTrips(modelBuilder);
@@ -707,6 +713,72 @@ public partial class TukiDbContext : DbContext
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("FK_TripSearches_UserProfiles");
+        });
+    }
+
+    private static void ConfigureTripSessions(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<TripSession>(entity =>
+        {
+            entity.ToTable("TripSessions", "dbo");
+            entity.HasKey(e => e.TripSessionId);
+            entity.HasIndex(e => new { e.UserId, e.CurrentNavigationState },
+                "IX_TripSessions_User_State");
+            entity.HasIndex(e => e.RecommendationId, "IX_TripSessions_Recommendation");
+            entity.Property(e => e.TripSessionId).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.DestinationName).HasMaxLength(250);
+            entity.Property(e => e.CurrentNavigationState).HasConversion<string>().HasMaxLength(40);
+            entity.Property(e => e.OriginalBudget).HasColumnType("decimal(10, 2)");
+            entity.Property(e => e.OriginalPreference).HasMaxLength(30);
+            entity.Property(e => e.LastRerouteReason).HasMaxLength(50);
+            entity.Property(e => e.LastNavigationStatus).HasMaxLength(50);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.HasOne(e => e.User).WithMany(e => e.TripSessions)
+                .HasForeignKey(e => e.UserId).OnDelete(DeleteBehavior.NoAction)
+                .HasConstraintName("FK_TripSessions_UserProfiles");
+            entity.HasOne(e => e.Recommendation).WithMany(e => e.TripSessions)
+                .HasForeignKey(e => e.RecommendationId).OnDelete(DeleteBehavior.NoAction)
+                .HasConstraintName("FK_TripSessions_RouteRecommendations");
+        });
+    }
+
+    private static void ConfigureNavigationInstructions(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<NavigationInstruction>(entity =>
+        {
+            entity.ToTable("NavigationInstructions", "dbo");
+            entity.HasKey(e => e.NavigationInstructionId);
+            entity.HasIndex(e => new { e.TripSessionId, e.Sequence },
+                "UX_NavigationInstructions_SessionSequence").IsUnique();
+            entity.Property(e => e.NavigationInstructionId).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.Type).HasConversion<string>().HasMaxLength(40);
+            entity.Property(e => e.Audience).HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.Text).HasMaxLength(500);
+            entity.Property(e => e.StreetName).HasMaxLength(250);
+            entity.HasOne(e => e.TripSession).WithMany(e => e.NavigationInstructions)
+                .HasForeignKey(e => e.TripSessionId).OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_NavigationInstructions_TripSessions");
+        });
+    }
+
+    private static void ConfigureTripLandmarkCandidates(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<TripLandmarkCandidate>(entity =>
+        {
+            entity.ToTable("TripLandmarkCandidates", "dbo");
+            entity.HasKey(e => e.TripLandmarkCandidateId);
+            entity.HasIndex(e => new { e.TripSessionId, e.LegIndex, e.DistanceFromRouteStartMeters },
+                "IX_TripLandmarkCandidates_SessionLegProgress");
+            entity.HasIndex(e => new { e.TripSessionId, e.LegIndex, e.ExternalPlaceId },
+                "UX_TripLandmarkCandidates_SessionLegPlace").IsUnique();
+            entity.Property(e => e.TripLandmarkCandidateId).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.ExternalPlaceId).HasMaxLength(250);
+            entity.Property(e => e.Name).HasMaxLength(200);
+            entity.Property(e => e.Category).HasMaxLength(50);
+            entity.Property(e => e.CachedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.HasOne(e => e.TripSession).WithMany(e => e.CachedLandmarks)
+                .HasForeignKey(e => e.TripSessionId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 

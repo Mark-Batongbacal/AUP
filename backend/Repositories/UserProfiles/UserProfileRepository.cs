@@ -21,6 +21,37 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
             .AsNoTracking()
             .FirstOrDefaultAsync(profile => profile.UserId == userId && profile.IsActive, cancellationToken);
 
+    public Task<UserProfile?> GetByExternalAuthAsync(
+        string provider,
+        string externalAuthId,
+        CancellationToken cancellationToken = default) =>
+        _context.UserProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                profile => profile.ExternalAuthProvider == provider &&
+                    profile.ExternalAuthId == externalAuthId,
+                cancellationToken);
+
+    public Task<UserProfile?> GetActiveByExternalAuthAsync(
+        string provider,
+        string externalAuthId,
+        CancellationToken cancellationToken = default) =>
+        _context.UserProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                profile => profile.ExternalAuthProvider == provider &&
+                    profile.ExternalAuthId == externalAuthId &&
+                    profile.IsActive,
+                cancellationToken);
+
+    public Task<UserProfile?> GetActiveByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(
+            profile => profile.Email == email && profile.IsActive, cancellationToken);
+
+    public Task<UserProfile?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(
+            profile => profile.Email == email, cancellationToken);
+
     public async Task<UserProfile> AddOrUpdateAsync(UserProfile profile, CancellationToken cancellationToken = default)
     {
         var existing = await _context.UserProfiles.FirstOrDefaultAsync(
@@ -34,12 +65,40 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
             return profile;
         }
 
+        existing.ExternalAuthProvider = profile.ExternalAuthProvider;
+        existing.ExternalAuthId = profile.ExternalAuthId;
+        existing.Email = profile.Email;
         existing.FirstName = profile.FirstName;
         existing.LastName = profile.LastName;
         existing.PhoneNumber = profile.PhoneNumber;
         existing.Role = profile.Role;
         existing.ProfileImageUrl = profile.ProfileImageUrl;
         existing.IsActive = profile.IsActive;
+        existing.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return existing;
+    }
+
+    public async Task<UserProfile?> UpdateEditableFieldsAsync(
+        Guid userId,
+        string? firstName,
+        string? lastName,
+        string? phoneNumber,
+        string? profileImageUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.UserProfiles.FirstOrDefaultAsync(
+            currentProfile => currentProfile.UserId == userId && currentProfile.IsActive,
+            cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        existing.FirstName = firstName;
+        existing.LastName = lastName;
+        existing.PhoneNumber = phoneNumber;
+        existing.ProfileImageUrl = profileImageUrl;
         existing.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return existing;

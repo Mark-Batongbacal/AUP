@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using backend.Services.Authentication.Login;
 using Microsoft.Extensions.Options;
 
-namespace backend.Services;
+namespace backend.Services.Authentication.ApiKey;
 
 public interface IApiKeyService
 {

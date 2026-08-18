@@ -1,8 +1,27 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.secrets)
 }
+
+val localConfig = Properties().apply {
+    val defaultsFile = rootProject.file("local.defaults.properties")
+    if (defaultsFile.exists()) {
+        defaultsFile.inputStream().use(::load)
+    }
+
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        localFile.inputStream().use(::load)
+    }
+}
+
+fun localConfigValue(name: String): String = localConfig.getProperty(name, "")
+
+fun String.asBuildConfigString(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "com.example.frontend"
@@ -20,6 +39,31 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "BACKEND_BASE_URL",
+            localConfigValue("BACKEND_BASE_URL").asBuildConfigString()
+        )
+        resValue(
+            "string",
+            "google_server_client_id",
+            localConfigValue("GOOGLE_SERVER_CLIENT_ID")
+        )
+        resValue(
+            "string",
+            "facebook_app_id",
+            localConfigValue("FACEBOOK_APP_ID")
+        )
+        resValue(
+            "string",
+            "fb_login_protocol_scheme",
+            "fb${localConfigValue("FACEBOOK_APP_ID")}"
+        )
+        resValue(
+            "string",
+            "facebook_client_token",
+            localConfigValue("FACEBOOK_CLIENT_TOKEN")
+        )
     }
 
     buildTypes {
@@ -36,6 +80,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 }
 
@@ -48,8 +93,14 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.google.identity.googleid)
     implementation(libs.google.maps.compose)
+    implementation(libs.facebook.login)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
     implementation("androidx.navigation:navigation-compose:2.8.0")
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

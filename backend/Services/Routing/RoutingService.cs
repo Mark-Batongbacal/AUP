@@ -4,6 +4,7 @@ using backend.Models.Valhalla;
 using backend.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using backend.Services.Telemetry;
 
 namespace backend.Services.Routing;
 
@@ -37,12 +38,15 @@ public partial class RoutingService : IRoutingService
     // "auto" is a road-network proxy, not a tricycle legality model.
     private string TrikeCostingModel => _options.TrikeCostingModel;
     private int MaxCandidatesToConfirm => _options.MaxCandidatesToConfirm;
+    private int MaxTransfers => _options.MaxTransfers;
 
     private const double EarthRadiusMeters = 6_371_000;
 
     private readonly IValhallaService _valhallaService;
     private readonly ILogger<RoutingService> _logger;
     private readonly RoutingOptions _options;
+    private readonly ITripAreaValidator _tripAreaValidator;
+    private readonly ITukiTelemetry _telemetry;
     private List<StaticJeepneyRoute> _routes = [];
     private List<TrikePoint> _trikePoints = [];
 
@@ -64,11 +68,15 @@ public partial class RoutingService : IRoutingService
         ITransportRouteRepository transportRouteRepository,
         ITricyclePointRepository tricyclePointRepository,
         ILogger<RoutingService> logger,
-        IOptions<RoutingOptions> options)
+        IOptions<RoutingOptions> options,
+        ITripAreaValidator? tripAreaValidator = null,
+        ITukiTelemetry? telemetry = null)
     {
         _valhallaService = valhallaService;
         _logger = logger;
         _options = options.Value;
+        _tripAreaValidator = tripAreaValidator ?? new TripAreaValidator(options);
+        _telemetry = telemetry ?? NullTukiTelemetry.Instance;
         _transportRouteRepository = transportRouteRepository;
         _tricyclePointRepository = tricyclePointRepository;
 

@@ -1,0 +1,15 @@
+.git
+.gitignore
+.github
+.idea
+.vscode
+**/.env
+**/appsettings.Development.json
+**/backend.http
+**/bin
+**/obj
+**/TestResults
+backend.Tests
+frontend
+database
+*.md

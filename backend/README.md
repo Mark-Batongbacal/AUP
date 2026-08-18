@@ -8,6 +8,9 @@ export Login__Users__0__Password='your-login-password'
 export NVIDIA_API_KEY='your-nvidia-api-key'
 export ConnectionStrings__TukiDbConnection='<sql-server-connection-string>'
 export Valhalla__BaseUrl='https://your-valhalla-instance.example.com'
+export Facebook__AppId='<facebook-app-id>'
+export Facebook__AppSecret='<facebook-app-secret>'
+export Pelias__BaseUrl='http://your-pelias-instance.example.com:4000'
 ```
 
 Both `.env` and `appsettings.Development.json` are intentionally ignored by Git. Never put API keys, passwords, database connection strings, or issued API keys in `.http` request files.
@@ -33,6 +36,9 @@ Login__Users__3__UserName=<fourth-user-name>
 Login__Users__3__Password=<another-long-unique-password>
 NVIDIA_API_KEY=<your-nvidia-api-key>
 ConnectionStrings__TukiDbConnection=<sql-server-connection-string>
+Facebook__AppId=<facebook-app-id>
+Facebook__AppSecret=<facebook-app-secret>
+Pelias__BaseUrl=<your-pelias-base-url>
 ```
 
 Render provides `PORT` automatically. The application listens on that port inside the container.

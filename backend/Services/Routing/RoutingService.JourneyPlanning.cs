@@ -12,6 +12,16 @@ public partial class RoutingService
         double destinationLongitude,
         CancellationToken cancellationToken = default)
     {
+        using var routingMeasurement = _telemetry.Measure("RoutePlanning");
+        var areaValidation = _tripAreaValidator.ValidateTrip(
+            originLatitude, originLongitude,
+            destinationLatitude, destinationLongitude);
+        if (!areaValidation.IsValid)
+        {
+            throw new RoutingValidationException(
+                areaValidation.ErrorCode!, areaValidation.Message!);
+        }
+
         await EnsureInitializedAsync(cancellationToken);
 
         var boardAccessPrefixByRoute =
@@ -90,180 +100,10 @@ public partial class RoutingService
                     JeepneyBaseFarePesos)));
         }
 
-        // 1 and 2 transfers.
-        foreach (var route in _routes)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (!_routeSamples.TryGetValue(
-                    route.RouteId,
-                    out var samplesA))
-            {
-                continue;
-            }
-
-            if (!_interchangesByRoute.TryGetValue(
-                    route.RouteId,
-                    out var edgesFromA))
-            {
-                continue;
-            }
-
-            var prefixA =
-                boardAccessPrefixByRoute[route.RouteId];
-
-            foreach (var edge1 in edgesFromA)
-            {
-                // Boarding must occur before the first transfer.
-                if (edge1.OwnIndex == 0)
-                    continue;
-
-                var boardAccess =
-                    prefixA.Access[edge1.OwnIndex];
-
-                if (boardAccess is null)
-                    continue;
-
-                var transferFromA =
-                    samplesA[edge1.OwnIndex];
-
-                var samplesB =
-                    _routeSamples[edge1.OtherRouteId];
-
-                var transferToB =
-                    samplesB[edge1.OtherIndex];
-
-                var suffixB =
-                    alightAccessSuffixByRoute[
-                        edge1.OtherRouteId];
-
-                // Do not choose a transfer solely because it is
-                // geographically closest. Score the complete provisional
-                // journey: access + first jeepney ride + transfer walk +
-                // second jeepney ride + destination access.
-                var oneTransfer = BuildOneTransferCandidate(
-                    route,
-                    samplesA,
-                    edge1,
-                    boardAccess,
-                    suffixB);
-
-                if (oneTransfer is not null)
-                    candidates.Add(oneTransfer);
-
-                if (!_interchangesByRoute.TryGetValue(
-                        edge1.OtherRouteId,
-                        out var edgesFromB))
-                {
-                    continue;
-                }
-
-                foreach (var edge2 in edgesFromB)
-                {
-                    // On the second route, the second transfer must happen
-                    // after the first transfer point.
-                    if (edge2.OwnIndex <= edge1.OtherIndex)
-                        continue;
-
-                    if (edge2.OtherRouteId == route.RouteId)
-                        continue;
-
-                    var transferFromB =
-                        samplesB[edge2.OwnIndex];
-
-                    var samplesC =
-                        _routeSamples[edge2.OtherRouteId];
-
-                    var transferToC =
-                        samplesC[edge2.OtherIndex];
-
-                    var suffixC =
-                        alightAccessSuffixByRoute[
-                            edge2.OtherRouteId];
-
-                    if (edge2.OtherIndex >= samplesC.Count - 1)
-                        continue;
-
-                    var alightAccessC =
-                        suffixC.Access[edge2.OtherIndex];
-
-                    if (alightAccessC is null)
-                        continue;
-
-                    var legs = new List<JourneyLegCandidate>
-                    {
-                        new(
-                            route.RouteId,
-                            route.RouteName,
-                            boardAccess.Anchor,
-                            transferFromA,
-                            boardAccess.RouteSampleIndex,
-                            edge1.OwnIndex,
-                            boardAccess.FullRouteAnchor,
-                            GetRouteAnchor(
-                                route.RouteId,
-                                edge1.OwnIndex,
-                                transferFromA)),
-                        new(
-                            edge1.OtherRouteId,
-                            edge1.OtherRouteName,
-                            transferToB,
-                            transferFromB,
-                            edge1.OtherIndex,
-                            edge2.OwnIndex,
-                            GetRouteAnchor(
-                                edge1.OtherRouteId,
-                                edge1.OtherIndex,
-                                transferToB),
-                            GetRouteAnchor(
-                                edge1.OtherRouteId,
-                                edge2.OwnIndex,
-                                transferFromB)),
-                        new(
-                            edge2.OtherRouteId,
-                            edge2.OtherRouteName,
-                            transferToC,
-                            alightAccessC.Anchor,
-                            edge2.OtherIndex,
-                            alightAccessC.RouteSampleIndex,
-                            GetRouteAnchor(
-                                edge2.OtherRouteId,
-                                edge2.OtherIndex,
-                                transferToC),
-                            alightAccessC.FullRouteAnchor)
-                    };
-
-                    candidates.Add(new JourneyCandidate(
-                        legs,
-                        boardAccess,
-                        alightAccessC,
-                        [
-                            new WalkSegmentCandidate(
-                                transferFromA,
-                                transferToB,
-                                edge1.DistanceMeters),
-
-                            new WalkSegmentCandidate(
-                                transferFromB,
-                                transferToC,
-                                edge2.DistanceMeters)
-                        ],
-                        boardAccess.GeneralizedCostPesos +
-                        alightAccessC.GeneralizedCostPesos +
-                        GeneralizedCostFromWalking(
-                            edge1.DistanceMeters /
-                            WalkingSpeedMetersPerSecond,
-                            edge1.DistanceMeters) +
-                        GeneralizedCostFromWalking(
-                            edge2.DistanceMeters /
-                            WalkingSpeedMetersPerSecond,
-                            edge2.DistanceMeters) +
-                        GeneralizedCostFromTimeAndFare(
-                            EstimateJeepneyTravelTimeSeconds(legs),
-                            legs.Count * JeepneyBaseFarePesos)));
-                }
-            }
-        }
+        candidates.AddRange(FindTransferCandidates(
+            boardAccessPrefixByRoute,
+            alightAccessSuffixByRoute,
+            cancellationToken));
 
         // Access generation stores walking and tricycle choices together on
         // one route anchor. Expand them before ranking; otherwise confirmation
@@ -308,7 +148,10 @@ public partial class RoutingService
                 .First())
             .ToList();
 
-        return SelectObjectivePlans(distinctPlans);
+        var selectedPlans = SelectObjectivePlans(distinctPlans);
+        _telemetry.Event(selectedPlans.Count == 0 ? "NoRouteFound" : "TripPlanned",
+            outcome: selectedPlans.Count.ToString());
+        return selectedPlans;
     }
 
     private static IEnumerable<JourneyCandidate> ExpandAccessAlternatives(

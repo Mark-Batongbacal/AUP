@@ -34,4 +34,5 @@ public partial class RouteRecommendation
     public virtual ICollection<RecommendationLeg> RecommendationLegs { get; set; } = new List<RecommendationLeg>();
 
     public virtual TripSearch TripSearch { get; set; } = null!;
+    public virtual ICollection<TripSession> TripSessions { get; set; } = new List<TripSession>();
 }

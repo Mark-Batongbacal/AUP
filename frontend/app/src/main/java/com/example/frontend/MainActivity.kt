@@ -1,24 +1,41 @@
 package com.example.frontend
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.credentials.CredentialManager
+import com.example.frontend.auth.AuthRepository
+import com.example.frontend.auth.AuthResult
+import com.example.frontend.auth.FacebookSignInClient
+import com.example.frontend.auth.FacebookSignInResult
+import com.example.frontend.auth.GoogleSignInClient
+import com.example.frontend.auth.GoogleSignInResult
+import com.example.frontend.auth.SharedPreferencesTukiCredentialStore
+import com.example.frontend.auth.TukiApiClient
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.navigation.AppScreen
 import com.example.frontend.screens.CommuteDetailScreen
+import com.example.frontend.screens.FavoritesScreen
 import com.example.frontend.screens.HomeScreen
+import com.example.frontend.screens.LoginActionResult
 import com.example.frontend.screens.LoginScreen
 import com.example.frontend.screens.OnboardingScreen
+import com.example.frontend.screens.ProfileScreen
+import com.example.frontend.screens.RecentScreen
+import com.example.frontend.screens.RouteResultsScreen
 import com.example.frontend.screens.SignupScreen
 import com.example.frontend.ui.theme.FrontendTheme
-import com.example.frontend.screens.RouteResultsScreen
-import com.example.frontend.screens.RecentScreen
-import com.example.frontend.screens.FavoritesScreen
-import com.example.frontend.screens.ProfileScreen
 
 class MainActivity : ComponentActivity() {
+    private val facebookSignInClient = FacebookSignInClient()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,14 +43,41 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             FrontendTheme {
-                TukiApp()
+                TukiApp(facebookSignInClient)
             }
         }
+    }
+
+    @Deprecated("Deprecated in Java")
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        facebookSignInClient.onActivityResult(requestCode, resultCode, data)
     }
 }
 
 @Composable
-fun TukiApp() {
+fun TukiApp(
+    facebookSignInClient: FacebookSignInClient = FacebookSignInClient()
+) {
+    val context = LocalContext.current
+    val activity = context.findActivity()
+    val googleServerClientId = stringResource(R.string.google_server_client_id)
+    val facebookAppId = stringResource(R.string.facebook_app_id)
+    val facebookClientToken = stringResource(R.string.facebook_client_token)
+    val credentialStore = remember {
+        SharedPreferencesTukiCredentialStore(context.applicationContext)
+    }
+    val authRepository = remember {
+        AuthRepository(
+            authApi = TukiApiClient.createAuthApi(),
+            credentialStore = credentialStore
+        )
+    }
+    val googleSignInClient = remember {
+        GoogleSignInClient(CredentialManager.create(context))
+    }
+
     var currentScreen by remember {
         mutableStateOf(AppScreen.ONBOARDING)
     }
@@ -69,6 +113,61 @@ fun TukiApp() {
                 },
                 onLoginSuccess = {
                     currentScreen = AppScreen.HOME
+                },
+                onGoogleLoginClick = {
+                    if (activity == null) {
+                        LoginActionResult.Error("Google sign-in is unavailable right now.")
+                    } else {
+                        when (
+                            val googleResult = googleSignInClient.getIdToken(
+                                activity = activity,
+                                serverClientId = googleServerClientId
+                            )
+                        ) {
+                            is GoogleSignInResult.Success -> {
+                                when (val authResult = authRepository.loginWithGoogle(googleResult.idToken)) {
+                                    AuthResult.Success -> LoginActionResult.Success
+                                    is AuthResult.Failure -> LoginActionResult.Error(authResult.message)
+                                }
+                            }
+
+                            is GoogleSignInResult.Failure -> {
+                                LoginActionResult.Error(googleResult.message)
+                            }
+                        }
+                    }
+                },
+                onFacebookLoginClick = {
+                    if (activity == null) {
+                        LoginActionResult.Error("Facebook sign-in is unavailable right now.")
+                    } else {
+                        when (
+                            val facebookResult = facebookSignInClient.getAccessToken(
+                                activity = activity,
+                                appId = facebookAppId,
+                                clientToken = facebookClientToken
+                            )
+                        ) {
+                            is FacebookSignInResult.Success -> {
+                                when (
+                                    val authResult = authRepository.loginWithFacebook(
+                                        facebookResult.accessToken
+                                    )
+                                ) {
+                                    AuthResult.Success -> LoginActionResult.Success
+                                    is AuthResult.Failure -> LoginActionResult.Error(authResult.message)
+                                }
+                            }
+
+                            FacebookSignInResult.Canceled -> {
+                                LoginActionResult.Canceled
+                            }
+
+                            is FacebookSignInResult.Failure -> {
+                                LoginActionResult.Error(facebookResult.message)
+                            }
+                        }
+                    }
                 }
             )
         }
@@ -175,3 +274,10 @@ fun TukiApp() {
         }
     }
 }
+
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }

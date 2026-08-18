@@ -3,6 +3,8 @@ package com.example.frontend.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,8 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import androidx.compose.foundation.clickable
-import kotlinx.coroutines.delay
-import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.launch
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -52,7 +54,15 @@ fun LoginScreen(
     onBack: () -> Unit = {},
     onSignUpClick: () -> Unit = {},
     onLoginSuccess: () -> Unit = {},
+    onGoogleLoginClick: suspend () -> LoginActionResult = {
+        LoginActionResult.Error("Google login is not configured.")
+    },
+    onFacebookLoginClick: suspend () -> LoginActionResult = {
+        LoginActionResult.Error("Facebook login is not configured.")
+    },
 ) {
+    val coroutineScope = rememberCoroutineScope()
+
     var email by remember {
         mutableStateOf("")
     }
@@ -65,21 +75,24 @@ fun LoginScreen(
         mutableStateOf(false)
     }
 
-    var isSocialLoggingIn by remember {
+    var isGoogleLoggingIn by remember {
         mutableStateOf(false)
     }
 
-    LaunchedEffect(isSocialLoggingIn) {
-        if (isSocialLoggingIn) {
-            delay(1000)
-            onLoginSuccess()
-            isSocialLoggingIn = false
-        }
+    var isFacebookLoggingIn by remember {
+        mutableStateOf(false)
     }
+
+    var loginError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    val isSocialLoginInProgress = isGoogleLoggingIn || isFacebookLoggingIn
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .background(Color.White)
             .padding(
                 start = 34.dp,
@@ -260,17 +273,35 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             OutlinedButton(
                 onClick = {
-                    isSocialLoggingIn = true
+                    if (!isSocialLoginInProgress) {
+                        coroutineScope.launch {
+                            loginError = null
+                            isGoogleLoggingIn = true
+                            when (val result = onGoogleLoginClick()) {
+                                is LoginActionResult.Success -> {
+                                    onLoginSuccess()
+                                }
+
+                                LoginActionResult.Canceled -> Unit
+
+                                is LoginActionResult.Error -> {
+                                    loginError = result.message
+                                }
+                            }
+                            isGoogleLoggingIn = false
+                        }
+                    }
                 },
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxWidth()
                     .height(76.dp),
+                enabled = !isSocialLoginInProgress,
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(
                     3.dp,
@@ -289,9 +320,13 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
-                        text = "Google",
+                        text = if (isGoogleLoggingIn) {
+                            "Connecting..."
+                        } else {
+                            "Continue with Google"
+                        },
                         color = TukiDark,
-                        fontSize = 18.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -299,11 +334,29 @@ fun LoginScreen(
 
             OutlinedButton(
                 onClick = {
-                    isSocialLoggingIn = true
+                    if (!isSocialLoginInProgress) {
+                        coroutineScope.launch {
+                            loginError = null
+                            isFacebookLoggingIn = true
+                            when (val result = onFacebookLoginClick()) {
+                                is LoginActionResult.Success -> {
+                                    onLoginSuccess()
+                                }
+
+                                LoginActionResult.Canceled -> Unit
+
+                                is LoginActionResult.Error -> {
+                                    loginError = result.message
+                                }
+                            }
+                            isFacebookLoggingIn = false
+                        }
+                    }
                 },
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxWidth()
                     .height(76.dp),
+                enabled = !isSocialLoginInProgress,
                 shape = RoundedCornerShape(20.dp),
                 border = BorderStroke(
                     3.dp,
@@ -322,13 +375,28 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
-                        text = "Facebook",
+                        text = if (isFacebookLoggingIn) {
+                            "Connecting..."
+                        } else {
+                            "Continue with Facebook"
+                        },
                         color = TukiDark,
-                        fontSize = 16.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
+        }
+
+        loginError?.let { message ->
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = message,
+                color = Color(0xFFB00020),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -352,4 +420,10 @@ fun LoginScreen(
             )
         }
     }
+}
+
+sealed interface LoginActionResult {
+    data object Success : LoginActionResult
+    data object Canceled : LoginActionResult
+    data class Error(val message: String) : LoginActionResult
 }
