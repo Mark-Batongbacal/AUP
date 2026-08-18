@@ -116,6 +116,15 @@ Content-Type: application/json
 
 ###
 
+POST {{backend_HostAddress}}/api/auth/facebook
+Content-Type: application/json
+
+{
+  "accessToken": "INVALID_TEST_TOKEN"
+}
+
+###
+
 ### Generate each consecutive waypoint segment through Valhalla, then create
 ### the jeepney route and its ordered geometry in one database write
 POST {{backend_HostAddress}}/api/transport-routes

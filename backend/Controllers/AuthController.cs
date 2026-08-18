@@ -19,10 +19,14 @@ public sealed class AuthController(
     IUserProfileRepository userProfiles,
     IOptions<LoginOptions> options,
     IOptions<GoogleOptions> googleOptions,
-    IGoogleIdTokenValidator googleIdTokenValidator) : ControllerBase
+    IOptions<FacebookOptions> facebookOptions,
+    IGoogleIdTokenValidator googleIdTokenValidator,
+    IFacebookAccessTokenValidator facebookAccessTokenValidator,
+    IFacebookOidcTokenValidator facebookOidcTokenValidator) : ControllerBase
 {
     private readonly LoginOptions _options = options.Value;
     private readonly GoogleOptions _googleOptions = googleOptions.Value;
+    private readonly FacebookOptions _facebookOptions = facebookOptions.Value;
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -131,6 +135,105 @@ public sealed class AuthController(
         return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
     }
 
+    [HttpPost("facebook")]
+    [AllowAnonymous]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<LoginResponse>> Facebook(
+        FacebookLoginRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_facebookOptions.AppId) ||
+            string.IsNullOrWhiteSpace(_facebookOptions.AppSecret))
+        {
+            return Problem(
+                title: "Facebook login is not configured.",
+                detail: "The Facebook app ID or app secret is missing.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        if (request is null || string.IsNullOrWhiteSpace(request.AccessToken))
+        {
+            return Unauthorized(new { message = "Invalid Facebook token." });
+        }
+
+        FacebookUserInfo profile;
+        try
+        {
+            profile = await facebookAccessTokenValidator.ValidateAsync(
+                request.AccessToken,
+                _facebookOptions.AppId,
+                _facebookOptions.AppSecret,
+                cancellationToken);
+        }
+        catch (FacebookAccessTokenValidationException)
+        {
+            return Unauthorized(new { message = "Invalid Facebook token." });
+        }
+        catch (FacebookTokenValidationUnavailableException)
+        {
+            return Problem(
+                title: "Facebook login is temporarily unavailable.",
+                detail: "The Facebook access token could not be validated at this time.",
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        var issuedKey = apiKeyService.Create($"facebook:{profile.UserId}");
+        return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
+    }
+
+    [HttpPost("facebook/oidc")]
+    [AllowAnonymous]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<LoginResponse>> FacebookOidc(
+        FacebookOidcLoginRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_facebookOptions.AppId))
+        {
+            return Problem(
+                title: "Facebook login is not configured.",
+                detail: "The Facebook app ID is missing.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        if (request is null ||
+            string.IsNullOrWhiteSpace(request.IdToken) ||
+            string.IsNullOrWhiteSpace(request.Nonce))
+        {
+            return Unauthorized(new { message = "Invalid Facebook token." });
+        }
+
+        FacebookOidcUserInfo profile;
+        try
+        {
+            profile = await facebookOidcTokenValidator.ValidateAsync(
+                request.IdToken,
+                _facebookOptions.AppId,
+                request.Nonce,
+                cancellationToken);
+        }
+        catch (FacebookOidcTokenValidationException)
+        {
+            return Unauthorized(new { message = "Invalid Facebook token." });
+        }
+        catch (FacebookOidcTokenValidationUnavailableException)
+        {
+            return Problem(
+                title: "Facebook login is temporarily unavailable.",
+                detail: "The Facebook authentication token could not be validated at this time.",
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        var issuedKey = apiKeyService.Create($"facebook:{profile.Subject}");
+        return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
+    }
+
     [HttpGet("me")]
     [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
     public ActionResult<object> Me() => Ok(new { userName = User.Identity?.Name });
@@ -149,6 +252,10 @@ public sealed record LoginRequest(
     [Required, StringLength(256, MinimumLength = 8)] string Password);
 
 public sealed record GoogleLoginRequest(string? IdToken);
+
+public sealed record FacebookLoginRequest(string? AccessToken);
+
+public sealed record FacebookOidcLoginRequest(string? IdToken, string? Nonce);
 
 public sealed record LoginResponse(string ApiKey, DateTimeOffset ExpiresAt)
 {
