@@ -12,14 +12,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.credentials.CredentialManager
-import com.example.frontend.auth.AuthRepository
-import com.example.frontend.auth.AuthResult
 import com.example.frontend.auth.FacebookSignInClient
 import com.example.frontend.auth.FacebookSignInResult
 import com.example.frontend.auth.GoogleSignInClient
 import com.example.frontend.auth.GoogleSignInResult
-import com.example.frontend.auth.SharedPreferencesTukiCredentialStore
-import com.example.frontend.auth.TukiApiClient
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.navigation.AppScreen
 import com.example.frontend.screens.CommuteDetailScreen
@@ -65,15 +63,8 @@ fun TukiApp(
     val googleServerClientId = stringResource(R.string.google_server_client_id)
     val facebookAppId = stringResource(R.string.facebook_app_id)
     val facebookClientToken = stringResource(R.string.facebook_client_token)
-    val credentialStore = remember {
-        SharedPreferencesTukiCredentialStore(context.applicationContext)
-    }
-    val authRepository = remember {
-        AuthRepository(
-            authApi = TukiApiClient.createAuthApi(),
-            credentialStore = credentialStore
-        )
-    }
+    val dataProvider = remember { TukiDataProvider(context.applicationContext) }
+    val authRepository = dataProvider.authRepository
     val googleSignInClient = remember {
         GoogleSignInClient(CredentialManager.create(context))
     }
@@ -126,8 +117,8 @@ fun TukiApp(
                         ) {
                             is GoogleSignInResult.Success -> {
                                 when (val authResult = authRepository.loginWithGoogle(googleResult.idToken)) {
-                                    AuthResult.Success -> LoginActionResult.Success
-                                    is AuthResult.Failure -> LoginActionResult.Error(authResult.message)
+                                    is ApiResult.Success -> LoginActionResult.Success
+                                    is ApiResult.Failure -> LoginActionResult.Error(authResult.message)
                                 }
                             }
 
@@ -154,8 +145,8 @@ fun TukiApp(
                                         facebookResult.accessToken
                                     )
                                 ) {
-                                    AuthResult.Success -> LoginActionResult.Success
-                                    is AuthResult.Failure -> LoginActionResult.Error(authResult.message)
+                                    is ApiResult.Success -> LoginActionResult.Success
+                                    is ApiResult.Failure -> LoginActionResult.Error(authResult.message)
                                 }
                             }
 
