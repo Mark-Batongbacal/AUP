@@ -20,10 +20,19 @@ public sealed class TripLandmarkCandidateRepository(TukiDbContext context)
         CancellationToken cancellationToken = default) =>
         context.TripLandmarkCandidates.AsNoTracking()
             .Where(item => item.TripSessionId == sessionId && item.LegIndex == legIndex &&
+                item.Role == LandmarkRole.ProgressReference &&
                 item.TriggeredAt == null &&
                 item.DistanceFromRouteStartMeters >= previousProgress - item.TriggerAfterMeters &&
                 item.DistanceFromRouteStartMeters <= currentProgress + item.TriggerBeforeMeters)
             .OrderBy(item => item.DistanceFromRouteStartMeters).ToListAsync(cancellationToken);
+
+    public Task<List<TripLandmarkCandidate>> GetForLegAsync(
+        Guid sessionId, int legIndex, CancellationToken cancellationToken = default) =>
+        context.TripLandmarkCandidates.AsNoTracking()
+            .Where(item => item.TripSessionId == sessionId && item.LegIndex == legIndex)
+            .OrderBy(item => item.Role)
+            .ThenBy(item => item.DistanceFromTargetMeters)
+            .ToListAsync(cancellationToken);
 
     public async Task MarkTriggeredAsync(Guid candidateId, DateTime triggeredAt, CancellationToken cancellationToken = default)
     {

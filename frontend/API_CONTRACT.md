@@ -1,6 +1,29 @@
 # Android API contract
 
-Source checked: backend `dev` at `971f4b1`. All paths below are relative to `BuildConfig.BACKEND_BASE_URL`.
+Source checked: backend `dev` at `78252e9` plus the navigation-facade changes in this worktree. All paths below are relative to `BuildConfig.BACKEND_BASE_URL`.
+
+## High-level mobile navigation API (recommended)
+
+Android should use `NavigationRepository` for an active journey. Each operation returns one complete `NavigationSnapshotDto`; the app does not need a follow-up session, instruction, or landmark request.
+
+| Flow | Endpoint | Repository method |
+|---|---|---|
+| Plan and persist recommendations | `POST api/journeys/plan` | `RoutingRepository.planJourneys(request)` |
+| Start a selected recommendation | `POST api/navigation/start` | `startNavigation(recommendationId)` |
+| Restore the active journey | `GET api/navigation/active` | `getActiveNavigation()` |
+| Send GPS and receive updated state | `POST api/navigation/{sessionId}/location` | `updateLocation(sessionId, update)` |
+| Confirm boarding | `POST api/navigation/{sessionId}/boarding` | `confirmBoarding(sessionId)` |
+| Confirm alighting | `POST api/navigation/{sessionId}/alighting` | `confirmAlighting(sessionId)` |
+| Cancel | `POST api/navigation/{sessionId}/cancel` | `cancel(sessionId)` |
+| Explicit reroute (normally automatic after a deterministic off-route decision) | `POST api/navigation/{sessionId}/reroute` | `reroute(sessionId, reason)` |
+
+`NavigationSnapshotDto.state`, `nextInstruction`, confirmation flags, distances, leg data, and landmark role/relation are authoritative. `spokenInstruction` is presentation text produced by the backend and may be absent; clients must never parse it to determine state. Landmark wire roles are `BOARD_REFERENCE`, `ALIGHT_REFERENCE`, and `PROGRESS_REFERENCE`; relevant relations are `NEAR_BOARD_POINT`, `BEFORE_ALIGHT`, and `ALONG_ROUTE`.
+
+Use `RoutingRepository.planJourneys` for the mobile flow; it returns each deterministic plan with its persisted recommendation ID for `startNavigation`. The older `planTrip` method remains available for compatibility and diagnostics but does not create startable recommendations.
+
+## Low-level / legacy / internal APIs
+
+The APIs below remain supported for compatibility and administrative/internal workflows. New Android navigation flows should not coordinate `Trips` and `TripSessions` directly.
 
 | Backend controller | Endpoint | Retrofit method | Repository method | Response DTO |
 |---|---|---|---|---|

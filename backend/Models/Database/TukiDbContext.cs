@@ -732,6 +732,8 @@ public partial class TukiDbContext : DbContext
             entity.Property(e => e.OriginalPreference).HasMaxLength(30);
             entity.Property(e => e.LastRerouteReason).HasMaxLength(50);
             entity.Property(e => e.LastNavigationStatus).HasMaxLength(50);
+            entity.Property(e => e.LastSpeechEventKey).HasMaxLength(250);
+            entity.Property(e => e.LastSpokenInstruction).HasMaxLength(500);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())");
             entity.HasOne(e => e.User).WithMany(e => e.TripSessions)
@@ -776,6 +778,8 @@ public partial class TukiDbContext : DbContext
             entity.Property(e => e.ExternalPlaceId).HasMaxLength(250);
             entity.Property(e => e.Name).HasMaxLength(200);
             entity.Property(e => e.Category).HasMaxLength(50);
+            entity.Property(e => e.Role).HasConversion<string>().HasMaxLength(30);
+            entity.Property(e => e.Relation).HasConversion<string>().HasMaxLength(30);
             entity.Property(e => e.CachedAt).HasDefaultValueSql("(sysutcdatetime())");
             entity.HasOne(e => e.TripSession).WithMany(e => e.CachedLandmarks)
                 .HasForeignKey(e => e.TripSessionId).OnDelete(DeleteBehavior.Cascade);

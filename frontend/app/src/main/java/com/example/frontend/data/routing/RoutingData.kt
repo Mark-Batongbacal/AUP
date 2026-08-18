@@ -6,6 +6,8 @@ import com.example.frontend.core.network.authenticatedApiCall
 import com.example.frontend.core.storage.AuthSessionStore
 import retrofit2.Response
 import retrofit2.http.GET
+import retrofit2.http.Body
+import retrofit2.http.POST
 import retrofit2.http.Query
 
 data class NearbyJeepneyRouteDto(
@@ -72,6 +74,21 @@ data class JeepneyTripPlanDto(
     val transferCount: Int
 )
 
+data class JourneyPlanRequest(
+    val originLatitude: Double,
+    val originLongitude: Double,
+    val destinationName: String,
+    val destinationLatitude: Double,
+    val destinationLongitude: Double,
+    val budget: Double? = null,
+    val preference: String? = null
+)
+
+data class MobileJourneyRecommendationDto(
+    val recommendationId: String,
+    val plan: JeepneyTripPlanDto
+)
+
 sealed interface TransitMode {
     data object Walk : TransitMode
     data object Trike : TransitMode
@@ -105,6 +122,7 @@ data class JourneyLeg(
 )
 
 data class JourneyPlan(val legs: List<JourneyLeg>, val source: JeepneyTripPlanDto)
+data class PlannedJourney(val recommendationId: String, val journey: JourneyPlan)
 
 fun JeepneyTripPlanDto.toDomain() = JourneyPlan(
     legs = legs.map { leg ->
@@ -126,6 +144,11 @@ fun JeepneyTripPlanDto.toDomain() = JourneyPlan(
 )
 
 interface RoutingApi {
+    @POST("api/journeys/plan")
+    suspend fun planJourneys(
+        @Body request: JourneyPlanRequest
+    ): Response<List<MobileJourneyRecommendationDto>>
+
     @GET("api/test/jeepney/nearby")
     suspend fun nearby(@Query("lat") latitude: Double, @Query("lon") longitude: Double): Response<List<NearbyJeepneyRouteDto>>
 
@@ -139,6 +162,7 @@ interface RoutingApi {
 }
 
 interface RoutingRepository {
+    suspend fun planJourneys(request: JourneyPlanRequest): ApiResult<List<PlannedJourney>>
     suspend fun findNearbyRoutes(latitude: Double, longitude: Double): ApiResult<List<NearbyJeepneyRouteDto>>
     suspend fun planTrip(originLatitude: Double, originLongitude: Double, destinationLatitude: Double, destinationLongitude: Double): ApiResult<List<JourneyPlan>>
 }
@@ -148,6 +172,14 @@ class RoutingRepositoryImpl(
     private val sessions: AuthSessionStore,
     private val errors: ApiErrorParser
 ) : RoutingRepository {
+    override suspend fun planJourneys(request: JourneyPlanRequest): ApiResult<List<PlannedJourney>> =
+        when (val result = authenticatedApiCall(sessions, errors) { api.planJourneys(request) }) {
+            is ApiResult.Success -> ApiResult.Success(result.data.map {
+                PlannedJourney(it.recommendationId, it.plan.toDomain())
+            })
+            is ApiResult.Failure -> result
+        }
+
     override suspend fun findNearbyRoutes(latitude: Double, longitude: Double) =
         authenticatedApiCall(sessions, errors) { api.nearby(latitude, longitude) }
 
@@ -159,4 +191,3 @@ class RoutingRepositoryImpl(
             is ApiResult.Failure -> result
         }
 }
-

@@ -16,6 +16,9 @@ import com.example.frontend.data.drivers.DriverRepositoryImpl
 import com.example.frontend.data.drivers.DriversApi
 import com.example.frontend.data.health.HealthApi
 import com.example.frontend.data.health.HealthService
+import com.example.frontend.data.navigation.NavigationApi
+import com.example.frontend.data.navigation.NavigationRepository
+import com.example.frontend.data.navigation.NavigationRepositoryImpl
 import com.example.frontend.data.places.PlacesApi
 import com.example.frontend.data.places.PlacesRepository
 import com.example.frontend.data.places.PlacesRepositoryImpl
@@ -58,6 +61,7 @@ class TukiDataProvider(
     val routingRepository: RoutingRepository = RoutingRepositoryImpl(api(RoutingApi::class.java), sessionStore, errors)
     val tripRepository: TripRepository = TripRepositoryImpl(api(TripsApi::class.java), sessionStore, errors)
     val tripSessionRepository: TripSessionRepository = TripSessionRepositoryImpl(api(TripSessionsApi::class.java), sessionStore, errors)
+    val navigationRepository: NavigationRepository = NavigationRepositoryImpl(api(NavigationApi::class.java), sessionStore, errors)
     val transportRouteRepository: TransportRouteRepository = TransportRouteRepositoryImpl(api(TransportRoutesApi::class.java), sessionStore, errors)
     val tricycleRepository: TricycleRepository = TricycleRepositoryImpl(api(TricyclePointsApi::class.java), sessionStore, errors)
     val rideMatchingRepository: RideMatchingRepository = RideMatchingRepositoryImpl(api(RideMatchingApi::class.java), sessionStore, errors)
@@ -65,4 +69,3 @@ class TukiDataProvider(
     val aiRepository: AiRepository = AiRepositoryImpl(api(AiApi::class.java), sessionStore, errors)
     val healthService = HealthService(api(HealthApi::class.java), errors)
 }
-
