@@ -38,14 +38,15 @@ public class RoutingController : ControllerBase
         [FromQuery] double destinationLon,
         CancellationToken cancellationToken)
     {
-        var result =
-            await _routingService.PlanTripsAsync(
-                originLat,
-                originLon,
-                destinationLat,
-                destinationLon,
-                cancellationToken);
-
-        return Ok(result);
+        try
+        {
+            var result = await _routingService.PlanTripsAsync(
+                originLat, originLon, destinationLat, destinationLon, cancellationToken);
+            return Ok(result);
+        }
+        catch (RoutingValidationException exception)
+        {
+            return BadRequest(new { error = exception.ErrorCode, message = exception.Message });
+        }
     }
 }
