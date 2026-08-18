@@ -72,6 +72,7 @@ var connectionString =
 
 
 builder.Services.Configure<LoginOptions>(builder.Configuration.GetSection(LoginOptions.SectionName));
+builder.Services.Configure<GoogleOptions>(builder.Configuration.GetSection(GoogleOptions.SectionName));
 
 builder.Services.AddDbContext<TukiDbContext>(options =>
     options.UseSqlServer(connectionString));
@@ -103,6 +104,7 @@ builder.Services.AddScoped<ITransferConnectionRepository, TransferConnectionRepo
 builder.Services.AddScoped<ITricyclePointRepository, TricyclePointRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
+builder.Services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();

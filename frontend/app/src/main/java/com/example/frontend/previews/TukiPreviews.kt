@@ -4,11 +4,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.screens.CommuteDetailScreen
+import com.example.frontend.screens.FavoritesScreen
 import com.example.frontend.screens.LoginScreen
 import com.example.frontend.screens.OnboardingScreen
 import com.example.frontend.screens.SignupScreen
 import com.example.frontend.ui.theme.FrontendTheme
 import com.example.frontend.screens.HomeScreen
+import com.example.frontend.screens.ProfileScreen
+import com.example.frontend.screens.RecentScreen
 import com.example.frontend.screens.RouteResultsScreen
 
 @Preview(
@@ -97,5 +100,41 @@ fun RouteResultsPreview() {
             origin = "Brgy. Sta. Rita",
             destinationQuery = "Guagua Town"
         )
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Recent"
+)
+@Composable
+fun RecentPreview() {
+    FrontendTheme {
+        RecentScreen()
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Favorites"
+)
+@Composable
+fun FavoritesPreview() {
+    FrontendTheme {
+        FavoritesScreen()
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Profile"
+)
+@Composable
+fun ProfilePreview() {
+    FrontendTheme {
+        ProfileScreen()
     }
 }

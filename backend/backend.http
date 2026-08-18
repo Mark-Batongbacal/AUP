@@ -107,6 +107,15 @@ Content-Type: application/json
 
 ###
 
+POST {{backend_HostAddress}}/api/auth/google
+Content-Type: application/json
+
+{
+  "idToken": "INVALID_TEST_TOKEN"
+}
+
+###
+
 ### Generate each consecutive waypoint segment through Valhalla, then create
 ### the jeepney route and its ordered geometry in one database write
 POST {{backend_HostAddress}}/api/transport-routes

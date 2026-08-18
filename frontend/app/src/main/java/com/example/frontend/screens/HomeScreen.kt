@@ -10,7 +10,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,23 +40,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.frontend.R
 import com.example.frontend.model.RecentCommute
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
+import com.example.frontend.components.BottomBar
+import com.example.frontend.components.TukiTab
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
 private val TukiCream = Color(0xFFFFF8E8)
 private val TukiDark = Color(0xFF173B43)
 private val TukiGray = Color(0xFF9AA6A9)
-
-private enum class HomeTab { HOME, RECENT, FAVORITES, PROFILE }
 
 @Composable
 fun HomeScreen(
@@ -178,8 +175,8 @@ fun HomeScreen(
             }
         }
 
-        HomeBottomBar(
-            selectedTab = HomeTab.HOME,
+        BottomBar(
+            selectedTab = TukiTab.HOME,
             onHomeClick = {},
             onRecentClick = onRecentClick,
             onFavoritesClick = onFavoritesClick,
@@ -284,7 +281,7 @@ private fun RecentCommuteCard(commute: RecentCommute, onClick: () -> Unit) {
             .padding(16.dp)
     ) {
         Text(
-            text = "${commute.origin} \u2192 ${commute.destination}",
+            text = "${commute.origin} to ${commute.destination}",
             color = TukiDark,
             fontSize = 17.sp,
             fontWeight = FontWeight.Bold
@@ -322,71 +319,6 @@ private fun NewHereBanner(onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun HomeBottomBar(
-    selectedTab: HomeTab,
-    onHomeClick: () -> Unit,
-    onRecentClick: () -> Unit,
-    onFavoritesClick: () -> Unit,
-    onProfileClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(horizontal = 24.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        BottomBarItem(
-            iconRes = R.drawable.ic_home,
-            label = "Home",
-            selected = selectedTab == HomeTab.HOME,
-            onClick = onHomeClick
-        )
-        BottomBarItem(
-            iconRes = R.drawable.ic_map,
-            label = "Recent",
-            selected = selectedTab == HomeTab.RECENT,
-            onClick = onRecentClick
-        )
-        BottomBarItem(
-            iconRes = R.drawable.ic_favorite,
-            label = "Favorites",
-            selected = selectedTab == HomeTab.FAVORITES,
-            onClick = onFavoritesClick
-        )
-        BottomBarItem(
-            iconRes = R.drawable.ic_account_box,
-            label = "Profile",
-            selected = selectedTab == HomeTab.PROFILE,
-            onClick = onProfileClick
-        )
-    }
-}
-
-@Composable
-private fun BottomBarItem(
-    iconRes: Int,
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val tint = if (selected) TukiTeal else TukiGray
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(onClick = onClick)
-    ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = label,
-            tint = tint,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(text = label, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
 private val TukiCream2 = Color(0xFFFAEBC7)
 
 private val sampleRecentCommutes = listOf(
@@ -404,11 +336,6 @@ private fun android.content.Context.hasLocationPermission(): Boolean {
             ) == PackageManager.PERMISSION_GRANTED
 }
 
-/**
- * Uses the platform LocationManager (no extra Play Services dependency needed)
- * to grab the last known fix, then reverse-geocodes it into a short label
- * like "Brgy. Sta. Rita".
- */
 private suspend fun getCurrentLocationLabel(context: android.content.Context): String? {
     if (!context.hasLocationPermission()) return null
 
