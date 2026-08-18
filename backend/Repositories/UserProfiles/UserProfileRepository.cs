@@ -53,6 +53,31 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
         return existing;
     }
 
+    public async Task<UserProfile?> UpdateEditableFieldsAsync(
+        Guid userId,
+        string? firstName,
+        string? lastName,
+        string? phoneNumber,
+        string? profileImageUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.UserProfiles.FirstOrDefaultAsync(
+            currentProfile => currentProfile.UserId == userId && currentProfile.IsActive,
+            cancellationToken);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        existing.FirstName = firstName;
+        existing.LastName = lastName;
+        existing.PhoneNumber = phoneNumber;
+        existing.ProfileImageUrl = profileImageUrl;
+        existing.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return existing;
+    }
+
     public Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default) =>
         _context.UserProfiles
             .AsNoTracking()
