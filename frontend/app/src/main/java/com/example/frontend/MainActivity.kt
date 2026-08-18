@@ -1,22 +1,35 @@
 package com.example.frontend
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.credentials.CredentialManager
+import com.example.frontend.auth.AuthRepository
+import com.example.frontend.auth.AuthResult
+import com.example.frontend.auth.GoogleSignInClient
+import com.example.frontend.auth.GoogleSignInResult
+import com.example.frontend.auth.SharedPreferencesTukiCredentialStore
+import com.example.frontend.auth.TukiApiClient
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.navigation.AppScreen
 import com.example.frontend.screens.CommuteDetailScreen
+import com.example.frontend.screens.FavoritesScreen
 import com.example.frontend.screens.HomeScreen
+import com.example.frontend.screens.LoginActionResult
 import com.example.frontend.screens.LoginScreen
 import com.example.frontend.screens.OnboardingScreen
+import com.example.frontend.screens.ProfileScreen
+import com.example.frontend.screens.RecentScreen
+import com.example.frontend.screens.RouteResultsScreen
 import com.example.frontend.screens.SignupScreen
 import com.example.frontend.ui.theme.FrontendTheme
-import com.example.frontend.screens.RouteResultsScreen
-import com.example.frontend.screens.RecentScreen
-import com.example.frontend.screens.FavoritesScreen
-import com.example.frontend.screens.ProfileScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -34,6 +47,22 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun TukiApp() {
+    val context = LocalContext.current
+    val activity = context.findActivity()
+    val googleServerClientId = stringResource(R.string.google_server_client_id)
+    val credentialStore = remember {
+        SharedPreferencesTukiCredentialStore(context.applicationContext)
+    }
+    val authRepository = remember {
+        AuthRepository(
+            authApi = TukiApiClient.createAuthApi(),
+            credentialStore = credentialStore
+        )
+    }
+    val googleSignInClient = remember {
+        GoogleSignInClient(CredentialManager.create(context))
+    }
+
     var currentScreen by remember {
         mutableStateOf(AppScreen.ONBOARDING)
     }
@@ -69,6 +98,29 @@ fun TukiApp() {
                 },
                 onLoginSuccess = {
                     currentScreen = AppScreen.HOME
+                },
+                onGoogleLoginClick = {
+                    if (activity == null) {
+                        LoginActionResult.Error("Google sign-in is unavailable right now.")
+                    } else {
+                        when (
+                            val googleResult = googleSignInClient.getIdToken(
+                                activity = activity,
+                                serverClientId = googleServerClientId
+                            )
+                        ) {
+                            is GoogleSignInResult.Success -> {
+                                when (val authResult = authRepository.loginWithGoogle(googleResult.idToken)) {
+                                    AuthResult.Success -> LoginActionResult.Success
+                                    is AuthResult.Failure -> LoginActionResult.Error(authResult.message)
+                                }
+                            }
+
+                            is GoogleSignInResult.Failure -> {
+                                LoginActionResult.Error(googleResult.message)
+                            }
+                        }
+                    }
                 }
             )
         }
@@ -175,3 +227,10 @@ fun TukiApp() {
         }
     }
 }
+
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }

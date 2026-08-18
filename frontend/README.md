@@ -15,6 +15,24 @@ configuration. To build from a terminal instead:
 ./gradlew :app:assembleDebug
 ```
 
+## Local authentication config
+
+For real Google login, add the backend Web/Server OAuth client ID to
+`frontend/local.properties`. This is the same client ID configured on the
+backend as `Google__ClientId`, not the Android OAuth client ID.
+
+```properties
+GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_OR_SERVER_CLIENT_ID.apps.googleusercontent.com
+BACKEND_BASE_URL=https://aup-0mjy.onrender.com/
+```
+
+When testing the backend running on your development machine from an Android
+emulator, use:
+
+```properties
+BACKEND_BASE_URL=http://10.0.2.2:5129/
+```
+
 ## Run and test the backend
 
 The backend API is currently hosted at https://aup-0mjy.onrender.com/
