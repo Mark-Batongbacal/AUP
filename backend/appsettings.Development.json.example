@@ -18,6 +18,9 @@
   "Valhalla": {
     "BaseUrl": ""
   },
+  "Pelias": {
+    "BaseUrl": ""
+  },
   "Cors": {
     "AllowedOrigins": [
       "http://localhost:3000",

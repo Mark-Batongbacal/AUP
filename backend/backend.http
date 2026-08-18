@@ -1,6 +1,6 @@
-@backend_HostAddress = http://tuki-api.japaneast.cloudapp.azure.com:5129
-# @backend_HostAddress = http://localhost:5129
-@apiKey = API-KEY
+# @backend_HostAddress = http://tuki-api.japaneast.cloudapp.azure.com:5129
+@backend_HostAddress = http://localhost:5129
+@apiKey = REPLACE_AFTER_LOGIN
 
 ###
 
@@ -44,6 +44,8 @@ X-API-Key: {{apiKey}}
 }
 
 
+
+
 ###
 
 GET {{backend_HostAddress}}/api/routes/sample
@@ -75,7 +77,7 @@ X-Api-Key: {{apiKey}}
 
 ###
 
-@apiKey = API-KEY
+@apiKey = REPLACE_AFTER_LOGIN
 
 ###porac -> diegs originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
 ###diegs -> porac originLat=15.139582098206548&originLon=120.60108373338038&destinationLat=15.109698583445889&destinationLon=120.58240903543013
@@ -174,3 +176,207 @@ X-API-Key: {{apiKey}}
   "serviceEndTime": "23:00:00",
   "isActive": true
 }
+
+### Register the configured .env account in UserProfiles
+# Run this once before login/protected requests when the profile does not exist.
+POST {{backend_HostAddress}}/api/auth/register
+Content-Type: application/json
+Accept: application/json
+
+{
+  "userName": "{{$dotenv Login__Users__0__UserName}}",
+  "password": "{{$dotenv Login__Users__0__Password}}",
+  "firstName": "Mark",
+  "lastName": "Batongbacal",
+  "phoneNumber": null
+}
+
+###############################################################################
+# Tuki phases 2-8 test endpoints
+# These requests reuse your existing backend_HostAddress and apiKey variables.
+# Run place search or AI planning first. If AI returns JOURNEYS_AVAILABLE, copy a
+# journeyId below before testing the TripSession lifecycle.
+###############################################################################
+
+@tukiOriginLat = 15.109698583445889
+@tukiOriginLon = 120.58240903543013
+@tukiDestinationLat = 15.139582098206548
+@tukiDestinationLon = 120.60108373338038
+# Replace after AI returns JOURNEYS_AVAILABLE: journeys[0].journeyId
+@tukiRecommendationId = 140e433e-f36b-1410-8642-00e4c9b18fbc
+# Replace after Create TripSession returns HTTP 201: tripSessionId
+@tukiTripSessionId = 6b0e433e-f36b-1410-8642-00e4c9b18fbc
+# For simulated alighting, copy the latitude/longitude from the generated
+# PrepareToAlight instruction. Do not leave these at zero when sending updates.
+@tukiTestAlightLat = 15.136742
+@tukiTestAlightLon = 120.58635
+
+### Pelias destination autocomplete through Tuki
+GET {{backend_HostAddress}}/api/places/search?q=SM%20City%20Clark&focusLat={{tukiOriginLat}}&focusLon={{tukiOriginLon}}
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### Deterministic route planning, including graph-based transfers
+GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat={{tukiOriginLat}}&originLon={{tukiOriginLon}}&destinationLat={{tukiDestinationLat}}&destinationLon={{tukiDestinationLon}}
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### Grounded AI route planning
+# A successful response stores each option and returns its recommendation ID as
+# journeys[n].journeyId. Copy one into tukiRecommendationId above.
+POST {{backend_HostAddress}}/api/AI/ask
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "message": "Plan a route to SM City Clark with a budget of 100 pesos",
+  "originLatitude": {{tukiOriginLat}},
+  "originLongitude": {{tukiOriginLon}}
+}
+
+### Grounded AI route planning with an explicit Pelias selection
+# Use this when AI planning returns DESTINATION_AMBIGUOUS. Copy one destination
+# id from that response into destinationId.
+POST {{backend_HostAddress}}/api/AI/ask
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "message": "Plan a route to SM City Clark with a budget of 100 pesos",
+  "originLatitude": {{tukiOriginLat}},
+  "originLongitude": {{tukiOriginLon}},
+  "destinationId": "openstreetmap:venue:relation/15655696"
+}
+
+### Grounded AI lost/status question
+# Uses the authenticated user's active trip when tripSessionId is omitted.
+POST {{backend_HostAddress}}/api/AI/ask
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "message": "Am I still going the right way?"
+}
+
+### Create TripSession from an owned stored recommendation
+# Replace tukiRecommendationId with a journeyId returned by AI planning.
+POST {{backend_HostAddress}}/api/tripsessions
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "recommendationId": "{{tukiRecommendationId}}"
+}
+
+### Get the authenticated user's active TripSession
+GET {{backend_HostAddress}}/api/tripsessions/active
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### Get TripSession by ID
+# Copy tripSessionId from the create/active response into tukiTripSessionId.
+GET {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### Start navigation
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/start
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### Get generated navigation instructions
+GET {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/instructions
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### Submit a good GPS update for map matching and progress
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/location
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "latitude": {{tukiOriginLat}},
+  "longitude": {{tukiOriginLon}},
+  "accuracyMeters": 8,
+  "timestamp": "{{$datetime iso8601}}",
+  "speedMetersPerSecond": 1.2,
+  "bearingDegrees": 45
+}
+
+### Submit an intentionally inaccurate GPS update
+# Expected result: rejected/uncertain GPS without changing route progress.
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/location
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "latitude": {{tukiOriginLat}},
+  "longitude": {{tukiOriginLon}},
+  "accuracyMeters": 250,
+  "timestamp": "{{$datetime iso8601}}"
+}
+
+### Confirm boarding after reaching the boarding state
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/boarding-confirmed
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### SIMULATION: first GPS sample near the planned alighting point
+# Before running this, copy the PrepareToAlight instruction coordinates into
+# tukiTestAlightLat/tukiTestAlightLon. For the easiest test, do not submit the
+# earlier origin GPS example on this TripSession because teleporting can be
+# correctly rejected as IMPOSSIBLE_JUMP.
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/location
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "latitude": {{tukiTestAlightLat}},
+  "longitude": {{tukiTestAlightLon}},
+  "accuracyMeters": 5,
+  "timestamp": "{{$datetime iso8601}}",
+  "speedMetersPerSecond": 0
+}
+
+### SIMULATION: second GPS sample near the planned alighting point
+# Run after the first sample. Expected status: ApproachingAlightPoint.
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/location
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "latitude": {{tukiTestAlightLat}},
+  "longitude": {{tukiTestAlightLon}},
+  "accuracyMeters": 5,
+  "timestamp": "{{$datetime iso8601}}",
+  "speedMetersPerSecond": 0
+}
+
+### Confirm alighting after reaching the alighting state
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/alighting-confirmed
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+### Request rerouting
+# This normally succeeds only after off-route or missed-alight confirmation.
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/reroute
+Content-Type: application/json
+Accept: application/json
+X-API-Key: {{apiKey}}
+
+{
+  "reason": "OFF_ROUTE"
+}
+
+### Cancel TripSession
+POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/cancel
+Accept: application/json
+X-API-Key: {{apiKey}}
