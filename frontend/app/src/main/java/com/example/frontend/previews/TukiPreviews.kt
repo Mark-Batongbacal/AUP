@@ -13,6 +13,9 @@ import com.example.frontend.screens.HomeScreen
 import com.example.frontend.screens.ProfileScreen
 import com.example.frontend.screens.RecentScreen
 import com.example.frontend.screens.RouteResultsScreen
+import com.example.frontend.repository.MockCommuteRepository
+import com.example.frontend.repository.MockRouteRepository
+import com.example.frontend.repository.MockAuthRepository
 
 @Preview(
     showBackground = true,
@@ -37,6 +40,7 @@ fun OnboardingPreview() {
 fun LoginPreview() {
     FrontendTheme {
         LoginScreen(
+            authRepository = MockAuthRepository(),
             onBack = {}
         )
     }
@@ -51,6 +55,7 @@ fun LoginPreview() {
 fun SignUpPreview() {
     FrontendTheme {
         SignupScreen(
+            authRepository = MockAuthRepository(),
             onBack = {}
         )
     }
@@ -64,7 +69,7 @@ fun SignUpPreview() {
 @Composable
 fun HomePreview() {
     FrontendTheme {
-        HomeScreen()
+        HomeScreen(commuteRepository = MockCommuteRepository())
     }
 }
 
@@ -98,7 +103,8 @@ fun RouteResultsPreview() {
     FrontendTheme {
         RouteResultsScreen(
             origin = "Brgy. Sta. Rita",
-            destinationQuery = "Guagua Town"
+            destinationQuery = "Guagua Town",
+            routeRepository = MockRouteRepository()
         )
     }
 }

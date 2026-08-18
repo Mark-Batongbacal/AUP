@@ -30,6 +30,10 @@ import com.example.frontend.screens.RecentScreen
 import com.example.frontend.screens.RouteResultsScreen
 import com.example.frontend.screens.SignupScreen
 import com.example.frontend.ui.theme.FrontendTheme
+import com.example.frontend.repository.MockRouteRepository
+import com.example.frontend.repository.MockCommuteRepository
+import com.example.frontend.repository.MockAuthRepository
+import com.example.frontend.repository.MockAIRepository
 
 class MainActivity : ComponentActivity() {
 
@@ -47,6 +51,11 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun TukiApp() {
+    val routeRepository = remember { MockRouteRepository() }
+    val commuteRepository = remember { MockCommuteRepository() }
+    val authRepositoryImpl = remember { MockAuthRepository() }
+    val aiRepository = remember { MockAIRepository() }
+
     val context = LocalContext.current
     val activity = context.findActivity()
     val googleServerClientId = stringResource(R.string.google_server_client_id)
@@ -90,6 +99,7 @@ fun TukiApp() {
 
         AppScreen.LOGIN -> {
             LoginScreen(
+                authRepository = authRepositoryImpl,
                 onBack = {
                     currentScreen = AppScreen.ONBOARDING
                 },
@@ -127,6 +137,7 @@ fun TukiApp() {
 
         AppScreen.SIGNUP -> {
             SignupScreen(
+                authRepository = authRepositoryImpl,
                 onBack = {
                     currentScreen = AppScreen.LOGIN
                 },
@@ -141,6 +152,7 @@ fun TukiApp() {
 
         AppScreen.HOME -> {
             HomeScreen(
+                commuteRepository = commuteRepository,
                 onSearchDestination = { origin, destination ->
                     searchOrigin = origin
                     searchDestination = destination
@@ -217,6 +229,7 @@ fun TukiApp() {
             RouteResultsScreen(
                 origin = searchOrigin,
                 destinationQuery = searchDestination,
+                routeRepository = routeRepository,
                 onBack = {
                     currentScreen = AppScreen.HOME
                 },

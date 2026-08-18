@@ -38,6 +38,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
+import com.example.frontend.repository.ApiResult
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.CircularProgressIndicator
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -46,6 +50,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 
 @Composable
 fun SignupScreen(
+    authRepository: com.example.frontend.repository.AuthRepository,
     onBack: () -> Unit = {},
     onLoginClick: () -> Unit = {},
     onLoginSuccess: () -> Unit = {}
@@ -57,6 +62,11 @@ fun SignupScreen(
 
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
+
+    var isSigningUp by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val coroutineScope = rememberCoroutineScope()
 
     val scrollState = rememberScrollState()
 
@@ -261,11 +271,39 @@ fun SignupScreen(
                 }
             }
 
+            if (errorMessage != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = errorMessage!!,
+                    color = Color.Red,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
 
             // Main action button
             Button(
-                onClick = {},
+                onClick = {
+                    if (password != confirmPassword) {
+                        errorMessage = "Passwords do not match"
+                        return@Button
+                    }
+                    coroutineScope.launch {
+                        isSigningUp = true
+                        errorMessage = null
+                        val result = authRepository.signUp(fullName, email, password)
+                        isSigningUp = false
+                        
+                        when (result) {
+                            is ApiResult.Success -> onLoginSuccess()
+                            is ApiResult.Error -> errorMessage = result.message
+                            else -> {}
+                        }
+                    }
+                },
+                enabled = !isSigningUp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(60.dp),
@@ -275,11 +313,15 @@ fun SignupScreen(
                     contentColor = Color.White
                 )
             ) {
-                Text(
-                    text = "Sign up",
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (isSigningUp) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                } else {
+                    Text(
+                        text = "Sign up",
+                        fontSize = 25.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

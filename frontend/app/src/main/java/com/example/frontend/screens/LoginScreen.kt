@@ -38,8 +38,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
+import com.example.frontend.repository.ApiResult
 import androidx.compose.foundation.clickable
 import kotlinx.coroutines.launch
+import androidx.compose.material3.CircularProgressIndicator
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -49,6 +51,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 
 @Composable
 fun LoginScreen(
+    authRepository: com.example.frontend.repository.AuthRepository,
     onBack: () -> Unit = {},
     onSignUpClick: () -> Unit = {},
     onLoginSuccess: () -> Unit = {},
@@ -67,6 +70,10 @@ fun LoginScreen(
     }
 
     var passwordVisible by remember {
+        mutableStateOf(false)
+    }
+
+    var isLoggingIn by remember {
         mutableStateOf(false)
     }
 
@@ -213,7 +220,21 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(28.dp))
 
         Button(
-            onClick = onLoginSuccess,
+            onClick = {
+                coroutineScope.launch {
+                    isLoggingIn = true
+                    loginError = null
+                    val result = authRepository.login(email, password)
+                    isLoggingIn = false
+                    
+                    when (result) {
+                        is ApiResult.Success -> onLoginSuccess()
+                        is ApiResult.Error -> loginError = result.message
+                        else -> {}
+                    }
+                }
+            },
+            enabled = !isLoggingIn && !isGoogleLoggingIn,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(60.dp),
@@ -223,11 +244,15 @@ fun LoginScreen(
                 contentColor = Color.White
             )
         ) {
-            Text(
-                text = "Log in",
-                fontSize = 25.sp,
-                fontWeight = FontWeight.Bold
-            )
+            if (isLoggingIn) {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+            } else {
+                Text(
+                    text = "Log in",
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(20.dp))

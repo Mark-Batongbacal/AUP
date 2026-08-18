@@ -6,10 +6,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.frontend.screens.LoginScreen
 import com.example.frontend.screens.SignupScreen
+import com.example.frontend.repository.MockAuthRepository
+import androidx.compose.runtime.remember
 
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+    val authRepository = remember { MockAuthRepository() }
 
     NavHost(
         navController = navController,
@@ -17,6 +20,7 @@ fun AppNavigation() {
     ) {
         composable(route = AppScreen.LOGIN.name) {
             LoginScreen(
+                authRepository = authRepository,
                 onSignUpClick = {
                     navController.navigate(AppScreen.SIGNUP.name)
                 }
@@ -25,6 +29,7 @@ fun AppNavigation() {
 
         composable(route = AppScreen.SIGNUP.name) {
             SignupScreen(
+                authRepository = authRepository,
                 onLoginClick = {
                     navController.popBackStack()
                 }

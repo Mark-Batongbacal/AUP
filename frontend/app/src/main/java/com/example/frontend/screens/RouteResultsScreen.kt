@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RouteOption
+import com.example.frontend.repository.RouteRepository
+import com.example.frontend.repository.ApiResult
 import kotlinx.coroutines.delay
 
 private val TukiTeal = Color(0xFF15919B)
@@ -54,28 +56,27 @@ private val TukiGray = Color(0xFF9AA6A9)
 fun RouteResultsScreen(
     origin: String,
     destinationQuery: String,
+    routeRepository: RouteRepository,
     onBack: () -> Unit = {},
     onRouteSelect: (RouteOption) -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var routeOptions by remember { mutableStateOf<List<RouteOption>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(destinationQuery) {
         isLoading = true
+        errorMessage = null
 
-        // ------------------------------------------------------------------
-        // BACKEND TEAM: replace fetchMockRouteOptions(...) with the real
-        // route-planning API call, e.g.:
-        //
-        //   routeOptions = routeRepository.getRoutes(
-        //       origin = origin,
-        //       destination = destinationQuery
-        //   )
-        //
-        // Keep it a suspend call inside this LaunchedEffect so the loading
-        // spinner below keeps working as-is.
-        // ------------------------------------------------------------------
-        routeOptions = fetchMockRouteOptions(origin, destinationQuery)
+        when (val result = routeRepository.getRoutes(origin, destinationQuery)) {
+            is ApiResult.Success -> {
+                routeOptions = result.data
+            }
+            is ApiResult.Error -> {
+                errorMessage = result.message
+            }
+            else -> {}
+        }
 
         isLoading = false
     }
@@ -126,6 +127,13 @@ fun RouteResultsScreen(
                     Text(text = "Finding routes...", color = TukiGray, fontSize = 14.sp)
                 }
             }
+        } else if (errorMessage != null) {
+            Text(
+                text = "Error: $errorMessage",
+                color = Color.Red,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
         } else if (routeOptions.isEmpty()) {
             Text(
                 text = "No routes found for \"$destinationQuery\" yet.",
@@ -200,46 +208,4 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
             }
         }
     }
-}
-
-// ============================================================================
-// BACKEND TEAM: everything below this line is placeholder data so the
-// screen is clickable/demoable without a live API. Delete this whole
-// block once fetchMockRouteOptions(...) above is wired to the real thing.
-// ============================================================================
-private suspend fun fetchMockRouteOptions(origin: String, destination: String): List<RouteOption> {
-    delay(900) // pretend network latency so the loading state is visible
-
-    return listOf(
-        RouteOption(
-            id = "1",
-            label = "Fastest",
-            totalMinutes = 22,
-            totalFare = 35.0,
-            steps = listOf(
-                CommuteStep(mode = "Jeepney", from = origin, to = "San Fernando Terminal", minutes = 14, fare = 15.0),
-                CommuteStep(mode = "Tricycle", from = "San Fernando Terminal", to = destination, minutes = 8, fare = 20.0)
-            )
-        ),
-        RouteOption(
-            id = "2",
-            label = "Cheapest",
-            totalMinutes = 35,
-            totalFare = 22.0,
-            steps = listOf(
-                CommuteStep(mode = "Jeepney", from = origin, to = "Dolores Crossing", minutes = 20, fare = 12.0),
-                CommuteStep(mode = "Walk", from = "Dolores Crossing", to = "Guagua Terminal", minutes = 5, fare = null),
-                CommuteStep(mode = "Jeepney", from = "Guagua Terminal", to = destination, minutes = 10, fare = 10.0)
-            )
-        ),
-        RouteOption(
-            id = "3",
-            label = "Fewest transfers",
-            totalMinutes = 28,
-            totalFare = 40.0,
-            steps = listOf(
-                CommuteStep(mode = "Bus", from = origin, to = destination, minutes = 28, fare = 40.0)
-            )
-        )
-    )
 }
