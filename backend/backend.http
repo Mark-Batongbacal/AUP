@@ -75,7 +75,7 @@ X-Api-Key: {{apiKey}}
 
 ###
 
-@apiKey = API_KEY
+@apiKey = API-KEY
 
 ###porac -> diegs originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
 ###diegs -> porac originLat=15.139582098206548&originLon=120.60108373338038&destinationLat=15.109698583445889&destinationLon=120.58240903543013
@@ -101,6 +101,15 @@ Content-Type: application/json
   // Change the number in the index to select a different user from the .env file
   "userName": "{{$dotenv Login__Users__0__UserName}}",
   "password": "{{$dotenv Login__Users__0__Password}}"
+}
+
+###
+
+POST {{backend_HostAddress}}/api/auth/google
+Content-Type: application/json
+
+{
+  "idToken": "INVALID_TEST_TOKEN"
 }
 
 ###
