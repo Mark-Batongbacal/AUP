@@ -17,6 +17,10 @@ public partial class RoutingService : IRoutingService
     private int MatrixChunkSize => _options.MatrixMaxTargets;
     private int MaxInterchangesPerRoutePair => _options.MaxInterchangesPerRoutePair;
     private double MaxTransferWalkMeters => _options.MaxTransferWalkMeters;
+    private double MinimumSelfTransferProgressMeters =>
+        _options.MinimumSelfTransferProgressMeters;
+    private double MinimumSelfTransferRouteToWalkRatio =>
+        _options.MinimumSelfTransferRouteToWalkRatio;
     private int MaxNearbyTrikeCandidates => _options.MaxNearbyTrikeCandidates;
     private double MaxWalkToTrikePointMeters => _options.MaxWalkToTrikePointMeters;
     private double MaxWalkOnlyTripDistanceMeters => _options.MaxWalkOnlyTripDistanceMeters;
