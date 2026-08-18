@@ -29,6 +29,8 @@ import com.example.frontend.screens.ProfileScreen
 import com.example.frontend.screens.RecentScreen
 import com.example.frontend.screens.RouteResultsScreen
 import com.example.frontend.screens.SignupScreen
+import com.example.frontend.screens.SettingsScreen
+import com.example.frontend.screens.TripTrackingScreen
 import com.example.frontend.ui.theme.FrontendTheme
 import com.example.frontend.repository.MockRouteRepository
 import com.example.frontend.repository.MockCommuteRepository
@@ -210,6 +212,20 @@ fun TukiApp() {
                 },
                 onFavoritesClick = {
                     currentScreen = AppScreen.FAVORITES
+                },
+                onEditProfileClick = {
+                    currentScreen = AppScreen.SETTINGS
+                }
+            )
+        }
+
+        AppScreen.SETTINGS -> {
+            SettingsScreen(
+                onBack = {
+                    currentScreen = AppScreen.PROFILE
+                },
+                onLogoutClick = {
+                    currentScreen = AppScreen.LOGIN
                 }
             )
         }
@@ -234,7 +250,18 @@ fun TukiApp() {
                     currentScreen = AppScreen.HOME
                 },
                 onRouteSelect = { route ->
-                    // TODO: once there's a "commute in progress" / tracking screen
+                    currentScreen = AppScreen.TRIP_TRACKING
+                }
+            )
+        }
+
+        AppScreen.TRIP_TRACKING -> {
+            TripTrackingScreen(
+                origin = searchOrigin,
+                destination = searchDestination,
+                routePoints = TemporaryMapSamples.routePoints,
+                onBack = {
+                    currentScreen = AppScreen.ROUTE_RESULTS
                 }
             )
         }

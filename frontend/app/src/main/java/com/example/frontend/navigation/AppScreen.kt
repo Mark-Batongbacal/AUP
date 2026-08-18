@@ -9,5 +9,7 @@ enum class AppScreen {
     FAVORITES,
     PROFILE,
     COMMUTE_DETAIL,
-    ROUTE_RESULTS
+    ROUTE_RESULTS,
+    TRIP_TRACKING,
+    SETTINGS
 }

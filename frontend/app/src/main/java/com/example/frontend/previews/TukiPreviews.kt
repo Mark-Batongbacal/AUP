@@ -13,6 +13,9 @@ import com.example.frontend.screens.HomeScreen
 import com.example.frontend.screens.ProfileScreen
 import com.example.frontend.screens.RecentScreen
 import com.example.frontend.screens.RouteResultsScreen
+import com.example.frontend.screens.SettingsScreen
+import com.example.frontend.screens.TripTrackingScreen
+import com.example.frontend.TemporaryMapSamples
 import com.example.frontend.repository.MockCommuteRepository
 import com.example.frontend.repository.MockRouteRepository
 import com.example.frontend.repository.MockAuthRepository
@@ -142,5 +145,33 @@ fun FavoritesPreview() {
 fun ProfilePreview() {
     FrontendTheme {
         ProfileScreen()
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Settings"
+)
+@Composable
+fun SettingsPreview() {
+    FrontendTheme {
+        SettingsScreen()
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Trip Tracking"
+)
+@Composable
+fun TripTrackingPreview() {
+    FrontendTheme {
+        TripTrackingScreen(
+            origin = "Sta. Rita",
+            destination = "Guagua Town",
+            routePoints = TemporaryMapSamples.routePoints
+        )
     }
 }
