@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace backend.Services;
+namespace backend.Services.Authentication.Facebook;
 
 public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
 {

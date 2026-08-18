@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
-namespace backend.Services;
+namespace backend.Services.Authentication.Facebook;
 
 public interface IFacebookAccessTokenValidator
 {

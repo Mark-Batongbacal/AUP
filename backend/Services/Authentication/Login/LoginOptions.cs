@@ -1,4 +1,4 @@
-namespace backend.Services;
+namespace backend.Services.Authentication.Login;
 
 public sealed class LoginOptions
 {

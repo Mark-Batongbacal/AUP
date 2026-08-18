@@ -1,6 +1,6 @@
 using Google.Apis.Auth;
 
-namespace backend.Services;
+namespace backend.Services.Authentication.Google;
 
 public interface IGoogleIdTokenValidator
 {

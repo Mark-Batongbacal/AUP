@@ -1,4 +1,4 @@
-namespace backend.Services;
+namespace backend.Services.Authentication.Google;
 
 public sealed class GoogleOptions
 {
