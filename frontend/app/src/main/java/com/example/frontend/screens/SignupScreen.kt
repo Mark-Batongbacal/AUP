@@ -38,7 +38,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
-import com.example.frontend.repository.ApiResult
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.auth.AuthRepository
+import com.example.frontend.data.auth.RegisterRequest
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,7 +52,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 
 @Composable
 fun SignupScreen(
-    authRepository: com.example.frontend.repository.AuthRepository,
+    authRepository: AuthRepository,
     onBack: () -> Unit = {},
     onLoginClick: () -> Unit = {},
     onLoginSuccess: () -> Unit = {}
@@ -293,13 +295,23 @@ fun SignupScreen(
                     coroutineScope.launch {
                         isSigningUp = true
                         errorMessage = null
-                        val result = authRepository.signUp(fullName, email, password)
+                        val nameParts = fullName.split(" ", limit = 2)
+                        val firstName = nameParts.getOrNull(0) ?: ""
+                        val lastName = nameParts.getOrNull(1) ?: ""
+                        
+                        val result = authRepository.register(
+                            RegisterRequest(
+                                userName = email,
+                                password = password,
+                                firstName = firstName,
+                                lastName = lastName
+                            )
+                        )
                         isSigningUp = false
                         
                         when (result) {
                             is ApiResult.Success -> onLoginSuccess()
-                            is ApiResult.Error -> errorMessage = result.message
-                            else -> {}
+                            is ApiResult.Failure -> errorMessage = result.message
                         }
                     }
                 },

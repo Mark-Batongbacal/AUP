@@ -37,9 +37,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RouteOption
-import com.example.frontend.repository.RouteRepository
-import com.example.frontend.repository.ApiResult
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.routing.RoutingRepository
+import com.example.frontend.data.routing.JourneyPlan
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -56,7 +58,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 fun RouteResultsScreen(
     origin: String,
     destinationQuery: String,
-    routeRepository: RouteRepository,
+    routingRepository: RoutingRepository,
     onBack: () -> Unit = {},
     onRouteSelect: (RouteOption) -> Unit = {}
 ) {
@@ -68,14 +70,30 @@ fun RouteResultsScreen(
         isLoading = true
         errorMessage = null
 
-        when (val result = routeRepository.getRoutes(origin, destinationQuery)) {
+        // Using sample coordinates as real geocoding is not yet integrated in this view
+        when (val result = routingRepository.planTrip(15.1453, 120.5887, 15.1174, 120.5720)) {
             is ApiResult.Success -> {
-                routeOptions = result.data
+                routeOptions = result.data.map { plan ->
+                    RouteOption(
+                        id = plan.hashCode().toString(),
+                        label = plan.source.recommendationType,
+                        totalMinutes = (plan.source.totalTimeSeconds / 60).roundToInt(),
+                        totalFare = plan.source.totalFarePesos,
+                        steps = plan.legs.map { leg ->
+                            CommuteStep(
+                                mode = leg.mode.toString(),
+                                from = "Origin",
+                                to = "Destination",
+                                minutes = (leg.durationSeconds / 60).roundToInt(),
+                                fare = leg.farePesos
+                            )
+                        }
+                    )
+                }
             }
-            is ApiResult.Error -> {
+            is ApiResult.Failure -> {
                 errorMessage = result.message
             }
-            else -> {}
         }
 
         isLoading = false

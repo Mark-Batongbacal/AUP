@@ -45,8 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.frontend.model.RecentCommute
-import com.example.frontend.repository.CommuteRepository
-import com.example.frontend.repository.ApiResult
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.trips.TripRepository
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import com.example.frontend.components.BottomBar
@@ -61,7 +61,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 @Composable
 fun HomeScreen(
     userName: String = "Juan",
-    commuteRepository: CommuteRepository,
+    tripRepository: TripRepository,
     onSearchDestination: (origin: String, destination: String) -> Unit = { _, _ -> },
     onCommuteClick: (RecentCommute) -> Unit = {},
     onRecentClick: () -> Unit = {},
@@ -96,15 +96,13 @@ fun HomeScreen(
         isRefreshingRecent = true
         recentErrorMessage = null
 
-        when (val result = commuteRepository.getRecentCommutes()) {
-            is ApiResult.Success -> {
-                recentCommutes = result.data
-            }
-            is ApiResult.Error -> {
-                recentErrorMessage = result.message
-            }
-            else -> {}
-        }
+        // Backend currently doesn't have a list-trips endpoint in TripRepository
+        // Using local mock data for now to maintain UI functionality
+        recentCommutes = listOf(
+            RecentCommute(id = "1", origin = "Sta. Rita", destination = "Guagua Town", legs = 3, minutes = 22),
+            RecentCommute(id = "2", origin = "Dolores", destination = "SM City Clark", legs = 2, minutes = 18),
+            RecentCommute(id = "3", origin = "Porac", destination = "Dau Terminal", legs = 4, minutes = 35)
+        )
 
         isRefreshingRecent = false
 

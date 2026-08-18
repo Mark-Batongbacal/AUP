@@ -40,7 +40,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
-import com.example.frontend.repository.ApiResult
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.auth.AuthRepository
 import androidx.compose.foundation.clickable
 import kotlinx.coroutines.launch
 import androidx.compose.material3.CircularProgressIndicator
@@ -53,7 +54,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 
 @Composable
 fun LoginScreen(
-    authRepository: com.example.frontend.repository.AuthRepository,
+    authRepository: AuthRepository,
     onBack: () -> Unit = {},
     onSignUpClick: () -> Unit = {},
     onLoginSuccess: () -> Unit = {},
@@ -241,8 +242,7 @@ fun LoginScreen(
                     
                     when (result) {
                         is ApiResult.Success -> onLoginSuccess()
-                        is ApiResult.Error -> loginError = result.message
-                        else -> {}
+                        is ApiResult.Failure -> loginError = result.message
                     }
                 }
             },

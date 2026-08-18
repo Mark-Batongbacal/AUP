@@ -56,6 +56,16 @@ android {
         )
         resValue(
             "string",
+            "facebook_client_token",
+            localConfigValue("FACEBOOK_CLIENT_TOKEN")
+        )
+        resValue(
+            "string",
+            "facebook_app_id",
+            localConfigValue("FACEBOOK_APP_ID")
+        )
+        resValue(
+            "string",
             "fb_login_protocol_scheme",
             "fb${localConfigValue("FACEBOOK_APP_ID")}"
         )
