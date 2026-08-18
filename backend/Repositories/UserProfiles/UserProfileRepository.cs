@@ -21,6 +21,14 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
             .AsNoTracking()
             .FirstOrDefaultAsync(profile => profile.UserId == userId && profile.IsActive, cancellationToken);
 
+    public Task<UserProfile?> GetActiveByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(
+            profile => profile.Email == email && profile.IsActive, cancellationToken);
+
+    public Task<UserProfile?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(
+            profile => profile.Email == email, cancellationToken);
+
     public async Task<UserProfile> AddOrUpdateAsync(UserProfile profile, CancellationToken cancellationToken = default)
     {
         var existing = await _context.UserProfiles.FirstOrDefaultAsync(
