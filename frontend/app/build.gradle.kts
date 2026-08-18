@@ -49,6 +49,21 @@ android {
             "google_server_client_id",
             localConfigValue("GOOGLE_SERVER_CLIENT_ID")
         )
+        resValue(
+            "string",
+            "facebook_app_id",
+            localConfigValue("FACEBOOK_APP_ID")
+        )
+        resValue(
+            "string",
+            "fb_login_protocol_scheme",
+            "fb${localConfigValue("FACEBOOK_APP_ID")}"
+        )
+        resValue(
+            "string",
+            "facebook_client_token",
+            localConfigValue("FACEBOOK_CLIENT_TOKEN")
+        )
     }
 
     buildTypes {
@@ -83,10 +98,12 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.google.identity.googleid)
     implementation(libs.google.maps.compose)
+    implementation(libs.facebook.login)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
     implementation("androidx.navigation:navigation-compose:2.8.0")
     testImplementation(libs.junit)
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
