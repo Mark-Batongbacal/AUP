@@ -21,6 +21,29 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
             .AsNoTracking()
             .FirstOrDefaultAsync(profile => profile.UserId == userId && profile.IsActive, cancellationToken);
 
+    public Task<UserProfile?> GetByExternalAuthAsync(
+        string provider,
+        string externalAuthId,
+        CancellationToken cancellationToken = default) =>
+        _context.UserProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                profile => profile.ExternalAuthProvider == provider &&
+                    profile.ExternalAuthId == externalAuthId,
+                cancellationToken);
+
+    public Task<UserProfile?> GetActiveByExternalAuthAsync(
+        string provider,
+        string externalAuthId,
+        CancellationToken cancellationToken = default) =>
+        _context.UserProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                profile => profile.ExternalAuthProvider == provider &&
+                    profile.ExternalAuthId == externalAuthId &&
+                    profile.IsActive,
+                cancellationToken);
+
     public Task<UserProfile?> GetActiveByEmailAsync(string email, CancellationToken cancellationToken = default) =>
         _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(
             profile => profile.Email == email && profile.IsActive, cancellationToken);
@@ -42,6 +65,9 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
             return profile;
         }
 
+        existing.ExternalAuthProvider = profile.ExternalAuthProvider;
+        existing.ExternalAuthId = profile.ExternalAuthId;
+        existing.Email = profile.Email;
         existing.FirstName = profile.FirstName;
         existing.LastName = profile.LastName;
         existing.PhoneNumber = profile.PhoneNumber;

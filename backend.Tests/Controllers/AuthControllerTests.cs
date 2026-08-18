@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using backend.Controllers;
 using backend.Models.Database;
+using backend.Models.Users;
 using backend.Repositories;
 using backend.Services;
 using backend.Services.Authentication.ApiKey;
@@ -131,12 +133,16 @@ public sealed class AuthControllerTests
     public async Task Facebook_WhenTokenIsValid_IssuesApiKeyForVerifiedUserId()
     {
         var apiKeys = new RecordingApiKeyService();
+        var userProfiles = new RecordingUserProfileRepository();
         var facebookTokens = new StubFacebookAccessTokenValidator
         {
             Validate = (_, _, _, _) => Task.FromResult(
-                new FacebookUserInfo("stable-facebook-user-id", "Verified Name", null))
+                new FacebookUserInfo("stable-facebook-user-id", "Verified Name", "verified@example.test"))
         };
-        var controller = CreateController(apiKeys, facebookTokens: facebookTokens);
+        var controller = CreateController(
+            apiKeys,
+            facebookTokens: facebookTokens,
+            userProfiles: userProfiles);
 
         var response = await controller.Facebook(
             new FacebookLoginRequest("verified-facebook-token"),
@@ -152,17 +158,102 @@ public sealed class AuthControllerTests
         Assert.Equal("facebook-app-id", facebookTokens.LastAppId);
         Assert.Equal("facebook-app-secret", facebookTokens.LastAppSecret);
         Assert.Equal(["facebook:stable-facebook-user-id"], apiKeys.CreatedFor);
+        var persistedProfile = Assert.Single(userProfiles.Profiles);
+        Assert.Equal("facebook", persistedProfile.ExternalAuthProvider);
+        Assert.Equal("stable-facebook-user-id", persistedProfile.ExternalAuthId);
+        Assert.Equal("facebook:stable-facebook-user-id", persistedProfile.Email);
+        Assert.Equal("Verified", persistedProfile.FirstName);
+        Assert.Equal("Name", persistedProfile.LastName);
+        await AssertCredentialResolvesUsersMeAsync(
+            userProfiles,
+            "facebook:stable-facebook-user-id",
+            persistedProfile.UserId);
+    }
+
+    [Fact]
+    public async Task Facebook_WhenProfileAlreadyExists_ReusesProfileWithoutCreatingDuplicate()
+    {
+        var apiKeys = new RecordingApiKeyService();
+        var userProfiles = new RecordingUserProfileRepository();
+        var userId = Guid.NewGuid();
+        userProfiles.Seed(new UserProfile
+        {
+            UserId = userId,
+            ExternalAuthProvider = "facebook",
+            ExternalAuthId = "stable-facebook-user-id",
+            Email = "facebook:stable-facebook-user-id",
+            FirstName = "Manual",
+            LastName = "Profile",
+            PhoneNumber = "+63 900 000 0000",
+            Role = "Passenger",
+            IsActive = true,
+            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            UpdatedAt = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+        });
+        var facebookTokens = new StubFacebookAccessTokenValidator
+        {
+            Validate = (_, _, _, _) => Task.FromResult(
+                new FacebookUserInfo("stable-facebook-user-id", "Provider Name", null))
+        };
+        var controller = CreateController(
+            apiKeys,
+            facebookTokens: facebookTokens,
+            userProfiles: userProfiles);
+
+        var response = await controller.Facebook(
+            new FacebookLoginRequest("verified-facebook-token"),
+            CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(response.Result);
+        var persistedProfile = Assert.Single(userProfiles.Profiles);
+        Assert.Equal(userId, persistedProfile.UserId);
+        Assert.Equal("Manual", persistedProfile.FirstName);
+        Assert.Equal("Profile", persistedProfile.LastName);
+        Assert.Equal("+63 900 000 0000", persistedProfile.PhoneNumber);
+        Assert.Equal(["facebook:stable-facebook-user-id"], apiKeys.CreatedFor);
+        Assert.Equal(1, userProfiles.AddOrUpdateCalls);
+    }
+
+    [Fact]
+    public async Task Facebook_WhenEmailIsMissing_StillCreatesProfileAndIssuesApiKey()
+    {
+        var apiKeys = new RecordingApiKeyService();
+        var userProfiles = new RecordingUserProfileRepository();
+        var facebookTokens = new StubFacebookAccessTokenValidator
+        {
+            Validate = (_, _, _, _) => Task.FromResult(
+                new FacebookUserInfo("facebook-user-without-email", "No Email", null))
+        };
+        var controller = CreateController(
+            apiKeys,
+            facebookTokens: facebookTokens,
+            userProfiles: userProfiles);
+
+        var response = await controller.Facebook(
+            new FacebookLoginRequest("verified-facebook-token"),
+            CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(response.Result);
+        var persistedProfile = Assert.Single(userProfiles.Profiles);
+        Assert.Equal("facebook:facebook-user-without-email", persistedProfile.Email);
+        Assert.Equal("facebook", persistedProfile.ExternalAuthProvider);
+        Assert.Equal("facebook-user-without-email", persistedProfile.ExternalAuthId);
+        Assert.Equal(["facebook:facebook-user-without-email"], apiKeys.CreatedFor);
     }
 
     [Fact]
     public async Task Facebook_WhenTokenIsInvalid_ReturnsUnauthorized()
     {
         var apiKeys = new RecordingApiKeyService();
+        var userProfiles = new RecordingUserProfileRepository();
         var facebookTokens = new StubFacebookAccessTokenValidator
         {
             Validate = (_, _, _, _) => throw new FacebookAccessTokenValidationException()
         };
-        var controller = CreateController(apiKeys, facebookTokens: facebookTokens);
+        var controller = CreateController(
+            apiKeys,
+            facebookTokens: facebookTokens,
+            userProfiles: userProfiles);
 
         var response = await controller.Facebook(
             new FacebookLoginRequest("INVALID_TEST_TOKEN"),
@@ -171,6 +262,7 @@ public sealed class AuthControllerTests
         Assert.IsType<UnauthorizedObjectResult>(response.Result);
         Assert.Equal("INVALID_TEST_TOKEN", facebookTokens.LastAccessToken);
         Assert.Empty(apiKeys.CreatedFor);
+        Assert.Empty(userProfiles.Profiles);
     }
 
     [Fact]
@@ -225,12 +317,16 @@ public sealed class AuthControllerTests
     public async Task FacebookOidc_WhenTokenIsValid_IssuesApiKeyForVerifiedSubject()
     {
         var apiKeys = new RecordingApiKeyService();
+        var userProfiles = new RecordingUserProfileRepository();
         var oidcTokens = new StubFacebookOidcTokenValidator
         {
             Validate = (_, _, _, _) => Task.FromResult(
-                new FacebookOidcUserInfo("stable-facebook-subject", "Verified Name", null))
+                new FacebookOidcUserInfo("stable-facebook-subject", "Verified Name", "verified@example.test"))
         };
-        var controller = CreateController(apiKeys, facebookOidcTokens: oidcTokens);
+        var controller = CreateController(
+            apiKeys,
+            facebookOidcTokens: oidcTokens,
+            userProfiles: userProfiles);
 
         var response = await controller.FacebookOidc(
             new FacebookOidcLoginRequest("verified-facebook-id-token", "nonce-value"),
@@ -246,17 +342,104 @@ public sealed class AuthControllerTests
         Assert.Equal("facebook-app-id", oidcTokens.LastAppId);
         Assert.Equal("nonce-value", oidcTokens.LastNonce);
         Assert.Equal(["facebook:stable-facebook-subject"], apiKeys.CreatedFor);
+        var persistedProfile = Assert.Single(userProfiles.Profiles);
+        Assert.Equal("facebook", persistedProfile.ExternalAuthProvider);
+        Assert.Equal("stable-facebook-subject", persistedProfile.ExternalAuthId);
+        Assert.Equal("facebook:stable-facebook-subject", persistedProfile.Email);
+        Assert.Equal("Verified", persistedProfile.FirstName);
+        Assert.Equal("Name", persistedProfile.LastName);
+        await AssertCredentialResolvesUsersMeAsync(
+            userProfiles,
+            "facebook:stable-facebook-subject",
+            persistedProfile.UserId);
+    }
+
+    [Fact]
+    public async Task FacebookOidc_WhenProfileAlreadyExists_ReusesProfileWithoutCreatingDuplicate()
+    {
+        var apiKeys = new RecordingApiKeyService();
+        var userProfiles = new RecordingUserProfileRepository();
+        var userId = Guid.NewGuid();
+        userProfiles.Seed(new UserProfile
+        {
+            UserId = userId,
+            ExternalAuthProvider = "facebook",
+            ExternalAuthId = "stable-facebook-subject",
+            Email = "facebook:stable-facebook-subject",
+            FirstName = "Manual",
+            LastName = "Profile",
+            PhoneNumber = "+63 900 000 0000",
+            Role = "Passenger",
+            IsActive = true,
+            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            UpdatedAt = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+        });
+        var oidcTokens = new StubFacebookOidcTokenValidator
+        {
+            Validate = (_, _, _, _) => Task.FromResult(
+                new FacebookOidcUserInfo("stable-facebook-subject", "Provider Name", null))
+        };
+        var controller = CreateController(
+            apiKeys,
+            facebookOidcTokens: oidcTokens,
+            userProfiles: userProfiles);
+
+        var response = await controller.FacebookOidc(
+            new FacebookOidcLoginRequest("verified-facebook-id-token", "nonce-value"),
+            CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(response.Result);
+        var persistedProfile = Assert.Single(userProfiles.Profiles);
+        Assert.Equal(userId, persistedProfile.UserId);
+        Assert.Equal("Manual", persistedProfile.FirstName);
+        Assert.Equal("Profile", persistedProfile.LastName);
+        Assert.Equal("+63 900 000 0000", persistedProfile.PhoneNumber);
+        Assert.Equal(["facebook:stable-facebook-subject"], apiKeys.CreatedFor);
+        Assert.Equal(1, userProfiles.AddOrUpdateCalls);
+    }
+
+    [Fact]
+    public async Task FacebookOidc_WhenProfileClaimsAreMissing_StillCreatesProfileAndIssuesApiKey()
+    {
+        var apiKeys = new RecordingApiKeyService();
+        var userProfiles = new RecordingUserProfileRepository();
+        var oidcTokens = new StubFacebookOidcTokenValidator
+        {
+            Validate = (_, _, _, _) => Task.FromResult(
+                new FacebookOidcUserInfo("subject-without-profile-claims", null, null))
+        };
+        var controller = CreateController(
+            apiKeys,
+            facebookOidcTokens: oidcTokens,
+            userProfiles: userProfiles);
+
+        var response = await controller.FacebookOidc(
+            new FacebookOidcLoginRequest("verified-facebook-id-token", "nonce-value"),
+            CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(response.Result);
+        var persistedProfile = Assert.Single(userProfiles.Profiles);
+        Assert.Equal("facebook:subject-without-profile-claims", persistedProfile.Email);
+        Assert.Equal("facebook", persistedProfile.ExternalAuthProvider);
+        Assert.Equal("subject-without-profile-claims", persistedProfile.ExternalAuthId);
+        Assert.Null(persistedProfile.FirstName);
+        Assert.Null(persistedProfile.LastName);
+        Assert.Equal(["facebook:subject-without-profile-claims"], apiKeys.CreatedFor);
     }
 
     [Fact]
     public async Task FacebookOidc_WhenTokenIsInvalid_ReturnsUnauthorized()
     {
         var apiKeys = new RecordingApiKeyService();
+        var userProfiles = new RecordingUserProfileRepository();
         var oidcTokens = new StubFacebookOidcTokenValidator
         {
             Validate = (_, _, _, _) => throw new FacebookOidcTokenValidationException()
         };
-        var controller = CreateController(apiKeys, facebookOidcTokens: oidcTokens);
+        var controller = CreateController(
+            apiKeys,
+            facebookOidcTokens: oidcTokens,
+            userProfiles: userProfiles);
 
         var response = await controller.FacebookOidc(
             new FacebookOidcLoginRequest("INVALID_ID_TOKEN", "nonce-value"),
@@ -265,6 +448,7 @@ public sealed class AuthControllerTests
         Assert.IsType<UnauthorizedObjectResult>(response.Result);
         Assert.Equal("INVALID_ID_TOKEN", oidcTokens.LastIdToken);
         Assert.Empty(apiKeys.CreatedFor);
+        Assert.Empty(userProfiles.Profiles);
     }
 
     [Fact]
@@ -306,17 +490,50 @@ public sealed class AuthControllerTests
         Assert.Empty(apiKeys.CreatedFor);
     }
 
+    private static async Task AssertCredentialResolvesUsersMeAsync(
+        RecordingUserProfileRepository userProfiles,
+        string credentialOwner,
+        Guid expectedUserId)
+    {
+        var userProfileService = new UserProfileService(userProfiles);
+        var authenticatedProfile = await userProfileService.GetAuthenticatedUserProfileAsync(
+            credentialOwner,
+            CancellationToken.None);
+        Assert.NotNull(authenticatedProfile);
+        Assert.Equal(expectedUserId, authenticatedProfile.UserId);
+
+        var usersController = new UsersController(userProfileService);
+        usersController.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                    [new Claim(ClaimTypes.NameIdentifier, authenticatedProfile.UserId.ToString())],
+                    "ApiKey")),
+            },
+        };
+
+        var response = await usersController.GetCurrent(CancellationToken.None);
+        var ok = Assert.IsType<OkObjectResult>(response.Result);
+        var profile = Assert.IsType<UserProfileResponse>(ok.Value);
+        Assert.Equal(expectedUserId, profile.UserId);
+    }
+
     private static AuthController CreateController(
         RecordingApiKeyService? apiKeys = null,
         StubGoogleIdTokenValidator? googleTokens = null,
         StubFacebookAccessTokenValidator? facebookTokens = null,
         StubFacebookOidcTokenValidator? facebookOidcTokens = null,
+        RecordingUserProfileRepository? userProfiles = null,
         LoginOptions? loginOptions = null,
         GoogleOptions? googleOptions = null,
-        FacebookOptions? facebookOptions = null) =>
-        new(
+        FacebookOptions? facebookOptions = null)
+    {
+        var profileRepository = userProfiles ?? new RecordingUserProfileRepository();
+
+        return new AuthController(
             apiKeys ?? new RecordingApiKeyService(),
-            new RecordingUserProfileRepository(),
+            new UserProfileService(profileRepository),
             Options.Create(loginOptions ?? new LoginOptions
             {
                 Users =
@@ -340,35 +557,78 @@ public sealed class AuthControllerTests
             googleTokens ?? new StubGoogleIdTokenValidator(),
             facebookTokens ?? new StubFacebookAccessTokenValidator(),
             facebookOidcTokens ?? new StubFacebookOidcTokenValidator());
+    }
 
     private sealed class RecordingUserProfileRepository : IUserProfileRepository
     {
-        private readonly Dictionary<string, UserProfile> _profiles = [];
+        private readonly List<UserProfile> _profiles = [];
+
+        public IReadOnlyList<UserProfile> Profiles => _profiles;
+
+        public int AddOrUpdateCalls { get; private set; }
+
+        public void Seed(UserProfile profile)
+        {
+            _profiles.Add(profile);
+        }
 
         public Task<UserProfile?> GetByUserIdAsync(
             Guid userId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_profiles.Values.FirstOrDefault(profile => profile.UserId == userId));
+            Task.FromResult(_profiles.FirstOrDefault(profile => profile.UserId == userId));
 
         public Task<UserProfile?> GetActiveByUserIdAsync(
             Guid userId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_profiles.Values.FirstOrDefault(
+            Task.FromResult(_profiles.FirstOrDefault(
                 profile => profile.UserId == userId && profile.IsActive));
+
+        public Task<UserProfile?> GetByExternalAuthAsync(
+            string provider,
+            string externalAuthId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_profiles.FirstOrDefault(
+                profile => profile.ExternalAuthProvider == provider &&
+                    profile.ExternalAuthId == externalAuthId));
+
+        public Task<UserProfile?> GetActiveByExternalAuthAsync(
+            string provider,
+            string externalAuthId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_profiles.FirstOrDefault(
+                profile => profile.ExternalAuthProvider == provider &&
+                    profile.ExternalAuthId == externalAuthId &&
+                    profile.IsActive));
 
         public Task<UserProfile?> GetActiveByEmailAsync(
             string email, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_profiles.GetValueOrDefault(email) is { IsActive: true } profile
-                ? profile
-                : null);
+            Task.FromResult(_profiles.FirstOrDefault(profile => profile.Email == email && profile.IsActive));
 
         public Task<UserProfile?> GetByEmailAsync(
             string email, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_profiles.GetValueOrDefault(email));
+            Task.FromResult(_profiles.FirstOrDefault(profile => profile.Email == email));
 
         public Task<UserProfile> AddOrUpdateAsync(
             UserProfile profile, CancellationToken cancellationToken = default)
         {
-            _profiles[profile.Email] = profile;
-            return Task.FromResult(profile);
+            AddOrUpdateCalls++;
+            var existing = _profiles.FirstOrDefault(current => current.UserId == profile.UserId);
+            if (existing is null)
+            {
+                _profiles.Add(profile);
+                return Task.FromResult(profile);
+            }
+
+            existing.ExternalAuthProvider = profile.ExternalAuthProvider;
+            existing.ExternalAuthId = profile.ExternalAuthId;
+            existing.Email = profile.Email;
+            existing.FirstName = profile.FirstName;
+            existing.LastName = profile.LastName;
+            existing.PhoneNumber = profile.PhoneNumber;
+            existing.Role = profile.Role;
+            existing.ProfileImageUrl = profile.ProfileImageUrl;
+            existing.IsActive = profile.IsActive;
+            existing.UpdatedAt = DateTime.UtcNow;
+
+            return Task.FromResult(existing);
         }
 
         public Task<UserProfile?> UpdateEditableFieldsAsync(
@@ -379,7 +639,7 @@ public sealed class AuthControllerTests
             string? profileImageUrl,
             CancellationToken cancellationToken = default)
         {
-            var profile = _profiles.Values.FirstOrDefault(profile => profile.UserId == userId && profile.IsActive);
+            var profile = _profiles.FirstOrDefault(profile => profile.UserId == userId && profile.IsActive);
             if (profile is null)
             {
                 return Task.FromResult<UserProfile?>(null);
@@ -395,7 +655,7 @@ public sealed class AuthControllerTests
         }
 
         public Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_profiles.Values.Any(profile => profile.UserId == userId));
+            Task.FromResult(_profiles.Any(profile => profile.UserId == userId));
     }
 
     private sealed class RecordingApiKeyService : IApiKeyService

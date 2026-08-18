@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using backend.Services.Authentication.ApiKey;
-using backend.Repositories;
+using backend.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -16,7 +16,7 @@ public sealed class ApiKeyAuthenticationHandler(
     ILoggerFactory logger,
     UrlEncoder encoder,
     IApiKeyService apiKeyService,
-    IUserProfileRepository userProfileRepository)
+    IUserProfileService userProfileService)
     : AuthenticationHandler<ApiKeyAuthenticationOptions>(options, logger, encoder)
 {
     public const string SchemeName = "ApiKey";
@@ -34,7 +34,7 @@ public sealed class ApiKeyAuthenticationHandler(
             return AuthenticateResult.Fail("The API key is invalid or expired.");
         }
 
-        var profile = await userProfileRepository.GetActiveByEmailAsync(
+        var profile = await userProfileService.GetAuthenticatedUserProfileAsync(
             userName!, Context.RequestAborted);
         if (profile is null)
             return AuthenticateResult.Fail("The API key owner has no active user profile.");
