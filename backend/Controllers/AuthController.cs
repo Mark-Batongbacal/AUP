@@ -2,8 +2,6 @@ using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text;
 using backend.Authentication;
-using backend.Models.Database;
-using backend.Repositories;
 using backend.Services;
 using backend.Services.Authentication.ApiKey;
 using backend.Services.Authentication.Facebook;
@@ -20,7 +18,7 @@ namespace backend.Controllers;
 [Route("api/auth")]
 public sealed class AuthController(
     IApiKeyService apiKeyService,
-    IUserProfileRepository userProfiles,
+    IUserProfileService userProfileService,
     IOptions<LoginOptions> options,
     IOptions<GoogleOptions> googleOptions,
     IOptions<FacebookOptions> facebookOptions,
@@ -59,25 +57,29 @@ public sealed class AuthController(
         if (!CredentialsAreValid(request.UserName, request.Password))
             return Unauthorized(new { message = "The account is not configured or the password is invalid." });
 
-        if (await userProfiles.GetByEmailAsync(request.UserName, cancellationToken) is not null)
-            return Conflict(new { message = "A user profile with this email already exists." });
-
-        var profile = await userProfiles.AddOrUpdateAsync(new UserProfile
+        var registration = await userProfileService.RegisterLocalProfileAsync(
+            request.UserName,
+            request.FirstName,
+            request.LastName,
+            request.PhoneNumber,
+            cancellationToken);
+        if (registration.Status == UserProfileRegistrationStatus.Duplicate)
         {
-            UserId = Guid.NewGuid(),
-            Email = request.UserName,
-            FirstName = request.FirstName.Trim(),
-            LastName = request.LastName.Trim(),
-            PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
-            Role = "Passenger",
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        }, cancellationToken);
+            return Conflict(new { message = registration.Errors[0] });
+        }
 
-        var issuedKey = apiKeyService.Create(profile.Email);
+        if (registration.Status == UserProfileRegistrationStatus.ValidationFailed)
+        {
+            return BadRequest(new { errors = registration.Errors });
+        }
+
+        var authentication = registration.Authentication!;
+        var issuedKey = apiKeyService.Create(authentication.CredentialOwner);
         return StatusCode(StatusCodes.Status201Created, new RegisterResponse(
-            profile.UserId, profile.Email, profile.FirstName, profile.LastName,
+            authentication.UserId,
+            authentication.CredentialOwner,
+            authentication.Profile.FirstName,
+            authentication.Profile.LastName,
             issuedKey.Value, issuedKey.ExpiresAt));
     }
 
@@ -86,7 +88,9 @@ public sealed class AuthController(
     [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<LoginResponse>> Google(GoogleLoginRequest request)
+    public async Task<ActionResult<LoginResponse>> Google(
+        GoogleLoginRequest? request,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_googleOptions.ClientId))
         {
@@ -118,24 +122,21 @@ public sealed class AuthController(
             return Unauthorized(new { message = "Invalid Google token." });
         }
 
-        var profileOwner = $"google:{payload.Subject}";
-        var existingProfile = await userProfiles.GetByEmailAsync(profileOwner);
-        var displayName = (payload.Name ?? string.Empty).Trim();
-        var nameParts = displayName.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-        var profile = await userProfiles.AddOrUpdateAsync(new UserProfile
+        var profile = await userProfileService.CreateOrUpdateExternalProfileAsync(
+            "google",
+            payload.Subject,
+            payload.Name,
+            payload.Email,
+            cancellationToken);
+        if (profile is null)
         {
-            UserId = existingProfile?.UserId ?? Guid.NewGuid(),
-            Email = profileOwner,
-            FirstName = existingProfile?.FirstName ?? nameParts.FirstOrDefault(),
-            LastName = existingProfile?.LastName ?? (nameParts.Length > 1 ? nameParts[1] : null),
-            PhoneNumber = existingProfile?.PhoneNumber,
-            Role = existingProfile?.Role ?? "Passenger",
-            IsActive = true,
-            CreatedAt = existingProfile?.CreatedAt ?? DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        });
+            return Problem(
+                title: "User profile could not be synchronized.",
+                detail: "The Google identity could not be mapped to a user profile.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
 
-        var issuedKey = apiKeyService.Create(profile.Email);
+        var issuedKey = apiKeyService.Create(profile.CredentialOwner);
         return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
     }
 
@@ -163,10 +164,10 @@ public sealed class AuthController(
             return Unauthorized(new { message = "Invalid Facebook token." });
         }
 
-        FacebookUserInfo profile;
+        FacebookUserInfo facebookProfile;
         try
         {
-            profile = await facebookAccessTokenValidator.ValidateAsync(
+            facebookProfile = await facebookAccessTokenValidator.ValidateAsync(
                 request.AccessToken,
                 _facebookOptions.AppId,
                 _facebookOptions.AppSecret,
@@ -184,7 +185,21 @@ public sealed class AuthController(
                 statusCode: StatusCodes.Status502BadGateway);
         }
 
-        var issuedKey = apiKeyService.Create($"facebook:{profile.UserId}");
+        var profile = await userProfileService.CreateOrUpdateExternalProfileAsync(
+            "facebook",
+            facebookProfile.UserId,
+            facebookProfile.Name,
+            facebookProfile.Email,
+            cancellationToken);
+        if (profile is null)
+        {
+            return Problem(
+                title: "User profile could not be synchronized.",
+                detail: "The Facebook identity could not be mapped to a user profile.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        var issuedKey = apiKeyService.Create(profile.CredentialOwner);
         return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
     }
 
@@ -213,10 +228,10 @@ public sealed class AuthController(
             return Unauthorized(new { message = "Invalid Facebook token." });
         }
 
-        FacebookOidcUserInfo profile;
+        FacebookOidcUserInfo facebookProfile;
         try
         {
-            profile = await facebookOidcTokenValidator.ValidateAsync(
+            facebookProfile = await facebookOidcTokenValidator.ValidateAsync(
                 request.IdToken,
                 _facebookOptions.AppId,
                 request.Nonce,
@@ -234,7 +249,21 @@ public sealed class AuthController(
                 statusCode: StatusCodes.Status502BadGateway);
         }
 
-        var issuedKey = apiKeyService.Create($"facebook:{profile.Subject}");
+        var profile = await userProfileService.CreateOrUpdateExternalProfileAsync(
+            "facebook",
+            facebookProfile.Subject,
+            facebookProfile.Name,
+            facebookProfile.Email,
+            cancellationToken);
+        if (profile is null)
+        {
+            return Problem(
+                title: "User profile could not be synchronized.",
+                detail: "The Facebook identity could not be mapped to a user profile.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        var issuedKey = apiKeyService.Create(profile.CredentialOwner);
         return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
     }
 

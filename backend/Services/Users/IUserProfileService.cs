@@ -4,6 +4,24 @@ namespace backend.Services;
 
 public interface IUserProfileService
 {
+    Task<UserProfileRegistrationResult> RegisterLocalProfileAsync(
+        string userName,
+        string firstName,
+        string lastName,
+        string? phoneNumber,
+        CancellationToken cancellationToken = default);
+
+    Task<UserProfileAuthenticationResult?> CreateOrUpdateExternalProfileAsync(
+        string provider,
+        string providerSubject,
+        string? displayName,
+        string? email,
+        CancellationToken cancellationToken = default);
+
+    Task<UserProfileAuthenticationResult?> GetAuthenticatedUserProfileAsync(
+        string credentialOwner,
+        CancellationToken cancellationToken = default);
+
     Task<UserProfileResponse?> GetCurrentUserProfileAsync(
         Guid userId,
         CancellationToken cancellationToken = default);
@@ -16,6 +34,36 @@ public interface IUserProfileService
         string? profileImageUrl,
         CancellationToken cancellationToken = default);
 }
+
+public enum UserProfileRegistrationStatus
+{
+    Success,
+    ValidationFailed,
+    Duplicate,
+}
+
+public sealed record UserProfileRegistrationResult(
+    UserProfileRegistrationStatus Status,
+    IReadOnlyList<string> Errors,
+    UserProfileAuthenticationResult? Authentication)
+{
+    public static UserProfileRegistrationResult Success(UserProfileAuthenticationResult authentication) =>
+        new(UserProfileRegistrationStatus.Success, [], authentication);
+
+    public static UserProfileRegistrationResult ValidationFailed(IReadOnlyList<string> errors) =>
+        new(UserProfileRegistrationStatus.ValidationFailed, errors, null);
+
+    public static UserProfileRegistrationResult Duplicate(string userName) =>
+        new(
+            UserProfileRegistrationStatus.Duplicate,
+            [$"A user profile with this email already exists."],
+            null);
+}
+
+public sealed record UserProfileAuthenticationResult(
+    Guid UserId,
+    string CredentialOwner,
+    UserProfileResponse Profile);
 
 public enum UserProfileMutationStatus
 {

@@ -8,6 +8,16 @@ public interface IUserProfileRepository
 
     Task<UserProfile?> GetActiveByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
 
+    Task<UserProfile?> GetByExternalAuthAsync(
+        string provider,
+        string externalAuthId,
+        CancellationToken cancellationToken = default);
+
+    Task<UserProfile?> GetActiveByExternalAuthAsync(
+        string provider,
+        string externalAuthId,
+        CancellationToken cancellationToken = default);
+
     Task<UserProfile?> GetActiveByEmailAsync(string email, CancellationToken cancellationToken = default);
 
     Task<UserProfile?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
