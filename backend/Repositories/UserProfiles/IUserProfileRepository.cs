@@ -14,5 +14,13 @@ public interface IUserProfileRepository
 
     Task<UserProfile> AddOrUpdateAsync(UserProfile profile, CancellationToken cancellationToken = default);
 
+    Task<UserProfile?> UpdateEditableFieldsAsync(
+        Guid userId,
+        string? firstName,
+        string? lastName,
+        string? phoneNumber,
+        string? profileImageUrl,
+        CancellationToken cancellationToken = default);
+
     Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default);
 }

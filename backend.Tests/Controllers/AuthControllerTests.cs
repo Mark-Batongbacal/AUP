@@ -371,6 +371,29 @@ public sealed class AuthControllerTests
             return Task.FromResult(profile);
         }
 
+        public Task<UserProfile?> UpdateEditableFieldsAsync(
+            Guid userId,
+            string? firstName,
+            string? lastName,
+            string? phoneNumber,
+            string? profileImageUrl,
+            CancellationToken cancellationToken = default)
+        {
+            var profile = _profiles.Values.FirstOrDefault(profile => profile.UserId == userId && profile.IsActive);
+            if (profile is null)
+            {
+                return Task.FromResult<UserProfile?>(null);
+            }
+
+            profile.FirstName = firstName;
+            profile.LastName = lastName;
+            profile.PhoneNumber = phoneNumber;
+            profile.ProfileImageUrl = profileImageUrl;
+            profile.UpdatedAt = DateTime.UtcNow;
+
+            return Task.FromResult<UserProfile?>(profile);
+        }
+
         public Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_profiles.Values.Any(profile => profile.UserId == userId));
     }
