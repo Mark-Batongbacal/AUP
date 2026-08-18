@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
-using backend.Services;
+using backend.Services.Authentication.Facebook;
 using Microsoft.Extensions.Logging;
 
 namespace backend.Tests.Services;
