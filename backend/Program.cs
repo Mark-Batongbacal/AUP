@@ -59,6 +59,7 @@ var connectionString =
 
 builder.Services.Configure<LoginOptions>(builder.Configuration.GetSection(LoginOptions.SectionName));
 builder.Services.Configure<GoogleOptions>(builder.Configuration.GetSection(GoogleOptions.SectionName));
+builder.Services.Configure<FacebookOptions>(builder.Configuration.GetSection(FacebookOptions.SectionName));
 
 builder.Services.AddDbContext<TukiDbContext>(options =>
     options.UseSqlServer(connectionString));
@@ -88,6 +89,35 @@ builder.Services.AddScoped<ITricyclePointRepository, TricyclePointRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
 builder.Services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
+builder.Services.AddSingleton<IFacebookAccessTokenValidator>(serviceProvider =>
+{
+    var httpClient = new HttpClient
+    {
+        Timeout = TimeSpan.FromSeconds(10)
+    };
+
+#if DEBUG
+    return new FacebookAccessTokenValidator(
+        httpClient,
+        serviceProvider.GetRequiredService<ILogger<FacebookAccessTokenValidator>>(),
+        builder.Environment.IsDevelopment());
+#else
+    return new FacebookAccessTokenValidator(httpClient);
+#endif
+});
+builder.Services.AddSingleton<IFacebookOidcTokenValidator>(serviceProvider =>
+{
+    var httpClient = new HttpClient
+    {
+        Timeout = TimeSpan.FromSeconds(10)
+    };
+    var facebookOptions = serviceProvider.GetRequiredService<IOptions<FacebookOptions>>().Value;
+
+    return new FacebookOidcTokenValidator(
+        httpClient,
+        facebookOptions.OidcIssuer,
+        facebookOptions.OidcJwksUri);
+});
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();
