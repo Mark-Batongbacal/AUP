@@ -9,3 +9,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Xcode user-specific files
+**/xcuserdata/
+*.xcuserstate
