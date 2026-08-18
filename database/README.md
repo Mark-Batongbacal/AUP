@@ -18,6 +18,10 @@ Open `TukiDbSchema.sql` in SSMS and execute it against `TukiDb`.
 
 The script uses the `dbo` schema, creates missing tables, adds missing columns, adds indexes and constraints when absent, and seeds only stable lookup transport modes: `WALK`, `JEEPNEY`, and `TRICYCLE`.
 
+Before using TripSession, GPS navigation, instructions, or landmark endpoints, also
+run `TukiNavigationSchema.sql` once against the same database. It is additive and
+idempotent and creates the Phase 2-6 navigation tables only when missing.
+
 ## Secrets
 
 Application secrets do not belong in this folder or any tracked source file. Set connection strings, passwords, and API keys through environment variables such as `ConnectionStrings__TukiDbConnection`.
