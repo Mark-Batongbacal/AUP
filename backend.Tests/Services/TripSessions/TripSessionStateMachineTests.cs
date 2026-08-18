@@ -1,0 +1,25 @@
+using backend.Models.Database;
+using backend.Services.TripSessions;
+
+namespace backend.Tests.Services.TripSessions;
+
+public sealed class TripSessionStateMachineTests
+{
+    private readonly TripSessionStateMachine _machine = new();
+
+    [Theory]
+    [InlineData(TripNavigationState.Planned, TripNavigationState.Starting)]
+    [InlineData(TripNavigationState.Planned, TripNavigationState.Cancelled)]
+    [InlineData(TripNavigationState.WaitingToBoard, TripNavigationState.OnJeepney)]
+    [InlineData(TripNavigationState.WalkingToDestination, TripNavigationState.Arrived)]
+    public void ValidTransitions_AreAllowed(TripNavigationState from, TripNavigationState to) =>
+        Assert.True(_machine.CanTransition(from, to));
+
+    [Theory]
+    [InlineData(TripNavigationState.Planned, TripNavigationState.Arrived)]
+    [InlineData(TripNavigationState.OnJeepney, TripNavigationState.Planned)]
+    [InlineData(TripNavigationState.Cancelled, TripNavigationState.OnJeepney)]
+    [InlineData(TripNavigationState.Arrived, TripNavigationState.Rerouting)]
+    public void InvalidAndTerminalTransitions_AreRejected(TripNavigationState from, TripNavigationState to) =>
+        Assert.False(_machine.CanTransition(from, to));
+}
