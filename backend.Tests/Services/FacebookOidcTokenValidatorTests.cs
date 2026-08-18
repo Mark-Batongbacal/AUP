@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using backend.Services;
+using backend.Services.Authentication.Facebook;
 
 namespace backend.Tests.Services;
 
