@@ -48,13 +48,21 @@ data class TricyclePointResponseDto(
 )
 
 interface TricyclePointsApi {
+    @GET("api/tricycle-points") suspend fun active(): Response<List<TricyclePointResponseDto>>
     @GET("api/tricycle-points/{tricyclePointId}") suspend fun get(@Path("tricyclePointId") id: Long): Response<TricyclePointResponseDto>
     @POST("api/tricycle-points") suspend fun create(@Body request: CreateTricyclePointRequestDto): Response<TricyclePointResponseDto>
 }
 
-interface TricycleRepository { suspend fun getPoint(id: Long): ApiResult<TricyclePointResponseDto> }
-
-class TricycleRepositoryImpl(private val api: TricyclePointsApi, private val sessions: AuthSessionStore, private val errors: ApiErrorParser) : TricycleRepository {
-    override suspend fun getPoint(id: Long) = authenticatedApiCall(sessions, errors) { api.get(id) }
+interface TricycleRepository {
+    suspend fun getActivePoints(): ApiResult<List<TricyclePointResponseDto>>
+    suspend fun getPoint(id: Long): ApiResult<TricyclePointResponseDto>
 }
 
+class TricycleRepositoryImpl(
+    private val api: TricyclePointsApi,
+    private val sessions: AuthSessionStore,
+    private val errors: ApiErrorParser
+) : TricycleRepository {
+    override suspend fun getActivePoints() = authenticatedApiCall(sessions, errors) { api.active() }
+    override suspend fun getPoint(id: Long) = authenticatedApiCall(sessions, errors) { api.get(id) }
+}
