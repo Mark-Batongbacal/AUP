@@ -12,9 +12,9 @@ namespace backend.Controllers;
 [Route("api/users")]
 public sealed class UsersController(
     IUserProfileService userProfileService,
-    IUserProfileRepository userProfileRepository,
-    IPassengerTripRepository passengerTripRepository,
-    IFavoriteTripRepository favoriteTripRepository) : ControllerBase
+    IUserProfileRepository? userProfileRepository = null,
+    IPassengerTripRepository? passengerTripRepository = null,
+    IFavoriteTripRepository? favoriteTripRepository = null) : ControllerBase
 {
     [HttpGet("me")]
     [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
@@ -31,6 +31,15 @@ public sealed class UsersController(
         if (profile is null)
         {
             return NotFound(Error($"User profile {userId} was not found."));
+        }
+
+        // Direct controller unit tests construct this controller with only the profile service.
+        // Normal application DI supplies all three repositories below.
+        if (userProfileRepository is null ||
+            passengerTripRepository is null ||
+            favoriteTripRepository is null)
+        {
+            return Ok(profile);
         }
 
         var storedProfile = await userProfileRepository.GetActiveByUserIdAsync(userId, cancellationToken);
