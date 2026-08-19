@@ -1,5 +1,6 @@
 package com.example.frontend.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.MapScreen
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -48,6 +50,40 @@ fun DestinationSearchScreen(
     onFindRoutes: (destination: String) -> Unit = {}
 ) {
     var destinationText by remember { mutableStateOf("") }
+    var showMap by remember { mutableStateOf(false) }
+
+    if (showMap) {
+        BackHandler {
+            showMap = false
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            MapScreen(
+                routePoints = emptyList(),
+                modifier = Modifier.fillMaxSize()
+            )
+
+            Text(
+                text = "← Back",
+                color = TukiDark,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(16.dp)
+                    .background(
+                        color = TukiCream,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .clickable {
+                        showMap = false
+                    }
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
+
+        return
+    }
 
     Box(
         modifier = Modifier
@@ -167,6 +203,9 @@ fun DestinationSearchScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(color = Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(14.dp))
+                        .clickable {
+                            showMap = true
+                        }
                         .padding(vertical = 12.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
