@@ -6,6 +6,7 @@ using backend.Services.Authentication.ApiKey;
 using backend.Services.Authentication.Facebook;
 using backend.Services.Authentication.Google;
 using backend.Services.Authentication.Login;
+using backend.Services.Email;
 using backend.Services.Transportation;
 using Microsoft.EntityFrameworkCore;
 using backend.Helpers;
@@ -77,6 +78,7 @@ var connectionString =
 builder.Services.Configure<LoginOptions>(builder.Configuration.GetSection(LoginOptions.SectionName));
 builder.Services.Configure<GoogleOptions>(builder.Configuration.GetSection(GoogleOptions.SectionName));
 builder.Services.Configure<FacebookOptions>(builder.Configuration.GetSection(FacebookOptions.SectionName));
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
 
 builder.Services.AddDbContext<TukiDbContext>(options =>
     options.UseSqlServer(connectionString));
@@ -144,6 +146,9 @@ builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();
 builder.Services.AddScoped<ITripService, TripService>();
 builder.Services.AddScoped<IFavoriteTripService, FavoriteTripService>();
+builder.Services.AddScoped<IEmailSender, AzureEmailSender>();
+builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
+builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<IUserProfileService, UserProfileService>();
 builder.Services.AddScoped<ILocalAuthenticationService, LocalAuthenticationService>();
 builder.Services.AddScoped<IRoutePointService, RoutePointService>();
