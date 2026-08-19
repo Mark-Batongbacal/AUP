@@ -163,18 +163,24 @@ fun RouteResultsScreen(
                             plan.source.transferWalkDistancesMeters.sum()
                         ).roundToInt()
 
-                    val routePoints = buildList {
-                        plan.legs.forEach { leg ->
-                            val points = if (leg.geometry.isNotEmpty()) {
-                                leg.geometry.map { point -> RoutePoint(point.latitude, point.longitude) }
-                            } else {
-                                listOf(
-                                    RoutePoint(leg.origin.latitude, leg.origin.longitude),
-                                    RoutePoint(leg.destination.latitude, leg.destination.longitude)
-                                )
+                    val legRoutePoints = plan.legs.map { leg ->
+                        if (leg.geometry.isNotEmpty()) {
+                            leg.geometry.map { point ->
+                                RoutePoint(point.latitude, point.longitude)
                             }
-
-                            points.forEach { point ->
+                        } else {
+                            listOf(
+                                RoutePoint(leg.origin.latitude, leg.origin.longitude),
+                                RoutePoint(leg.destination.latitude, leg.destination.longitude)
+                            )
+                        }
+                    }
+                    val legEndPoints = plan.legs.map { leg ->
+                        RoutePoint(leg.destination.latitude, leg.destination.longitude)
+                    }
+                    val routePoints = buildList {
+                        legRoutePoints.forEach { legPoints ->
+                            legPoints.forEach { point ->
                                 if (lastOrNull() != point) add(point)
                             }
                         }
@@ -190,6 +196,8 @@ fun RouteResultsScreen(
                         generalCost = plan.source.generalizedCostPesos,
                         isRecommended = "efficient" in recommendationTags,
                         routePoints = routePoints,
+                        legRoutePoints = legRoutePoints,
+                        legEndPoints = legEndPoints,
                         steps = plan.legs.mapIndexed { legIndex, leg ->
                             val mode = when (leg.mode) {
                                 TransitMode.Walk -> "Walk"
