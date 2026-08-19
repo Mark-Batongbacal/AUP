@@ -14,6 +14,11 @@ public sealed record UserProfileResponse(
     string Role,
     string? ProfileImageUrl,
     DateTime CreatedAt,
-    DateTime? UpdatedAt);
+    DateTime? UpdatedAt)
+{
+    public string? Email { get; init; }
+    public int TripsTaken { get; init; }
+    public int FavoritesCount { get; init; }
+}
 
 public sealed record UserProfileErrorResponse(IReadOnlyList<string> Errors);
