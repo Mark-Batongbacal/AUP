@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DC28C3A5303562EA00450666 /* Secrets.generated.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = DC28C3A4303562EA00450666 /* Secrets.generated.xcconfig */; };
 		DCD250223033FA0000106143 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = DCD250213033FA0000106143 /* GoogleSignIn */; };
 		DCD250243033FA0000106143 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD250263033FA0000106143 /* AppConfigurationTests.swift */; };
 		DCD250253033FA0000106143 /* AuthModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD250273033FA0000106143 /* AuthModelsTests.swift */; };
@@ -26,6 +27,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		DC28C3A4303562EA00450666 /* Secrets.generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.generated.xcconfig; sourceTree = "<group>"; };
 		DCBB7E5A3033F1600059A8C3 /* TUKI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TUKI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DCD250263033FA0000106143 /* AppConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigurationTests.swift; sourceTree = "<group>"; };
 		DCD250273033FA0000106143 /* AuthModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModelsTests.swift; sourceTree = "<group>"; };
@@ -81,6 +83,7 @@
 				DCBB7E5C3033F1600059A8C3 /* TUKI */,
 				DCD250293033FA0000106143 /* TUKITests */,
 				DCBB7E5B3033F1600059A8C3 /* Products */,
+				DC28C3A4303562EA00450666 /* Secrets.generated.xcconfig */,
 			);
 			sourceTree = "<group>";
 		};
@@ -199,6 +202,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DC28C3A5303562EA00450666 /* Secrets.generated.xcconfig in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -361,6 +365,7 @@
 		};
 		DCBB7E663033F1610059A8C3 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = DC28C3A4303562EA00450666 /* Secrets.generated.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -393,6 +398,7 @@
 		};
 		DCBB7E673033F1610059A8C3 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = DC28C3A4303562EA00450666 /* Secrets.generated.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

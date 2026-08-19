@@ -116,7 +116,14 @@ public sealed class TripSessionService(
                     : TripNavigationState.Transferring)
                 : TripNavigationState.WaitingToBoard;
         var result = await TransitionAsync(userId, sessionId, nextState, cancellationToken,
-            session => session.CurrentLegIndex = Math.Min(nextIndex, legs.Count));
+            session => {
+                session.CurrentLegIndex = Math.Min(nextIndex, legs.Count);
+
+                // New leg = new progress coordinate system.
+                session.CurrentProgressMeters = 0;
+                session.CurrentRouteProgressMeters = null;
+                session.ConsecutiveStateConfirmationSamples = 0;
+            });
         if (result.Succeeded) _telemetry.Event("AlightingConfirmed", sessionId);
         return result;
     }

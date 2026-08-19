@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
+import kotlinx.coroutines.launch
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
 import com.example.frontend.data.auth.RegisterRequest
@@ -49,21 +51,27 @@ private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
 private val TukiCream = Color(0xFFFFF8E8)
 private val TukiGray = Color(0xFF9AA6A9)
+private val TukiError = Color(0xFFB00020)
 
 @Composable
 fun SignupScreen(
     authRepository: AuthRepository,
     onBack: () -> Unit = {},
     onLoginClick: () -> Unit = {},
-    onLoginSuccess: () -> Unit = {}
+    onLoginSuccess: () -> Unit = {},
+    onSignUpClick: suspend (String, String, String) -> LoginActionResult = { _, _, _ ->
+        LoginActionResult.Error("Sign up is not configured.")
+    }
 ) {
+    val coroutineScope = rememberCoroutineScope()
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
+    var isSigningUp by remember { mutableStateOf(false) }
+    var signUpError by remember { mutableStateOf<String?>(null) }
 
     var isSigningUp by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -86,7 +94,6 @@ fun SignupScreen(
                 .padding(horizontal = 28.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Branding header matching login screen sizing
             Image(
                 painter = painterResource(R.drawable.tuki_logo),
                 contentDescription = "TUKI logo",
@@ -123,154 +130,63 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Input form fields
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Full name
-                Column {
-                    Text(
-                        text = "Full Name",
-                        color = Color.Black,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TextField(
-                        value = fullName,
-                        onValueChange = { fullName = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = TukiCream,
-                            unfocusedContainerColor = TukiCream,
-                            disabledContainerColor = TukiCream,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent
-                        )
-                    )
-                }
+                SignUpTextField(
+                    label = "Full Name",
+                    value = fullName,
+                    enabled = !isSigningUp,
+                    onValueChange = {
+                        fullName = it
+                        signUpError = null
+                    }
+                )
 
-                // Email
-                Column {
-                    Text(
-                        text = "Email",
-                        color = Color.Black,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = TukiCream,
-                            unfocusedContainerColor = TukiCream,
-                            disabledContainerColor = TukiCream,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent
-                        )
-                    )
-                }
+                SignUpTextField(
+                    label = "Email",
+                    value = email,
+                    enabled = !isSigningUp,
+                    onValueChange = {
+                        email = it
+                        signUpError = null
+                    }
+                )
 
-                // Password
-                Column {
-                    Text(
-                        text = "Password",
-                        color = Color.Black,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        visualTransformation = if (passwordVisible) {
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
-                        trailingIcon = {
-                            Text(
-                                text = if (passwordVisible) "HIDE" else "SHOW",
-                                color = TukiTeal,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .padding(end = 12.dp)
-                                    .clickable { passwordVisible = !passwordVisible }
-                            )
-                        },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = TukiCream,
-                            unfocusedContainerColor = TukiCream,
-                            disabledContainerColor = TukiCream,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent
-                        )
-                    )
-                }
+                PasswordField(
+                    label = "Password",
+                    value = password,
+                    visible = passwordVisible,
+                    enabled = !isSigningUp,
+                    onValueChange = {
+                        password = it
+                        signUpError = null
+                    },
+                    onVisibilityToggle = { passwordVisible = !passwordVisible }
+                )
 
-                // Confirm password
-                Column {
-                    Text(
-                        text = "Confirm Password",
-                        color = Color.Black,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    TextField(
-                        value = confirmPassword,
-                        onValueChange = { confirmPassword = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                        singleLine = true,
-                        shape = RoundedCornerShape(14.dp),
-                        visualTransformation = if (confirmPasswordVisible) {
-                            VisualTransformation.None
-                        } else {
-                            PasswordVisualTransformation()
-                        },
-                        trailingIcon = {
-                            Text(
-                                text = if (confirmPasswordVisible) "HIDE" else "SHOW",
-                                color = TukiTeal,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .padding(end = 12.dp)
-                                    .clickable { confirmPasswordVisible = !confirmPasswordVisible }
-                            )
-                        },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = TukiCream,
-                            unfocusedContainerColor = TukiCream,
-                            disabledContainerColor = TukiCream,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent
-                        )
-                    )
-                }
+                PasswordField(
+                    label = "Confirm Password",
+                    value = confirmPassword,
+                    visible = confirmPasswordVisible,
+                    enabled = !isSigningUp,
+                    onValueChange = {
+                        confirmPassword = it
+                        signUpError = null
+                    },
+                    onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
+                )
+            }
+
+            signUpError?.let { message ->
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = message,
+                    color = TukiError,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
 
             if (errorMessage != null) {
@@ -285,51 +201,45 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Main action button
             Button(
                 onClick = {
-                    if (password != confirmPassword) {
-                        errorMessage = "Passwords do not match"
-                        return@Button
-                    }
-                    coroutineScope.launch {
-                        isSigningUp = true
-                        errorMessage = null
-                        val nameParts = fullName.split(" ", limit = 2)
-                        val firstName = nameParts.getOrNull(0) ?: ""
-                        val lastName = nameParts.getOrNull(1) ?: ""
-                        
-                        val result = authRepository.register(
-                            RegisterRequest(
-                                userName = email,
-                                password = password,
-                                firstName = firstName,
-                                lastName = lastName
-                            )
-                        )
-                        isSigningUp = false
-                        
-                        when (result) {
-                            is ApiResult.Success -> onLoginSuccess()
-                            is ApiResult.Failure -> errorMessage = result.message
+                    if (isSigningUp) return@Button
+
+                    val normalizedName = fullName.trim()
+                    val normalizedEmail = email.trim()
+                    when {
+                        normalizedName.isBlank() -> signUpError = "Enter your full name."
+                        normalizedName.split(Regex("\\s+")).size < 2 ->
+                            signUpError = "Enter both your first and last name."
+                        normalizedEmail.isBlank() -> signUpError = "Enter your email address."
+                        !normalizedEmail.contains("@") -> signUpError = "Enter a valid email address."
+                        password.length < 8 -> signUpError = "Password must be at least 8 characters."
+                        password != confirmPassword -> signUpError = "Passwords do not match."
+                        else -> coroutineScope.launch {
+                            signUpError = null
+                            isSigningUp = true
+                            try {
+                                when (val result = onSignUpClick(normalizedName, normalizedEmail, password)) {
+                                    LoginActionResult.Success -> onLoginSuccess()
+                                    LoginActionResult.Canceled -> Unit
+                                    is LoginActionResult.Error -> signUpError = result.message
+                                }
+                            } finally {
+                                isSigningUp = false
+                            }
                         }
                     }
                 },
+                modifier = Modifier.fillMaxWidth().height(60.dp),
                 enabled = !isSigningUp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TukiOrange,
-                    contentColor = Color.White
-                )
+                colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
             ) {
                 if (isSigningUp) {
                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                 } else {
                     Text(
-                        text = "Sign up",
+                        text = if (isSigningUp) "Creating account..." else "Sign up",
                         fontSize = 25.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -338,10 +248,7 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Navigation link
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "Already have an account? ",
                     color = TukiGray,
@@ -354,9 +261,87 @@ fun SignupScreen(
                     color = TukiOrange,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clickable { onLoginClick() }
+                    modifier = Modifier.clickable(enabled = !isSigningUp) { onLoginClick() }
                 )
             }
         }
     }
 }
+
+@Composable
+private fun SignUpTextField(
+    label: String,
+    value: String,
+    enabled: Boolean,
+    onValueChange: (String) -> Unit
+) {
+    Column {
+        Text(
+            text = label,
+            color = Color.Black,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            enabled = enabled,
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            colors = signUpFieldColors()
+        )
+    }
+}
+
+@Composable
+private fun PasswordField(
+    label: String,
+    value: String,
+    visible: Boolean,
+    enabled: Boolean,
+    onValueChange: (String) -> Unit,
+    onVisibilityToggle: () -> Unit
+) {
+    Column {
+        Text(
+            text = label,
+            color = Color.Black,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            enabled = enabled,
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                Text(
+                    text = if (visible) "HIDE" else "SHOW",
+                    color = TukiTeal,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .clickable(enabled = enabled, onClick = onVisibilityToggle)
+                )
+            },
+            colors = signUpFieldColors()
+        )
+    }
+}
+
+@Composable
+private fun signUpFieldColors() = TextFieldDefaults.colors(
+    focusedContainerColor = TukiCream,
+    unfocusedContainerColor = TukiCream,
+    disabledContainerColor = TukiCream,
+    focusedIndicatorColor = Color.Transparent,
+    unfocusedIndicatorColor = Color.Transparent,
+    disabledIndicatorColor = Color.Transparent
+)

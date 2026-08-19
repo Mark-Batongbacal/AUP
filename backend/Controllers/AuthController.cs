@@ -24,11 +24,13 @@ public sealed class AuthController(
     IOptions<FacebookOptions> facebookOptions,
     IGoogleIdTokenValidator googleIdTokenValidator,
     IFacebookAccessTokenValidator facebookAccessTokenValidator,
-    IFacebookOidcTokenValidator facebookOidcTokenValidator) : ControllerBase
+    IFacebookOidcTokenValidator facebookOidcTokenValidator,
+    ILocalAuthenticationService? localAuthenticationService = null) : ControllerBase
 {
     private readonly LoginOptions _options = options.Value;
     private readonly GoogleOptions _googleOptions = googleOptions.Value;
     private readonly FacebookOptions _facebookOptions = facebookOptions.Value;
+    private readonly ILocalAuthenticationService? _localAuthenticationService = localAuthenticationService;
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -36,12 +38,15 @@ public sealed class AuthController(
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public ActionResult<LoginResponse> Login(LoginRequest request)
     {
-        if (!CredentialsAreValid(request.UserName, request.Password))
+        var validPersistentCredential =
+            _localAuthenticationService?.CredentialsAreValid(request.UserName, request.Password) == true;
+
+        if (!validPersistentCredential && !ConfiguredCredentialsAreValid(request.UserName, request.Password))
         {
             return Unauthorized(new { message = "Invalid username or password." });
         }
 
-        var issuedKey = apiKeyService.Create(request.UserName);
+        var issuedKey = apiKeyService.Create(request.UserName.Trim());
         return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
     }
 
@@ -54,8 +59,14 @@ public sealed class AuthController(
         RegisterRequest request,
         CancellationToken cancellationToken)
     {
-        if (!CredentialsAreValid(request.UserName, request.Password))
+        // Tests and legacy deployments that do not register the persistent local-auth service
+        // keep the previous configured-user behavior. Normal application startup registers the
+        // service, allowing arbitrary users to create local accounts safely in the database.
+        if (_localAuthenticationService is null &&
+            !ConfiguredCredentialsAreValid(request.UserName, request.Password))
+        {
             return Unauthorized(new { message = "The account is not configured or the password is invalid." });
+        }
 
         var registration = await userProfileService.RegisterLocalProfileAsync(
             request.UserName,
@@ -74,13 +85,22 @@ public sealed class AuthController(
         }
 
         var authentication = registration.Authentication!;
+        if (_localAuthenticationService is not null)
+        {
+            await _localAuthenticationService.StoreCredentialAsync(
+                authentication.UserId,
+                request.Password,
+                cancellationToken);
+        }
+
         var issuedKey = apiKeyService.Create(authentication.CredentialOwner);
         return StatusCode(StatusCodes.Status201Created, new RegisterResponse(
             authentication.UserId,
             authentication.CredentialOwner,
             authentication.Profile.FirstName,
             authentication.Profile.LastName,
-            issuedKey.Value, issuedKey.ExpiresAt));
+            issuedKey.Value,
+            issuedKey.ExpiresAt));
     }
 
     [HttpPost("google")]
@@ -241,7 +261,7 @@ public sealed class AuthController(
         {
             return Unauthorized(new { message = "Invalid Facebook token." });
         }
-        catch (FacebookOidcTokenValidationUnavailableException)
+        catch (FacebookTokenValidationUnavailableException)
         {
             return Problem(
                 title: "Facebook login is temporarily unavailable.",
@@ -271,7 +291,7 @@ public sealed class AuthController(
     [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
     public ActionResult<object> Me() => Ok(new { userName = User.Identity?.Name });
 
-    private bool CredentialsAreValid(string userName, string password)
+    private bool ConfiguredCredentialsAreValid(string userName, string password)
     {
         var configuredUser = _options.ConfiguredUsers.FirstOrDefault(user =>
             string.Equals(userName, user.UserName, StringComparison.Ordinal));
