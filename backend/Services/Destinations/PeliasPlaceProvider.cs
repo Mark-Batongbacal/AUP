@@ -11,10 +11,16 @@ public interface IPlaceLandmarkDiscoveryService
         double latitude, double longitude, CancellationToken cancellationToken = default);
 }
 
+public interface IReverseGeocodingService
+{
+    Task<DestinationSearchResult?> ReverseAsync(
+        double latitude, double longitude, CancellationToken cancellationToken = default);
+}
+
 public sealed class PeliasPlaceProvider(
     HttpClient client, IOptions<PeliasOptions> options,
     ILogger<PeliasPlaceProvider> logger)
-    : IDestinationSearchProvider, IPlaceLandmarkDiscoveryService
+    : IDestinationSearchProvider, IPlaceLandmarkDiscoveryService, IReverseGeocodingService
 {
     private readonly PeliasOptions _options = options.Value;
 
@@ -45,6 +51,19 @@ public sealed class PeliasPlaceProvider(
             ("boundary.circle.radius", FormattableString.Invariant($"{_options.LandmarkSearchRadiusKilometers}")),
             ("size", _options.LandmarkCandidateCount.ToString())
         ], cancellationToken);
+
+    public async Task<DestinationSearchResult?> ReverseAsync(
+        double latitude, double longitude, CancellationToken cancellationToken = default)
+    {
+        var results = await SendAsync("v1/reverse",
+        [
+            ("point.lat", FormattableString.Invariant($"{latitude}")),
+            ("point.lon", FormattableString.Invariant($"{longitude}")),
+            ("sources", "openstreetmap"),
+            ("size", "1")
+        ], cancellationToken);
+        return results.FirstOrDefault();
+    }
 
     private async Task<IReadOnlyList<DestinationSearchResult>> SendAsync(
         string path, IEnumerable<(string Key, string Value)> parameters,
