@@ -23,6 +23,7 @@ import com.example.frontend.model.FavoriteRoute
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.model.RouteOption
 import com.example.frontend.screens.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun AppNavigation(
@@ -40,10 +41,12 @@ fun AppNavigation(
     }
 
     val navController = rememberNavController()
+    val coroutineScope = rememberCoroutineScope()
     val authRepository = dataProvider.authRepository
     val userRepository = dataProvider.userRepository
     val placesRepository = dataProvider.placesRepository
     val routingRepository = dataProvider.routingRepository
+    val navigationRepository = dataProvider.navigationRepository
     val tripRepository = dataProvider.tripRepository
 
     val startDestination = remember {
@@ -58,6 +61,7 @@ fun AppNavigation(
     var favorites by remember { mutableStateOf<List<FavoriteRoute>>(emptyList()) }
     var selectedCommute by remember { mutableStateOf<RecentCommute?>(null) }
     var selectedRouteOption by remember { mutableStateOf<RouteOption?>(null) }
+    var activeNavigationSessionId by remember { mutableStateOf<String?>(null) }
     var showAskAI by remember { mutableStateOf(false) }
 
     val profileDisplayName = currentUserProfile?.let { profile ->
@@ -447,14 +451,39 @@ fun AppNavigation(
             composable(route = "${AppScreen.NAVIGATION.name}/{origin}/{destination}") { backStackEntry ->
                 val origin = backStackEntry.arguments?.getString("origin") ?: ""
                 val destination = backStackEntry.arguments?.getString("destination") ?: ""
+                var isStartingNavigation by remember { mutableStateOf(false) }
+                var navigationStartError by remember { mutableStateOf<String?>(null) }
 
                 NavigationScreen(
                     origin = origin,
                     destination = destination,
                     steps = selectedRouteOption?.steps.orEmpty(),
+                    isStartingNavigation = isStartingNavigation,
+                    navigationStartError = navigationStartError,
                     onBack = { navController.popBackStack() },
                     onStartTracking = {
-                        navController.navigate(trackingRoute(origin, destination))
+                        val recommendationId = selectedRouteOption?.id
+                        if (recommendationId == null) {
+                            navigationStartError = "No route is selected. Please go back and choose a route again."
+                        } else if (!isStartingNavigation) {
+                            coroutineScope.launch {
+                                isStartingNavigation = true
+                                navigationStartError = null
+
+                                when (val result = navigationRepository.startNavigation(recommendationId)) {
+                                    is ApiResult.Success -> {
+                                        activeNavigationSessionId = result.data.sessionId
+                                        navController.navigate(trackingRoute(origin, destination))
+                                    }
+
+                                    is ApiResult.Failure -> {
+                                        navigationStartError = result.message
+                                    }
+                                }
+
+                                isStartingNavigation = false
+                            }
+                        }
                     }
                 )
             }
