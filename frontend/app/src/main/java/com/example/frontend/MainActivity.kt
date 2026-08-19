@@ -18,6 +18,7 @@ import com.example.frontend.auth.GoogleSignInClient
 import com.example.frontend.auth.GoogleSignInResult
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.data.auth.RegisterRequest
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.navigation.AppScreen
 import com.example.frontend.screens.CommuteDetailScreen
@@ -69,8 +70,12 @@ fun TukiApp(
         GoogleSignInClient(CredentialManager.create(context))
     }
 
+    val hasStoredSession = remember {
+        dataProvider.sessionStore.validSession() != null
+    }
+
     var currentScreen by remember {
-        mutableStateOf(AppScreen.ONBOARDING)
+        mutableStateOf(if (hasStoredSession) AppScreen.HOME else AppScreen.ONBOARDING)
     }
 
     var selectedCommute by remember {
@@ -104,6 +109,12 @@ fun TukiApp(
                 },
                 onLoginSuccess = {
                     currentScreen = AppScreen.HOME
+                },
+                onPasswordLoginClick = { email, password ->
+                    when (val authResult = authRepository.login(email, password)) {
+                        is ApiResult.Success -> LoginActionResult.Success
+                        is ApiResult.Failure -> LoginActionResult.Error(authResult.message)
+                    }
                 },
                 onGoogleLoginClick = {
                     if (activity == null) {
@@ -173,6 +184,29 @@ fun TukiApp(
                 },
                 onLoginSuccess = {
                     currentScreen = AppScreen.HOME
+                },
+                onSignUpClick = { fullName, email, password ->
+                    val nameParts = fullName
+                        .trim()
+                        .split(Regex("\\s+"), limit = 2)
+
+                    if (nameParts.size < 2) {
+                        LoginActionResult.Error("Enter both your first and last name.")
+                    } else {
+                        when (
+                            val authResult = authRepository.register(
+                                RegisterRequest(
+                                    userName = email,
+                                    password = password,
+                                    firstName = nameParts[0],
+                                    lastName = nameParts[1]
+                                )
+                            )
+                        ) {
+                            is ApiResult.Success -> LoginActionResult.Success
+                            is ApiResult.Failure -> LoginActionResult.Error(authResult.message)
+                        }
+                    }
                 }
             )
         }
@@ -188,9 +222,9 @@ fun TukiApp(
                     selectedCommute = commute
                     currentScreen = AppScreen.COMMUTE_DETAIL
                 },
-                onRecentClick = {currentScreen = AppScreen.RECENT},
-                onFavoritesClick = {currentScreen = AppScreen.FAVORITES},
-                onProfileClick = {currentScreen = AppScreen.PROFILE},
+                onRecentClick = { currentScreen = AppScreen.RECENT },
+                onFavoritesClick = { currentScreen = AppScreen.FAVORITES },
+                onProfileClick = { currentScreen = AppScreen.PROFILE },
                 onNewHereClick = {}
             )
         }
