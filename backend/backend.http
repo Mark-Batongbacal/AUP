@@ -27,7 +27,7 @@
 # @host = http://localhost:5129
 @host = http://tuki-api.japaneast.cloudapp.azure.com:5129
 
-@apiKey = REPLACE
+@apiKey = apikey
 
 # Common Porac -> Angeles sample 15.136824336548178, 120.58674703311
 @originLat = 15.12254950605129
