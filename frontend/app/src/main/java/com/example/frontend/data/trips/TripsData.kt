@@ -95,21 +95,38 @@ data class PassengerTripDetailsDto(
     val alerts: List<TripAlertDto>
 )
 
+data class PassengerTripHistoryItemDto(
+    val passengerTripId: String,
+    val status: String,
+    val originName: String,
+    val destinationName: String,
+    val startedAt: String?,
+    val completedAt: String?,
+    val createdAt: String,
+    val recommendation: RecommendationDetailsDto?
+)
+
 interface TripsApi {
+    @GET("api/trips") suspend fun history(): Response<List<PassengerTripHistoryItemDto>>
     @POST("api/trips") suspend fun start(@Body request: StartTripRequest): Response<PassengerTripDetailsDto>
     @GET("api/trips/{tripId}") suspend fun get(@Path("tripId") tripId: String): Response<PassengerTripDetailsDto>
     @GET("api/trips/{tripId}/alerts") suspend fun alerts(@Path("tripId") tripId: String): Response<List<TripAlertDto>>
 }
 
 interface TripRepository {
+    suspend fun getHistory(): ApiResult<List<PassengerTripHistoryItemDto>>
     suspend fun startTrip(request: StartTripRequest): ApiResult<PassengerTripDetailsDto>
     suspend fun getTrip(tripId: String): ApiResult<PassengerTripDetailsDto>
     suspend fun getTripAlerts(tripId: String): ApiResult<List<TripAlertDto>>
 }
 
-class TripRepositoryImpl(private val api: TripsApi, private val sessions: AuthSessionStore, private val errors: ApiErrorParser) : TripRepository {
+class TripRepositoryImpl(
+    private val api: TripsApi,
+    private val sessions: AuthSessionStore,
+    private val errors: ApiErrorParser
+) : TripRepository {
+    override suspend fun getHistory() = authenticatedApiCall(sessions, errors) { api.history() }
     override suspend fun startTrip(request: StartTripRequest) = authenticatedApiCall(sessions, errors) { api.start(request) }
     override suspend fun getTrip(tripId: String) = authenticatedApiCall(sessions, errors) { api.get(tripId) }
     override suspend fun getTripAlerts(tripId: String) = authenticatedApiCall(sessions, errors) { api.alerts(tripId) }
 }
-
