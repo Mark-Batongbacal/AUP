@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -39,6 +40,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
+import com.example.frontend.data.auth.AuthRepository
 import kotlinx.coroutines.launch
 
 private val TukiTeal = Color(0xFF15919B)
@@ -49,6 +51,7 @@ private val TukiError = Color(0xFFB00020)
 
 @Composable
 fun SignupScreen(
+    authRepository: AuthRepository,
     onBack: () -> Unit = {},
     onLoginClick: () -> Unit = {},
     onLoginSuccess: () -> Unit = {},
@@ -213,11 +216,15 @@ fun SignupScreen(
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
             ) {
-                Text(
-                    text = if (isSigningUp) "Creating account..." else "Sign up",
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (isSigningUp) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                } else {
+                    Text(
+                        text = "Sign up",
+                        fontSize = 25.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

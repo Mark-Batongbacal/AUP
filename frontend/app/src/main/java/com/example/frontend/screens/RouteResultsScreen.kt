@@ -35,9 +35,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.routing.RoutingRepository
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RouteOption
-import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -50,17 +52,61 @@ private val TukiGray = Color(0xFF9AA6A9)
 fun RouteResultsScreen(
     origin: String,
     destinationQuery: String,
+    routingRepository: RoutingRepository,
     onBack: () -> Unit = {},
     onRouteSelect: (RouteOption) -> Unit = {},
     onSuggestToda: () -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var routeOptions by remember { mutableStateOf<List<RouteOption>>(emptyList()) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(destinationQuery) {
         isLoading = true
+        errorMessage = null
 
-      routeOptions = fetchMockRouteOptions(origin, destinationQuery)
+        // Using sample coordinates as real geocoding is not yet integrated in this view
+        when (
+            val result = routingRepository.planTrip(
+                15.1453,
+                120.5887,
+                15.1174,
+                120.5720
+            )
+        ) {
+            is ApiResult.Success -> {
+                routeOptions = result.data.map { plan ->
+                    val walkMeters = (
+                        plan.source.originAccess.walkDistanceMeters +
+                            plan.source.destinationAccess.walkDistanceMeters +
+                            plan.source.transferWalkDistancesMeters.sum()
+                        ).roundToInt()
+
+                    RouteOption(
+                        id = plan.hashCode().toString(),
+                        label = plan.source.recommendationType,
+                        totalMinutes = (plan.source.totalTimeSeconds / 60).roundToInt(),
+                        totalFare = plan.source.totalFarePesos,
+                        walkMeters = walkMeters,
+                        transfers = plan.source.transferCount,
+                        generalCost = plan.source.generalizedCostPesos,
+                        steps = plan.legs.map { leg ->
+                            CommuteStep(
+                                mode = leg.mode.toString(),
+                                from = "Origin",
+                                to = "Destination",
+                                minutes = (leg.durationSeconds / 60).roundToInt(),
+                                fare = leg.farePesos
+                            )
+                        }
+                    )
+                }
+            }
+
+            is ApiResult.Failure -> {
+                errorMessage = result.message
+            }
+        }
 
         isLoading = false
     }
@@ -75,7 +121,7 @@ fun RouteResultsScreen(
             .padding(horizontal = 24.dp, vertical = 12.dp)
     ) {
         Text(
-            text = "\u2190 Back",
+            text = "← Back",
             color = TukiTeal,
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
@@ -93,7 +139,10 @@ fun RouteResultsScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        CurrentAndDestinationCard(origin = origin, destinationQuery = destinationQuery)
+        CurrentAndDestinationCard(
+            origin = origin,
+            destinationQuery = destinationQuery
+        )
 
         Spacer(modifier = Modifier.height(18.dp))
 
@@ -107,9 +156,20 @@ fun RouteResultsScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = TukiTeal)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(text = "Finding routes...", color = TukiGray, fontSize = 14.sp)
+                    Text(
+                        text = "Finding routes...",
+                        color = TukiGray,
+                        fontSize = 14.sp
+                    )
                 }
             }
+        } else if (errorMessage != null) {
+            Text(
+                text = "Error: $errorMessage",
+                color = Color.Red,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
         } else if (routeOptions.isEmpty()) {
             Text(
                 text = "No routes found for \"$destinationQuery\" yet.",
@@ -118,7 +178,7 @@ fun RouteResultsScreen(
             )
         } else {
             Text(
-                text = "ROUTE OPTIONS \u00B7 $origin \u2192 $destinationQuery".uppercase(),
+                text = "ROUTE OPTIONS · $origin → $destinationQuery".uppercase(),
                 color = TukiGray,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
@@ -126,7 +186,9 @@ fun RouteResultsScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            val pagerState = rememberPagerState(pageCount = { routeOptions.size })
+            val pagerState = rememberPagerState(
+                pageCount = { routeOptions.size }
+            )
 
             HorizontalPager(
                 state = pagerState,
@@ -135,13 +197,18 @@ fun RouteResultsScreen(
             ) { page ->
                 RouteOptionCard(
                     option = routeOptions[page],
-                    onClick = { onRouteSelect(routeOptions[page]) }
+                    onClick = {
+                        onRouteSelect(routeOptions[page])
+                    }
                 )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            PagerDots(pageCount = routeOptions.size, currentPage = pagerState.currentPage)
+            PagerDots(
+                pageCount = routeOptions.size,
+                currentPage = pagerState.currentPage
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -153,11 +220,17 @@ fun RouteResultsScreen(
 }
 
 @Composable
-private fun CurrentAndDestinationCard(origin: String, destinationQuery: String) {
+private fun CurrentAndDestinationCard(
+    origin: String,
+    destinationQuery: String
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = TukiCream2, shape = RoundedCornerShape(14.dp))
+            .background(
+                color = TukiCream2,
+                shape = RoundedCornerShape(14.dp)
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -174,12 +247,17 @@ private fun CurrentAndDestinationCard(origin: String, destinationQuery: String) 
                 fontWeight = FontWeight.Bold
             )
         }
+
         Spacer(modifier = Modifier.height(8.dp))
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(9.dp)
-                    .background(TukiOrange, RoundedCornerShape(2.dp))
+                    .background(
+                        TukiOrange,
+                        RoundedCornerShape(2.dp)
+                    )
             )
             Spacer(modifier = Modifier.width(10.dp))
             Text(
@@ -193,18 +271,24 @@ private fun CurrentAndDestinationCard(origin: String, destinationQuery: String) 
 }
 
 @Composable
-private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
+private fun RouteOptionCard(
+    option: RouteOption,
+    onClick: () -> Unit
+) {
     val icon = when {
-        option.isRecommended -> "\u2B50" // ⭐
-        option.label.contains("Fast", ignoreCase = true) -> "\u26A1\uFE0E" // ⚡
-        option.label.contains("Cheap", ignoreCase = true) -> "\u20B1" // ₱
-        else -> "\uD83D\uDE8C" // 🚌
+        option.isRecommended -> "⭐"
+        option.label.contains("Fast", ignoreCase = true) -> "⚡"
+        option.label.contains("Cheap", ignoreCase = true) -> "₱"
+        else -> "🚌"
     }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = TukiDark, shape = RoundedCornerShape(18.dp))
+            .background(
+                color = TukiDark,
+                shape = RoundedCornerShape(18.dp)
+            )
             .padding(20.dp)
     ) {
         Row(
@@ -213,7 +297,11 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = icon, color = Color.White, fontSize = 16.sp)
+                Text(
+                    text = icon,
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = option.label,
@@ -222,11 +310,18 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
                     fontWeight = FontWeight.Bold
                 )
             }
+
             if (option.isRecommended) {
                 Box(
                     modifier = Modifier
-                        .background(color = TukiOrange, shape = RoundedCornerShape(10.dp))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .background(
+                            color = TukiOrange,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .padding(
+                            horizontal = 10.dp,
+                            vertical = 5.dp
+                        )
                 ) {
                     Text(
                         text = "RECOMMENDED",
@@ -257,8 +352,9 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
             )
 
             Spacer(modifier = Modifier.width(10.dp))
+
             StatBox(
-                value = "\u20B1${option.totalFare.toInt()}",
+                value = "₱${option.totalFare.toInt()}",
                 label = "EST. FARE",
                 modifier = Modifier.weight(1f)
             )
@@ -279,6 +375,7 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
                 modifier = Modifier.weight(1f)
             )
         }
+
         Spacer(modifier = Modifier.height(14.dp))
 
         Row(
@@ -305,8 +402,9 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
                     fontSize = 10.sp
                 )
             }
+
             Text(
-                text = "\u20B1${option.generalCost.toInt()}",
+                text = "₱${option.generalCost.toInt()}",
                 color = TukiOrange,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.ExtraBold
@@ -316,7 +414,7 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
         Spacer(modifier = Modifier.height(10.dp))
 
         Text(
-            text = "Estimates only \u2014 actual time and fare may vary with traffic and driver",
+            text = "Estimates only — actual time and fare may vary with traffic and driver",
             color = Color.White.copy(alpha = 0.45f),
             fontSize = 10.sp
         )
@@ -326,7 +424,10 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(color = TukiOrange, shape = RoundedCornerShape(14.dp))
+                .background(
+                    color = TukiOrange,
+                    shape = RoundedCornerShape(14.dp)
+                )
                 .clickable(onClick = onClick)
                 .padding(vertical = 14.dp),
             horizontalArrangement = Arrangement.Center
@@ -342,13 +443,25 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
 }
 
 @Composable
-private fun StatBox(value: String, label: String, modifier: Modifier = Modifier) {
+private fun StatBox(
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier
-            .background(color = Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(12.dp))
+            .background(
+                color = Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(12.dp)
+            )
             .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Text(text = value, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold
+        )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = label,
@@ -360,7 +473,10 @@ private fun StatBox(value: String, label: String, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun PagerDots(pageCount: Int, currentPage: Int) {
+private fun PagerDots(
+    pageCount: Int,
+    currentPage: Int
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center
@@ -369,9 +485,19 @@ private fun PagerDots(pageCount: Int, currentPage: Int) {
             Box(
                 modifier = Modifier
                     .padding(horizontal = 3.dp)
-                    .size(if (index == currentPage) 8.dp else 6.dp)
+                    .size(
+                        if (index == currentPage) {
+                            8.dp
+                        } else {
+                            6.dp
+                        }
+                    )
                     .background(
-                        color = if (index == currentPage) TukiTeal else TukiGray.copy(alpha = 0.4f),
+                        color = if (index == currentPage) {
+                            TukiTeal
+                        } else {
+                            TukiGray.copy(alpha = 0.4f)
+                        },
                         shape = CircleShape
                     )
             )
@@ -380,11 +506,16 @@ private fun PagerDots(pageCount: Int, currentPage: Int) {
 }
 
 @Composable
-private fun SuggestTodaBanner(onClick: () -> Unit) {
+private fun SuggestTodaBanner(
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = TukiCream2, shape = RoundedCornerShape(14.dp))
+            .background(
+                color = TukiCream2,
+                shape = RoundedCornerShape(14.dp)
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -395,9 +526,16 @@ private fun SuggestTodaBanner(onClick: () -> Unit) {
                 .background(TukiTeal, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "+",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
+
         Spacer(modifier = Modifier.width(12.dp))
+
         Column {
             Text(
                 text = "Know a TODA we don't have? Suggest it",
@@ -412,79 +550,4 @@ private fun SuggestTodaBanner(onClick: () -> Unit) {
             )
         }
     }
-}
-
-private suspend fun fetchMockRouteOptions(origin: String, destination: String): List<RouteOption> {
-    delay(900)
-
-    val dest = destination.ifBlank { "your destination" }
-
-    return listOf(
-        RouteOption(
-            id = "1",
-            label = "Most Efficient",
-            description = "Jeepney + short tricycle transfer",
-            totalMinutes = 40,
-            totalFare = 42.0,
-            walkMeters = 550,
-            transfers = 2,
-            generalCost = 79.0,
-            isRecommended = true,
-            steps = listOf(
-                CommuteStep(
-                    mode = "Jeepney",
-                    from = origin,
-                    to = "San Fernando Terminal",
-                    minutes = 25,
-                    fare = 20.0
-                ),
-                CommuteStep(
-                    mode = "Tricycle",
-                    from = "San Fernando Terminal",
-                    to = dest,
-                    minutes = 15,
-                    fare = 22.0
-                )
-            )
-        ),
-        RouteOption(
-            id = "2",
-            label = "Fastest",
-            description = "Direct jeepney, minimal walking",
-            totalMinutes = 35,
-            totalFare = 55.0,
-            walkMeters = 400,
-            transfers = 2,
-            generalCost = 88.0,
-            steps = listOf(
-                CommuteStep(
-                    mode = "Jeepney",
-                    from = origin,
-                    to = "Dolores Crossing",
-                    minutes = 20,
-                    fare = 30.0
-                ),
-                CommuteStep(
-                    mode = "Jeepney",
-                    from = "Guagua Terminal",
-                    to = dest,
-                    minutes = 15,
-                    fare = 25.0
-                )
-            )
-        ),
-        RouteOption(
-            id = "3",
-            label = "Cheapest",
-            description = "Tricycle only, longer walk to terminal",
-            totalMinutes = 48,
-            totalFare = 35.0,
-            walkMeters = 950,
-            transfers = 1,
-            generalCost = 91.0,
-            steps = listOf(
-                CommuteStep(mode = "Tricycle", from = origin, to = dest, minutes = 48, fare = 35.0)
-            )
-        )
-    )
 }

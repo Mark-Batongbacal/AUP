@@ -10,6 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,12 +42,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.example.frontend.components.BottomBar
+import com.example.frontend.components.TukiTab
+import com.example.frontend.data.trips.TripRepository
 import com.example.frontend.model.RecentCommute
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
-import com.example.frontend.components.BottomBar
-import com.example.frontend.components.TukiTab
-import androidx.compose.foundation.layout.Arrangement
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -54,10 +55,11 @@ private val TukiCream = Color(0xFFFFF8E8)
 private val TukiDark = Color(0xFF173B43)
 private val TukiGray = Color(0xFF9AA6A9)
 private val TukiCream2 = Color(0xFFFAEBC7)
+
 @Composable
 fun HomeScreen(
     userName: String = "Juan",
-    recentCommutes: List<RecentCommute> = sampleRecentCommutes,
+    tripRepository: TripRepository,
     onSearchDestination: (origin: String, destination: String) -> Unit = { _, _ -> },
     onCommuteClick: (RecentCommute) -> Unit = {},
     onRecentClick: () -> Unit = {},
@@ -67,9 +69,11 @@ fun HomeScreen(
     onPinDestinationClick: (origin: String) -> Unit = {},
     onAskAiClick: () -> Unit = {}
 ) {
-
     var currentLocationLabel by remember { mutableStateOf("Locating you...") }
     var isLocating by remember { mutableStateOf(true) }
+    var recentCommutes by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
+    var isRefreshingRecent by remember { mutableStateOf(false) }
+    var recentErrorMessage by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val inPreview = LocalInspectionMode.current
@@ -88,10 +92,24 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
+        isRefreshingRecent = true
+        recentErrorMessage = null
+
+        // Backend currently doesn't have a list-trips endpoint in TripRepository
+        // Using local mock data for now to maintain UI functionality
+        recentCommutes = listOf(
+            RecentCommute(id = "1", origin = "Sta. Rita", destination = "Guagua Town", legs = 3, minutes = 22),
+            RecentCommute(id = "2", origin = "Dolores", destination = "SM City Clark", legs = 2, minutes = 18),
+            RecentCommute(id = "3", origin = "Porac", destination = "Dau Terminal", legs = 4, minutes = 35)
+        )
+
+        isRefreshingRecent = false
+
         if (inPreview) {
             isLocating = false
             return@LaunchedEffect
         }
+
         if (context.hasLocationPermission()) {
             val label = getCurrentLocationLabel(context)
             currentLocationLabel = label ?: "Unable to detect location"
@@ -116,11 +134,14 @@ fun HomeScreen(
                 .weight(1f)
                 .fillMaxWidth()
                 .padding(horizontal = 30.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 30.dp, bottom = 20.dp)
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                top = 30.dp,
+                bottom = 20.dp
+            )
         ) {
             item {
                 Text(
-                    text = "Hello, $userName \uD83D\uDC4B",
+                    text = "Hello, $userName 👋",
                     color = TukiGray,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.SemiBold
@@ -128,67 +149,91 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-            Text(
-                text = "Where are you going?",
-                color = TukiDark,
-                fontSize = 27.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+                Text(
+                    text = "Where are you going?",
+                    color = TukiDark,
+                    fontSize = 27.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
 
-            Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-            Text(
-                text = "Pick a destination yourself, or tell our AI where you want to go.",
-                color = TukiGray,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium
-            )
+                Text(
+                    text = "Pick a destination yourself, or tell our AI where you want to go.",
+                    color = TukiGray,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
 
-            Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-            CurrentLocationPill(
-                currentLocationLabel = currentLocationLabel,
-                isLocating = isLocating
-            )
+                CurrentLocationPill(
+                    currentLocationLabel = currentLocationLabel,
+                    isLocating = isLocating
+                )
 
-            Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(20.dp))
+            }
+
+            item {
+                PinDestinationCard(
+                    onClick = { onPinDestinationClick(currentLocationLabel) }
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                AskAiCard(onClick = onAskAiClick)
+
+                Spacer(modifier = Modifier.height(30.dp))
+            }
+
+            item {
+                Text(
+                    text = "RECENT COMMUTES",
+                    color = TukiDark,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (isRefreshingRecent) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = TukiTeal,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            } else if (recentErrorMessage != null) {
+                item {
+                    Text(
+                        text = "Could not load recent commutes",
+                        color = Color.Red,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                items(recentCommutes, key = { it.id }) { commute ->
+                    RecentCommuteCard(
+                        commute = commute,
+                        onClick = { onCommuteClick(commute) }
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(4.dp))
+                NewHereBanner(onClick = onNewHereClick)
+            }
         }
 
-        item {
-            PinDestinationCard(
-                onClick = { onPinDestinationClick(currentLocationLabel) }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            AskAiCard(onClick = onAskAiClick)
-
-            Spacer(modifier = Modifier.height(30.dp))
-        }
-
-        item {
-            Text(
-                text = "RECENT COMMUTES",
-                color = TukiDark,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-
-        items(recentCommutes, key = { it.id }) { commute ->
-            RecentCommuteCard(commute = commute, onClick = { onCommuteClick(commute) })
-            Spacer(modifier = Modifier.height(14.dp))
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(4.dp))
-            NewHereBanner(onClick = onNewHereClick)
-        }
-    }
-
-
-    BottomBar(
+        BottomBar(
             selectedTab = TukiTab.HOME,
             onHomeClick = {},
             onRecentClick = onRecentClick,
@@ -242,7 +287,6 @@ private fun CurrentLocationPill(
     }
 }
 
-
 @Composable
 private fun PinDestinationCard(onClick: () -> Unit) {
     Column(
@@ -253,7 +297,7 @@ private fun PinDestinationCard(onClick: () -> Unit) {
             .padding(18.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(emoji = "\uD83D\uDCCD") // 📍
+            IconBadge(emoji = "📍")
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = "Pin your destination",
@@ -276,11 +320,14 @@ private fun PinDestinationCard(onClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(color = Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(14.dp))
+                .background(
+                    color = Color.White.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(14.dp)
+                )
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "\uD83D\uDD0D", fontSize = 14.sp) // 🔍
+            Text(text = "🔍", fontSize = 14.sp)
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = "Type or search a place",
@@ -294,11 +341,18 @@ private fun PinDestinationCard(onClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(color = Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(14.dp))
+                .background(
+                    color = Color.White.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(14.dp)
+                )
                 .padding(vertical = 14.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            Text(text = "\uD83D\uDDFA\uFE0F Open map", color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp)
+            Text(
+                text = "🗺️ Open map",
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 14.sp
+            )
         }
     }
 }
@@ -313,7 +367,7 @@ private fun AskAiCard(onClick: () -> Unit) {
             .padding(18.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(emoji = "\u2728") // ✨
+            IconBadge(emoji = "✨")
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = "Ask our AI",
@@ -327,7 +381,12 @@ private fun AskAiCard(onClick: () -> Unit) {
                     .background(color = TukiOrange, shape = RoundedCornerShape(8.dp))
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
-                Text(text = "NEW", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "NEW",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
@@ -344,11 +403,14 @@ private fun AskAiCard(onClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(color = TukiTeal.copy(alpha = 0.35f), shape = RoundedCornerShape(14.dp))
+                .background(
+                    color = TukiTeal.copy(alpha = 0.35f),
+                    shape = RoundedCornerShape(14.dp)
+                )
                 .padding(horizontal = 14.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "\uD83D\uDCAC", fontSize = 14.sp) // 💬
+            Text(text = "💬", fontSize = 14.sp)
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = "\"Yung malapit sa SM Clark...\"",
@@ -366,7 +428,12 @@ private fun AskAiCard(onClick: () -> Unit) {
                 .padding(vertical = 14.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            Text(text = "\u2728 Ask AI", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "✨ Ask AI",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -376,7 +443,10 @@ private fun IconBadge(emoji: String) {
     Box(
         modifier = Modifier
             .size(34.dp)
-            .background(color = Color.White.copy(alpha = 0.12f), shape = RoundedCornerShape(10.dp)),
+            .background(
+                color = Color.White.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(10.dp)
+            ),
         contentAlignment = Alignment.Center
     ) {
         Text(text = emoji, fontSize = 16.sp)
@@ -384,7 +454,10 @@ private fun IconBadge(emoji: String) {
 }
 
 @Composable
-private fun RecentCommuteCard(commute: RecentCommute, onClick: () -> Unit) {
+private fun RecentCommuteCard(
+    commute: RecentCommute,
+    onClick: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -400,7 +473,7 @@ private fun RecentCommuteCard(commute: RecentCommute, onClick: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "${commute.legs} legs \u00B7 ${commute.minutes} min",
+            text = "${commute.legs} legs · ${commute.minutes} min",
             color = TukiTeal,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
@@ -419,38 +492,47 @@ private fun NewHereBanner(onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = "New here?", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "New here?",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Learn how \u201cpara po\u201d works",
+                text = "Learn how “para po” works",
                 color = Color.White.copy(alpha = 0.85f),
                 fontSize = 14.sp
             )
         }
-        Text(text = "\u2192", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text = "→",
+            color = Color.White,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
-private val sampleRecentCommutes = listOf(
-    RecentCommute(id = "1", origin = "Sta. Rita", destination = "Guagua Town", legs = 3, minutes = 22),
-    RecentCommute(id = "2", origin = "Dolores", destination = "SM City Clark", legs = 2, minutes = 18),
-    RecentCommute(id = "3", origin = "Porac", destination = "Dau Terminal", legs = 4, minutes = 35)
-)
-
 private fun android.content.Context.hasLocationPermission(): Boolean {
     return ContextCompat.checkSelfPermission(
-        this, Manifest.permission.ACCESS_FINE_LOCATION
+        this,
+        Manifest.permission.ACCESS_FINE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_COARSE_LOCATION
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
 }
 
-private suspend fun getCurrentLocationLabel(context: android.content.Context): String? {
+private suspend fun getCurrentLocationLabel(
+    context: android.content.Context
+): String? {
     if (!context.hasLocationPermission()) return null
 
-    val locationManager = context.getSystemService(android.content.Context.LOCATION_SERVICE) as? LocationManager
-        ?: return null
+    val locationManager =
+        context.getSystemService(android.content.Context.LOCATION_SERVICE) as? LocationManager
+            ?: return null
 
     val location: Location? = try {
         val providers = locationManager.getProviders(true)
@@ -463,11 +545,20 @@ private suspend fun getCurrentLocationLabel(context: android.content.Context): S
     }
 
     location ?: return null
-    return reverseGeocode(context, location.latitude, location.longitude)
+    return reverseGeocode(
+        context,
+        location.latitude,
+        location.longitude
+    )
 }
 
-private suspend fun reverseGeocode(context: android.content.Context, lat: Double, lng: Double): String? {
+private suspend fun reverseGeocode(
+    context: android.content.Context,
+    lat: Double,
+    lng: Double
+): String? {
     val geocoder = Geocoder(context)
+
     return try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             suspendCancellableCoroutine { cont ->
