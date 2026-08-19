@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.MapScreen
+import androidx.compose.ui.draw.clip
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -57,29 +58,66 @@ fun DestinationSearchScreen(
             showMap = false
         }
 
-        Box(modifier = Modifier.fillMaxSize()) {
-            MapScreen(
-                routePoints = emptyList(),
-                modifier = Modifier.fillMaxSize()
-            )
-
-            Text(
-                text = "← Back",
-                color = TukiDark,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.35f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
                 modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(16.dp)
+                    .fillMaxWidth(0.92f)
                     .background(
                         color = TukiCream,
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(24.dp)
                     )
-                    .clickable {
-                        showMap = false
-                    }
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
-            )
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Pick destination",
+                        color = TukiDark,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text = "✕",
+                        color = TukiDark,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            showMap = false
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                ) {
+                    MapScreen(
+                        routePoints = emptyList(),
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Tap the map to choose a destination",
+                    color = TukiGray,
+                    fontSize = 13.sp
+                )
+            }
         }
 
         return
