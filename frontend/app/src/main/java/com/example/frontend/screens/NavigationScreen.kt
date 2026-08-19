@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,6 +28,8 @@ fun NavigationScreen(
     origin: String,
     destination: String,
     steps: List<CommuteStep>,
+    isStartingNavigation: Boolean = false,
+    navigationStartError: String? = null,
     onBack: () -> Unit = {},
     onStartTracking: () -> Unit = {}
 ) {
@@ -41,7 +44,7 @@ fun NavigationScreen(
                 modifier = Modifier
                     .size(38.dp)
                     .background(Color.White, RoundedCornerShape(12.dp))
-                    .clickable(onClick = onBack),
+                    .clickable(enabled = !isStartingNavigation, onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -70,10 +73,21 @@ fun NavigationScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        navigationStartError?.let { message ->
+            Text(
+                text = message,
+                color = Color.Red,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 10.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
 
         androidx.compose.material3.Button(
             onClick = onStartTracking,
+            enabled = !isStartingNavigation,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(60.dp),
@@ -83,7 +97,17 @@ fun NavigationScreen(
                 contentColor = Color.White
             )
         ) {
-            Text(text = "Start Trip", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            if (isStartingNavigation) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(text = "Starting trip...", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            } else {
+                Text(text = "Start Trip", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -113,9 +137,9 @@ private fun NavigationStepRow(step: CommuteStep) {
                 fontSize = 20.sp
             )
         }
-        
+
         Spacer(modifier = Modifier.width(16.dp))
-        
+
         Column {
             Text(
                 text = "${step.mode} to ${step.to}",
