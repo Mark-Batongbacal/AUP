@@ -22,9 +22,9 @@
 		</dict>
 	</array>
 	<key>FacebookAppID</key>
-	<string>2265558194204704</string>
+	<string>$(FACEBOOK_APP_ID)</string>
 	<key>FacebookClientToken</key>
-	<string>YOUR_FACEBOOK_CLIENT_TOKEN</string>
+	<string>$(FACEBOOK_CLIENT_TOKEN)</string>
 	<key>FacebookDisplayName</key>
 	<string>TUKI</string>
 	<key>GIDClientID</key>
