@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using backend.Authentication;
 using backend.Models.Users;
+using backend.Repositories;
 using backend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +10,11 @@ namespace backend.Controllers;
 
 [ApiController]
 [Route("api/users")]
-public sealed class UsersController(IUserProfileService userProfileService) : ControllerBase
+public sealed class UsersController(
+    IUserProfileService userProfileService,
+    IUserProfileRepository? userProfileRepository = null,
+    IPassengerTripRepository? passengerTripRepository = null,
+    IFavoriteTripRepository? favoriteTripRepository = null) : ControllerBase
 {
     [HttpGet("me")]
     [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
@@ -23,9 +28,35 @@ public sealed class UsersController(IUserProfileService userProfileService) : Co
         }
 
         var profile = await userProfileService.GetCurrentUserProfileAsync(userId, cancellationToken);
-        return profile is null
-            ? NotFound(Error($"User profile {userId} was not found."))
-            : Ok(profile);
+        if (profile is null)
+        {
+            return NotFound(Error($"User profile {userId} was not found."));
+        }
+
+        // Direct controller unit tests construct this controller with only the profile service.
+        // Normal application DI supplies all three repositories below.
+        if (userProfileRepository is null ||
+            passengerTripRepository is null ||
+            favoriteTripRepository is null)
+        {
+            return Ok(profile);
+        }
+
+        var storedProfile = await userProfileRepository.GetActiveByUserIdAsync(userId, cancellationToken);
+        if (storedProfile is null)
+        {
+            return NotFound(Error($"User profile {userId} was not found."));
+        }
+
+        var trips = await passengerTripRepository.GetByUserAsync(userId, cancellationToken);
+        var favorites = await favoriteTripRepository.GetByUserAsync(userId, cancellationToken);
+
+        return Ok(profile with
+        {
+            Email = storedProfile.Email,
+            TripsTaken = trips.Count,
+            FavoritesCount = favorites.Count,
+        });
     }
 
     [HttpPut("me")]
