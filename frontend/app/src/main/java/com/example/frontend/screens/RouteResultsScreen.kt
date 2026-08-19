@@ -44,6 +44,7 @@ import com.example.frontend.data.routing.RoutingRepository
 import com.example.frontend.data.routing.TransitMode
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RouteOption
+import com.example.frontend.model.RoutePoint
 import kotlin.math.roundToInt
 
 private val TukiTeal = Color(0xFF15919B)
@@ -150,33 +151,56 @@ fun RouteResultsScreen(
             )
         ) {
             is ApiResult.Success -> {
-                routeOptions = result.data.mapIndexed { index, planned ->
+                routeOptions = result.data.map { planned ->
                     val plan = planned.journey
+                    val recommendationTags = plan.source.recommendationType
+                        .split(',')
+                        .map { it.trim().lowercase() }
+                        .filter { it.isNotBlank() }
                     val walkMeters = (
                         plan.source.originAccess.walkDistanceMeters +
                             plan.source.destinationAccess.walkDistanceMeters +
                             plan.source.transferWalkDistancesMeters.sum()
                         ).roundToInt()
 
+                    val routePoints = buildList {
+                        plan.legs.forEach { leg ->
+                            val originPoint = RoutePoint(leg.origin.latitude, leg.origin.longitude)
+                            val destinationPoint = RoutePoint(leg.destination.latitude, leg.destination.longitude)
+                            if (lastOrNull() != originPoint) add(originPoint)
+                            if (lastOrNull() != destinationPoint) add(destinationPoint)
+                        }
+                    }
+
                     RouteOption(
                         id = planned.recommendationId,
-                        label = plan.source.recommendationType,
+                        label = formatRecommendationLabel(recommendationTags),
                         totalMinutes = (plan.source.totalTimeSeconds / 60).roundToInt(),
                         totalFare = plan.source.totalFarePesos,
                         walkMeters = walkMeters,
                         transfers = plan.source.transferCount,
                         generalCost = plan.source.generalizedCostPesos,
-                        isRecommended = index == 0,
-                        steps = plan.legs.map { leg ->
+                        isRecommended = "efficient" in recommendationTags,
+                        routePoints = routePoints,
+                        steps = plan.legs.mapIndexed { legIndex, leg ->
+                            val mode = when (leg.mode) {
+                                TransitMode.Walk -> "Walk"
+                                TransitMode.Trike -> "Tricycle"
+                                TransitMode.Jeepney -> "Jeepney"
+                                is TransitMode.Unknown -> "Transit"
+                            }
                             CommuteStep(
-                                mode = when (leg.mode) {
-                                    TransitMode.Walk -> "Walk"
-                                    TransitMode.Trike -> "Tricycle"
-                                    TransitMode.Jeepney -> "Jeepney"
-                                    is TransitMode.Unknown -> "Transit"
+                                mode = mode,
+                                from = when {
+                                    legIndex == 0 -> origin
+                                    leg.routeName?.isNotBlank() == true -> leg.routeName
+                                    else -> "Transfer point"
                                 },
-                                from = if (leg.routeName.isNullOrBlank()) "Origin" else leg.routeName,
-                                to = if (leg.routeName.isNullOrBlank()) "Destination" else leg.routeName,
+                                to = when {
+                                    legIndex == plan.legs.lastIndex -> destinationQuery
+                                    leg.routeName?.isNotBlank() == true -> leg.routeName
+                                    else -> "Transfer point"
+                                },
                                 minutes = (leg.durationSeconds / 60).roundToInt(),
                                 fare = leg.farePesos
                             )
@@ -279,6 +303,23 @@ fun RouteResultsScreen(
     }
 }
 
+private fun formatRecommendationLabel(tags: List<String>): String {
+    val fastest = "fastest" in tags
+    val cheapest = "cheapest" in tags
+    val efficient = "efficient" in tags
+
+    return when {
+        efficient && fastest -> "Best Overall · Fastest"
+        efficient && cheapest -> "Best Overall · Cheapest"
+        efficient -> "Best Overall"
+        fastest -> "Fastest"
+        cheapest -> "Cheapest"
+        else -> tags.joinToString(" · ") { tag ->
+            tag.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        }.ifBlank { "Route option" }
+    }
+}
+
 @Composable
 private fun CurrentAndDestinationCard(origin: String, destinationQuery: String) {
     Column(
@@ -361,7 +402,11 @@ private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
         Row(modifier = Modifier.fillMaxWidth()) {
             StatBox("${option.walkMeters} m", "WALK", Modifier.weight(1f))
             Spacer(modifier = Modifier.width(10.dp))
-            StatBox("${maxOf(option.transfers, option.steps.size)} legs", "TRANSFERS", Modifier.weight(1f))
+            StatBox(
+                "${option.steps.size} legs",
+                if (option.transfers == 1) "1 TRANSFER" else "${option.transfers} TRANSFERS",
+                Modifier.weight(1f)
+            )
         }
 
         Spacer(modifier = Modifier.height(14.dp))
