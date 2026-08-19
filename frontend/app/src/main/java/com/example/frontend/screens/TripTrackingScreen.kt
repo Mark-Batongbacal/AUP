@@ -19,6 +19,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.MapScreen
+import com.example.frontend.TodaPointOverlay
+import com.example.frontend.TransitRouteOverlay
 import com.example.frontend.components.ParaPoOverlay
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import org.maplibre.android.geometry.LatLng
@@ -35,7 +37,11 @@ fun TripTrackingScreen(
     origin: String,
     destination: String,
     routePoints: List<LatLng> = emptyList(),
+    futureRouteSegments: List<List<LatLng>> = emptyList(),
     legDestination: LatLng? = null,
+    finalDestination: LatLng? = null,
+    nearbyJeepneyRoutes: List<TransitRouteOverlay> = emptyList(),
+    todaPoints: List<TodaPointOverlay> = emptyList(),
     navigationSnapshot: NavigationSnapshotDto? = null,
     navigationError: String? = null,
     isNavigationActionInProgress: Boolean = false,
@@ -93,8 +99,12 @@ fun TripTrackingScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         MapScreen(
             routePoints = routePoints,
-            modifier = Modifier.fillMaxSize(),
-            selectedDestination = legDestination
+            futureRouteSegments = futureRouteSegments,
+            selectedDestination = legDestination,
+            finalDestination = finalDestination,
+            transitRoutes = nearbyJeepneyRoutes,
+            todaPoints = todaPoints,
+            modifier = Modifier.fillMaxSize()
         )
 
         Column(
