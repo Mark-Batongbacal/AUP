@@ -3,5 +3,6 @@
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">10.0.2.2</domain>
         <domain includeSubdomains="false">tuki-api.japaneast.cloudapp.azure.com</domain>
+        <domain includeSubdomains="false">10.18.156.50</domain>
     </domain-config>
 </network-security-config>
