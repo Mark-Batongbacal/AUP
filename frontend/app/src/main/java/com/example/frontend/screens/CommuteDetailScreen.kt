@@ -50,7 +50,13 @@ fun CommuteDetailScreen(
 ) {
     var selectedLegIndex by remember(commute.id) { mutableIntStateOf(0) }
     val selectedGeometry = legGeometries.getOrNull(selectedLegIndex).orEmpty()
-    val selectedLegEnd = commute.historyLegs.getOrNull(selectedLegIndex)?.let { leg ->
+    val selectedHistoryLeg = commute.historyLegs.getOrNull(selectedLegIndex)
+    val selectedLegStart = selectedHistoryLeg?.let { leg ->
+        if (leg.startLatitude != null && leg.startLongitude != null) {
+            LatLng(leg.startLatitude, leg.startLongitude)
+        } else null
+    }
+    val selectedLegEnd = selectedHistoryLeg?.let { leg ->
         if (leg.endLatitude != null && leg.endLongitude != null) {
             LatLng(leg.endLatitude, leg.endLongitude)
         } else null
@@ -115,6 +121,7 @@ fun CommuteDetailScreen(
         ) {
             MapScreen(
                 routePoints = selectedGeometry,
+                startPoint = selectedLegStart,
                 selectedDestination = selectedLegEnd,
                 finalDestination = finalDestination,
                 futureRouteSegments = legGeometries.drop(selectedLegIndex + 1),
@@ -129,6 +136,12 @@ fun CommuteDetailScreen(
         }
 
         Spacer(modifier = Modifier.height(14.dp))
+        Text(
+            text = "Teal = leg start · Orange = leg end · Red = final destination",
+            color = TukiGray,
+            fontSize = 12.sp
+        )
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "Tap a leg to inspect its path",
             color = TukiGray,
