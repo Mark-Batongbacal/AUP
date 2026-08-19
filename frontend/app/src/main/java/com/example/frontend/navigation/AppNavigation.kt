@@ -21,6 +21,7 @@ import com.example.frontend.data.auth.RegisterRequest
 import com.example.frontend.data.users.UserProfileDto
 import com.example.frontend.model.FavoriteRoute
 import com.example.frontend.model.RecentCommute
+import com.example.frontend.model.RouteOption
 import com.example.frontend.screens.*
 
 @Composable
@@ -41,6 +42,7 @@ fun AppNavigation(
     val navController = rememberNavController()
     val authRepository = dataProvider.authRepository
     val userRepository = dataProvider.userRepository
+    val placesRepository = dataProvider.placesRepository
     val routingRepository = dataProvider.routingRepository
     val tripRepository = dataProvider.tripRepository
 
@@ -52,21 +54,11 @@ fun AppNavigation(
         }
     }
 
-    var currentUserProfile by remember {
-        mutableStateOf<UserProfileDto?>(null)
-    }
-
-    var favorites by remember {
-        mutableStateOf<List<FavoriteRoute>>(emptyList())
-    }
-
-    var selectedCommute by remember {
-        mutableStateOf<RecentCommute?>(null)
-    }
-
-    var showAskAI by remember {
-        mutableStateOf(false)
-    }
+    var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
+    var favorites by remember { mutableStateOf<List<FavoriteRoute>>(emptyList()) }
+    var selectedCommute by remember { mutableStateOf<RecentCommute?>(null) }
+    var selectedRouteOption by remember { mutableStateOf<RouteOption?>(null) }
+    var showAskAI by remember { mutableStateOf(false) }
 
     val profileDisplayName = currentUserProfile?.let { profile ->
         listOfNotNull(
@@ -402,11 +394,16 @@ fun AppNavigation(
                 val origin = backStackEntry.arguments?.getString("origin") ?: ""
                 DestinationSearchScreen(
                     origin = origin,
+                    placesRepository = placesRepository,
                     onBack = {
                         navController.popBackStack()
                     },
-                    onFindRoutes = { destination ->
-                        navController.navigate(routeResults(origin, destination))
+                    onFindRoutes = { destination, originLatitude, originLongitude ->
+                        backStackEntry.savedStateHandle["routeOriginLatitude"] = originLatitude
+                        backStackEntry.savedStateHandle["routeOriginLongitude"] = originLongitude
+                        backStackEntry.savedStateHandle["routeDestinationLatitude"] = destination.latitude
+                        backStackEntry.savedStateHandle["routeDestinationLongitude"] = destination.longitude
+                        navController.navigate(routeResults(origin, destination.name))
                     }
                 )
             }
@@ -414,12 +411,33 @@ fun AppNavigation(
             composable(route = "${AppScreen.ROUTE_RESULTS.name}/{origin}/{destination}") { backStackEntry ->
                 val origin = backStackEntry.arguments?.getString("origin") ?: ""
                 val destination = backStackEntry.arguments?.getString("destination") ?: ""
+                val previousState = navController.previousBackStackEntry?.savedStateHandle
+
+                val originLatitude = remember(backStackEntry) {
+                    previousState?.remove<Double>("routeOriginLatitude")
+                }
+                val originLongitude = remember(backStackEntry) {
+                    previousState?.remove<Double>("routeOriginLongitude")
+                }
+                val destinationLatitude = remember(backStackEntry) {
+                    previousState?.remove<Double>("routeDestinationLatitude")
+                }
+                val destinationLongitude = remember(backStackEntry) {
+                    previousState?.remove<Double>("routeDestinationLongitude")
+                }
+
                 RouteResultsScreen(
                     origin = origin,
                     destinationQuery = destination,
                     routingRepository = routingRepository,
+                    placesRepository = placesRepository,
+                    originLatitude = originLatitude,
+                    originLongitude = originLongitude,
+                    destinationLatitude = destinationLatitude,
+                    destinationLongitude = destinationLongitude,
                     onBack = { navController.popBackStack() },
-                    onRouteSelect = {
+                    onRouteSelect = { option ->
+                        selectedRouteOption = option
                         navController.navigate(navigationRoute(origin, destination))
                     },
                     onSuggestToda = {}
@@ -429,15 +447,11 @@ fun AppNavigation(
             composable(route = "${AppScreen.NAVIGATION.name}/{origin}/{destination}") { backStackEntry ->
                 val origin = backStackEntry.arguments?.getString("origin") ?: ""
                 val destination = backStackEntry.arguments?.getString("destination") ?: ""
-                // Mocking steps for now
-                val mockSteps = listOf(
-                    com.example.frontend.model.CommuteStep("Jeepney", origin, "Terminal", 15, 13.0),
-                    com.example.frontend.model.CommuteStep("Walk", "Terminal", destination, 5, 0.0)
-                )
+
                 NavigationScreen(
                     origin = origin,
                     destination = destination,
-                    steps = mockSteps,
+                    steps = selectedRouteOption?.steps.orEmpty(),
                     onBack = { navController.popBackStack() },
                     onStartTracking = {
                         navController.navigate(trackingRoute(origin, destination))
