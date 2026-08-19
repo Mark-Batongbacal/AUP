@@ -524,7 +524,7 @@ fun AppNavigation(
                             val endLat = leg.endLatitude
                             val endLon = leg.endLongitude
                             if (startLat == null || startLon == null || endLat == null || endLon == null) {
-                                geometries += emptyList()
+                                geometries.add(emptyList())
                                 continue
                             }
 
@@ -539,7 +539,7 @@ fun AppNavigation(
                                 is ApiResult.Success -> geometries += result.data.points.map { point ->
                                     LatLng(point.latitude, point.longitude)
                                 }
-                                is ApiResult.Failure -> geometries += emptyList()
+                                is ApiResult.Failure -> geometries.add(emptyList())
                             }
                         }
                         selectedCommuteGeometries = geometries
@@ -861,7 +861,7 @@ fun AppNavigation(
                             if (step.mode.equals("Tricycle", true)) "TRICYCLE" else "WALK"
                         )) {
                             is ApiResult.Success -> {
-                                while (working.size <= index) working += emptyList()
+                                while (working.size <= index) working.add(emptyList())
                                 working[index] = result.data.points.map { point ->
                                     LatLng(point.latitude, point.longitude)
                                 }
