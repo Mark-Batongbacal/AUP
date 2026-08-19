@@ -78,6 +78,15 @@ fun TukiApp(
         mutableStateOf(if (hasStoredSession) AppScreen.HOME else AppScreen.ONBOARDING)
     }
 
+    LaunchedEffect(hasStoredSession) {
+        if (hasStoredSession) {
+            when (authRepository.getCurrentAuthIdentity()) {
+                is ApiResult.Success -> Unit
+                is ApiResult.Failure -> currentScreen = AppScreen.LOGIN
+            }
+        }
+    }
+
     var selectedCommute by remember {
         mutableStateOf<RecentCommute?>(null)
     }
