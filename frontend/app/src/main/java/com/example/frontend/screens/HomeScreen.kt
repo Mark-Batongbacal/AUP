@@ -25,10 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,13 +46,14 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
+import androidx.compose.foundation.layout.Arrangement
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
 private val TukiCream = Color(0xFFFFF8E8)
 private val TukiDark = Color(0xFF173B43)
 private val TukiGray = Color(0xFF9AA6A9)
-
+private val TukiCream2 = Color(0xFFFAEBC7)
 @Composable
 fun HomeScreen(
     userName: String = "Juan",
@@ -65,9 +63,11 @@ fun HomeScreen(
     onRecentClick: () -> Unit = {},
     onFavoritesClick: () -> Unit = {},
     onProfileClick: () -> Unit = {},
-    onNewHereClick: () -> Unit = {}
+    onNewHereClick: () -> Unit = {},
+    onPinDestinationClick: (origin: String) -> Unit = {},
+    onAskAiClick: () -> Unit = {}
 ) {
-    var destinationQuery by remember { mutableStateOf("") }
+
     var currentLocationLabel by remember { mutableStateOf("Locating you...") }
     var isLocating by remember { mutableStateOf(true) }
 
@@ -128,54 +128,67 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                Text(
-                    text = "Where are you going?",
-                    color = TukiDark,
-                    fontSize = 27.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+            Text(
+                text = "Where are you going?",
+                color = TukiDark,
+                fontSize = 27.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
 
-                Spacer(modifier = Modifier.height(22.dp))
-            }
+            Spacer(modifier = Modifier.height(10.dp))
 
-            item {
-                LocationCard(
-                    currentLocationLabel = currentLocationLabel,
-                    isLocating = isLocating,
-                    destinationQuery = destinationQuery,
-                    onDestinationChange = { destinationQuery = it },
-                    onSearch = {
-                        if (destinationQuery.isNotBlank()) {
-                            onSearchDestination(currentLocationLabel, destinationQuery)
-                        }
-                    }
-                )
+            Text(
+                text = "Pick a destination yourself, or tell our AI where you want to go.",
+                color = TukiGray,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
 
-                Spacer(modifier = Modifier.height(30.dp))
-            }
+            Spacer(modifier = Modifier.height(20.dp))
 
-            item {
-                Text(
-                    text = "RECENT COMMUTES",
-                    color = TukiDark,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
+            CurrentLocationPill(
+                currentLocationLabel = currentLocationLabel,
+                isLocating = isLocating
+            )
 
-            items(recentCommutes, key = { it.id }) { commute ->
-                RecentCommuteCard(commute = commute, onClick = { onCommuteClick(commute) })
-                Spacer(modifier = Modifier.height(14.dp))
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                NewHereBanner(onClick = onNewHereClick)
-            }
+            Spacer(modifier = Modifier.height(20.dp))
         }
 
-        BottomBar(
+        item {
+            PinDestinationCard(
+                onClick = { onPinDestinationClick(currentLocationLabel) }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AskAiCard(onClick = onAskAiClick)
+
+            Spacer(modifier = Modifier.height(30.dp))
+        }
+
+        item {
+            Text(
+                text = "RECENT COMMUTES",
+                color = TukiDark,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
+        items(recentCommutes, key = { it.id }) { commute ->
+            RecentCommuteCard(commute = commute, onClick = { onCommuteClick(commute) })
+            Spacer(modifier = Modifier.height(14.dp))
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            NewHereBanner(onClick = onNewHereClick)
+        }
+    }
+
+
+    BottomBar(
             selectedTab = TukiTab.HOME,
             onHomeClick = {},
             onRecentClick = onRecentClick,
@@ -186,88 +199,187 @@ fun HomeScreen(
 }
 
 @Composable
-private fun LocationCard(
+private fun CurrentLocationPill(
     currentLocationLabel: String,
-    isLocating: Boolean,
-    destinationQuery: String,
-    onDestinationChange: (String) -> Unit,
-    onSearch: () -> Unit
+    isLocating: Boolean
 ) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = TukiCream2, shape = RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(11.dp)
+                .background(color = TukiTeal, shape = CircleShape)
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        if (isLocating) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = TukiTeal
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Locating you...",
+                color = TukiDark,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+        } else {
+            Text(
+                text = "$currentLocationLabel (current location)",
+                color = TukiDark,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun PinDestinationCard(onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                color = TukiCream2,
-                shape = RoundedCornerShape(18.dp)
-            )
+            .background(color = TukiDark, shape = RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
             .padding(18.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(emoji = "\uD83D\uDCCD") // 📍
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "Pin your destination",
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = "Search or drop a pin on the map if you already know where you're headed.",
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 13.sp
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(14.dp))
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "\uD83D\uDD0D", fontSize = 14.sp) // 🔍
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "Type or search a place",
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 14.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(14.dp))
+                .padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(text = "\uD83D\uDDFA\uFE0F Open map", color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun AskAiCard(onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = TukiDark, shape = RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(emoji = "\u2728") // ✨
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = "Ask our AI",
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             Box(
                 modifier = Modifier
-                    .size(11.dp)
-                    .background(color = TukiTeal, shape = CircleShape)
-            )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            if (isLocating) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(14.dp),
-                    strokeWidth = 2.dp,
-                    color = TukiTeal
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Locating you...",
-                    color = TukiDark,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            } else {
-                Text(
-                    text = "$currentLocationLabel (current location)",
-                    color = TukiDark,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                    .background(color = TukiOrange, shape = RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(text = "NEW", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(11.dp)
-                    .background(color = TukiOrange, shape = RoundedCornerShape(2.dp))
-            )
+        Text(
+            text = "Describe where you want to go and we'll figure out the location and commute.",
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 13.sp
+        )
 
-            Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-            TextField(
-                value = destinationQuery,
-                onValueChange = onDestinationChange,
-                placeholder = {
-                    Text(text = "Type your destination...", color = TukiGray, fontSize = 15.sp)
-                },
-                singleLine = true,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                    focusedTextColor = TukiDark,
-                    unfocusedTextColor = TukiDark
-                ),
-                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                    onSearch = { onSearch() }
-                ),
-                modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = TukiTeal.copy(alpha = 0.35f), shape = RoundedCornerShape(14.dp))
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "\uD83D\uDCAC", fontSize = 14.sp) // 💬
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "\"Yung malapit sa SM Clark...\"",
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 13.sp
             )
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = TukiOrange, shape = RoundedCornerShape(14.dp))
+                .padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(text = "\u2728 Ask AI", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun IconBadge(emoji: String) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .background(color = Color.White.copy(alpha = 0.12f), shape = RoundedCornerShape(10.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = emoji, fontSize = 16.sp)
     }
 }
 
@@ -318,8 +430,6 @@ private fun NewHereBanner(onClick: () -> Unit) {
         Text(text = "\u2192", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
     }
 }
-
-private val TukiCream2 = Color(0xFFFAEBC7)
 
 private val sampleRecentCommutes = listOf(
     RecentCommute(id = "1", origin = "Sta. Rita", destination = "Guagua Town", legs = 3, minutes = 22),

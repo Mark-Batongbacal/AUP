@@ -55,8 +55,6 @@ fun ProfileScreen(
     userEmail: String = "juan.delacruz@gmail.com",
     tripsTaken: Int = 18,
     favoritesCount: Int = 2,
-    savedCount: Int = 3,
-    onBack: () -> Unit = {},
     onEditProfileClick: () -> Unit = {},
     onPrivacySecurityClick: () -> Unit = {},
     onLanguageClick: () -> Unit = {},
@@ -104,15 +102,6 @@ fun ProfileScreen(
         ) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .background(TukiCream2, RoundedCornerShape(12.dp))
-                            .clickable(onClick = onBack),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    }
                     Spacer(modifier = Modifier.width(14.dp))
                     Text(text = "Profile", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                 }
@@ -153,7 +142,6 @@ fun ProfileScreen(
                 ) {
                     ProfileStatCard(ProfileStat(tripsTaken.toString(), "TRIPS TAKEN"), Modifier.weight(1f))
                     ProfileStatCard(ProfileStat(favoritesCount.toString(), "FAVORITES"), Modifier.weight(1f))
-                    ProfileStatCard(ProfileStat(savedCount.toString(), "SAVED"), Modifier.weight(1f))
                 }
 
                 Spacer(modifier = Modifier.height(28.dp))
