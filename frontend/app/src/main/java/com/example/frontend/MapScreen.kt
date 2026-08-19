@@ -46,6 +46,7 @@ import org.maplibre.android.location.LocationComponentActivationOptions
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
@@ -58,11 +59,15 @@ private const val DefaultMapZoom = 14.0
 private const val OpenFreeMapStyleUrl = "https://tiles.openfreemap.org/styles/liberty"
 private const val RouteSourceId = "tuki-route-source"
 private const val RouteLayerId = "tuki-route-layer"
+private const val DestinationSourceId = "tuki-destination-source"
+private const val DestinationLayerId = "tuki-destination-layer"
 
 @Composable
 fun MapScreen(
     routePoints: List<LatLng>,
     modifier: Modifier = Modifier,
+    selectedDestination: LatLng? = null,
+    onMapClick: ((LatLng) -> Unit)? = null,
 ) {
     if (LocalInspectionMode.current) {
         MapPreviewPlaceholder(modifier)
@@ -123,13 +128,8 @@ fun MapScreen(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-
-            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                mapView.onPause()
-            }
-            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
-                mapView.onStop()
-            }
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) mapView.onPause()
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) mapView.onStop()
             mapView.onDestroy()
         }
     }
@@ -140,44 +140,45 @@ fun MapScreen(
             map.setStyle(OpenFreeMapStyleUrl) { style ->
                 loadedStyle = style
 
-                val cameraTarget = routePoints.firstOrNull() ?: DefaultMapCenter
+                val cameraTarget = routePoints.firstOrNull() ?: selectedDestination ?: DefaultMapCenter
                 map.cameraPosition = CameraPosition.Builder()
                     .target(cameraTarget)
                     .zoom(DefaultMapZoom)
                     .build()
 
                 updateRouteLayer(style, routePoints)
-                configureLocationComponent(
-                    context = context,
-                    map = map,
-                    style = style,
-                    enabled = hasLocationPermission
-                )
+                updateDestinationLayer(style, selectedDestination)
+                configureLocationComponent(context, map, style, hasLocationPermission)
             }
         }
     }
 
-    LaunchedEffect(loadedStyle, routePoints) {
-        loadedStyle?.let { style ->
-            updateRouteLayer(style, routePoints)
+    DisposableEffect(mapLibreMap, onMapClick) {
+        val map = mapLibreMap
+        if (map == null || onMapClick == null) {
+            onDispose { }
+        } else {
+            val listener = MapLibreMap.OnMapClickListener { point ->
+                onMapClick(point)
+                true
+            }
+            map.addOnMapClickListener(listener)
+            onDispose { map.removeOnMapClickListener(listener) }
         }
+    }
 
-        val cameraTarget = routePoints.firstOrNull() ?: DefaultMapCenter
-        mapLibreMap?.animateCamera(
-            CameraUpdateFactory.newLatLngZoom(cameraTarget, DefaultMapZoom)
-        )
+    LaunchedEffect(loadedStyle, routePoints) {
+        loadedStyle?.let { updateRouteLayer(it, routePoints) }
+    }
+
+    LaunchedEffect(loadedStyle, selectedDestination) {
+        loadedStyle?.let { updateDestinationLayer(it, selectedDestination) }
     }
 
     LaunchedEffect(loadedStyle, hasLocationPermission) {
         val style = loadedStyle ?: return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
-
-        configureLocationComponent(
-            context = context,
-            map = map,
-            style = style,
-            enabled = hasLocationPermission
-        )
+        configureLocationComponent(context, map, style, hasLocationPermission)
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -188,21 +189,15 @@ fun MapScreen(
 
         if (!hasLocationPermission) {
             LocationPermissionBanner(
-                canRequestAgain = activity?.shouldShowLocationPermissionRationale() != false ||
-                    !hasRequestedLocationPermission,
+                canRequestAgain = activity?.shouldShowLocationPermissionRationale() != false || !hasRequestedLocationPermission,
                 onRequestPermission = requestLocationPermission,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp)
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
             )
         }
     }
 }
 
-private fun updateRouteLayer(
-    style: Style,
-    routePoints: List<LatLng>
-) {
+private fun updateRouteLayer(style: Style, routePoints: List<LatLng>) {
     if (routePoints.size < 2) {
         style.removeLayer(RouteLayerId)
         style.removeSource(RouteSourceId)
@@ -210,30 +205,49 @@ private fun updateRouteLayer(
     }
 
     val routeGeometry = LineString.fromLngLats(
-        routePoints.map { point ->
-            Point.fromLngLat(point.longitude, point.latitude)
-        }
+        routePoints.map { Point.fromLngLat(it.longitude, it.latitude) }
     )
 
-    val existingSource = style.getSourceAs<GeoJsonSource>(RouteSourceId)
-
-    if (existingSource != null) {
-        existingSource.setGeoJson(routeGeometry)
+    val source = style.getSourceAs<GeoJsonSource>(RouteSourceId)
+    if (source != null) {
+        source.setGeoJson(routeGeometry)
         return
     }
 
-    style.addSource(
-        GeoJsonSource(RouteSourceId, routeGeometry)
-    )
-
+    style.addSource(GeoJsonSource(RouteSourceId, routeGeometry))
     style.addLayer(
-        LineLayer(RouteLayerId, RouteSourceId)
-            .withProperties(
-                PropertyFactory.lineColor("#15919B"),
-                PropertyFactory.lineWidth(6f),
-                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
-            )
+        LineLayer(RouteLayerId, RouteSourceId).withProperties(
+            PropertyFactory.lineColor("#15919B"),
+            PropertyFactory.lineWidth(6f),
+            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+        )
+    )
+}
+
+private fun updateDestinationLayer(style: Style, destination: LatLng?) {
+    if (destination == null) {
+        style.removeLayer(DestinationLayerId)
+        style.removeSource(DestinationSourceId)
+        return
+    }
+
+    val point = Point.fromLngLat(destination.longitude, destination.latitude)
+    val source = style.getSourceAs<GeoJsonSource>(DestinationSourceId)
+
+    if (source != null) {
+        source.setGeoJson(point)
+        return
+    }
+
+    style.addSource(GeoJsonSource(DestinationSourceId, point))
+    style.addLayer(
+        CircleLayer(DestinationLayerId, DestinationSourceId).withProperties(
+            PropertyFactory.circleColor("#FF9318"),
+            PropertyFactory.circleRadius(9f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeWidth(3f)
+        )
     )
 }
 
@@ -254,12 +268,10 @@ private fun configureLocationComponent(
     }
 
     if (!locationComponent.isLocationComponentActivated) {
-        val activationOptions = LocationComponentActivationOptions
-            .builder(context, style)
+        val options = LocationComponentActivationOptions.builder(context, style)
             .useDefaultLocationEngine(true)
             .build()
-
-        locationComponent.activateLocationComponent(activationOptions)
+        locationComponent.activateLocationComponent(options)
     }
 
     locationComponent.isLocationComponentEnabled = true
@@ -279,10 +291,7 @@ private fun LocationPermissionBanner(
         shape = MaterialTheme.shapes.medium
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text(
-                text = "Location permission is off",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text("Location permission is off", style = MaterialTheme.typography.titleMedium)
             Text(
                 text = if (canRequestAgain) {
                     "Allow location access to show your current position on the map."
@@ -293,10 +302,7 @@ private fun LocationPermissionBanner(
                 modifier = Modifier.padding(top = 4.dp)
             )
             if (canRequestAgain) {
-                Button(
-                    onClick = onRequestPermission,
-                    modifier = Modifier.padding(top = 12.dp)
-                ) {
+                Button(onClick = onRequestPermission, modifier = Modifier.padding(top = 12.dp)) {
                     Text("Allow location")
                 }
             }
@@ -307,43 +313,23 @@ private fun LocationPermissionBanner(
 @Composable
 private fun MapPreviewPlaceholder(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "MapLibre map",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text("MapLibre map", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-private fun Context.hasLocationPermission(): Boolean {
-    return ContextCompat.checkSelfPermission(
-        this,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED ||
-        ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-}
+private fun Context.hasLocationPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-private fun Activity.shouldShowLocationPermissionRationale(): Boolean {
-    return ActivityCompat.shouldShowRequestPermissionRationale(
-        this,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) || ActivityCompat.shouldShowRequestPermissionRationale(
-        this,
-        Manifest.permission.ACCESS_COARSE_LOCATION
-    )
-}
+private fun Activity.shouldShowLocationPermissionRationale(): Boolean =
+    ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION) ||
+        ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_COARSE_LOCATION)
 
-private tailrec fun Context.findActivity(): Activity? {
-    return when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
-    }
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
