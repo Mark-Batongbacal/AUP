@@ -212,13 +212,13 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.StartStop)
                 .WithMany(e => e.RoutesStartingHere)
                 .HasForeignKey(e => e.StartStopId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_TransportRoutes_StartStop");
 
             entity.HasOne(e => e.EndStop)
                 .WithMany(e => e.RoutesEndingHere)
                 .HasForeignKey(e => e.EndStopId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_TransportRoutes_EndStop");
         });
     }
@@ -405,7 +405,7 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.Stop)
                 .WithOne(e => e.TricyclePoint)
                 .HasForeignKey<TricyclePoint>(e => e.StopId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_TricyclePoints_TransportStops");
         });
     }
@@ -471,7 +471,7 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.HomeTerminal)
                 .WithMany(e => e.Drivers)
                 .HasForeignKey(e => e.HomeTerminalId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_Drivers_HomeTerminal");
         });
     }
@@ -515,7 +515,7 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.TricyclePoint)
                 .WithMany(e => e.DriverVehicles)
                 .HasForeignKey(e => e.TricyclePointId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_DriverVehicles_TricyclePoints");
         });
     }
@@ -572,19 +572,19 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.Vehicle)
                 .WithMany(e => e.DriverAvailabilitySessions)
                 .HasForeignKey(e => e.VehicleId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_DriverAvailability_Vehicles");
 
             entity.HasOne(e => e.DestinationStop)
                 .WithMany(e => e.DriverAvailabilitySessions)
                 .HasForeignKey(e => e.DestinationStopId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_DriverAvailability_DestinationStop");
 
             entity.HasOne(e => e.TricyclePoint)
                 .WithMany(e => e.DriverAvailabilitySessions)
                 .HasForeignKey(e => e.TricyclePointId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_DriverAvailability_TricyclePoints");
         });
     }
@@ -624,13 +624,13 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.TransportMode)
                 .WithMany(e => e.PassengerRideRequests)
                 .HasForeignKey(e => e.TransportModeId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_RideRequests_TransportModes");
 
             entity.HasOne(e => e.TricyclePoint)
                 .WithMany(e => e.PassengerRideRequests)
                 .HasForeignKey(e => e.TricyclePointId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_RideRequests_TricyclePoints");
         });
     }
@@ -674,7 +674,7 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.Vehicle)
                 .WithMany(e => e.RideMatches)
                 .HasForeignKey(e => e.VehicleId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_RideMatches_Vehicles");
 
             entity.HasOne(e => e.Request)
@@ -686,7 +686,7 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.Session)
                 .WithMany(e => e.RideMatches)
                 .HasForeignKey(e => e.SessionId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_RideMatches_AvailabilitySessions");
         });
     }
@@ -711,7 +711,7 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.User)
                 .WithMany(e => e.TripSearches)
                 .HasForeignKey(e => e.UserId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_TripSearches_UserProfiles");
         });
     }
@@ -854,19 +854,19 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.Route)
                 .WithMany(e => e.RecommendationLegs)
                 .HasForeignKey(e => e.RouteId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_RecommendationLegs_TransportRoutes");
 
             entity.HasOne(e => e.FromStop)
                 .WithMany(e => e.RecommendationLegsStartingHere)
                 .HasForeignKey(e => e.FromStopId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_RecommendationLegs_FromStop");
 
             entity.HasOne(e => e.ToStop)
                 .WithMany(e => e.RecommendationLegsEndingHere)
                 .HasForeignKey(e => e.ToStopId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_RecommendationLegs_ToStop");
         });
     }
@@ -926,13 +926,13 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.Leg)
                 .WithMany(e => e.TripAlerts)
                 .HasForeignKey(e => e.LegId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_TripAlerts_RecommendationLegs");
 
             entity.HasOne(e => e.TargetStop)
                 .WithMany(e => e.TripAlerts)
                 .HasForeignKey(e => e.TargetStopId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_TripAlerts_TargetStop");
         });
     }
@@ -984,7 +984,7 @@ public partial class TukiDbContext : DbContext
             entity.HasOne(e => e.TripSearch)
                 .WithMany(e => e.ChatMessages)
                 .HasForeignKey(e => e.TripSearchId)
-                .OnDelete(DeleteBehavior.SetNull)
+                .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_ChatMessages_TripSearches");
         });
     }

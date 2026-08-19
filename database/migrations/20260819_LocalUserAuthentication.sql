@@ -1,0 +1,20 @@
+SET NOCOUNT ON;
+SET XACT_ABORT ON;
+
+BEGIN TRANSACTION;
+
+IF OBJECT_ID(N'dbo.LocalUserCredentials', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.LocalUserCredentials
+    (
+        UserId UNIQUEIDENTIFIER NOT NULL,
+        PasswordHash NVARCHAR(512) NOT NULL,
+        CreatedAt DATETIME2 NOT NULL CONSTRAINT DF_LocalUserCredentials_CreatedAt DEFAULT SYSUTCDATETIME(),
+        UpdatedAt DATETIME2 NOT NULL CONSTRAINT DF_LocalUserCredentials_UpdatedAt DEFAULT SYSUTCDATETIME(),
+        CONSTRAINT PK_LocalUserCredentials PRIMARY KEY (UserId),
+        CONSTRAINT FK_LocalUserCredentials_UserProfiles
+            FOREIGN KEY (UserId) REFERENCES dbo.UserProfiles(UserId) ON DELETE CASCADE
+    );
+END;
+
+COMMIT TRANSACTION;

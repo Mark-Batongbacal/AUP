@@ -221,10 +221,19 @@ public sealed class NavigationFacadeService(
             TripNavigationState.OnJeepney or TripNavigationState.OnTricycle => new[] { NavigationInstructionType.Continue },
             _ => Array.Empty<NavigationInstructionType>()
         };
-        return legInstructions.FirstOrDefault(item => desired.Contains(item.Type)) ??
-            legInstructions.FirstOrDefault(item => item.DistanceFromLegStartMeters is null ||
-                item.DistanceFromLegStartMeters >= session.CurrentProgressMeters) ??
-            all.FirstOrDefault(item => item.Type == NavigationInstructionType.Arrived);
+        var instruction =
+            legInstructions.FirstOrDefault(item => desired.Contains(item.Type)) ??
+            legInstructions.FirstOrDefault(item =>
+                item.DistanceFromLegStartMeters is null ||
+                item.DistanceFromLegStartMeters >= session.CurrentProgressMeters);
+
+        if (instruction is not null)
+            return instruction;
+
+        return session.CurrentNavigationState == TripNavigationState.Arrived
+            ? all.FirstOrDefault(item =>
+                item.Type == NavigationInstructionType.Arrived)
+            : null;
     }
 
     private static string EventInstructionType(TripSession session, string status,
