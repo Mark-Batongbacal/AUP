@@ -5,6 +5,7 @@ import com.example.frontend.core.network.ApiResult
 import com.example.frontend.core.storage.AuthSession
 import com.example.frontend.core.storage.AuthSessionStore
 import com.example.frontend.data.navigation.NavigationApi
+import com.example.frontend.data.navigation.NavigationGeometryResponseDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRepositoryImpl
 import com.example.frontend.data.navigation.NavigationRerouteRequest
@@ -82,6 +83,15 @@ class NavigationRepositoryTest {
             activeCalls++
             return Response.success(response)
         }
+        override suspend fun geometry(
+            startLatitude: Double,
+            startLongitude: Double,
+            endLatitude: Double,
+            endLongitude: Double,
+            mode: String,
+            routeId: Long?
+        ): Response<NavigationGeometryResponseDto> =
+            Response.success(NavigationGeometryResponseDto(emptyList()))
         override suspend fun location(sessionId: String, update: NavigationLocationUpdate): Response<NavigationSnapshotDto> {
             locationSession = sessionId
             locationUpdate = update

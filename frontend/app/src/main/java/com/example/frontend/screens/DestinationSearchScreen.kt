@@ -70,6 +70,7 @@ fun DestinationSearchScreen(
     var showMap by remember { mutableStateOf(false) }
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
+    var currentLocationLabel by remember { mutableStateOf(origin) }
     var selectedDestination by remember { mutableStateOf<DestinationSearchResultDto?>(null) }
     var searchResults by remember { mutableStateOf<List<DestinationSearchResultDto>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
@@ -81,6 +82,33 @@ fun DestinationSearchScreen(
                 currentLatitude = location.latitude
                 currentLongitude = location.longitude
             }
+        }
+    }
+
+    LaunchedEffect(currentLatitude, currentLongitude) {
+        val lat = currentLatitude ?: return@LaunchedEffect
+        val lon = currentLongitude ?: return@LaunchedEffect
+        when (val result = placesRepository.reverseGeocode(lat, lon)) {
+            is ApiResult.Success -> currentLocationLabel = result.data.name
+            is ApiResult.Failure -> Unit
+        }
+    }
+
+    LaunchedEffect(selectedDestination?.latitude, selectedDestination?.longitude, selectedDestination?.source) {
+        val selected = selectedDestination ?: return@LaunchedEffect
+        if (selected.source != "map") return@LaunchedEffect
+        when (val result = placesRepository.reverseGeocode(selected.latitude, selected.longitude)) {
+            is ApiResult.Success -> {
+                val resolved = result.data
+                selectedDestination = selected.copy(
+                    name = resolved.name,
+                    address = resolved.address,
+                    category = resolved.category,
+                    source = "map-pelias"
+                )
+                destinationText = resolved.name
+            }
+            is ApiResult.Failure -> Unit
         }
     }
 
@@ -164,7 +192,7 @@ fun DestinationSearchScreen(
                         },
                         onMapClick = { point ->
                             selectedDestination = DestinationSearchResultDto(
-                                id = "map-pin",
+                                id = "map-pin-${point.latitude}-${point.longitude}",
                                 name = "Pinned destination",
                                 latitude = point.latitude,
                                 longitude = point.longitude,
@@ -254,7 +282,6 @@ fun DestinationSearchScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Origin pill
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -265,7 +292,7 @@ fun DestinationSearchScreen(
                 Box(modifier = Modifier.size(10.dp).background(TukiTeal, CircleShape))
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "$origin (current location)",
+                    text = "$currentLocationLabel (current location)",
                     color = TukiDark,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
@@ -274,7 +301,6 @@ fun DestinationSearchScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Destination input card
             Column(
                 modifier = Modifier
                     .fillMaxWidth()

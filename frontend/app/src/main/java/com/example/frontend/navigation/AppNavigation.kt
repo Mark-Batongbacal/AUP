@@ -12,6 +12,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.frontend.R
+import com.example.frontend.TodaPointOverlay
+import com.example.frontend.TransitRouteOverlay
 import com.example.frontend.auth.*
 import com.example.frontend.core.findActivity
 import com.example.frontend.core.location.currentDeviceLocation
@@ -20,14 +22,23 @@ import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.auth.RegisterRequest
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationSnapshotDto
+import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.users.UserProfileDto
+import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.FavoriteRoute
+import com.example.frontend.model.HistoryLeg
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.model.RouteOption
 import com.example.frontend.screens.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.maplibre.android.geometry.LatLng
 import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 @Composable
 fun AppNavigation(
@@ -52,6 +63,8 @@ fun AppNavigation(
     val routingRepository = dataProvider.routingRepository
     val navigationRepository = dataProvider.navigationRepository
     val tripRepository = dataProvider.tripRepository
+    val transportRouteRepository = dataProvider.transportRouteRepository
+    val tricycleRepository = dataProvider.tricycleRepository
 
     val startDestination = remember {
         if (dataProvider.sessionStore.validSession() != null) {
@@ -63,11 +76,23 @@ fun AppNavigation(
 
     var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var favorites by remember { mutableStateOf<List<FavoriteRoute>>(emptyList()) }
+    var recentCommutes by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
+    var recentTripsLoading by remember { mutableStateOf(false) }
+    var recentTripsError by remember { mutableStateOf<String?>(null) }
     var selectedCommute by remember { mutableStateOf<RecentCommute?>(null) }
+    var selectedCommuteGeometries by remember { mutableStateOf<List<List<LatLng>>>(emptyList()) }
+    var selectedCommuteGeometryLoading by remember { mutableStateOf(false) }
     var selectedRouteOption by remember { mutableStateOf<RouteOption?>(null) }
+    var selectedRoutingDestination by remember { mutableStateOf<DestinationSearchResultDto?>(null) }
+    var selectedRoutingOriginLatitude by remember { mutableStateOf<Double?>(null) }
+    var selectedRoutingOriginLongitude by remember { mutableStateOf<Double?>(null) }
     var activeNavigationSessionId by remember { mutableStateOf<String?>(null) }
     var activeNavigationSnapshot by remember { mutableStateOf<NavigationSnapshotDto?>(null) }
     var navigationTrackingError by remember { mutableStateOf<String?>(null) }
+    var transitRouteOverlays by remember { mutableStateOf<List<TransitRouteOverlay>>(emptyList()) }
+    var todaPointOverlays by remember { mutableStateOf<List<TodaPointOverlay>>(emptyList()) }
+    var resolvedLegGeometries by remember { mutableStateOf<List<List<LatLng>>>(emptyList()) }
+    var liveCurrentLegGeometry by remember { mutableStateOf<List<LatLng>>(emptyList()) }
     var showAskAI by remember { mutableStateOf(false) }
 
     val profileDisplayName = currentUserProfile?.let { profile ->
@@ -251,6 +276,9 @@ fun AppNavigation(
                     userName = greetingName,
                     tripRepository = tripRepository,
                     onSearchDestination = { origin, destination ->
+                        selectedRoutingDestination = null
+                        selectedRoutingOriginLatitude = null
+                        selectedRoutingOriginLongitude = null
                         navController.navigate(routeResults(origin, destination))
                     },
                     onCommuteClick = { commute ->
@@ -268,6 +296,9 @@ fun AppNavigation(
                     },
                     onNewHereClick = {},
                     onPinDestinationClick = { origin ->
+                        selectedRoutingDestination = null
+                        selectedRoutingOriginLatitude = null
+                        selectedRoutingOriginLongitude = null
                         navController.navigate(
                             "${AppScreen.DESTINATION_SEARCH.name}/${Uri.encode(origin)}"
                         )
@@ -279,7 +310,96 @@ fun AppNavigation(
             }
 
             composable(route = AppScreen.RECENT.name) {
+                LaunchedEffect(Unit) {
+                    recentTripsLoading = true
+                    recentTripsError = null
+                    when (val result = tripRepository.getHistory()) {
+                        is ApiResult.Success -> {
+                            val mapped = mutableListOf<RecentCommute>()
+                            for (item in result.data) {
+                                var originName = item.originName
+                                var destinationName = item.destinationName
+
+                                if (originName.isGenericLocationLabel()) {
+                                    when (val place = placesRepository.reverseGeocode(
+                                        item.originLatitude,
+                                        item.originLongitude
+                                    )) {
+                                        is ApiResult.Success -> originName = place.data.name
+                                        is ApiResult.Failure -> Unit
+                                    }
+                                }
+                                if (destinationName.isGenericLocationLabel()) {
+                                    when (val place = placesRepository.reverseGeocode(
+                                        item.destinationLatitude,
+                                        item.destinationLongitude
+                                    )) {
+                                        is ApiResult.Success -> destinationName = place.data.name
+                                        is ApiResult.Failure -> Unit
+                                    }
+                                }
+
+                                val recommendation = item.recommendation
+                                val orderedLegs = recommendation?.legs?.sortedBy { it.legOrder }.orEmpty()
+                                mapped += RecentCommute(
+                                    id = item.passengerTripId,
+                                    recommendationId = recommendation?.recommendationId,
+                                    origin = originName,
+                                    destination = destinationName,
+                                    originLatitude = item.originLatitude,
+                                    originLongitude = item.originLongitude,
+                                    destinationLatitude = item.destinationLatitude,
+                                    destinationLongitude = item.destinationLongitude,
+                                    legs = orderedLegs.size,
+                                    minutes = recommendation?.totalMinutes?.toInt() ?: 0,
+                                    dateGroup = recentDateGroup(item.startedAt ?: item.createdAt),
+                                    steps = orderedLegs.map { leg ->
+                                        CommuteStep(
+                                            mode = leg.transportMode?.name
+                                                ?: leg.route?.routeName
+                                                ?: "Transit",
+                                            from = leg.fromName
+                                                ?: leg.fromStop?.name
+                                                ?: originName,
+                                            to = leg.toName
+                                                ?: leg.toStop?.name
+                                                ?: destinationName,
+                                            minutes = leg.estimatedMinutes.toInt(),
+                                            fare = leg.estimatedFare.toDouble()
+                                        )
+                                    },
+                                    historyLegs = orderedLegs.map { leg ->
+                                        HistoryLeg(
+                                            mode = leg.transportMode?.code ?: "TRANSIT",
+                                            routeId = leg.routeId,
+                                            routeName = leg.route?.routeName,
+                                            from = leg.fromName ?: leg.fromStop?.name ?: originName,
+                                            to = leg.toName ?: leg.toStop?.name ?: destinationName,
+                                            startLatitude = leg.startLatitude,
+                                            startLongitude = leg.startLongitude,
+                                            endLatitude = leg.endLatitude,
+                                            endLongitude = leg.endLongitude
+                                        )
+                                    }
+                                )
+                            }
+                            recentCommutes = mapped
+                        }
+                        is ApiResult.Failure -> {
+                            recentCommutes = emptyList()
+                            recentTripsError = result.message
+                            if (result.isUnauthorized) {
+                                navController.navigate(AppScreen.LOGIN.name) { popUpTo(0) }
+                            }
+                        }
+                    }
+                    recentTripsLoading = false
+                }
+
                 RecentScreen(
+                    commutes = recentCommutes,
+                    isLoading = recentTripsLoading,
+                    errorMessage = recentTripsError,
                     onCommuteClick = { commute ->
                         selectedCommute = commute
                         navController.navigate(AppScreen.COMMUTE_DETAIL.name)
@@ -395,10 +515,62 @@ fun AppNavigation(
 
             composable(route = AppScreen.COMMUTE_DETAIL.name) {
                 selectedCommute?.let { commute ->
+                    LaunchedEffect(commute.id) {
+                        selectedCommuteGeometryLoading = true
+                        val geometries = mutableListOf<List<LatLng>>()
+                        for (leg in commute.historyLegs) {
+                            val startLat = leg.startLatitude
+                            val startLon = leg.startLongitude
+                            val endLat = leg.endLatitude
+                            val endLon = leg.endLongitude
+                            if (startLat == null || startLon == null || endLat == null || endLon == null) {
+                                geometries.add(emptyList())
+                                continue
+                            }
+
+                            when (val result = navigationRepository.getGeometry(
+                                startLatitude = startLat,
+                                startLongitude = startLon,
+                                endLatitude = endLat,
+                                endLongitude = endLon,
+                                mode = leg.mode,
+                                routeId = leg.routeId
+                            )) {
+                                is ApiResult.Success -> geometries += result.data.points.map { point ->
+                                    LatLng(point.latitude, point.longitude)
+                                }
+                                is ApiResult.Failure -> geometries.add(emptyList())
+                            }
+                        }
+                        selectedCommuteGeometries = geometries
+                        selectedCommuteGeometryLoading = false
+                    }
+
                     CommuteDetailScreen(
                         commute = commute,
+                        legGeometries = selectedCommuteGeometries,
+                        isGeometryLoading = selectedCommuteGeometryLoading,
                         onBack = {
                             navController.popBackStack()
+                        },
+                        onRepeatTrip = {
+                            val latitude = commute.destinationLatitude
+                            val longitude = commute.destinationLongitude
+                            if (latitude != null && longitude != null) {
+                                selectedRoutingDestination = DestinationSearchResultDto(
+                                    id = "recent-${commute.id}",
+                                    name = commute.destination,
+                                    latitude = latitude,
+                                    longitude = longitude,
+                                    category = "recent",
+                                    source = "history",
+                                    address = null
+                                )
+                                selectedRoutingOriginLatitude = null
+                                selectedRoutingOriginLongitude = null
+                                selectedRouteOption = null
+                                navController.navigate(routeResults("Current location", commute.destination))
+                            }
                         }
                     )
                 }
@@ -413,10 +585,9 @@ fun AppNavigation(
                         navController.popBackStack()
                     },
                     onFindRoutes = { destination, originLatitude, originLongitude ->
-                        backStackEntry.savedStateHandle["routeOriginLatitude"] = originLatitude
-                        backStackEntry.savedStateHandle["routeOriginLongitude"] = originLongitude
-                        backStackEntry.savedStateHandle["routeDestinationLatitude"] = destination.latitude
-                        backStackEntry.savedStateHandle["routeDestinationLongitude"] = destination.longitude
+                        selectedRoutingDestination = destination
+                        selectedRoutingOriginLatitude = originLatitude
+                        selectedRoutingOriginLongitude = originLongitude
                         navController.navigate(routeResults(origin, destination.name))
                     }
                 )
@@ -425,33 +596,25 @@ fun AppNavigation(
             composable(route = "${AppScreen.ROUTE_RESULTS.name}/{origin}/{destination}") { backStackEntry ->
                 val origin = backStackEntry.arguments?.getString("origin") ?: ""
                 val destination = backStackEntry.arguments?.getString("destination") ?: ""
-                val previousState = navController.previousBackStackEntry?.savedStateHandle
-
-                val originLatitude = remember(backStackEntry) {
-                    previousState?.remove<Double>("routeOriginLatitude")
-                }
-                val originLongitude = remember(backStackEntry) {
-                    previousState?.remove<Double>("routeOriginLongitude")
-                }
-                val destinationLatitude = remember(backStackEntry) {
-                    previousState?.remove<Double>("routeDestinationLatitude")
-                }
-                val destinationLongitude = remember(backStackEntry) {
-                    previousState?.remove<Double>("routeDestinationLongitude")
-                }
+                val exactDestination = selectedRoutingDestination
+                    ?.takeIf { it.name == destination }
 
                 RouteResultsScreen(
                     origin = origin,
                     destinationQuery = destination,
                     routingRepository = routingRepository,
                     placesRepository = placesRepository,
-                    originLatitude = originLatitude,
-                    originLongitude = originLongitude,
-                    destinationLatitude = destinationLatitude,
-                    destinationLongitude = destinationLongitude,
+                    originLatitude = if (exactDestination != null) selectedRoutingOriginLatitude else null,
+                    originLongitude = if (exactDestination != null) selectedRoutingOriginLongitude else null,
+                    destinationLatitude = exactDestination?.latitude,
+                    destinationLongitude = exactDestination?.longitude,
                     onBack = { navController.popBackStack() },
                     onRouteSelect = { option ->
                         selectedRouteOption = option
+                        resolvedLegGeometries = option.legRoutePoints.map { segment ->
+                            segment.map { point -> LatLng(point.latitude, point.longitude) }
+                        }
+                        liveCurrentLegGeometry = emptyList()
                         navController.navigate(navigationRoute(origin, destination))
                     },
                     onSuggestToda = {}
@@ -463,6 +626,7 @@ fun AppNavigation(
                 val destination = backStackEntry.arguments?.getString("destination") ?: ""
                 var isStartingNavigation by remember { mutableStateOf(false) }
                 var navigationStartError by remember { mutableStateOf<String?>(null) }
+                var hasExistingActiveTrip by remember { mutableStateOf(false) }
 
                 NavigationScreen(
                     origin = origin,
@@ -470,6 +634,7 @@ fun AppNavigation(
                     steps = selectedRouteOption?.steps.orEmpty(),
                     isStartingNavigation = isStartingNavigation,
                     navigationStartError = navigationStartError,
+                    hasActiveTrip = hasExistingActiveTrip,
                     onBack = { navController.popBackStack() },
                     onStartTracking = {
                         val recommendationId = selectedRouteOption?.id
@@ -485,14 +650,59 @@ fun AppNavigation(
                                         activeNavigationSessionId = result.data.sessionId
                                         activeNavigationSnapshot = result.data
                                         navigationTrackingError = null
+                                        hasExistingActiveTrip = false
                                         navController.navigate(trackingRoute(origin, destination))
                                     }
 
                                     is ApiResult.Failure -> {
-                                        navigationStartError = result.message
+                                        val looksLikeActiveTrip =
+                                            result.message.contains("ACTIVE_TRIP_EXISTS", ignoreCase = true) ||
+                                                result.message.contains("active trip", ignoreCase = true)
+                                        if (looksLikeActiveTrip) {
+                                            when (val active = navigationRepository.getActiveNavigation()) {
+                                                is ApiResult.Success -> {
+                                                    activeNavigationSessionId = active.data.sessionId
+                                                    activeNavigationSnapshot = active.data
+                                                    navigationTrackingError = null
+                                                    hasExistingActiveTrip = true
+                                                    navigationStartError =
+                                                        "You already have an active trip. Resume it or end it before starting this route."
+                                                }
+                                                is ApiResult.Failure -> {
+                                                    navigationStartError = active.message
+                                                }
+                                            }
+                                        } else {
+                                            navigationStartError = result.message
+                                        }
                                     }
                                 }
 
+                                isStartingNavigation = false
+                            }
+                        }
+                    },
+                    onResumeActiveTrip = {
+                        selectedRouteOption = null
+                        resolvedLegGeometries = emptyList()
+                        liveCurrentLegGeometry = emptyList()
+                        navController.navigate(trackingRoute("Current location", "Active trip"))
+                    },
+                    onEndActiveTrip = {
+                        val sessionId = activeNavigationSessionId
+                        if (sessionId != null && !isStartingNavigation) {
+                            coroutineScope.launch {
+                                isStartingNavigation = true
+                                when (val result = navigationRepository.cancel(sessionId)) {
+                                    is ApiResult.Success -> {
+                                        activeNavigationSessionId = null
+                                        activeNavigationSnapshot = result.data
+                                        navigationTrackingError = null
+                                        hasExistingActiveTrip = false
+                                        navigationStartError = null
+                                    }
+                                    is ApiResult.Failure -> navigationStartError = result.message
+                                }
                                 isStartingNavigation = false
                             }
                         }
@@ -503,6 +713,61 @@ fun AppNavigation(
             composable(route = "${AppScreen.TRIP_TRACKING.name}/{origin}/{destination}") { backStackEntry ->
                 val origin = backStackEntry.arguments?.getString("origin") ?: ""
                 val destination = backStackEntry.arguments?.getString("destination") ?: ""
+                var isNavigationActionInProgress by remember { mutableStateOf(false) }
+
+                LaunchedEffect(Unit) {
+                    if (transitRouteOverlays.isEmpty()) {
+                        when (val routes = transportRouteRepository.getActiveRoutes()) {
+                            is ApiResult.Success -> {
+                                val overlays = mutableListOf<TransitRouteOverlay>()
+                                routes.data.take(40).forEach { route ->
+                                    when (val points = transportRouteRepository.getRoutePoints(route.routeId)) {
+                                        is ApiResult.Success -> {
+                                            val geometry = points.data.points
+                                                .sortedBy { it.pointOrder }
+                                                .map { point ->
+                                                    LatLng(point.latitude, point.longitude)
+                                                }
+                                            if (geometry.size >= 2) {
+                                                overlays += TransitRouteOverlay(
+                                                    routeId = route.routeId,
+                                                    routeCode = route.routeCode,
+                                                    routeName = route.routeName,
+                                                    points = geometry
+                                                )
+                                            }
+                                        }
+                                        is ApiResult.Failure -> Unit
+                                    }
+                                }
+                                transitRouteOverlays = overlays
+                            }
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+
+                    if (todaPointOverlays.isEmpty()) {
+                        when (val points = tricycleRepository.getActivePoints()) {
+                            is ApiResult.Success -> {
+                                todaPointOverlays = points.data.map { point ->
+                                    TodaPointOverlay(
+                                        id = point.tricyclePointId,
+                                        name = point.pointName,
+                                        pointCode = point.pointCode,
+                                        latitude = point.centerLatitude,
+                                        longitude = point.centerLongitude,
+                                        radiusMeters = point.radiusMeters,
+                                        operatorName = point.operatorName,
+                                        baseFareText = point.baseFare?.let { fare ->
+                                            "₱${fare.stripTrailingZeros().toPlainString()}"
+                                        }
+                                    )
+                                }
+                            }
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                }
 
                 LaunchedEffect(activeNavigationSessionId) {
                     if (activeNavigationSessionId == null) {
@@ -510,6 +775,9 @@ fun AppNavigation(
                             is ApiResult.Success -> {
                                 activeNavigationSessionId = active.data.sessionId
                                 activeNavigationSnapshot = active.data
+                                selectedRouteOption = null
+                                resolvedLegGeometries = emptyList()
+                                liveCurrentLegGeometry = emptyList()
                             }
                             is ApiResult.Failure -> navigationTrackingError = active.message
                         }
@@ -563,17 +831,184 @@ fun AppNavigation(
                     }
                 }
 
-                val routePoints = selectedRouteOption?.routePoints.orEmpty().map { point ->
-                    org.maplibre.android.geometry.LatLng(point.latitude, point.longitude)
+                val currentLegIndex = activeNavigationSnapshot?.currentLegIndex ?: 0
+
+                LaunchedEffect(selectedRouteOption?.id) {
+                    val option = selectedRouteOption ?: return@LaunchedEffect
+                    val working = option.legRoutePoints.map { segment ->
+                        segment.map { point -> LatLng(point.latitude, point.longitude) }
+                    }.toMutableList()
+
+                    option.steps.forEachIndexed { index, step ->
+                        if (working.getOrNull(index)?.size ?: 0 >= 2) return@forEachIndexed
+                        if (!step.mode.equals("Walk", true) && !step.mode.equals("Tricycle", true)) {
+                            return@forEachIndexed
+                        }
+                        val end = option.legEndPoints.getOrNull(index) ?: return@forEachIndexed
+                        val start = if (index == 0) {
+                            val lat = selectedRoutingOriginLatitude
+                            val lon = selectedRoutingOriginLongitude
+                            if (lat != null && lon != null) LatLng(lat, lon) else null
+                        } else {
+                            option.legEndPoints.getOrNull(index - 1)?.let { LatLng(it.latitude, it.longitude) }
+                        } ?: return@forEachIndexed
+
+                        when (val result = navigationRepository.getGeometry(
+                            start.latitude,
+                            start.longitude,
+                            end.latitude,
+                            end.longitude,
+                            if (step.mode.equals("Tricycle", true)) "TRICYCLE" else "WALK"
+                        )) {
+                            is ApiResult.Success -> {
+                                while (working.size <= index) working.add(emptyList())
+                                working[index] = result.data.points.map { point ->
+                                    LatLng(point.latitude, point.longitude)
+                                }
+                            }
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                    resolvedLegGeometries = working
                 }
+
+                LaunchedEffect(
+                    currentLegIndex,
+                    activeNavigationSnapshot?.currentLeg?.endLatitude,
+                    activeNavigationSnapshot?.currentLeg?.endLongitude,
+                    activeNavigationSnapshot?.currentLeg?.transportMode
+                ) {
+                    liveCurrentLegGeometry = emptyList()
+                    val leg = activeNavigationSnapshot?.currentLeg ?: return@LaunchedEffect
+                    val endLat = leg.endLatitude ?: return@LaunchedEffect
+                    val endLon = leg.endLongitude ?: return@LaunchedEffect
+                    val mode = leg.transportMode.uppercase()
+
+                    if (mode != "WALK" && mode != "TRIKE" && mode != "TRICYCLE") {
+                        return@LaunchedEffect
+                    }
+
+                    val currentLocation = context.currentDeviceLocation()
+                    val startLat = currentLocation?.latitude ?: leg.startLatitude ?: return@LaunchedEffect
+                    val startLon = currentLocation?.longitude ?: leg.startLongitude ?: return@LaunchedEffect
+
+                    when (val geometry = navigationRepository.getGeometry(
+                        startLat,
+                        startLon,
+                        endLat,
+                        endLon,
+                        if (mode == "WALK") "WALK" else "TRICYCLE"
+                    )) {
+                        is ApiResult.Success -> liveCurrentLegGeometry = geometry.data.points.map { point ->
+                            LatLng(point.latitude, point.longitude)
+                        }
+                        is ApiResult.Failure -> navigationTrackingError = geometry.message
+                    }
+                }
+
+                val selectedLegPoints = resolvedLegGeometries.getOrNull(currentLegIndex).orEmpty()
+                val routePoints = if (liveCurrentLegGeometry.size >= 2) {
+                    liveCurrentLegGeometry
+                } else {
+                    selectedLegPoints
+                }
+
+                val futureRouteSegments = resolvedLegGeometries
+                    .drop(currentLegIndex + 1)
+                    .filter { it.size >= 2 }
+
+                val legDestination = selectedRouteOption
+                    ?.legEndPoints
+                    ?.getOrNull(currentLegIndex)
+                    ?.let { point ->
+                        LatLng(point.latitude, point.longitude)
+                    }
+                    ?: activeNavigationSnapshot?.currentLeg?.let { leg ->
+                        if (leg.endLatitude != null && leg.endLongitude != null) {
+                            LatLng(leg.endLatitude, leg.endLongitude)
+                        } else {
+                            null
+                        }
+                    }
+
+                val finalDestination = selectedRouteOption
+                    ?.legEndPoints
+                    ?.lastOrNull()
+                    ?.let { point ->
+                        LatLng(point.latitude, point.longitude)
+                    }
+                    ?: selectedRoutingDestination?.let { point ->
+                        LatLng(point.latitude, point.longitude)
+                    }
 
                 TripTrackingScreen(
                     origin = origin,
                     destination = destination,
                     routePoints = routePoints,
+                    futureRouteSegments = futureRouteSegments,
+                    legDestination = legDestination,
+                    finalDestination = finalDestination,
+                    nearbyJeepneyRoutes = transitRouteOverlays,
+                    todaPoints = todaPointOverlays,
                     navigationSnapshot = activeNavigationSnapshot,
                     navigationError = navigationTrackingError,
-                    onBack = { navController.popBackStack() }
+                    isNavigationActionInProgress = isNavigationActionInProgress,
+                    onBack = { navController.popBackStack() },
+                    onEndTrip = {
+                        val sessionId = activeNavigationSessionId
+                        if (sessionId != null && !isNavigationActionInProgress) {
+                            coroutineScope.launch {
+                                isNavigationActionInProgress = true
+                                when (val result = navigationRepository.cancel(sessionId)) {
+                                    is ApiResult.Success -> {
+                                        activeNavigationSessionId = null
+                                        activeNavigationSnapshot = result.data
+                                        navigationTrackingError = null
+                                        selectedRouteOption = null
+                                        resolvedLegGeometries = emptyList()
+                                        liveCurrentLegGeometry = emptyList()
+                                        navController.popBackStack()
+                                    }
+                                    is ApiResult.Failure -> navigationTrackingError = result.message
+                                }
+                                isNavigationActionInProgress = false
+                            }
+                        }
+                    },
+                    onConfirmBoarding = {
+                        val sessionId = activeNavigationSessionId
+                        if (sessionId != null && !isNavigationActionInProgress) {
+                            coroutineScope.launch {
+                                isNavigationActionInProgress = true
+                                when (val result = navigationRepository.confirmBoarding(sessionId)) {
+                                    is ApiResult.Success -> {
+                                        activeNavigationSnapshot = result.data
+                                        liveCurrentLegGeometry = emptyList()
+                                        navigationTrackingError = null
+                                    }
+                                    is ApiResult.Failure -> navigationTrackingError = result.message
+                                }
+                                isNavigationActionInProgress = false
+                            }
+                        }
+                    },
+                    onConfirmAlighting = {
+                        val sessionId = activeNavigationSessionId
+                        if (sessionId != null && !isNavigationActionInProgress) {
+                            coroutineScope.launch {
+                                isNavigationActionInProgress = true
+                                when (val result = navigationRepository.confirmAlighting(sessionId)) {
+                                    is ApiResult.Success -> {
+                                        activeNavigationSnapshot = result.data
+                                        liveCurrentLegGeometry = emptyList()
+                                        navigationTrackingError = null
+                                    }
+                                    is ApiResult.Failure -> navigationTrackingError = result.message
+                                }
+                                isNavigationActionInProgress = false
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -586,9 +1021,42 @@ fun AppNavigation(
                 },
                 onDestinationConfirmed = { destination ->
                     showAskAI = false
+                    selectedRoutingDestination = null
+                    selectedRoutingOriginLatitude = null
+                    selectedRoutingOriginLongitude = null
                     navController.navigate(routeResults("Current location", destination))
                 }
             )
         }
     }
+}
+
+private fun recentDateGroup(timestamp: String): String {
+    val zone = ZoneId.systemDefault()
+    val date = runCatching {
+        Instant.parse(timestamp).atZone(zone).toLocalDate()
+    }.recoverCatching {
+        OffsetDateTime.parse(timestamp).atZoneSameInstant(zone).toLocalDate()
+    }.recoverCatching {
+        LocalDateTime.parse(timestamp)
+            .atZone(ZoneOffset.UTC)
+            .withZoneSameInstant(zone)
+            .toLocalDate()
+    }.getOrNull() ?: return "Earlier"
+
+    val today = LocalDate.now(zone)
+    return when (date) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> "Earlier"
+    }
+}
+
+private fun String.isGenericLocationLabel(): Boolean {
+    val value = trim().lowercase()
+    return value.isBlank() ||
+        value == "current location" ||
+        value == "pinned destination" ||
+        value == "unknown origin" ||
+        value == "unknown destination"
 }

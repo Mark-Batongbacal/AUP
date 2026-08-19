@@ -1,12 +1,19 @@
 using System.Security.Claims;
 using backend.Services.Navigation;
+using backend.Services.Routing;
+using backend.Services.Transportation;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace backend.Controllers;
 
 [ApiController]
 [Route("api/navigation")]
-public sealed class NavigationController(INavigationFacadeService navigation) : ControllerBase
+public sealed class NavigationController(
+    INavigationFacadeService navigation,
+    IValhallaService valhalla,
+    IRoutePointService routePoints,
+    IOptions<RoutingOptions> routingOptions) : ControllerBase
 {
     [HttpPost("start")]
     public async Task<IActionResult> Start(
@@ -16,6 +23,57 @@ public sealed class NavigationController(INavigationFacadeService navigation) : 
     [HttpGet("active")]
     public async Task<IActionResult> Active(CancellationToken cancellationToken) =>
         Result(await navigation.GetActiveAsync(UserId(), cancellationToken));
+
+    [HttpGet("geometry")]
+    public async Task<IActionResult> Geometry(
+        [FromQuery] double startLat,
+        [FromQuery] double startLon,
+        [FromQuery] double endLat,
+        [FromQuery] double endLon,
+        [FromQuery] string mode,
+        [FromQuery] long? routeId,
+        CancellationToken cancellationToken)
+    {
+        if (!ValidCoordinate(startLat, startLon) || !ValidCoordinate(endLat, endLon))
+            return BadRequest(new { error = "INVALID_COORDINATES" });
+
+        var normalizedMode = (mode ?? string.Empty).Trim().ToUpperInvariant();
+        if (normalizedMode == "JEEPNEY")
+        {
+            if (routeId is not > 0)
+                return BadRequest(new { error = "JEEPNEY_ROUTE_REQUIRED" });
+
+            var points = await routePoints.GetRoutePointsAsync(routeId.Value, cancellationToken);
+            var ordered = points.OrderBy(item => item.PointOrder).ToList();
+            if (ordered.Count < 2)
+                return StatusCode(StatusCodes.Status502BadGateway, new { error = "JEEPNEY_GEOMETRY_UNAVAILABLE" });
+
+            var startIndex = ClosestIndex(ordered, startLat, startLon);
+            var endIndex = ClosestIndex(ordered, endLat, endLon);
+            var from = Math.Min(startIndex, endIndex);
+            var to = Math.Max(startIndex, endIndex);
+            var geometry = ordered.Skip(from).Take(to - from + 1)
+                .Select(item => new NavigationGeometryPoint(item.Latitude, item.Longitude))
+                .ToList();
+            if (startIndex > endIndex) geometry.Reverse();
+            return Ok(new NavigationGeometryResponse(geometry));
+        }
+
+        var costing = normalizedMode is "TRICYCLE" or "TRIKE"
+            ? routingOptions.Value.TrikeCostingModel
+            : "pedestrian";
+        var response = await valhalla.GetRouteAsync(
+            startLat, startLon, endLat, endLon, costing, cancellationToken);
+        var roadGeometry = response.Trip?.Legs
+            .SelectMany(leg => leg.Points)
+            .Where(point => point.Length >= 2)
+            .Select(point => new NavigationGeometryPoint(point[1], point[0]))
+            .ToList() ?? [];
+
+        return roadGeometry.Count >= 2
+            ? Ok(new NavigationGeometryResponse(roadGeometry))
+            : StatusCode(StatusCodes.Status502BadGateway, new { error = "GEOMETRY_UNAVAILABLE" });
+    }
 
     [HttpPost("{sessionId:guid}/location")]
     public async Task<IActionResult> Location(Guid sessionId, LocationUpdate update,
@@ -48,6 +106,30 @@ public sealed class NavigationController(INavigationFacadeService navigation) : 
             : Conflict(new { error = operation.Error });
     }
 
+    private static bool ValidCoordinate(double latitude, double longitude) =>
+        latitude is >= -90 and <= 90 && longitude is >= -180 and <= 180;
+
+    private static int ClosestIndex(IReadOnlyList<RoutePointDetailsDto> points, double latitude, double longitude)
+    {
+        var bestIndex = 0;
+        var bestDistance = double.MaxValue;
+        for (var index = 0; index < points.Count; index++)
+        {
+            var lat = points[index].Latitude - latitude;
+            var lon = points[index].Longitude - longitude;
+            var distance = lat * lat + lon * lon;
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                bestIndex = index;
+            }
+        }
+        return bestIndex;
+    }
+
     private Guid UserId() => Guid.TryParse(
         User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
 }
+
+public sealed record NavigationGeometryPoint(double Latitude, double Longitude);
+public sealed record NavigationGeometryResponse(IReadOnlyList<NavigationGeometryPoint> Points);

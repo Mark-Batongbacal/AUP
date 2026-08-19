@@ -6,7 +6,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -30,8 +33,11 @@ fun NavigationScreen(
     steps: List<CommuteStep>,
     isStartingNavigation: Boolean = false,
     navigationStartError: String? = null,
+    hasActiveTrip: Boolean = false,
     onBack: () -> Unit = {},
-    onStartTracking: () -> Unit = {}
+    onStartTracking: () -> Unit = {},
+    onResumeActiveTrip: () -> Unit = {},
+    onEndActiveTrip: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -83,16 +89,39 @@ fun NavigationScreen(
             )
         }
 
+        if (hasActiveTrip) {
+            Button(
+                onClick = onResumeActiveTrip,
+                enabled = !isStartingNavigation,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TukiTeal,
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Resume Active Trip", fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onEndActiveTrip,
+                enabled = !isStartingNavigation,
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) {
+                Text("End Active Trip", color = TukiOrange, fontWeight = FontWeight.Bold)
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         Spacer(modifier = Modifier.height(14.dp))
 
-        androidx.compose.material3.Button(
+        Button(
             onClick = onStartTracking,
-            enabled = !isStartingNavigation,
+            enabled = !isStartingNavigation && !hasActiveTrip,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(60.dp),
             shape = RoundedCornerShape(20.dp),
-            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+            colors = ButtonDefaults.buttonColors(
                 containerColor = TukiTeal,
                 contentColor = Color.White
             )
@@ -104,7 +133,7 @@ fun NavigationScreen(
                     color = Color.White
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Text(text = "Starting trip...", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(text = "Working...", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             } else {
                 Text(text = "Start Trip", fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
