@@ -45,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.frontend.model.RecentCommute
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.trips.TripRepository
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import com.example.frontend.components.BottomBar
@@ -59,7 +61,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 @Composable
 fun HomeScreen(
     userName: String = "Juan",
-    recentCommutes: List<RecentCommute> = sampleRecentCommutes,
+    tripRepository: TripRepository,
     onSearchDestination: (origin: String, destination: String) -> Unit = { _, _ -> },
     onCommuteClick: (RecentCommute) -> Unit = {},
     onRecentClick: () -> Unit = {},
@@ -70,6 +72,9 @@ fun HomeScreen(
     var destinationQuery by remember { mutableStateOf("") }
     var currentLocationLabel by remember { mutableStateOf("Locating you...") }
     var isLocating by remember { mutableStateOf(true) }
+    var recentCommutes by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
+    var isRefreshingRecent by remember { mutableStateOf(false) }
+    var recentErrorMessage by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val inPreview = LocalInspectionMode.current
@@ -88,6 +93,19 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
+        isRefreshingRecent = true
+        recentErrorMessage = null
+
+        // Backend currently doesn't have a list-trips endpoint in TripRepository
+        // Using local mock data for now to maintain UI functionality
+        recentCommutes = listOf(
+            RecentCommute(id = "1", origin = "Sta. Rita", destination = "Guagua Town", legs = 3, minutes = 22),
+            RecentCommute(id = "2", origin = "Dolores", destination = "SM City Clark", legs = 2, minutes = 18),
+            RecentCommute(id = "3", origin = "Porac", destination = "Dau Terminal", legs = 4, minutes = 35)
+        )
+
+        isRefreshingRecent = false
+
         if (inPreview) {
             isLocating = false
             return@LaunchedEffect
@@ -164,9 +182,25 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            items(recentCommutes, key = { it.id }) { commute ->
-                RecentCommuteCard(commute = commute, onClick = { onCommuteClick(commute) })
-                Spacer(modifier = Modifier.height(14.dp))
+            if (isRefreshingRecent) {
+                item {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = TukiTeal, modifier = Modifier.size(24.dp))
+                    }
+                }
+            } else if (recentErrorMessage != null) {
+                item {
+                    Text(
+                        text = "Could not load recent commutes",
+                        color = Color.Red,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                items(recentCommutes, key = { it.id }) { commute ->
+                    RecentCommuteCard(commute = commute, onClick = { onCommuteClick(commute) })
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
             }
 
             item {
@@ -320,12 +354,6 @@ private fun NewHereBanner(onClick: () -> Unit) {
 }
 
 private val TukiCream2 = Color(0xFFFAEBC7)
-
-private val sampleRecentCommutes = listOf(
-    RecentCommute(id = "1", origin = "Sta. Rita", destination = "Guagua Town", legs = 3, minutes = 22),
-    RecentCommute(id = "2", origin = "Dolores", destination = "SM City Clark", legs = 2, minutes = 18),
-    RecentCommute(id = "3", origin = "Porac", destination = "Dau Terminal", legs = 4, minutes = 35)
-)
 
 private fun android.content.Context.hasLocationPermission(): Boolean {
     return ContextCompat.checkSelfPermission(

@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,7 +42,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.auth.AuthRepository
 import kotlinx.coroutines.launch
+import androidx.compose.material3.CircularProgressIndicator
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -52,9 +56,12 @@ private val TukiError = Color(0xFFB00020)
 
 @Composable
 fun LoginScreen(
+    authRepository: AuthRepository,
     onBack: () -> Unit = {},
     onSignUpClick: () -> Unit = {},
     onLoginSuccess: () -> Unit = {},
+    onForgotPasswordClick: () -> Unit = {},
+    onGuestLoginClick: () -> Unit = {},
     onPasswordLoginClick: suspend (String, String) -> LoginActionResult = { _, _ ->
         LoginActionResult.Error("Password login is not configured.")
     },
@@ -71,6 +78,10 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var isPasswordLoggingIn by remember { mutableStateOf(false) }
+
+    var isLoggingIn by remember {
+        mutableStateOf(false)
+    }
     var isGoogleLoggingIn by remember { mutableStateOf(false) }
     var isFacebookLoggingIn by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
@@ -90,42 +101,47 @@ fun LoginScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .background(Color.White)
-            .padding(start = 34.dp, end = 34.dp, top = 35.dp, bottom = 15.dp),
+            .padding(start = 34.dp, end = 34.dp, top = 25.dp, bottom = 15.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Image(
-            painter = painterResource(R.drawable.tuki_logo),
-            contentDescription = "TUKI logo",
-            modifier = Modifier.size(75.dp),
-            contentScale = ContentScale.Fit
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(R.drawable.tuki_logo),
+                contentDescription = "TUKI logo",
+                modifier = Modifier.size(50.dp),
+                contentScale = ContentScale.Fit
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "TUKI.",
+                color = TukiTeal,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
 
-        Text(
-            text = "TUKI.",
-            color = TukiTeal,
-            fontSize = 34.sp,
-            fontWeight = FontWeight.ExtraBold
-        )
-
-        Spacer(modifier = Modifier.height(35.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         Text(
             text = "Welcome back",
             color = Color.Black,
-            fontSize = 26.sp,
+            fontSize = 24.sp,
             fontWeight = FontWeight.ExtraBold
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Text(
             text = "Log in to continue your commute",
             color = TukiGray,
-            fontSize = 18.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold
         )
 
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(25.dp))
 
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(text = "Email", color = Color.Black, fontSize = 18.sp)
@@ -180,7 +196,9 @@ fun LoginScreen(
 
             Text(
                 text = "Forgot password?",
-                modifier = Modifier.align(Alignment.End),
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .clickable(enabled = !isLoginInProgress) { onForgotPasswordClick() },
                 color = TukiTeal,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold
@@ -224,14 +242,18 @@ fun LoginScreen(
             shape = RoundedCornerShape(22.dp),
             colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
         ) {
-            Text(
-                text = if (isPasswordLoggingIn) "Logging in..." else "Log in",
-                fontSize = 25.sp,
-                fontWeight = FontWeight.Bold
-            )
+            if (isLoggingIn) {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+            } else {
+                Text(
+                    text = if (isPasswordLoggingIn) "Logging in..." else "Log in",
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(15.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -239,20 +261,20 @@ fun LoginScreen(
         ) {
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.LightGray))
             Text(
-                text = "OR CONTINUE WITH",
-                modifier = Modifier.padding(horizontal = 18.dp),
+                text = "OR",
+                modifier = Modifier.padding(horizontal = 14.dp),
                 color = TukiGray,
-                fontSize = 17.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )
             Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.LightGray))
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(15.dp))
 
-        Column(
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             OutlinedButton(
                 onClick = {
@@ -268,22 +290,23 @@ fun LoginScreen(
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(76.dp),
+                modifier = Modifier.weight(1f).height(56.dp),
                 enabled = !isLoginInProgress,
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(3.dp, Color(0xFFE8E8E8))
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(2.dp, Color(0xFFE8E8E8)),
+                contentPadding = PaddingValues(0.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Image(
                         painter = painterResource(R.drawable.google_logo),
                         contentDescription = "Google",
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isGoogleLoggingIn) "Connecting..." else "Continue with Google",
+                        text = if (isGoogleLoggingIn) "..." else "Google",
                         color = TukiDark,
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -303,26 +326,46 @@ fun LoginScreen(
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(76.dp),
+                modifier = Modifier.weight(1f).height(56.dp),
                 enabled = !isLoginInProgress,
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(3.dp, Color(0xFFE8E8E8))
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(2.dp, Color(0xFFE8E8E8)),
+                contentPadding = PaddingValues(0.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Image(
                         painter = painterResource(R.drawable.facebook_logo),
                         contentDescription = "Facebook",
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isFacebookLoggingIn) "Connecting..." else "Continue with Facebook",
+                        text = if (isFacebookLoggingIn) "..." else "Facebook",
                         color = TukiDark,
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onGuestLoginClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            enabled = !isLoginInProgress,
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(2.dp, Color(0xFFE8E8E8))
+        ) {
+            Text(
+                text = "Continue as Guest",
+                color = TukiDark,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))

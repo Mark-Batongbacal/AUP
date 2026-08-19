@@ -24,6 +24,8 @@ suspend fun <T : Any> apiCall(
     }
 } catch (exception: CancellationException) {
     throw exception
+} catch (exception: java.net.SocketTimeoutException) {
+    ApiResult.Failure(null, "Server is taking too long to respond. Please try again later.", cause = exception)
 } catch (exception: IOException) {
     Log.e("ApiCall_DIAG", "IOException during API call", exception)
     ApiResult.Failure(null, "Network error. Check your connection and try again.", cause = exception)

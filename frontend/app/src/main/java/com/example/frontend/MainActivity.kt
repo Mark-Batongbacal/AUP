@@ -1,23 +1,16 @@
 package com.example.frontend
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.credentials.CredentialManager
 import com.example.frontend.auth.FacebookSignInClient
-import com.example.frontend.auth.FacebookSignInResult
-import com.example.frontend.auth.GoogleSignInClient
-import com.example.frontend.auth.GoogleSignInResult
-import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.navigation.AppNavigation
 import com.example.frontend.data.auth.RegisterRequest
 import com.example.frontend.data.users.UserProfileDto
 import com.example.frontend.model.FavoriteRoute
@@ -62,11 +55,12 @@ fun TukiApp(
     facebookSignInClient: FacebookSignInClient = FacebookSignInClient()
 ) {
     val context = LocalContext.current
-    val activity = context.findActivity()
-    val googleServerClientId = stringResource(R.string.google_server_client_id)
-    val facebookAppId = stringResource(R.string.facebook_app_id)
-    val facebookClientToken = stringResource(R.string.facebook_client_token)
     val dataProvider = remember { TukiDataProvider(context.applicationContext) }
+    
+    AppNavigation(
+        dataProvider = dataProvider,
+        facebookSignInClient = facebookSignInClient
+    )
     val authRepository = dataProvider.authRepository
     val googleSignInClient = remember {
         GoogleSignInClient(CredentialManager.create(context))
@@ -370,10 +364,3 @@ fun TukiApp(
         }
     }
 }
-
-private tailrec fun Context.findActivity(): Activity? =
-    when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
-    }

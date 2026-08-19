@@ -162,8 +162,8 @@ fun DrawRoute(routePoints: List<LatLng>) {
 
     Polyline(
         points = routePoints,
-        color = Color(0xFF1565C0),
-        width = 12f
+        color = Color(0xFF15919B), // Match TukiTeal
+        width = 15f
     )
 }
 
