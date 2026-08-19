@@ -2,11 +2,18 @@ using backend.Models.Routing;
 
 namespace backend.Services.Routing;
 
-public partial class RoutingService
+public interface IJourneyGeometryEnricher
 {
-    private async Task EnrichSelectedPlanGeometryAsync(
+    Task EnrichSelectedPlanGeometryAsync(
         IReadOnlyList<JeepneyTripPlan> plans,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default);
+}
+
+public partial class RoutingService : IJourneyGeometryEnricher
+{
+    public async Task EnrichSelectedPlanGeometryAsync(
+        IReadOnlyList<JeepneyTripPlan> plans,
+        CancellationToken cancellationToken = default)
     {
         var roadGeometryTasks = new Dictionary<string, Task<List<RouteGeometryPoint>>>(
             StringComparer.Ordinal);
