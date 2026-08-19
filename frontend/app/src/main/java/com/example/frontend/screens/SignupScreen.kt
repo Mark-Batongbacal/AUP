@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -39,13 +40,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
-import kotlinx.coroutines.launch
-import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
-import com.example.frontend.data.auth.RegisterRequest
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.material3.CircularProgressIndicator
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -72,11 +68,6 @@ fun SignupScreen(
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var isSigningUp by remember { mutableStateOf(false) }
     var signUpError by remember { mutableStateOf<String?>(null) }
-
-    var isSigningUp by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    val coroutineScope = rememberCoroutineScope()
 
     val scrollState = rememberScrollState()
 
@@ -189,16 +180,6 @@ fun SignupScreen(
                 )
             }
 
-            if (errorMessage != null) {
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = errorMessage!!,
-                    color = Color.Red,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
             Spacer(modifier = Modifier.height(20.dp))
 
             Button(
@@ -239,7 +220,7 @@ fun SignupScreen(
                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
                 } else {
                     Text(
-                        text = if (isSigningUp) "Creating account..." else "Sign up",
+                        text = "Sign up",
                         fontSize = 25.sp,
                         fontWeight = FontWeight.Bold
                     )

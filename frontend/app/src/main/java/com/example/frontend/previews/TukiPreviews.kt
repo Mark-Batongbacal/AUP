@@ -14,6 +14,8 @@ import com.example.frontend.screens.ProfileScreen
 import com.example.frontend.screens.RecentScreen
 import com.example.frontend.screens.RouteResultsScreen
 import com.example.frontend.screens.SettingsScreen
+import com.example.frontend.screens.ForgotPasswordScreen
+import com.example.frontend.screens.NavigationScreen
 import com.example.frontend.screens.TripTrackingScreen
 import com.example.frontend.TemporaryMapSamples
 
@@ -154,6 +156,37 @@ fun ProfilePreview() {
 fun SettingsPreview() {
     FrontendTheme {
         SettingsScreen()
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Forgot Password"
+)
+@Composable
+fun ForgotPasswordPreview() {
+    FrontendTheme {
+        ForgotPasswordScreen()
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Navigation"
+)
+@Composable
+fun NavigationPreview() {
+    FrontendTheme {
+        NavigationScreen(
+            origin = "Sta. Rita",
+            destination = "Guagua Town",
+            steps = listOf(
+                com.example.frontend.model.CommuteStep("Jeepney", "Sta. Rita", "Terminal", 15, 13.0),
+                com.example.frontend.model.CommuteStep("Walk", "Terminal", "Guagua Town", 5, 0.0)
+            )
+        )
     }
 }
 

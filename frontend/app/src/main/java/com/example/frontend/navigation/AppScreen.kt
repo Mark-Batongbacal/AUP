@@ -11,5 +11,7 @@ enum class AppScreen {
     COMMUTE_DETAIL,
     ROUTE_RESULTS,
     TRIP_TRACKING,
-    SETTINGS
+    SETTINGS,
+    FORGOT_PASSWORD,
+    NAVIGATION
 }

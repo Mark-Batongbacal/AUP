@@ -14,7 +14,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.MapScreen
+import com.example.frontend.components.ParaPoOverlay
 import com.google.android.gms.maps.model.LatLng
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
@@ -29,6 +34,8 @@ fun TripTrackingScreen(
     routePoints: List<LatLng>,
     onBack: () -> Unit = {}
 ) {
+    var showParaPoOverlay by remember { mutableStateOf(false) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Full screen map
         MapScreen(
@@ -111,11 +118,11 @@ fun TripTrackingScreen(
                         )
                     }
 
-                    // Para Po Bell Placeholder
+                    // Para Po Bell
                     Surface(
                         modifier = Modifier
                             .size(64.dp)
-                            .clickable(enabled = false) { /* Implement later */ },
+                            .clickable { showParaPoOverlay = true },
                         shape = CircleShape,
                         color = TukiOrange.copy(alpha = 0.2f)
                     ) {
@@ -139,6 +146,18 @@ fun TripTrackingScreen(
                     trackColor = TukiTeal.copy(alpha = 0.1f),
                     strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
+            }
+        }
+
+        if (showParaPoOverlay) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .clickable { showParaPoOverlay = false },
+                contentAlignment = Alignment.Center
+            ) {
+                ParaPoOverlay(onDismiss = { showParaPoOverlay = false })
             }
         }
     }

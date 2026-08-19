@@ -16,6 +16,8 @@ import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.TemporaryMapSamples
 import androidx.compose.runtime.remember
 
+import com.example.frontend.data.auth.RegisterRequest
+
 @Composable
 fun AppNavigation(
     dataProvider: TukiDataProvider,
@@ -60,6 +62,20 @@ fun AppNavigation(
                 onLoginSuccess = {
                     navController.navigate(AppScreen.HOME.name) {
                         popUpTo(AppScreen.LOGIN.name) { inclusive = true }
+                    }
+                },
+                onForgotPasswordClick = {
+                    navController.navigate(AppScreen.FORGOT_PASSWORD.name)
+                },
+                onGuestLoginClick = {
+                    navController.navigate(AppScreen.HOME.name) {
+                        popUpTo(AppScreen.LOGIN.name) { inclusive = true }
+                    }
+                },
+                onPasswordLoginClick = { email, password ->
+                    when (val authResult = authRepository.login(email, password)) {
+                        is ApiResult.Success -> LoginActionResult.Success
+                        is ApiResult.Failure -> LoginActionResult.Error(authResult.message)
                     }
                 },
                 onGoogleLoginClick = {
@@ -130,7 +146,33 @@ fun AppNavigation(
                     navController.navigate(AppScreen.HOME.name) {
                         popUpTo(AppScreen.SIGNUP.name) { inclusive = true }
                     }
+                },
+                onSignUpClick = { fullName, email, password ->
+                    val nameParts = fullName.trim().split(Regex("\\s+"), limit = 2)
+                    if (nameParts.size < 2) {
+                        LoginActionResult.Error("Enter both your first and last name.")
+                    } else {
+                        val result = authRepository.register(
+                            RegisterRequest(
+                                userName = email,
+                                password = password,
+                                firstName = nameParts[0],
+                                lastName = nameParts[1]
+                            )
+                        )
+                        when (result) {
+                            is ApiResult.Success -> LoginActionResult.Success
+                            is ApiResult.Failure -> LoginActionResult.Error(result.message)
+                        }
+                    }
                 }
+            )
+        }
+
+        composable(route = AppScreen.FORGOT_PASSWORD.name) {
+            ForgotPasswordScreen(
+                onBack = { navController.popBackStack() },
+                onResetSent = { navController.popBackStack() }
             )
         }
 
@@ -174,6 +216,25 @@ fun AppNavigation(
                 routingRepository = routingRepository,
                 onBack = { navController.popBackStack() },
                 onRouteSelect = {
+                    navController.navigate("${AppScreen.NAVIGATION.name}/$origin/$destination")
+                }
+            )
+        }
+
+        composable(route = "${AppScreen.NAVIGATION.name}/{origin}/{destination}") { backStackEntry ->
+            val origin = backStackEntry.arguments?.getString("origin") ?: ""
+            val destination = backStackEntry.arguments?.getString("destination") ?: ""
+            // Mocking steps for now
+            val mockSteps = listOf(
+                com.example.frontend.model.CommuteStep("Jeepney", origin, "Terminal", 15, 13.0),
+                com.example.frontend.model.CommuteStep("Walk", "Terminal", destination, 5, 0.0)
+            )
+            NavigationScreen(
+                origin = origin,
+                destination = destination,
+                steps = mockSteps,
+                onBack = { navController.popBackStack() },
+                onStartTracking = {
                     navController.navigate("${AppScreen.TRIP_TRACKING.name}/$origin/$destination")
                 }
             )
