@@ -8,7 +8,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.credentials.CredentialManager
@@ -18,9 +21,13 @@ import com.example.frontend.auth.GoogleSignInClient
 import com.example.frontend.auth.GoogleSignInResult
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.data.auth.RegisterRequest
+import com.example.frontend.model.FavoriteRoute
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.navigation.AppScreen
+import com.example.frontend.screens.AskAiChatScreen
 import com.example.frontend.screens.CommuteDetailScreen
+import com.example.frontend.screens.DestinationSearchScreen
 import com.example.frontend.screens.FavoritesScreen
 import com.example.frontend.screens.HomeScreen
 import com.example.frontend.screens.LoginActionResult
@@ -31,12 +38,6 @@ import com.example.frontend.screens.RecentScreen
 import com.example.frontend.screens.RouteResultsScreen
 import com.example.frontend.screens.SignupScreen
 import com.example.frontend.ui.theme.FrontendTheme
-import com.example.frontend.screens.DestinationSearchScreen
-import com.example.frontend.screens.AskAiChatScreen
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Modifier
-
 
 class MainActivity : ComponentActivity() {
     private val facebookSignInClient = FacebookSignInClient()
@@ -66,17 +67,40 @@ fun TukiApp(
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
-    val googleServerClientId = stringResource(R.string.google_server_client_id)
-    val facebookAppId = stringResource(R.string.facebook_app_id)
-    val facebookClientToken = stringResource(R.string.facebook_client_token)
-    val dataProvider = remember { TukiDataProvider(context.applicationContext) }
+
+    val googleServerClientId =
+        stringResource(R.string.google_server_client_id)
+
+    val facebookAppId =
+        stringResource(R.string.facebook_app_id)
+
+    val facebookClientToken =
+        stringResource(R.string.facebook_client_token)
+
+    val dataProvider = remember {
+        TukiDataProvider(context.applicationContext)
+    }
+
     val authRepository = dataProvider.authRepository
+
     val googleSignInClient = remember {
-        GoogleSignInClient(CredentialManager.create(context))
+        GoogleSignInClient(
+            CredentialManager.create(context)
+        )
+    }
+
+    val hasStoredSession = remember {
+        dataProvider.sessionStore.validSession() != null
     }
 
     var currentScreen by remember {
-        mutableStateOf(AppScreen.ONBOARDING)
+        mutableStateOf(
+            if (hasStoredSession) {
+                AppScreen.HOME
+            } else {
+                AppScreen.ONBOARDING
+            }
+        )
     }
 
     var selectedCommute by remember {
@@ -95,11 +119,51 @@ fun TukiApp(
         mutableStateOf(false)
     }
 
+    var favorites by remember {
+        mutableStateOf<List<FavoriteRoute>>(emptyList())
+    }
+
+    LaunchedEffect(hasStoredSession) {
+        if (hasStoredSession) {
+            when (authRepository.getCurrentAuthIdentity()) {
+                is ApiResult.Success -> Unit
+
+                is ApiResult.Failure -> {
+                    currentScreen = AppScreen.LOGIN
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(currentScreen) {
+        if (currentScreen == AppScreen.FAVORITES) {
+            when (
+                val result =
+                    dataProvider.favoritesRepository.getFavorites()
+            ) {
+                is ApiResult.Success -> {
+                    favorites = result.data.map { dto ->
+                        FavoriteRoute(
+                            id = dto.favoriteTripId,
+                            origin = dto.origin ?: "Unknown origin",
+                            destination =
+                                dto.destination ?: "Unknown destination",
+                            timesUsed = dto.timesUsed,
+                            note = dto.note.orEmpty()
+                        )
+                    }
+                }
+
+                is ApiResult.Failure -> Unit
+            }
+        }
+    }
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-
         when (currentScreen) {
+
             AppScreen.ONBOARDING -> {
                 OnboardingScreen(
                     onLetsRideClick = {
@@ -111,57 +175,108 @@ fun TukiApp(
             AppScreen.LOGIN -> {
                 LoginScreen(
                     onBack = {
-                        currentScreen = AppScreen.ONBOARDING
+                        currentScreen =
+                            AppScreen.ONBOARDING
                     },
+
                     onSignUpClick = {
-                        currentScreen = AppScreen.SIGNUP
+                        currentScreen =
+                            AppScreen.SIGNUP
                     },
+
                     onLoginSuccess = {
-                        currentScreen = AppScreen.HOME
+                        currentScreen =
+                            AppScreen.HOME
                     },
+
+                    onPasswordLoginClick = { email, password ->
+                        when (
+                            val authResult =
+                                authRepository.login(
+                                    email,
+                                    password
+                                )
+                        ) {
+                            is ApiResult.Success ->
+                                LoginActionResult.Success
+
+                            is ApiResult.Failure ->
+                                LoginActionResult.Error(
+                                    authResult.message
+                                )
+                        }
+                    },
+
                     onGoogleLoginClick = {
                         if (activity == null) {
-                            LoginActionResult.Error("Google sign-in is unavailable right now.")
+                            LoginActionResult.Error(
+                                "Google sign-in is unavailable right now."
+                            )
                         } else {
                             when (
-                                val googleResult = googleSignInClient.getIdToken(
-                                    activity = activity,
-                                    serverClientId = googleServerClientId
-                                )
+                                val googleResult =
+                                    googleSignInClient.getIdToken(
+                                        activity = activity,
+                                        serverClientId =
+                                            googleServerClientId
+                                    )
                             ) {
                                 is GoogleSignInResult.Success -> {
-                                    when (val authResult =
-                                        authRepository.loginWithGoogle(googleResult.idToken)) {
-                                        is ApiResult.Success -> LoginActionResult.Success
-                                        is ApiResult.Failure -> LoginActionResult.Error(authResult.message)
+                                    when (
+                                        val authResult =
+                                            authRepository.loginWithGoogle(
+                                                googleResult.idToken
+                                            )
+                                    ) {
+                                        is ApiResult.Success ->
+                                            LoginActionResult.Success
+
+                                        is ApiResult.Failure ->
+                                            LoginActionResult.Error(
+                                                authResult.message
+                                            )
                                     }
                                 }
 
                                 is GoogleSignInResult.Failure -> {
-                                    LoginActionResult.Error(googleResult.message)
+                                    LoginActionResult.Error(
+                                        googleResult.message
+                                    )
                                 }
                             }
                         }
                     },
+
                     onFacebookLoginClick = {
                         if (activity == null) {
-                            LoginActionResult.Error("Facebook sign-in is unavailable right now.")
+                            LoginActionResult.Error(
+                                "Facebook sign-in is unavailable right now."
+                            )
                         } else {
                             when (
-                                val facebookResult = facebookSignInClient.getAccessToken(
-                                    activity = activity,
-                                    appId = facebookAppId,
-                                    clientToken = facebookClientToken
-                                )
+                                val facebookResult =
+                                    facebookSignInClient.getAccessToken(
+                                        activity = activity,
+                                        appId =
+                                            facebookAppId,
+                                        clientToken =
+                                            facebookClientToken
+                                    )
                             ) {
                                 is FacebookSignInResult.Success -> {
                                     when (
-                                        val authResult = authRepository.loginWithFacebook(
-                                            facebookResult.accessToken
-                                        )
+                                        val authResult =
+                                            authRepository.loginWithFacebook(
+                                                facebookResult.accessToken
+                                            )
                                     ) {
-                                        is ApiResult.Success -> LoginActionResult.Success
-                                        is ApiResult.Failure -> LoginActionResult.Error(authResult.message)
+                                        is ApiResult.Success ->
+                                            LoginActionResult.Success
+
+                                        is ApiResult.Failure ->
+                                            LoginActionResult.Error(
+                                                authResult.message
+                                            )
                                     }
                                 }
 
@@ -170,7 +285,9 @@ fun TukiApp(
                                 }
 
                                 is FacebookSignInResult.Failure -> {
-                                    LoginActionResult.Error(facebookResult.message)
+                                    LoginActionResult.Error(
+                                        facebookResult.message
+                                    )
                                 }
                             }
                         }
@@ -181,39 +298,115 @@ fun TukiApp(
             AppScreen.SIGNUP -> {
                 SignupScreen(
                     onBack = {
-                        currentScreen = AppScreen.LOGIN
+                        currentScreen =
+                            AppScreen.LOGIN
                     },
+
                     onLoginClick = {
-                        currentScreen = AppScreen.LOGIN
+                        currentScreen =
+                            AppScreen.LOGIN
                     },
+
                     onLoginSuccess = {
-                        currentScreen = AppScreen.HOME
+                        currentScreen =
+                            AppScreen.HOME
+                    },
+
+                    onSignUpClick = {
+                            fullName,
+                            email,
+                            password ->
+
+                        val nameParts =
+                            fullName
+                                .trim()
+                                .split(
+                                    Regex("\\s+"),
+                                    limit = 2
+                                )
+
+                        if (nameParts.size < 2) {
+                            LoginActionResult.Error(
+                                "Enter both your first and last name."
+                            )
+                        } else {
+                            when (
+                                val authResult =
+                                    authRepository.register(
+                                        RegisterRequest(
+                                            userName =
+                                                email,
+                                            password =
+                                                password,
+                                            firstName =
+                                                nameParts[0],
+                                            lastName =
+                                                nameParts[1]
+                                        )
+                                    )
+                            ) {
+                                is ApiResult.Success ->
+                                    LoginActionResult.Success
+
+                                is ApiResult.Failure ->
+                                    LoginActionResult.Error(
+                                        authResult.message
+                                    )
+                            }
+                        }
                     }
                 )
             }
 
             AppScreen.HOME -> {
                 HomeScreen(
-                    onSearchDestination = { origin, destination ->
-                        searchOrigin = origin
-                        searchDestination = destination
-                        currentScreen = AppScreen.ROUTE_RESULTS
+                    onSearchDestination = {
+                            origin,
+                            destination ->
+
+                        searchOrigin =
+                            origin
+
+                        searchDestination =
+                            destination
+
+                        currentScreen =
+                            AppScreen.ROUTE_RESULTS
                     },
+
                     onCommuteClick = { commute ->
-                        selectedCommute = commute
-                        currentScreen = AppScreen.COMMUTE_DETAIL
+                        selectedCommute =
+                            commute
+
+                        currentScreen =
+                            AppScreen.COMMUTE_DETAIL
                     },
-                    onRecentClick = { currentScreen = AppScreen.RECENT },
-                    onFavoritesClick = { currentScreen = AppScreen.FAVORITES },
-                    onProfileClick = { currentScreen = AppScreen.PROFILE },
+
+                    onRecentClick = {
+                        currentScreen =
+                            AppScreen.RECENT
+                    },
+
+                    onFavoritesClick = {
+                        currentScreen =
+                            AppScreen.FAVORITES
+                    },
+
+                    onProfileClick = {
+                        currentScreen =
+                            AppScreen.PROFILE
+                    },
+
                     onNewHereClick = {},
 
-                    //Card 1
                     onPinDestinationClick = { origin ->
-                        searchOrigin = origin
-                        currentScreen = AppScreen.DESTINATION_SEARCH
+                        searchOrigin =
+                            origin
+
+                        currentScreen =
+                            AppScreen.DESTINATION_SEARCH
                     },
-                    // Card 2
+
                     onAskAiClick = {
                         showAskAI = true
                     }
@@ -223,41 +416,70 @@ fun TukiApp(
             AppScreen.RECENT -> {
                 RecentScreen(
                     onHomeClick = {
-                        currentScreen = AppScreen.HOME
+                        currentScreen =
+                            AppScreen.HOME
                     },
+
                     onFavoritesClick = {
-                        currentScreen = AppScreen.FAVORITES
+                        currentScreen =
+                            AppScreen.FAVORITES
                     },
+
                     onProfileClick = {
-                        currentScreen = AppScreen.PROFILE
+                        currentScreen =
+                            AppScreen.PROFILE
                     }
                 )
             }
 
             AppScreen.FAVORITES -> {
                 FavoritesScreen(
+                    favorites = favorites,
+
                     onHomeClick = {
-                        currentScreen = AppScreen.HOME
+                        currentScreen =
+                            AppScreen.HOME
                     },
+
                     onRecentClick = {
-                        currentScreen = AppScreen.RECENT
+                        currentScreen =
+                            AppScreen.RECENT
                     },
+
                     onProfileClick = {
-                        currentScreen = AppScreen.PROFILE
+                        currentScreen =
+                            AppScreen.PROFILE
                     }
                 )
             }
 
             AppScreen.PROFILE -> {
                 ProfileScreen(
+                    onBack = {
+                        currentScreen =
+                            AppScreen.HOME
+                    },
+
+                    onLogoutClick = {
+                        authRepository.logoutLocalSession()
+
+                        currentScreen =
+                            AppScreen.LOGIN
+                    },
+
                     onHomeClick = {
-                        currentScreen = AppScreen.HOME
+                        currentScreen =
+                            AppScreen.HOME
                     },
+
                     onRecentClick = {
-                        currentScreen = AppScreen.RECENT
+                        currentScreen =
+                            AppScreen.RECENT
                     },
+
                     onFavoritesClick = {
-                        currentScreen = AppScreen.FAVORITES
+                        currentScreen =
+                            AppScreen.FAVORITES
                     }
                 )
             }
@@ -266,8 +488,10 @@ fun TukiApp(
                 selectedCommute?.let { commute ->
                     CommuteDetailScreen(
                         commute = commute,
+
                         onBack = {
-                            currentScreen = AppScreen.HOME
+                            currentScreen =
+                                AppScreen.HOME
                         }
                     )
                 }
@@ -276,14 +500,18 @@ fun TukiApp(
             AppScreen.DESTINATION_SEARCH -> {
                 DestinationSearchScreen(
                     origin = searchOrigin,
+
                     onBack = {
-                        // Lets the user bail out to Home if they tapped the
-                        // wrong card.
-                        currentScreen = AppScreen.HOME
+                        currentScreen =
+                            AppScreen.HOME
                     },
+
                     onFindRoutes = { destination ->
-                        searchDestination = destination
-                        currentScreen = AppScreen.ROUTE_RESULTS
+                        searchDestination =
+                            destination
+
+                        currentScreen =
+                            AppScreen.ROUTE_RESULTS
                     }
                 )
             }
@@ -291,40 +519,61 @@ fun TukiApp(
             AppScreen.ROUTE_RESULTS -> {
                 RouteResultsScreen(
                     origin = searchOrigin,
-                    destinationQuery = searchDestination,
+
+                    destinationQuery =
+                        searchDestination,
+
                     onBack = {
-                        currentScreen = AppScreen.HOME
+                        currentScreen =
+                            AppScreen.HOME
                     },
-                    onRouteSelect = { route ->
-                        // TODO: once there's a "commute in progress" / tracking screen
+
+                    onRouteSelect = {
+                        // TODO:
+                        // Wire to commute-in-progress
+                        // / navigation screen.
                     },
+
                     onSuggestToda = {
-                        // TODO: wire to a "suggest a TODA" form/flow.
+                        // TODO:
+                        // Wire to Suggest TODA flow.
                     }
                 )
             }
         }
 
-            if (showAskAI) {
-                AskAiChatScreen(
-                    onBack = {
-                        showAskAI = false
-                    },
-                    onDestinationConfirmed = { destination ->
-                        searchOrigin = "Current location"
-                        searchDestination = destination
-                        showAskAI = false
-                        currentScreen = AppScreen.ROUTE_RESULTS
-                    }
-                )
-            }
+        if (showAskAI) {
+            AskAiChatScreen(
+                onBack = {
+                    showAskAI = false
+                },
+
+                onDestinationConfirmed = { destination ->
+                    searchOrigin =
+                        "Current location"
+
+                    searchDestination =
+                        destination
+
+                    showAskAI =
+                        false
+
+                    currentScreen =
+                        AppScreen.ROUTE_RESULTS
+                }
+            )
         }
     }
-
+}
 
 private tailrec fun Context.findActivity(): Activity? =
     when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
+        is Activity ->
+            this
+
+        is ContextWrapper ->
+            baseContext.findActivity()
+
+        else ->
+            null
     }
