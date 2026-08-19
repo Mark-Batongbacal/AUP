@@ -187,6 +187,8 @@ builder.Services.AddScoped<IDestinationSearchProvider>(services =>
     services.GetRequiredService<PeliasPlaceProvider>());
 builder.Services.AddScoped<IPlaceLandmarkDiscoveryService>(services =>
     services.GetRequiredService<PeliasPlaceProvider>());
+builder.Services.AddScoped<IReverseGeocodingService>(services =>
+    services.GetRequiredService<PeliasPlaceProvider>());
 builder.Services.AddScoped<IDestinationSearchService, DestinationSearchService>();
 builder.Services
     .AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
@@ -218,48 +220,72 @@ if (app.Environment.IsDevelopment())
 app.UseCors("Frontend");
 app.Use(async (context, next) =>
 {
-    context.Items["RequestStartTimestamp"] = Stopwatch.GetTimestamp();
-    await next();
+    var stopwatch = Stopwatch.StartNew();
+    try
+    {
+        await next();
+    }
+    finally
+    {
+        stopwatch.Stop();
+        var telemetry = context.RequestServices.GetRequiredService<ITukiTelemetry>();
+        telemetry.RecordRequest(
+            context.Request.Path,
+            context.Response.StatusCode,
+            stopwatch.Elapsed.TotalMilliseconds);
+    }
 });
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-app.MapGet("/test", () => "Backend is alive");
 app.Run();
 
 static void LoadDevelopmentEnvironmentFile()
 {
-    if (!string.Equals(
-            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
-            Environments.Development,
-            StringComparison.OrdinalIgnoreCase))
+    var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+    if (!string.Equals(environment, "Development", StringComparison.OrdinalIgnoreCase))
     {
         return;
     }
 
-    var environmentFile = Path.Combine(Directory.GetCurrentDirectory(), ".env");
-    if (!File.Exists(environmentFile))
+    var candidates = new[]
+    {
+        Path.Combine(Directory.GetCurrentDirectory(), ".env"),
+        Path.Combine(Directory.GetCurrentDirectory(), "backend", ".env"),
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.env")),
+    };
+
+    var envPath = candidates.FirstOrDefault(File.Exists);
+    if (envPath is null)
     {
         return;
     }
 
-    foreach (var line in File.ReadLines(environmentFile))
+    foreach (var rawLine in File.ReadLines(envPath))
     {
-        var trimmedLine = line.Trim();
-        if (string.IsNullOrEmpty(trimmedLine) || trimmedLine.StartsWith('#'))
+        var line = rawLine.Trim();
+        if (line.Length == 0 || line.StartsWith('#'))
         {
             continue;
         }
 
-        var separatorIndex = trimmedLine.IndexOf('=');
-        if (separatorIndex <= 0)
+        var separator = line.IndexOf('=');
+        if (separator <= 0)
         {
             continue;
         }
 
-        var key = trimmedLine[..separatorIndex].Trim();
-        var value = trimmedLine[(separatorIndex + 1)..].Trim();
+        var key = line[..separator].Trim();
+        var value = line[(separator + 1)..].Trim();
+
+        if (value.Length >= 2 &&
+            ((value[0] == '"' && value[^1] == '"') ||
+             (value[0] == '\'' && value[^1] == '\'')))
+        {
+            value = value[1..^1];
+        }
+
+        // Real process environment variables take precedence over .env values.
         if (Environment.GetEnvironmentVariable(key) is null)
         {
             Environment.SetEnvironmentVariable(key, value);
