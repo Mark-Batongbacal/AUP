@@ -24,7 +24,10 @@ data class UserProfileDto(
     val role: String,
     val profileImageUrl: String?,
     val createdAt: String,
-    val updatedAt: String?
+    val updatedAt: String?,
+    val email: String? = null,
+    val tripsTaken: Int = 0,
+    val favoritesCount: Int = 0
 )
 
 interface UsersApi {
@@ -51,4 +54,3 @@ class UserRepositoryImpl(
     override suspend fun updateCurrentUser(request: UpdateUserProfileRequest) =
         authenticatedApiCall(sessionStore, errors) { api.updateCurrentUser(request) }
 }
-
