@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using backend.Authentication;
@@ -7,6 +8,7 @@ using backend.Services.Authentication.ApiKey;
 using backend.Services.Authentication.Facebook;
 using backend.Services.Authentication.Google;
 using backend.Services.Authentication.Login;
+using backend.Services.Email;
 using Google.Apis.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -25,6 +27,8 @@ public sealed class AuthController(
     IGoogleIdTokenValidator googleIdTokenValidator,
     IFacebookAccessTokenValidator facebookAccessTokenValidator,
     IFacebookOidcTokenValidator facebookOidcTokenValidator,
+    IEmailVerificationService emailVerificationService,
+    IPasswordResetService passwordResetService,
     ILocalAuthenticationService? localAuthenticationService = null) : ControllerBase
 {
     private readonly LoginOptions _options = options.Value;
@@ -91,6 +95,15 @@ public sealed class AuthController(
                 authentication.UserId,
                 request.Password,
                 cancellationToken);
+        }
+
+        try
+        {
+            await emailVerificationService.SendVerificationEmailAsync(authentication.UserId, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            // Email sending is not configured in this environment; registration still succeeds.
         }
 
         var issuedKey = apiKeyService.Create(authentication.CredentialOwner);
@@ -291,6 +304,79 @@ public sealed class AuthController(
     [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
     public ActionResult<object> Me() => Ok(new { userName = User.Identity?.Name });
 
+    [HttpPost("verify-email/resend")]
+    [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
+    public async Task<IActionResult> ResendVerificationEmail(CancellationToken cancellationToken)
+    {
+        var userId = UserId();
+        if (userId == Guid.Empty)
+        {
+            return Unauthorized();
+        }
+
+        await emailVerificationService.SendVerificationEmailAsync(userId, cancellationToken);
+        return Ok(new { message = "If the account is not already verified, a verification email was sent." });
+    }
+
+    [HttpPost("verify-email")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyEmail(VerifyEmailRequest? request, CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Code))
+        {
+            return BadRequest(new { message = "A verification code is required." });
+        }
+
+        var verified = await emailVerificationService.ConfirmAsync(request.Code, cancellationToken);
+        return verified
+            ? Ok(new { message = "Email verified." })
+            : BadRequest(new { message = "The verification code is invalid or has expired." });
+    }
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest? request, CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Email))
+        {
+            return BadRequest(new { message = "An email address is required." });
+        }
+
+        await passwordResetService.RequestResetAsync(request.Email, cancellationToken);
+        return Ok(new { message = "If the account exists, a password reset email was sent." });
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequest? request, CancellationToken cancellationToken)
+    {
+        if (request is null ||
+            string.IsNullOrWhiteSpace(request.Email) ||
+            string.IsNullOrWhiteSpace(request.Code) ||
+            string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            return BadRequest(new { message = "Email, code, and a new password are required." });
+        }
+
+        if (request.NewPassword.Length < 8)
+        {
+            return BadRequest(new { message = "The new password must be at least 8 characters." });
+        }
+
+        var reset = await passwordResetService.ResetPasswordAsync(
+            request.Email,
+            request.Code,
+            request.NewPassword,
+            cancellationToken);
+
+        return reset
+            ? Ok(new { message = "Password reset." })
+            : BadRequest(new { message = "The reset code is invalid or has expired." });
+    }
+
+    private Guid UserId() =>
+        Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
+
     private bool ConfiguredCredentialsAreValid(string userName, string password)
     {
         var configuredUser = _options.ConfiguredUsers.FirstOrDefault(user =>
@@ -334,3 +420,9 @@ public sealed record RegisterResponse(
     public string AuthenticationScheme { get; init; } = ApiKeyAuthenticationHandler.SchemeName;
     public string HeaderName { get; init; } = ApiKeyAuthenticationHandler.HeaderName;
 }
+
+public sealed record VerifyEmailRequest(string? Code);
+
+public sealed record ForgotPasswordRequest(string? Email);
+
+public sealed record ResetPasswordRequest(string? Email, string? Code, string? NewPassword);

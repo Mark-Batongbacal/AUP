@@ -44,6 +44,10 @@ public sealed class JourneyPlanningFacadeService(
             eligible = eligible.OrderByDescending(plan => plan.RecommendationType.Split(',')
                 .Contains(request.Preference, StringComparer.OrdinalIgnoreCase)).ToList();
         if (eligible.Count == 0) return [];
+
+        if (routing is IJourneyGeometryEnricher geometryEnricher)
+            await geometryEnricher.EnrichSelectedPlanGeometryAsync(eligible, cancellationToken);
+
         var stored = await persistence.PersistAsync(userId,
             request.OriginLatitude, request.OriginLongitude,
             request.DestinationName.Trim(), request.DestinationLatitude,

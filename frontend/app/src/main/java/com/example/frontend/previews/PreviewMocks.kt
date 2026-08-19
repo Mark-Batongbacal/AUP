@@ -5,6 +5,8 @@ import com.example.frontend.data.auth.AuthIdentityDto
 import com.example.frontend.data.auth.AuthRepository
 import com.example.frontend.data.auth.AuthenticatedUser
 import com.example.frontend.data.auth.RegisterRequest
+import com.example.frontend.data.places.DestinationSearchResultDto
+import com.example.frontend.data.places.PlacesRepository
 import com.example.frontend.data.routing.JourneyPlan
 import com.example.frontend.data.routing.JourneyPlanRequest
 import com.example.frontend.data.routing.NearbyJeepneyRouteDto
@@ -24,6 +26,14 @@ object PreviewMocks {
         override suspend fun loginWithFacebookOidc(idToken: String, nonce: String): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun getCurrentAuthIdentity(): ApiResult<AuthIdentityDto> = ApiResult.Failure(null, "Mock")
         override fun logoutLocalSession() {}
+    }
+
+    val placesRepository = object : PlacesRepository {
+        override suspend fun searchPlaces(
+            query: String,
+            focusLatitude: Double?,
+            focusLongitude: Double?
+        ): ApiResult<List<DestinationSearchResultDto>> = ApiResult.Success(emptyList())
     }
 
     val routingRepository = object : RoutingRepository {

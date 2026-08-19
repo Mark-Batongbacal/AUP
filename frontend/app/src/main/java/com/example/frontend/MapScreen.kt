@@ -1,6 +1,7 @@
 package com.example.frontend
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -18,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,30 +31,43 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.CameraPositionState
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.GoogleMapComposable
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Marker
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.rememberCameraPositionState
-import com.google.maps.android.compose.rememberUpdatedMarkerState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.location.LocationComponentActivationOptions
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
 
 private val DefaultMapCenter = LatLng(15.1453, 120.5887)
-private const val DefaultMapZoom = 14f
+private const val DefaultMapZoom = 14.0
+private const val OpenFreeMapStyleUrl = "https://tiles.openfreemap.org/styles/liberty"
+private const val RouteSourceId = "tuki-route-source"
+private const val RouteLayerId = "tuki-route-layer"
+private const val DestinationSourceId = "tuki-destination-source"
+private const val DestinationLayerId = "tuki-destination-layer"
 
 @Composable
 fun MapScreen(
     routePoints: List<LatLng>,
     modifier: Modifier = Modifier,
-    mapContent: @Composable @GoogleMapComposable () -> Unit = {},
+    selectedDestination: LatLng? = null,
+    onMapClick: ((LatLng) -> Unit)? = null,
 ) {
     if (LocalInspectionMode.current) {
         MapPreviewPlaceholder(modifier)
@@ -61,8 +76,12 @@ fun MapScreen(
 
     val context = LocalContext.current
     val activity = context.findActivity()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     var hasLocationPermission by remember { mutableStateOf(context.hasLocationPermission()) }
     var hasRequestedLocationPermission by rememberSaveable { mutableStateOf(false) }
+    var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
+    var loadedStyle by remember { mutableStateOf<Style?>(null) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -87,96 +106,175 @@ fun MapScreen(
         }
     }
 
-    val cameraTarget = routePoints.firstOrNull() ?: DefaultMapCenter
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(cameraTarget, DefaultMapZoom)
-    }
-    var mapLoaded by remember { mutableStateOf(false) }
-
-    LaunchedEffect(mapLoaded, cameraTarget) {
-        if (mapLoaded) {
-            cameraPositionState.moveCamera(
-                latitude = cameraTarget.latitude,
-                longitude = cameraTarget.longitude,
-                zoom = DefaultMapZoom
-            )
+    val mapView = remember(context) {
+        MapLibre.getInstance(context)
+        MapView(context).apply {
+            onCreate(null)
         }
+    }
+
+    DisposableEffect(lifecycleOwner, mapView) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> mapView.onStart()
+                Lifecycle.Event.ON_RESUME -> mapView.onResume()
+                Lifecycle.Event.ON_PAUSE -> mapView.onPause()
+                Lifecycle.Event.ON_STOP -> mapView.onStop()
+                else -> Unit
+            }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) mapView.onPause()
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) mapView.onStop()
+            mapView.onDestroy()
+        }
+    }
+
+    LaunchedEffect(mapView) {
+        mapView.getMapAsync { map ->
+            mapLibreMap = map
+            map.setStyle(OpenFreeMapStyleUrl) { style ->
+                loadedStyle = style
+
+                val cameraTarget = routePoints.firstOrNull() ?: selectedDestination ?: DefaultMapCenter
+                map.cameraPosition = CameraPosition.Builder()
+                    .target(cameraTarget)
+                    .zoom(DefaultMapZoom)
+                    .build()
+
+                updateRouteLayer(style, routePoints)
+                updateDestinationLayer(style, selectedDestination)
+                configureLocationComponent(context, map, style, hasLocationPermission)
+            }
+        }
+    }
+
+    DisposableEffect(mapLibreMap, onMapClick) {
+        val map = mapLibreMap
+        if (map == null || onMapClick == null) {
+            onDispose { }
+        } else {
+            val listener = MapLibreMap.OnMapClickListener { point ->
+                onMapClick(point)
+                true
+            }
+            map.addOnMapClickListener(listener)
+            onDispose { map.removeOnMapClickListener(listener) }
+        }
+    }
+
+    LaunchedEffect(loadedStyle, routePoints) {
+        loadedStyle?.let { updateRouteLayer(it, routePoints) }
+    }
+
+    LaunchedEffect(loadedStyle, selectedDestination) {
+        loadedStyle?.let { updateDestinationLayer(it, selectedDestination) }
+    }
+
+    LaunchedEffect(loadedStyle, hasLocationPermission) {
+        val style = loadedStyle ?: return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+        configureLocationComponent(context, map, style, hasLocationPermission)
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraPositionState,
-            properties = MapProperties(isMyLocationEnabled = hasLocationPermission),
-            uiSettings = MapUiSettings(myLocationButtonEnabled = hasLocationPermission),
-            onMapLoaded = { mapLoaded = true }
-        ) {
-            mapContent()
-
-            // Later, backend route coordinates can be passed directly to this function.
-            DrawRoute(routePoints)
-        }
+        AndroidView(
+            factory = { mapView },
+            modifier = Modifier.fillMaxSize()
+        )
 
         if (!hasLocationPermission) {
             LocationPermissionBanner(
-                canRequestAgain = activity?.shouldShowLocationPermissionRationale() != false ||
-                    !hasRequestedLocationPermission,
+                canRequestAgain = activity?.shouldShowLocationPermissionRationale() != false || !hasRequestedLocationPermission,
                 onRequestPermission = requestLocationPermission,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp)
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
             )
         }
     }
 }
 
-/**
- * Adds a marker to the current GoogleMap content using only coordinates and display text.
- *
- * Required: latitude, longitude, title.
- * Optional: snippet, shown by Google Maps in the marker info window.
- */
-@Composable
-@GoogleMapComposable
-fun MapMarker(
-    latitude: Double,
-    longitude: Double,
-    title: String,
-    snippet: String? = null,
-) {
-    Marker(
-        state = rememberUpdatedMarkerState(position = LatLng(latitude, longitude)),
-        title = title,
-        snippet = snippet
+private fun updateRouteLayer(style: Style, routePoints: List<LatLng>) {
+    if (routePoints.size < 2) {
+        style.removeLayer(RouteLayerId)
+        style.removeSource(RouteSourceId)
+        return
+    }
+
+    val routeGeometry = LineString.fromLngLats(
+        routePoints.map { Point.fromLngLat(it.longitude, it.latitude) }
+    )
+
+    val source = style.getSourceAs<GeoJsonSource>(RouteSourceId)
+    if (source != null) {
+        source.setGeoJson(routeGeometry)
+        return
+    }
+
+    style.addSource(GeoJsonSource(RouteSourceId, routeGeometry))
+    style.addLayer(
+        LineLayer(RouteLayerId, RouteSourceId).withProperties(
+            PropertyFactory.lineColor("#15919B"),
+            PropertyFactory.lineWidth(6f),
+            PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+            PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+        )
     )
 }
 
-/**
- * Draws an ordered coordinate list as a polyline. This intentionally contains no
- * jeepney, tricycle, fare, station, or recommendation logic.
- */
-@Composable
-@GoogleMapComposable
-fun DrawRoute(routePoints: List<LatLng>) {
-    if (routePoints.size < 2) return
+private fun updateDestinationLayer(style: Style, destination: LatLng?) {
+    if (destination == null) {
+        style.removeLayer(DestinationLayerId)
+        style.removeSource(DestinationSourceId)
+        return
+    }
 
-    Polyline(
-        points = routePoints,
-        color = Color(0xFF15919B), // Match TukiTeal
-        width = 15f
+    val point = Point.fromLngLat(destination.longitude, destination.latitude)
+    val source = style.getSourceAs<GeoJsonSource>(DestinationSourceId)
+
+    if (source != null) {
+        source.setGeoJson(point)
+        return
+    }
+
+    style.addSource(GeoJsonSource(DestinationSourceId, point))
+    style.addLayer(
+        CircleLayer(DestinationLayerId, DestinationSourceId).withProperties(
+            PropertyFactory.circleColor("#FF9318"),
+            PropertyFactory.circleRadius(9f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeWidth(3f)
+        )
     )
 }
 
-/**
- * Moves the map camera to a coordinate and zoom level.
- * Backend-provided route coordinates can later choose these values before drawing.
- */
-fun CameraPositionState.moveCamera(
-    latitude: Double,
-    longitude: Double,
-    zoom: Float,
+@SuppressLint("MissingPermission")
+private fun configureLocationComponent(
+    context: Context,
+    map: MapLibreMap,
+    style: Style,
+    enabled: Boolean
 ) {
-    move(CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), zoom))
+    val locationComponent = map.locationComponent
+
+    if (!enabled) {
+        if (locationComponent.isLocationComponentActivated) {
+            locationComponent.isLocationComponentEnabled = false
+        }
+        return
+    }
+
+    if (!locationComponent.isLocationComponentActivated) {
+        val options = LocationComponentActivationOptions.builder(context, style)
+            .useDefaultLocationEngine(true)
+            .build()
+        locationComponent.activateLocationComponent(options)
+    }
+
+    locationComponent.isLocationComponentEnabled = true
 }
 
 @Composable
@@ -193,24 +291,18 @@ private fun LocationPermissionBanner(
         shape = MaterialTheme.shapes.medium
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text(
-                text = "Location permission is off",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text("Location permission is off", style = MaterialTheme.typography.titleMedium)
             Text(
                 text = if (canRequestAgain) {
-                    "Allow location access to show the standard Google Maps current-location indicator."
+                    "Allow location access to show your current position on the map."
                 } else {
-                    "Enable location access in Android settings to show the standard Google Maps current-location indicator."
+                    "Enable location access in Android settings to show your current position on the map."
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)
             )
             if (canRequestAgain) {
-                Button(
-                    onClick = onRequestPermission,
-                    modifier = Modifier.padding(top = 12.dp)
-                ) {
+                Button(onClick = onRequestPermission, modifier = Modifier.padding(top = 12.dp)) {
                     Text("Allow location")
                 }
             }
@@ -221,43 +313,23 @@ private fun LocationPermissionBanner(
 @Composable
 private fun MapPreviewPlaceholder(modifier: Modifier = Modifier) {
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "Google Map",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text("MapLibre map", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-private fun Context.hasLocationPermission(): Boolean {
-    return ContextCompat.checkSelfPermission(
-        this,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED ||
-        ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-}
+private fun Context.hasLocationPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+        ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-private fun Activity.shouldShowLocationPermissionRationale(): Boolean {
-    return ActivityCompat.shouldShowRequestPermissionRationale(
-        this,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) || ActivityCompat.shouldShowRequestPermissionRationale(
-        this,
-        Manifest.permission.ACCESS_COARSE_LOCATION
-    )
-}
+private fun Activity.shouldShowLocationPermissionRationale(): Boolean =
+    ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION) ||
+        ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_COARSE_LOCATION)
 
-private tailrec fun Context.findActivity(): Activity? {
-    return when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
-    }
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

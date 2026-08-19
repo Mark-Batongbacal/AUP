@@ -106,7 +106,8 @@ fun RouteResultsPreview() {
         RouteResultsScreen(
             origin = "Brgy. Sta. Rita",
             destinationQuery = "Guagua Town",
-            routingRepository = PreviewMocks.routingRepository
+            routingRepository = PreviewMocks.routingRepository,
+            placesRepository = PreviewMocks.placesRepository
         )
     }
 }
@@ -182,10 +183,7 @@ fun NavigationPreview() {
         NavigationScreen(
             origin = "Sta. Rita",
             destination = "Guagua Town",
-            steps = listOf(
-                com.example.frontend.model.CommuteStep("Jeepney", "Sta. Rita", "Terminal", 15, 13.0),
-                com.example.frontend.model.CommuteStep("Walk", "Terminal", "Guagua Town", 5, 0.0)
-            )
+            steps = emptyList()
         )
     }
 }
