@@ -32,11 +32,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.places.PlacesRepository
+import com.example.frontend.data.routing.JourneyPlanRequest
 import com.example.frontend.data.routing.RoutingRepository
+import com.example.frontend.data.routing.TransitMode
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RouteOption
 import kotlin.math.roundToInt
@@ -53,29 +58,100 @@ fun RouteResultsScreen(
     origin: String,
     destinationQuery: String,
     routingRepository: RoutingRepository,
+    placesRepository: PlacesRepository,
+    originLatitude: Double? = null,
+    originLongitude: Double? = null,
+    destinationLatitude: Double? = null,
+    destinationLongitude: Double? = null,
     onBack: () -> Unit = {},
     onRouteSelect: (RouteOption) -> Unit = {},
     onSuggestToda: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var routeOptions by remember { mutableStateOf<List<RouteOption>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(destinationQuery) {
+    LaunchedEffect(
+        destinationQuery,
+        originLatitude,
+        originLongitude,
+        destinationLatitude,
+        destinationLongitude
+    ) {
         isLoading = true
         errorMessage = null
+        routeOptions = emptyList()
 
-        // Using sample coordinates as real geocoding is not yet integrated in this view
+        val deviceLocation = if (originLatitude == null || originLongitude == null) {
+            context.currentDeviceLocation()
+        } else {
+            null
+        }
+
+        val resolvedOriginLatitude = originLatitude ?: deviceLocation?.latitude
+        val resolvedOriginLongitude = originLongitude ?: deviceLocation?.longitude
+
+        if (resolvedOriginLatitude == null || resolvedOriginLongitude == null) {
+            errorMessage = "Current location is unavailable. Allow location access and try again."
+            isLoading = false
+            return@LaunchedEffect
+        }
+
+        var resolvedDestinationLatitude = destinationLatitude
+        var resolvedDestinationLongitude = destinationLongitude
+        var resolvedDestinationName = destinationQuery
+
+        if (resolvedDestinationLatitude == null || resolvedDestinationLongitude == null) {
+            when (
+                val placeResult = placesRepository.searchPlaces(
+                    query = destinationQuery,
+                    focusLatitude = resolvedOriginLatitude,
+                    focusLongitude = resolvedOriginLongitude
+                )
+            ) {
+                is ApiResult.Success -> {
+                    val place = placeResult.data.firstOrNull()
+                    if (place == null) {
+                        errorMessage = "No matching destination found for \"$destinationQuery\"."
+                        isLoading = false
+                        return@LaunchedEffect
+                    }
+                    resolvedDestinationLatitude = place.latitude
+                    resolvedDestinationLongitude = place.longitude
+                    resolvedDestinationName = place.name
+                }
+
+                is ApiResult.Failure -> {
+                    errorMessage = placeResult.message
+                    isLoading = false
+                    return@LaunchedEffect
+                }
+            }
+        }
+
+        val finalDestinationLatitude = resolvedDestinationLatitude
+        val finalDestinationLongitude = resolvedDestinationLongitude
+        if (finalDestinationLatitude == null || finalDestinationLongitude == null) {
+            errorMessage = "Destination coordinates are unavailable."
+            isLoading = false
+            return@LaunchedEffect
+        }
+
         when (
-            val result = routingRepository.planTrip(
-                15.1453,
-                120.5887,
-                15.1174,
-                120.5720
+            val result = routingRepository.planJourneys(
+                JourneyPlanRequest(
+                    originLatitude = resolvedOriginLatitude,
+                    originLongitude = resolvedOriginLongitude,
+                    destinationName = resolvedDestinationName,
+                    destinationLatitude = finalDestinationLatitude,
+                    destinationLongitude = finalDestinationLongitude
+                )
             )
         ) {
             is ApiResult.Success -> {
-                routeOptions = result.data.map { plan ->
+                routeOptions = result.data.mapIndexed { index, planned ->
+                    val plan = planned.journey
                     val walkMeters = (
                         plan.source.originAccess.walkDistanceMeters +
                             plan.source.destinationAccess.walkDistanceMeters +
@@ -83,18 +159,24 @@ fun RouteResultsScreen(
                         ).roundToInt()
 
                     RouteOption(
-                        id = plan.hashCode().toString(),
+                        id = planned.recommendationId,
                         label = plan.source.recommendationType,
                         totalMinutes = (plan.source.totalTimeSeconds / 60).roundToInt(),
                         totalFare = plan.source.totalFarePesos,
                         walkMeters = walkMeters,
                         transfers = plan.source.transferCount,
                         generalCost = plan.source.generalizedCostPesos,
+                        isRecommended = index == 0,
                         steps = plan.legs.map { leg ->
                             CommuteStep(
-                                mode = leg.mode.toString(),
-                                from = "Origin",
-                                to = "Destination",
+                                mode = when (leg.mode) {
+                                    TransitMode.Walk -> "Walk"
+                                    TransitMode.Trike -> "Tricycle"
+                                    TransitMode.Jeepney -> "Jeepney"
+                                    is TransitMode.Unknown -> "Transit"
+                                },
+                                from = if (leg.routeName.isNullOrBlank()) "Origin" else leg.routeName,
+                                to = if (leg.routeName.isNullOrBlank()) "Destination" else leg.routeName,
                                 minutes = (leg.durationSeconds / 60).roundToInt(),
                                 fare = leg.farePesos
                             )
@@ -103,9 +185,7 @@ fun RouteResultsScreen(
                 }
             }
 
-            is ApiResult.Failure -> {
-                errorMessage = result.message
-            }
+            is ApiResult.Failure -> errorMessage = result.message
         }
 
         isLoading = false
@@ -139,28 +219,19 @@ fun RouteResultsScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        CurrentAndDestinationCard(
-            origin = origin,
-            destinationQuery = destinationQuery
-        )
+        CurrentAndDestinationCard(origin = origin, destinationQuery = destinationQuery)
 
         Spacer(modifier = Modifier.height(18.dp))
 
         if (isLoading) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 32.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = TukiTeal)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Finding routes...",
-                        color = TukiGray,
-                        fontSize = 14.sp
-                    )
+                    Text("Finding routes...", color = TukiGray, fontSize = 14.sp)
                 }
             }
         } else if (errorMessage != null) {
@@ -186,9 +257,7 @@ fun RouteResultsScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            val pagerState = rememberPagerState(
-                pageCount = { routeOptions.size }
-            )
+            val pagerState = rememberPagerState(pageCount = { routeOptions.size })
 
             HorizontalPager(
                 state = pagerState,
@@ -197,71 +266,38 @@ fun RouteResultsScreen(
             ) { page ->
                 RouteOptionCard(
                     option = routeOptions[page],
-                    onClick = {
-                        onRouteSelect(routeOptions[page])
-                    }
+                    onClick = { onRouteSelect(routeOptions[page]) }
                 )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-
-            PagerDots(
-                pageCount = routeOptions.size,
-                currentPage = pagerState.currentPage
-            )
-
+            PagerDots(pageCount = routeOptions.size, currentPage = pagerState.currentPage)
             Spacer(modifier = Modifier.height(16.dp))
-
             SuggestTodaBanner(onClick = onSuggestToda)
-
             Spacer(modifier = Modifier.height(12.dp))
         }
     }
 }
 
 @Composable
-private fun CurrentAndDestinationCard(
-    origin: String,
-    destinationQuery: String
-) {
+private fun CurrentAndDestinationCard(origin: String, destinationQuery: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                color = TukiCream2,
-                shape = RoundedCornerShape(14.dp)
-            )
+            .background(TukiCream2, RoundedCornerShape(14.dp))
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(9.dp)
-                    .background(TukiTeal, CircleShape)
-            )
+            Box(modifier = Modifier.size(9.dp).background(TukiTeal, CircleShape))
             Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = "$origin (current location)",
-                color = TukiDark,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("$origin (current location)", color = TukiDark, fontSize = 14.sp, fontWeight = FontWeight.Bold)
         }
-
         Spacer(modifier = Modifier.height(8.dp))
-
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(9.dp)
-                    .background(
-                        TukiOrange,
-                        RoundedCornerShape(2.dp)
-                    )
-            )
+            Box(modifier = Modifier.size(9.dp).background(TukiOrange, RoundedCornerShape(2.dp)))
             Spacer(modifier = Modifier.width(10.dp))
             Text(
-                text = destinationQuery.ifBlank { "Somewhere" },
+                destinationQuery.ifBlank { "Somewhere" },
                 color = TukiDark,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
@@ -271,10 +307,7 @@ private fun CurrentAndDestinationCard(
 }
 
 @Composable
-private fun RouteOptionCard(
-    option: RouteOption,
-    onClick: () -> Unit
-) {
+private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
     val icon = when {
         option.isRecommended -> "⭐"
         option.label.contains("Fast", ignoreCase = true) -> "⚡"
@@ -285,10 +318,7 @@ private fun RouteOptionCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                color = TukiDark,
-                shape = RoundedCornerShape(18.dp)
-            )
+            .background(TukiDark, RoundedCornerShape(18.dp))
             .padding(20.dp)
     ) {
         Row(
@@ -297,83 +327,41 @@ private fun RouteOptionCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = icon,
-                    color = Color.White,
-                    fontSize = 16.sp
-                )
+                Text(icon, color = Color.White, fontSize = 16.sp)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = option.label,
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Text(option.label, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
 
             if (option.isRecommended) {
                 Box(
                     modifier = Modifier
-                        .background(
-                            color = TukiOrange,
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .padding(
-                            horizontal = 10.dp,
-                            vertical = 5.dp
-                        )
+                        .background(TukiOrange, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
-                    Text(
-                        text = "RECOMMENDED",
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("RECOMMENDED", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
         if (option.description.isNotBlank()) {
             Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = option.description,
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 13.sp
-            )
+            Text(option.description, color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(modifier = Modifier.fillMaxWidth()) {
-            StatBox(
-                value = "~${option.totalMinutes} min",
-                label = "EST. TIME",
-                modifier = Modifier.weight(1f)
-            )
-
+            StatBox("~${option.totalMinutes} min", "EST. TIME", Modifier.weight(1f))
             Spacer(modifier = Modifier.width(10.dp))
-
-            StatBox(
-                value = "₱${option.totalFare.toInt()}",
-                label = "EST. FARE",
-                modifier = Modifier.weight(1f)
-            )
+            StatBox("₱${option.totalFare.toInt()}", "EST. FARE", Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
         Row(modifier = Modifier.fillMaxWidth()) {
-            StatBox(
-                value = "${option.walkMeters} m",
-                label = "WALK",
-                modifier = Modifier.weight(1f)
-            )
+            StatBox("${option.walkMeters} m", "WALK", Modifier.weight(1f))
             Spacer(modifier = Modifier.width(10.dp))
-            StatBox(
-                value = "${maxOf(option.transfers, option.steps.size)} legs",
-                label = "TRANSFERS",
-                modifier = Modifier.weight(1f)
-            )
+            StatBox("${maxOf(option.transfers, option.steps.size)} legs", "TRANSFERS", Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -381,124 +369,63 @@ private fun RouteOptionCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    color = Color.White.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(12.dp)
-                )
+                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
-                Text(
-                    text = "GEN. COST",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Fare + time value",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 10.sp
-                )
+                Text("GEN. COST", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text("Fare + time value", color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
             }
-
-            Text(
-                text = "₱${option.generalCost.toInt()}",
-                color = TukiOrange,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
+            Text("₱${option.generalCost.toInt()}", color = TukiOrange, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
         }
 
         Spacer(modifier = Modifier.height(10.dp))
-
         Text(
-            text = "Estimates only — actual time and fare may vary with traffic and driver",
+            "Estimates only — actual time and fare may vary with traffic and driver",
             color = Color.White.copy(alpha = 0.45f),
             fontSize = 10.sp
         )
-
         Spacer(modifier = Modifier.height(14.dp))
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(
-                    color = TukiOrange,
-                    shape = RoundedCornerShape(14.dp)
-                )
+                .background(TukiOrange, RoundedCornerShape(14.dp))
                 .clickable(onClick = onClick)
                 .padding(vertical = 14.dp),
             horizontalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = "Select This Route",
-                color = Color.White,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Select This Route", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
-private fun StatBox(
-    value: String,
-    label: String,
-    modifier: Modifier = Modifier
-) {
+private fun StatBox(value: String, label: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .background(
-                color = Color.White.copy(alpha = 0.08f),
-                shape = RoundedCornerShape(12.dp)
-            )
+            .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
-        Text(
-            text = value,
-            color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text(value, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = label,
-            color = Color.White.copy(alpha = 0.55f),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text(label, color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
-private fun PagerDots(
-    pageCount: Int,
-    currentPage: Int
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center
-    ) {
+private fun PagerDots(pageCount: Int, currentPage: Int) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
         repeat(pageCount) { index ->
             Box(
                 modifier = Modifier
                     .padding(horizontal = 3.dp)
-                    .size(
-                        if (index == currentPage) {
-                            8.dp
-                        } else {
-                            6.dp
-                        }
-                    )
+                    .size(if (index == currentPage) 8.dp else 6.dp)
                     .background(
-                        color = if (index == currentPage) {
-                            TukiTeal
-                        } else {
-                            TukiGray.copy(alpha = 0.4f)
-                        },
-                        shape = CircleShape
+                        if (index == currentPage) TukiTeal else TukiGray.copy(alpha = 0.4f),
+                        CircleShape
                     )
             )
         }
@@ -506,48 +433,25 @@ private fun PagerDots(
 }
 
 @Composable
-private fun SuggestTodaBanner(
-    onClick: () -> Unit
-) {
+private fun SuggestTodaBanner(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                color = TukiCream2,
-                shape = RoundedCornerShape(14.dp)
-            )
+            .background(TukiCream2, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier
-                .size(26.dp)
-                .background(TukiTeal, CircleShape),
+            modifier = Modifier.size(26.dp).background(TukiTeal, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "+",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
-
         Spacer(modifier = Modifier.width(12.dp))
-
         Column {
-            Text(
-                text = "Know a TODA we don't have? Suggest it",
-                color = TukiDark,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Reviewed by our team before it goes live",
-                color = TukiGray,
-                fontSize = 11.sp
-            )
+            Text("Know a TODA we don't have? Suggest it", color = TukiDark, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Reviewed by our team before it goes live", color = TukiGray, fontSize = 11.sp)
         }
     }
 }
