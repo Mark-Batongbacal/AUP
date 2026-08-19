@@ -25,10 +25,17 @@ interface PlacesApi {
         @Query("focusLat") focusLatitude: Double? = null,
         @Query("focusLon") focusLongitude: Double? = null
     ): Response<List<DestinationSearchResultDto>>
+
+    @GET("api/places/reverse")
+    suspend fun reverse(
+        @Query("lat") latitude: Double,
+        @Query("lon") longitude: Double
+    ): Response<DestinationSearchResultDto>
 }
 
 interface PlacesRepository {
     suspend fun searchPlaces(query: String, focusLatitude: Double? = null, focusLongitude: Double? = null): ApiResult<List<DestinationSearchResultDto>>
+    suspend fun reverseGeocode(latitude: Double, longitude: Double): ApiResult<DestinationSearchResultDto>
 }
 
 class PlacesRepositoryImpl(
@@ -38,5 +45,7 @@ class PlacesRepositoryImpl(
 ) : PlacesRepository {
     override suspend fun searchPlaces(query: String, focusLatitude: Double?, focusLongitude: Double?) =
         authenticatedApiCall(sessions, errors) { api.search(query, focusLatitude, focusLongitude) }
-}
 
+    override suspend fun reverseGeocode(latitude: Double, longitude: Double) =
+        authenticatedApiCall(sessions, errors) { api.reverse(latitude, longitude) }
+}
