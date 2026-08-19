@@ -30,8 +30,8 @@
 @apiKey = REPLACE
 
 # Common Porac -> Angeles sample 15.136824336548178, 120.58674703311
-@originLat = 15.143147223770724
-@originLon = 120.59659289311016
+@originLat = 15.12254950605129
+@originLon = 120.5997480979361
 # @originLat = 15.109698583445889
 # @originLon = 120.58240903543013
 
@@ -42,7 +42,7 @@
 
 # Replace from API responses
 @recommendationId = 7211433e-f36b-1410-8642-00e4c9b18fbc
-@sessionId = 4012433e-f36b-1410-8642-00e4c9b18fbc
+@sessionId = 6d13433e-f36b-1410-8642-00e4c9b18fbc
 @tripId = 3a12433e-f36b-1410-8642-00e4c9b18fbc
 @driverId = 00000000-0000-0000-0000-000000000000
 @vehicleId = 00000000-0000-0000-0000-000000000000
