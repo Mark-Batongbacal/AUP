@@ -38,25 +38,28 @@ public sealed class NavigationController(
             return BadRequest(new { error = "INVALID_COORDINATES" });
 
         var normalizedMode = (mode ?? string.Empty).Trim().ToUpperInvariant();
-        if (normalizedMode == "JEEPNEY" && routeId is > 0)
+        if (normalizedMode == "JEEPNEY")
         {
+            if (routeId is not > 0)
+                return BadRequest(new { error = "JEEPNEY_ROUTE_REQUIRED" });
+
             var points = await routePoints.GetRoutePointsAsync(routeId.Value, cancellationToken);
             var ordered = points.OrderBy(item => item.PointOrder).ToList();
-            if (ordered.Count >= 2)
-            {
-                var startIndex = ClosestIndex(ordered, startLat, startLon);
-                var endIndex = ClosestIndex(ordered, endLat, endLon);
-                var from = Math.Min(startIndex, endIndex);
-                var to = Math.Max(startIndex, endIndex);
-                var geometry = ordered.Skip(from).Take(to - from + 1)
-                    .Select(item => new NavigationGeometryPoint(item.Latitude, item.Longitude))
-                    .ToList();
-                if (startIndex > endIndex) geometry.Reverse();
-                return Ok(new NavigationGeometryResponse(geometry));
-            }
+            if (ordered.Count < 2)
+                return StatusCode(StatusCodes.Status502BadGateway, new { error = "JEEPNEY_GEOMETRY_UNAVAILABLE" });
+
+            var startIndex = ClosestIndex(ordered, startLat, startLon);
+            var endIndex = ClosestIndex(ordered, endLat, endLon);
+            var from = Math.Min(startIndex, endIndex);
+            var to = Math.Max(startIndex, endIndex);
+            var geometry = ordered.Skip(from).Take(to - from + 1)
+                .Select(item => new NavigationGeometryPoint(item.Latitude, item.Longitude))
+                .ToList();
+            if (startIndex > endIndex) geometry.Reverse();
+            return Ok(new NavigationGeometryResponse(geometry));
         }
 
-        var costing = normalizedMode == "TRICYCLE"
+        var costing = normalizedMode is "TRICYCLE" or "TRIKE"
             ? routingOptions.Value.TrikeCostingModel
             : "pedestrian";
         var response = await valhalla.GetRouteAsync(
