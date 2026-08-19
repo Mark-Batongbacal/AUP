@@ -271,6 +271,10 @@ fun TukiApp(
                 onBack = {
                     currentScreen = AppScreen.HOME
                 },
+                onLogoutClick = {
+                    authRepository.logoutLocalSession()
+                    currentScreen = AppScreen.LOGIN
+                },
                 onHomeClick = {
                     currentScreen = AppScreen.HOME
                 },
