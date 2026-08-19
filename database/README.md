@@ -19,8 +19,22 @@ Open `TukiDbSchema.sql` in SSMS and execute it against `TukiDb`.
 The script uses the `dbo` schema, creates missing tables, adds missing columns, adds indexes and constraints when absent, and seeds only stable lookup transport modes: `WALK`, `JEEPNEY`, and `TRICYCLE`.
 
 Before using TripSession, GPS navigation, instructions, or landmark endpoints, also
-run `TukiNavigationSchema.sql` once against the same database. It is additive and
-idempotent and creates the Phase 2-6 navigation tables only when missing.
+run `TukiNavigationSchema.sql` against the same database. It is additive and
+idempotent: rerun it after pulling backend changes that add navigation columns,
+not only during initial database creation.
+
+### Upgrade an existing navigation database
+
+For the navigation speech and semantic-landmark release, run
+`migrations/20260819_NavigationSpeechAndSemanticLandmarks.sql` against the same
+database used by `ConnectionStrings__TukiDbConnection` before deploying or
+restarting the updated backend. This focused script is transactional and
+idempotent. Its final result set reports a non-null byte length for each required
+column.
+
+Deployments do not modify production schema automatically. Database upgrades
+must be applied explicitly before application code that maps the new columns is
+started.
 
 ## Secrets
 

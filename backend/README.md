@@ -19,7 +19,13 @@ Both `.env` and `appsettings.Development.json` are intentionally ignored by Git.
 
 The backend connects to the existing SQL Server `TukiDb` database through EF Core using `TukiDbContext`. The tables already exist in `dbo`; do not run migrations or `dotnet ef database update` unless a future task explicitly asks for schema changes.
 
-The reproducible additive schema script is tracked at `../database/TukiDbSchema.sql`; see `../database/README.md` for the SSMS workflow. The active model layer keeps API-friendly property names where possible and maps them explicitly to the existing PascalCase SQL Server tables and columns in `Models/Database/TukiDbContext.cs`.
+The reproducible additive schema scripts are tracked under `../database`; see
+`../database/README.md` for the SSMS workflow. Apply the applicable idempotent
+database upgrade before deploying backend code that maps new columns. The
+application intentionally does not alter production schema at startup. The
+active model layer keeps API-friendly property names where possible and maps
+them explicitly to the existing PascalCase SQL Server tables and columns in
+`Models/Database/TukiDbContext.cs`.
 
 ## Deploying to Render
 
