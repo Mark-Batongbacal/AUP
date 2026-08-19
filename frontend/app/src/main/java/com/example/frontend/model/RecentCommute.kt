@@ -2,16 +2,34 @@ package com.example.frontend.model
 
 data class RecentCommute(
     val id: String,
+    val recommendationId: String? = null,
     val origin: String,
     val destination: String,
-    val legs: Int,      // number of rides/transfers
-    val minutes: Int,   // estimated total travel time
+    val originLatitude: Double? = null,
+    val originLongitude: Double? = null,
+    val destinationLatitude: Double? = null,
+    val destinationLongitude: Double? = null,
+    val legs: Int,
+    val minutes: Int,
     val dateGroup: String = "",
-    val steps: List<CommuteStep> = emptyList()
+    val steps: List<CommuteStep> = emptyList(),
+    val historyLegs: List<HistoryLeg> = emptyList()
+)
+
+data class HistoryLeg(
+    val mode: String,
+    val routeId: Long? = null,
+    val routeName: String? = null,
+    val from: String,
+    val to: String,
+    val startLatitude: Double?,
+    val startLongitude: Double?,
+    val endLatitude: Double?,
+    val endLongitude: Double?
 )
 
 data class CommuteStep(
-    val mode: String,   // "Jeepney", "Tricycle", "Walk", "Bus"
+    val mode: String,
     val from: String,
     val to: String,
     val minutes: Int,

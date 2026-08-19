@@ -16,5 +16,7 @@ class RouteOption (
     val transfers: Int = 0,
     val generalCost: Double = totalFare, // fare + time-value estimate shown on the carousel
     val isRecommended: Boolean = false,
-    val routePoints: List<RoutePoint> = emptyList()
+    val routePoints: List<RoutePoint> = emptyList(),
+    val legRoutePoints: List<List<RoutePoint>> = emptyList(),
+    val legEndPoints: List<RoutePoint> = emptyList()
 )

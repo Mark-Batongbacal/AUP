@@ -27,6 +27,13 @@ public sealed class TripSessionRepository(TukiDbContext context) : ITripSessionR
             .OrderByDescending(session => session.UpdatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
+    public Task<List<TripSession>> GetOwnedHistoryAsync(
+        Guid userId, CancellationToken cancellationToken = default) =>
+        context.TripSessions.AsNoTracking()
+            .Where(session => session.UserId == userId)
+            .OrderByDescending(session => session.StartedAt ?? session.CreatedAt)
+            .ToListAsync(cancellationToken);
+
     public Task<int> CountCompletedByUserAsync(
         Guid userId, CancellationToken cancellationToken = default) =>
         context.TripSessions

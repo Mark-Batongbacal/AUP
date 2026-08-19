@@ -2,6 +2,7 @@ using System.Security.Claims;
 using backend.Controllers;
 using backend.Models.Database;
 using backend.Models.Trips;
+using backend.Repositories;
 using backend.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -149,7 +150,9 @@ public sealed class TripsControllerTests
 
     private static TripsController CreateController(Mock<ITripService> service, Guid userId)
     {
-        var controller = new TripsController(service.Object);
+        var controller = new TripsController(
+            service.Object,
+            new Mock<ITripSessionRepository>().Object);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext

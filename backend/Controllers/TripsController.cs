@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using backend.Models.Database;
 using backend.Models.Trips;
+using backend.Repositories;
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,8 +9,53 @@ namespace backend.Controllers;
 
 [ApiController]
 [Route("api/trips")]
-public sealed class TripsController(ITripService tripService) : ControllerBase
+public sealed class TripsController(
+    ITripService tripService,
+    ITripSessionRepository tripSessions) : ControllerBase
 {
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<PassengerTripHistoryItemDto>>> GetHistory(
+        CancellationToken cancellationToken)
+    {
+        var userId = UserId();
+        if (userId == Guid.Empty)
+        {
+            return Unauthorized();
+        }
+
+        var sessions = await tripSessions.GetOwnedHistoryAsync(userId, cancellationToken);
+        var history = new List<PassengerTripHistoryItemDto>(sessions.Count);
+
+        foreach (var session in sessions)
+        {
+            var recommendation = await tripService.GetRecommendationByIdAsync(
+                session.RecommendationId,
+                cancellationToken);
+            var search = recommendation is null
+                ? null
+                : await tripService.GetTripSearchByIdAsync(recommendation.TripSearchId, cancellationToken);
+            var recommendationDetails = await tripService.GetRecommendationDetailsAsync(
+                session.RecommendationId,
+                cancellationToken);
+
+            history.Add(new PassengerTripHistoryItemDto(
+                session.TripSessionId,
+                session.CurrentNavigationState.ToString(),
+                search?.OriginName ?? "Current location",
+                session.DestinationName ?? search?.DestinationName ?? "Unknown destination",
+                session.OriginLatitude,
+                session.OriginLongitude,
+                session.DestinationLatitude,
+                session.DestinationLongitude,
+                session.StartedAt,
+                session.CompletedAt ?? session.CancelledAt,
+                session.CreatedAt,
+                recommendationDetails));
+        }
+
+        return Ok(history);
+    }
+
     [HttpPost]
     public async Task<ActionResult<PassengerTripDetailsDto>> StartTrip(
         [FromBody] StartTripRequest? request,
@@ -140,3 +186,17 @@ public sealed class TripsController(ITripService tripService) : ControllerBase
 
     private static TripErrorResponseDto Error(string message) => new([message]);
 }
+
+public sealed record PassengerTripHistoryItemDto(
+    Guid PassengerTripId,
+    string Status,
+    string OriginName,
+    string DestinationName,
+    double OriginLatitude,
+    double OriginLongitude,
+    double DestinationLatitude,
+    double DestinationLongitude,
+    DateTime? StartedAt,
+    DateTime? CompletedAt,
+    DateTime CreatedAt,
+    RecommendationDetailsDto? Recommendation);
