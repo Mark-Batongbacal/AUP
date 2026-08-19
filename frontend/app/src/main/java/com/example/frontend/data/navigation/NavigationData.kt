@@ -9,10 +9,13 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 import java.math.BigDecimal
 
 data class StartNavigationRequest(val recommendationId: String)
 data class NavigationRerouteRequest(val reason: String = "OFF_ROUTE")
+data class NavigationGeometryPointDto(val latitude: Double, val longitude: Double)
+data class NavigationGeometryResponseDto(val points: List<NavigationGeometryPointDto>)
 
 data class NavigationLocationUpdate(
     val latitude: Double,
@@ -95,6 +98,16 @@ interface NavigationApi {
     @GET("api/navigation/active")
     suspend fun active(): Response<NavigationSnapshotDto>
 
+    @GET("api/navigation/geometry")
+    suspend fun geometry(
+        @Query("startLat") startLatitude: Double,
+        @Query("startLon") startLongitude: Double,
+        @Query("endLat") endLatitude: Double,
+        @Query("endLon") endLongitude: Double,
+        @Query("mode") mode: String,
+        @Query("routeId") routeId: Long? = null
+    ): Response<NavigationGeometryResponseDto>
+
     @POST("api/navigation/{sessionId}/location")
     suspend fun location(
         @Path("sessionId") sessionId: String,
@@ -120,6 +133,14 @@ interface NavigationApi {
 interface NavigationRepository {
     suspend fun startNavigation(recommendationId: String): ApiResult<NavigationSnapshotDto>
     suspend fun getActiveNavigation(): ApiResult<NavigationSnapshotDto>
+    suspend fun getGeometry(
+        startLatitude: Double,
+        startLongitude: Double,
+        endLatitude: Double,
+        endLongitude: Double,
+        mode: String,
+        routeId: Long? = null
+    ): ApiResult<NavigationGeometryResponseDto>
     suspend fun updateLocation(
         sessionId: String,
         update: NavigationLocationUpdate
@@ -141,6 +162,16 @@ class NavigationRepositoryImpl(
     override suspend fun startNavigation(recommendationId: String) =
         call { api.start(StartNavigationRequest(recommendationId)) }
     override suspend fun getActiveNavigation() = call { api.active() }
+    override suspend fun getGeometry(
+        startLatitude: Double,
+        startLongitude: Double,
+        endLatitude: Double,
+        endLongitude: Double,
+        mode: String,
+        routeId: Long?
+    ) = call {
+        api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId)
+    }
     override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate) =
         call { api.location(sessionId, update) }
     override suspend fun confirmBoarding(sessionId: String) = call { api.boarding(sessionId) }
