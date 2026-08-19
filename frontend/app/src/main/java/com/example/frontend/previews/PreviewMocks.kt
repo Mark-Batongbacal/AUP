@@ -13,6 +13,7 @@ import com.example.frontend.data.routing.NearbyJeepneyRouteDto
 import com.example.frontend.data.routing.PlannedJourney
 import com.example.frontend.data.routing.RoutingRepository
 import com.example.frontend.data.trips.PassengerTripDetailsDto
+import com.example.frontend.data.trips.PassengerTripHistoryItemDto
 import com.example.frontend.data.trips.StartTripRequest
 import com.example.frontend.data.trips.TripAlertDto
 import com.example.frontend.data.trips.TripRepository
@@ -43,6 +44,7 @@ object PreviewMocks {
     }
 
     val tripRepository = object : TripRepository {
+        override suspend fun getHistory(): ApiResult<List<PassengerTripHistoryItemDto>> = ApiResult.Success(emptyList())
         override suspend fun startTrip(request: StartTripRequest): ApiResult<PassengerTripDetailsDto> = ApiResult.Failure(null, "Mock")
         override suspend fun getTrip(tripId: String): ApiResult<PassengerTripDetailsDto> = ApiResult.Failure(null, "Mock")
         override suspend fun getTripAlerts(tripId: String): ApiResult<List<TripAlertDto>> = ApiResult.Success(emptyList())
