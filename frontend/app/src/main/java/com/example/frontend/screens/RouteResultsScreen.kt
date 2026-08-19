@@ -165,10 +165,18 @@ fun RouteResultsScreen(
 
                     val routePoints = buildList {
                         plan.legs.forEach { leg ->
-                            val originPoint = RoutePoint(leg.origin.latitude, leg.origin.longitude)
-                            val destinationPoint = RoutePoint(leg.destination.latitude, leg.destination.longitude)
-                            if (lastOrNull() != originPoint) add(originPoint)
-                            if (lastOrNull() != destinationPoint) add(destinationPoint)
+                            val points = if (leg.geometry.isNotEmpty()) {
+                                leg.geometry.map { point -> RoutePoint(point.latitude, point.longitude) }
+                            } else {
+                                listOf(
+                                    RoutePoint(leg.origin.latitude, leg.origin.longitude),
+                                    RoutePoint(leg.destination.latitude, leg.destination.longitude)
+                                )
+                            }
+
+                            points.forEach { point ->
+                                if (lastOrNull() != point) add(point)
+                            }
                         }
                     }
 
