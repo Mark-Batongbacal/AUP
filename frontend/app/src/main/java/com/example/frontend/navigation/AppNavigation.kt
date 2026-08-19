@@ -12,6 +12,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.frontend.R
+import com.example.frontend.TodaPointOverlay
+import com.example.frontend.TransitRouteOverlay
 import com.example.frontend.auth.*
 import com.example.frontend.core.findActivity
 import com.example.frontend.core.location.currentDeviceLocation
@@ -22,6 +24,7 @@ import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.users.UserProfileDto
+import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.FavoriteRoute
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.model.RouteOption
@@ -29,6 +32,7 @@ import com.example.frontend.screens.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
+import java.time.LocalDate
 
 @Composable
 fun AppNavigation(
@@ -53,6 +57,8 @@ fun AppNavigation(
     val routingRepository = dataProvider.routingRepository
     val navigationRepository = dataProvider.navigationRepository
     val tripRepository = dataProvider.tripRepository
+    val transportRouteRepository = dataProvider.transportRouteRepository
+    val tricycleRepository = dataProvider.tricycleRepository
 
     val startDestination = remember {
         if (dataProvider.sessionStore.validSession() != null) {
@@ -64,6 +70,9 @@ fun AppNavigation(
 
     var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var favorites by remember { mutableStateOf<List<FavoriteRoute>>(emptyList()) }
+    var recentCommutes by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
+    var recentTripsLoading by remember { mutableStateOf(false) }
+    var recentTripsError by remember { mutableStateOf<String?>(null) }
     var selectedCommute by remember { mutableStateOf<RecentCommute?>(null) }
     var selectedRouteOption by remember { mutableStateOf<RouteOption?>(null) }
     var selectedRoutingDestination by remember { mutableStateOf<DestinationSearchResultDto?>(null) }
@@ -72,6 +81,8 @@ fun AppNavigation(
     var activeNavigationSessionId by remember { mutableStateOf<String?>(null) }
     var activeNavigationSnapshot by remember { mutableStateOf<NavigationSnapshotDto?>(null) }
     var navigationTrackingError by remember { mutableStateOf<String?>(null) }
+    var transitRouteOverlays by remember { mutableStateOf<List<TransitRouteOverlay>>(emptyList()) }
+    var todaPointOverlays by remember { mutableStateOf<List<TodaPointOverlay>>(emptyList()) }
     var showAskAI by remember { mutableStateOf(false) }
 
     val profileDisplayName = currentUserProfile?.let { profile ->
@@ -289,7 +300,56 @@ fun AppNavigation(
             }
 
             composable(route = AppScreen.RECENT.name) {
+                LaunchedEffect(Unit) {
+                    recentTripsLoading = true
+                    recentTripsError = null
+                    when (val result = tripRepository.getHistory()) {
+                        is ApiResult.Success -> {
+                            recentCommutes = result.data.map { item ->
+                                val recommendation = item.recommendation
+                                RecentCommute(
+                                    id = item.passengerTripId,
+                                    origin = item.originName,
+                                    destination = item.destinationName,
+                                    legs = recommendation?.legs?.size ?: 0,
+                                    minutes = recommendation?.totalMinutes?.toInt() ?: 0,
+                                    dateGroup = recentDateGroup(item.startedAt ?: item.createdAt),
+                                    steps = recommendation?.legs
+                                        ?.sortedBy { it.legOrder }
+                                        ?.map { leg ->
+                                            CommuteStep(
+                                                mode = leg.transportMode?.name
+                                                    ?: leg.route?.routeName
+                                                    ?: "Transit",
+                                                from = leg.fromName
+                                                    ?: leg.fromStop?.name
+                                                    ?: item.originName,
+                                                to = leg.toName
+                                                    ?: leg.toStop?.name
+                                                    ?: item.destinationName,
+                                                minutes = leg.estimatedMinutes.toInt(),
+                                                fare = leg.estimatedFare.toDouble()
+                                            )
+                                        }
+                                        .orEmpty()
+                                )
+                            }
+                        }
+                        is ApiResult.Failure -> {
+                            recentCommutes = emptyList()
+                            recentTripsError = result.message
+                            if (result.isUnauthorized) {
+                                navController.navigate(AppScreen.LOGIN.name) { popUpTo(0) }
+                            }
+                        }
+                    }
+                    recentTripsLoading = false
+                }
+
                 RecentScreen(
+                    commutes = recentCommutes,
+                    isLoading = recentTripsLoading,
+                    errorMessage = recentTripsError,
                     onCommuteClick = { commute ->
                         selectedCommute = commute
                         navController.navigate(AppScreen.COMMUTE_DETAIL.name)
@@ -547,6 +607,63 @@ fun AppNavigation(
                 val destination = backStackEntry.arguments?.getString("destination") ?: ""
                 var isNavigationActionInProgress by remember { mutableStateOf(false) }
 
+                LaunchedEffect(Unit) {
+                    if (transitRouteOverlays.isEmpty()) {
+                        when (val routes = transportRouteRepository.getActiveRoutes()) {
+                            is ApiResult.Success -> {
+                                val overlays = mutableListOf<TransitRouteOverlay>()
+                                routes.data.take(40).forEach { route ->
+                                    when (val points = transportRouteRepository.getRoutePoints(route.routeId)) {
+                                        is ApiResult.Success -> {
+                                            val geometry = points.data.points
+                                                .sortedBy { it.pointOrder }
+                                                .map { point ->
+                                                    org.maplibre.android.geometry.LatLng(
+                                                        point.latitude,
+                                                        point.longitude
+                                                    )
+                                                }
+                                            if (geometry.size >= 2) {
+                                                overlays += TransitRouteOverlay(
+                                                    routeId = route.routeId,
+                                                    routeCode = route.routeCode,
+                                                    routeName = route.routeName,
+                                                    points = geometry
+                                                )
+                                            }
+                                        }
+                                        is ApiResult.Failure -> Unit
+                                    }
+                                }
+                                transitRouteOverlays = overlays
+                            }
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+
+                    if (todaPointOverlays.isEmpty()) {
+                        when (val points = tricycleRepository.getActivePoints()) {
+                            is ApiResult.Success -> {
+                                todaPointOverlays = points.data.map { point ->
+                                    TodaPointOverlay(
+                                        id = point.tricyclePointId,
+                                        name = point.pointName,
+                                        pointCode = point.pointCode,
+                                        latitude = point.centerLatitude,
+                                        longitude = point.centerLongitude,
+                                        radiusMeters = point.radiusMeters,
+                                        operatorName = point.operatorName,
+                                        baseFareText = point.baseFare?.let { fare ->
+                                            "₱${fare.stripTrailingZeros().toPlainString()}"
+                                        }
+                                    )
+                                }
+                            }
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                }
+
                 LaunchedEffect(activeNavigationSessionId) {
                     if (activeNavigationSessionId == null) {
                         when (val active = navigationRepository.getActiveNavigation()) {
@@ -635,6 +752,17 @@ fun AppNavigation(
                     }
                 }
 
+                val futureRouteSegments = selectedRouteOption
+                    ?.legRoutePoints
+                    ?.drop(currentLegIndex + 1)
+                    .orEmpty()
+                    .filter { it.size >= 2 }
+                    .map { segment ->
+                        segment.map { point ->
+                            org.maplibre.android.geometry.LatLng(point.latitude, point.longitude)
+                        }
+                    }
+
                 val legDestination = selectedRouteOption
                     ?.legEndPoints
                     ?.getOrNull(currentLegIndex)
@@ -649,11 +777,25 @@ fun AppNavigation(
                         }
                     }
 
+                val finalDestination = selectedRouteOption
+                    ?.legEndPoints
+                    ?.lastOrNull()
+                    ?.let { point ->
+                        org.maplibre.android.geometry.LatLng(point.latitude, point.longitude)
+                    }
+                    ?: selectedRoutingDestination?.let { point ->
+                        org.maplibre.android.geometry.LatLng(point.latitude, point.longitude)
+                    }
+
                 TripTrackingScreen(
                     origin = origin,
                     destination = destination,
                     routePoints = routePoints,
+                    futureRouteSegments = futureRouteSegments,
                     legDestination = legDestination,
+                    finalDestination = finalDestination,
+                    nearbyJeepneyRoutes = transitRouteOverlays,
+                    todaPoints = todaPointOverlays,
                     navigationSnapshot = activeNavigationSnapshot,
                     navigationError = navigationTrackingError,
                     isNavigationActionInProgress = isNavigationActionInProgress,
@@ -728,5 +870,16 @@ fun AppNavigation(
                 }
             )
         }
+    }
+}
+
+private fun recentDateGroup(timestamp: String): String {
+    val date = runCatching { LocalDate.parse(timestamp.take(10)) }.getOrNull()
+        ?: return "Earlier"
+    val today = LocalDate.now()
+    return when (date) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> "Earlier"
     }
 }
