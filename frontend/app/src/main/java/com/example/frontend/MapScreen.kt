@@ -67,6 +67,8 @@ private const val RouteSourceId = "tuki-route-source"
 private const val RouteLayerId = "tuki-route-layer"
 private const val DestinationSourceId = "tuki-destination-source"
 private const val DestinationLayerId = "tuki-destination-layer"
+private const val StartSourceId = "tuki-leg-start-source"
+private const val StartLayerId = "tuki-leg-start-layer"
 private const val FinalDestinationSourceId = "tuki-final-destination-source"
 private const val FinalDestinationLayerId = "tuki-final-destination-layer"
 private const val TodaSourceId = "tuki-toda-source"
@@ -110,6 +112,7 @@ private data class MapSelectionInfo(
 fun MapScreen(
     routePoints: List<LatLng>,
     modifier: Modifier = Modifier,
+    startPoint: LatLng? = null,
     selectedDestination: LatLng? = null,
     finalDestination: LatLng? = null,
     futureRouteSegments: List<List<LatLng>> = emptyList(),
@@ -191,6 +194,7 @@ fun MapScreen(
                 loadedStyle = style
 
                 val cameraTarget = routePoints.firstOrNull()
+                    ?: startPoint
                     ?: selectedDestination
                     ?: finalDestination
                     ?: DefaultMapCenter
@@ -203,6 +207,7 @@ fun MapScreen(
                 updateFutureLegLayers(style, futureRouteSegments)
                 updateRouteLayer(style, routePoints)
                 updateTodaLayer(style, todaPoints)
+                updateStartLayer(style, startPoint)
                 updateDestinationLayer(style, selectedDestination)
                 updateFinalDestinationLayer(style, finalDestination)
                 configureLocationComponent(context, map, style, hasLocationPermission)
@@ -260,6 +265,10 @@ fun MapScreen(
 
     LaunchedEffect(loadedStyle, routePoints) {
         loadedStyle?.let { updateRouteLayer(it, routePoints) }
+    }
+
+    LaunchedEffect(loadedStyle, startPoint) {
+        loadedStyle?.let { updateStartLayer(it, startPoint) }
     }
 
     LaunchedEffect(loadedStyle, selectedDestination) {
@@ -377,9 +386,9 @@ private fun updateFutureLegLayers(style: Style, segments: List<List<LatLng>>) {
         style.addSource(GeoJsonSource(sourceId, geometry))
         style.addLayer(
             LineLayer(layerId, sourceId).withProperties(
-                PropertyFactory.lineColor("#64748B"),
-                PropertyFactory.lineWidth(if (index == 0) 4f else 3f),
-                PropertyFactory.lineOpacity(if (index == 0) 0.5f else 0.28f),
+                PropertyFactory.lineColor(if (index == 0) "#FF9318" else "#64748B"),
+                PropertyFactory.lineWidth(if (index == 0) 4.5f else 3f),
+                PropertyFactory.lineOpacity(if (index == 0) 0.72f else 0.28f),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
             )
@@ -441,6 +450,31 @@ private fun updateTodaLayer(style: Style, points: List<TodaPointOverlay>) {
             PropertyFactory.circleOpacity(0.78f),
             PropertyFactory.circleStrokeColor("#FFFFFF"),
             PropertyFactory.circleStrokeWidth(2f)
+        )
+    )
+}
+
+private fun updateStartLayer(style: Style, start: LatLng?) {
+    if (start == null) {
+        style.removeLayer(StartLayerId)
+        style.removeSource(StartSourceId)
+        return
+    }
+
+    val point = Point.fromLngLat(start.longitude, start.latitude)
+    val source = style.getSourceAs<GeoJsonSource>(StartSourceId)
+    if (source != null) {
+        source.setGeoJson(point)
+        return
+    }
+
+    style.addSource(GeoJsonSource(StartSourceId, point))
+    style.addLayer(
+        CircleLayer(StartLayerId, StartSourceId).withProperties(
+            PropertyFactory.circleColor("#15919B"),
+            PropertyFactory.circleRadius(8f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeWidth(3f)
         )
     )
 }
