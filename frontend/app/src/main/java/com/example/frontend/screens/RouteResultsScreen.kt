@@ -1,11 +1,5 @@
 package com.example.frontend.screens
 
-// ============================================================================
-// BACKEND TEAM: this screen currently runs entirely on mock data so the
-// frontend has something to click through. Search the file for "BACKEND"
-// to find every spot that needs to be swapped for a real API call.
-// ============================================================================
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,11 +10,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,16 +46,13 @@ private val TukiCream2 = Color(0xFFFAEBC7)
 private val TukiDark = Color(0xFF173B43)
 private val TukiGray = Color(0xFF9AA6A9)
 
-/**
- * Shown after the user types a destination on Home and hits search.
- * Lists the possible ways to get there.
- */
 @Composable
 fun RouteResultsScreen(
     origin: String,
     destinationQuery: String,
     onBack: () -> Unit = {},
-    onRouteSelect: (RouteOption) -> Unit = {}
+    onRouteSelect: (RouteOption) -> Unit = {},
+    onSuggestToda: () -> Unit = {}
 ) {
     var isLoading by remember { mutableStateOf(true) }
     var routeOptions by remember { mutableStateOf<List<RouteOption>>(emptyList()) }
@@ -63,19 +60,7 @@ fun RouteResultsScreen(
     LaunchedEffect(destinationQuery) {
         isLoading = true
 
-        // ------------------------------------------------------------------
-        // BACKEND TEAM: replace fetchMockRouteOptions(...) with the real
-        // route-planning API call, e.g.:
-        //
-        //   routeOptions = routeRepository.getRoutes(
-        //       origin = origin,
-        //       destination = destinationQuery
-        //   )
-        //
-        // Keep it a suspend call inside this LaunchedEffect so the loading
-        // spinner below keeps working as-is.
-        // ------------------------------------------------------------------
-        routeOptions = fetchMockRouteOptions(origin, destinationQuery)
+      routeOptions = fetchMockRouteOptions(origin, destinationQuery)
 
         isLoading = false
     }
@@ -84,7 +69,10 @@ fun RouteResultsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(TukiCream)
-            .padding(horizontal = 30.dp, vertical = 30.dp)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 12.dp)
     ) {
         Text(
             text = "\u2190 Back",
@@ -94,33 +82,29 @@ fun RouteResultsScreen(
             modifier = Modifier.clickable(onClick = onBack)
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = destinationQuery,
+            text = "Where are you going?",
             color = TukiDark,
-            fontSize = 24.sp,
+            fontSize = 22.sp,
             fontWeight = FontWeight.ExtraBold
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        Text(
-            text = "from $origin",
-            color = TukiGray,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold
-        )
+        CurrentAndDestinationCard(origin = origin, destinationQuery = destinationQuery)
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
         if (isLoading) {
             Box(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 32.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(modifier = Modifier.height(60.dp))
                     CircularProgressIndicator(color = TukiTeal)
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(text = "Finding routes...", color = TukiGray, fontSize = 14.sp)
@@ -133,112 +117,373 @@ fun RouteResultsScreen(
                 fontSize = 15.sp
             )
         } else {
-            LazyColumn {
-                items(routeOptions, key = { it.id }) { option ->
-                    RouteOptionCard(option = option, onClick = { onRouteSelect(option) })
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
+            Text(
+                text = "ROUTE OPTIONS \u00B7 $origin \u2192 $destinationQuery".uppercase(),
+                color = TukiGray,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            val pagerState = rememberPagerState(pageCount = { routeOptions.size })
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth(),
+                pageSpacing = 12.dp
+            ) { page ->
+                RouteOptionCard(
+                    option = routeOptions[page],
+                    onClick = { onRouteSelect(routeOptions[page]) }
+                )
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            PagerDots(pageCount = routeOptions.size, currentPage = pagerState.currentPage)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            SuggestTodaBanner(onClick = onSuggestToda)
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun CurrentAndDestinationCard(origin: String, destinationQuery: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = TukiCream2, shape = RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(9.dp)
+                    .background(TukiTeal, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "$origin (current location)",
+                color = TukiDark,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(9.dp)
+                    .background(TukiOrange, RoundedCornerShape(2.dp))
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = destinationQuery.ifBlank { "Somewhere" },
+                color = TukiDark,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
 
 @Composable
 private fun RouteOptionCard(option: RouteOption, onClick: () -> Unit) {
+    val icon = when {
+        option.isRecommended -> "\u2B50" // ⭐
+        option.label.contains("Fast", ignoreCase = true) -> "\u26A1\uFE0E" // ⚡
+        option.label.contains("Cheap", ignoreCase = true) -> "\u20B1" // ₱
+        else -> "\uD83D\uDE8C" // 🚌
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(color = TukiCream2, shape = RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp)
+            .background(color = TukiDark, shape = RoundedCornerShape(18.dp))
+            .padding(20.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = option.label,
-                color = TukiDark,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "\u20B1${option.totalFare}",
-                color = TukiOrange,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "${option.steps.size} legs \u00B7 ${option.totalMinutes} min",
-            color = TukiTeal,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            option.steps.forEachIndexed { index, step ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = icon, color = Color.White, fontSize = 16.sp)
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = step.mode,
-                    color = TukiDark,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    text = option.label,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
                 )
-                if (index != option.steps.lastIndex) {
+            }
+            if (option.isRecommended) {
+                Box(
+                    modifier = Modifier
+                        .background(color = TukiOrange, shape = RoundedCornerShape(10.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
                     Text(
-                        text = "  \u2192  ",
-                        color = TukiGray,
-                        fontSize = 12.sp
+                        text = "RECOMMENDED",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
         }
+
+        if (option.description.isNotBlank()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = option.description,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 13.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatBox(
+                value = "~${option.totalMinutes} min",
+                label = "EST. TIME",
+                modifier = Modifier.weight(1f)
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+            StatBox(
+                value = "\u20B1${option.totalFare.toInt()}",
+                label = "EST. FARE",
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            StatBox(
+                value = "${option.walkMeters} m",
+                label = "WALK",
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            StatBox(
+                value = "${maxOf(option.transfers, option.steps.size)} legs",
+                label = "TRANSFERS",
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = Color.White.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "GEN. COST",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Fare + time value",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 10.sp
+                )
+            }
+            Text(
+                text = "\u20B1${option.generalCost.toInt()}",
+                color = TukiOrange,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = "Estimates only \u2014 actual time and fare may vary with traffic and driver",
+            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 10.sp
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(color = TukiOrange, shape = RoundedCornerShape(14.dp))
+                .clickable(onClick = onClick)
+                .padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Select This Route",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
     }
 }
 
-// ============================================================================
-// BACKEND TEAM: everything below this line is placeholder data so the
-// screen is clickable/demoable without a live API. Delete this whole
-// block once fetchMockRouteOptions(...) above is wired to the real thing.
-// ============================================================================
+@Composable
+private fun StatBox(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(color = Color.White.copy(alpha = 0.08f), shape = RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(text = value, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = 0.55f),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun PagerDots(pageCount: Int, currentPage: Int) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center
+    ) {
+        repeat(pageCount) { index ->
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 3.dp)
+                    .size(if (index == currentPage) 8.dp else 6.dp)
+                    .background(
+                        color = if (index == currentPage) TukiTeal else TukiGray.copy(alpha = 0.4f),
+                        shape = CircleShape
+                    )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SuggestTodaBanner(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(color = TukiCream2, shape = RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(26.dp)
+                .background(TukiTeal, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = "+", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(
+                text = "Know a TODA we don't have? Suggest it",
+                color = TukiDark,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "Reviewed by our team before it goes live",
+                color = TukiGray,
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
 private suspend fun fetchMockRouteOptions(origin: String, destination: String): List<RouteOption> {
-    delay(900) // pretend network latency so the loading state is visible
+    delay(900)
+
+    val dest = destination.ifBlank { "your destination" }
 
     return listOf(
         RouteOption(
             id = "1",
-            label = "Fastest",
-            totalMinutes = 22,
-            totalFare = 35.0,
+            label = "Most Efficient",
+            description = "Jeepney + short tricycle transfer",
+            totalMinutes = 40,
+            totalFare = 42.0,
+            walkMeters = 550,
+            transfers = 2,
+            generalCost = 79.0,
+            isRecommended = true,
             steps = listOf(
-                CommuteStep(mode = "Jeepney", from = origin, to = "San Fernando Terminal", minutes = 14, fare = 15.0),
-                CommuteStep(mode = "Tricycle", from = "San Fernando Terminal", to = destination, minutes = 8, fare = 20.0)
+                CommuteStep(
+                    mode = "Jeepney",
+                    from = origin,
+                    to = "San Fernando Terminal",
+                    minutes = 25,
+                    fare = 20.0
+                ),
+                CommuteStep(
+                    mode = "Tricycle",
+                    from = "San Fernando Terminal",
+                    to = dest,
+                    minutes = 15,
+                    fare = 22.0
+                )
             )
         ),
         RouteOption(
             id = "2",
-            label = "Cheapest",
+            label = "Fastest",
+            description = "Direct jeepney, minimal walking",
             totalMinutes = 35,
-            totalFare = 22.0,
+            totalFare = 55.0,
+            walkMeters = 400,
+            transfers = 2,
+            generalCost = 88.0,
             steps = listOf(
-                CommuteStep(mode = "Jeepney", from = origin, to = "Dolores Crossing", minutes = 20, fare = 12.0),
-                CommuteStep(mode = "Walk", from = "Dolores Crossing", to = "Guagua Terminal", minutes = 5, fare = null),
-                CommuteStep(mode = "Jeepney", from = "Guagua Terminal", to = destination, minutes = 10, fare = 10.0)
+                CommuteStep(
+                    mode = "Jeepney",
+                    from = origin,
+                    to = "Dolores Crossing",
+                    minutes = 20,
+                    fare = 30.0
+                ),
+                CommuteStep(
+                    mode = "Jeepney",
+                    from = "Guagua Terminal",
+                    to = dest,
+                    minutes = 15,
+                    fare = 25.0
+                )
             )
         ),
         RouteOption(
             id = "3",
-            label = "Fewest transfers",
-            totalMinutes = 28,
-            totalFare = 40.0,
+            label = "Cheapest",
+            description = "Tricycle only, longer walk to terminal",
+            totalMinutes = 48,
+            totalFare = 35.0,
+            walkMeters = 950,
+            transfers = 1,
+            generalCost = 91.0,
             steps = listOf(
-                CommuteStep(mode = "Bus", from = origin, to = destination, minutes = 28, fare = 40.0)
+                CommuteStep(mode = "Tricycle", from = origin, to = dest, minutes = 48, fare = 35.0)
             )
         )
     )
