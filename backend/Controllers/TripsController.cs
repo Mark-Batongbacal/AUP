@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using backend.Models.Database;
 using backend.Models.Trips;
+using backend.Repositories;
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,7 +9,9 @@ namespace backend.Controllers;
 
 [ApiController]
 [Route("api/trips")]
-public sealed class TripsController(ITripService tripService) : ControllerBase
+public sealed class TripsController(
+    ITripService tripService,
+    ITripSessionRepository tripSessions) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PassengerTripHistoryItemDto>>> GetHistory(
@@ -20,29 +23,29 @@ public sealed class TripsController(ITripService tripService) : ControllerBase
             return Unauthorized();
         }
 
-        var trips = await tripService.GetPassengerTripsByUserAsync(userId, cancellationToken);
-        var history = new List<PassengerTripHistoryItemDto>(trips.Count);
+        var sessions = await tripSessions.GetOwnedHistoryAsync(userId, cancellationToken);
+        var history = new List<PassengerTripHistoryItemDto>(sessions.Count);
 
-        foreach (var trip in trips.OrderByDescending(item => item.StartedAt ?? item.CreatedAt))
+        foreach (var session in sessions)
         {
             var recommendation = await tripService.GetRecommendationByIdAsync(
-                trip.RecommendationId,
+                session.RecommendationId,
                 cancellationToken);
             var search = recommendation is null
                 ? null
                 : await tripService.GetTripSearchByIdAsync(recommendation.TripSearchId, cancellationToken);
             var recommendationDetails = await tripService.GetRecommendationDetailsAsync(
-                trip.RecommendationId,
+                session.RecommendationId,
                 cancellationToken);
 
             history.Add(new PassengerTripHistoryItemDto(
-                trip.PassengerTripId,
-                trip.Status,
-                search?.OriginName ?? "Unknown origin",
-                search?.DestinationName ?? "Unknown destination",
-                trip.StartedAt,
-                trip.CompletedAt,
-                trip.CreatedAt,
+                session.TripSessionId,
+                session.CurrentNavigationState.ToString(),
+                search?.OriginName ?? "Current location",
+                session.DestinationName ?? search?.DestinationName ?? "Unknown destination",
+                session.StartedAt,
+                session.CompletedAt ?? session.CancelledAt,
+                session.CreatedAt,
                 recommendationDetails));
         }
 
