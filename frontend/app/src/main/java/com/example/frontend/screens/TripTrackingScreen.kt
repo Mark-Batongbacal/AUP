@@ -1,5 +1,6 @@
 package com.example.frontend.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -34,11 +35,17 @@ fun TripTrackingScreen(
     origin: String,
     destination: String,
     routePoints: List<LatLng> = emptyList(),
+    legDestination: LatLng? = null,
     navigationSnapshot: NavigationSnapshotDto? = null,
     navigationError: String? = null,
-    onBack: () -> Unit = {}
+    isNavigationActionInProgress: Boolean = false,
+    onBack: () -> Unit = {},
+    onEndTrip: () -> Unit = {},
+    onConfirmBoarding: () -> Unit = {},
+    onConfirmAlighting: () -> Unit = {}
 ) {
     var showParaPoOverlay by remember { mutableStateOf(false) }
+    var showExitTripDialog by remember { mutableStateOf(false) }
 
     val instruction = navigationSnapshot?.displayInstruction()
         ?: navigationSnapshot?.nextInstruction?.let { next ->
@@ -67,13 +74,27 @@ fun TripTrackingScreen(
         0f
     }
 
-    val canUseParaPo = navigationSnapshot?.requiresAlightingConfirmation == true ||
+    val requiresBoarding = navigationSnapshot?.requiresBoardingConfirmation == true
+    val requiresAlighting = navigationSnapshot?.requiresAlightingConfirmation == true
+    val canUseParaPo = requiresAlighting ||
         navigationSnapshot?.nextInstruction?.type?.contains("alight", ignoreCase = true) == true
+    val hasActiveTrip = navigationSnapshot != null &&
+        !navigationSnapshot.state.equals("Arrived", ignoreCase = true) &&
+        !navigationSnapshot.state.equals("Cancelled", ignoreCase = true)
+
+    fun requestBack() {
+        if (hasActiveTrip) showExitTripDialog = true else onBack()
+    }
+
+    BackHandler(enabled = hasActiveTrip) {
+        showExitTripDialog = true
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         MapScreen(
             routePoints = routePoints,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            selectedDestination = legDestination
         )
 
         Column(
@@ -88,7 +109,7 @@ fun TripTrackingScreen(
                     modifier = Modifier
                         .size(32.dp)
                         .background(TukiCream, RoundedCornerShape(8.dp))
-                        .clickable(onClick = onBack),
+                        .clickable(onClick = ::requestBack),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(text = "‹", color = TukiDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -182,7 +203,7 @@ fun TripTrackingScreen(
                     Surface(
                         modifier = Modifier
                             .size(64.dp)
-                            .clickable(enabled = canUseParaPo) {
+                            .clickable(enabled = canUseParaPo && !isNavigationActionInProgress) {
                                 showParaPoOverlay = true
                             },
                         shape = CircleShape,
@@ -199,6 +220,32 @@ fun TripTrackingScreen(
                                 color = if (canUseParaPo) Color.Unspecified else TukiGray
                             )
                         }
+                    }
+                }
+
+                if (requiresBoarding || requiresAlighting) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = if (requiresBoarding) onConfirmBoarding else onConfirmAlighting,
+                        enabled = !isNavigationActionInProgress,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (requiresBoarding) TukiTeal else TukiOrange,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        if (isNavigationActionInProgress) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text(
+                            text = if (requiresBoarding) "Confirm Board" else "Confirm Alight",
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
@@ -237,5 +284,29 @@ fun TripTrackingScreen(
                 ParaPoOverlay(onDismiss = { showParaPoOverlay = false })
             }
         }
+    }
+
+    if (showExitTripDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitTripDialog = false },
+            title = { Text("Trip is still active") },
+            text = { Text("Going back will not end the navigation session. Continue the trip or end it first?") },
+            confirmButton = {
+                TextButton(
+                    onClick = onEndTrip,
+                    enabled = !isNavigationActionInProgress
+                ) {
+                    Text("End Trip", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showExitTripDialog = false },
+                    enabled = !isNavigationActionInProgress
+                ) {
+                    Text("Continue Trip")
+                }
+            }
+        )
     }
 }
