@@ -35,6 +35,11 @@ data class JeepneyAccessSegmentDto(
     val generalizedCostPesos: Double
 )
 
+data class RouteGeometryPointDto(
+    val latitude: Double,
+    val longitude: Double
+)
+
 data class JeepneyTripLegDto(
     val mode: Int,
     val routeId: String?,
@@ -58,7 +63,8 @@ data class JeepneyTripLegDto(
     val jeepneyDistanceMeters: Double?,
     val jeepneyTimeSeconds: Double?,
     val trikePointId: String?,
-    val trikePointName: String?
+    val trikePointName: String?,
+    val geometry: List<RouteGeometryPointDto> = emptyList()
 )
 
 data class JeepneyTripPlanDto(
@@ -115,6 +121,7 @@ data class JourneyLeg(
     val destination: RouteCoordinate,
     val board: RouteCoordinate,
     val alight: RouteCoordinate,
+    val geometry: List<RouteCoordinate>,
     val distanceMeters: Double,
     val durationSeconds: Double,
     val farePesos: Double,
@@ -134,6 +141,9 @@ fun JeepneyTripPlanDto.toDomain() = JourneyPlan(
             destination = RouteCoordinate(leg.destinationLatitude, leg.destinationLongitude),
             board = RouteCoordinate(leg.boardLatitude, leg.boardLongitude),
             alight = RouteCoordinate(leg.alightLatitude, leg.alightLongitude),
+            geometry = leg.geometry.map { point ->
+                RouteCoordinate(point.latitude, point.longitude)
+            },
             distanceMeters = leg.distanceMeters,
             durationSeconds = leg.durationSeconds,
             farePesos = leg.farePesos,

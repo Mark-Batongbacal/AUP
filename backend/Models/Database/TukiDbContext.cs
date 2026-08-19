@@ -25,6 +25,10 @@ public partial class TukiDbContext : DbContext
 
     public virtual DbSet<FavoriteTrip> FavoriteTrips { get; set; }
 
+    public virtual DbSet<EmailVerificationToken> EmailVerificationTokens { get; set; }
+
+    public virtual DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
+
     public virtual DbSet<PassengerRideRequest> PassengerRideRequests { get; set; }
 
     public virtual DbSet<PassengerTrip> PassengerTrips { get; set; }
@@ -92,6 +96,8 @@ public partial class TukiDbContext : DbContext
         ConfigurePassengerTrips(modelBuilder);
         ConfigureTripAlerts(modelBuilder);
         ConfigureFavoriteTrips(modelBuilder);
+        ConfigureEmailVerificationTokens(modelBuilder);
+        ConfigurePasswordResetTokens(modelBuilder);
         ConfigureChatConversations(modelBuilder);
         ConfigureChatMessages(modelBuilder);
 
@@ -120,6 +126,7 @@ public partial class TukiDbContext : DbContext
             entity.Property(e => e.Role).HasMaxLength(30).HasDefaultValue("Passenger");
             entity.Property(e => e.ProfileImageUrl).HasMaxLength(500);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.IsEmailVerified).HasDefaultValue(false);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())");
         });
@@ -965,6 +972,50 @@ public partial class TukiDbContext : DbContext
                 .HasForeignKey(e => e.RecommendationId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("FK_FavoriteTrips_RouteRecommendations");
+        });
+    }
+
+    private static void ConfigureEmailVerificationTokens(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<EmailVerificationToken>(entity =>
+        {
+            entity.ToTable("EmailVerificationTokens", "dbo");
+            entity.HasKey(e => e.EmailVerificationTokenId);
+
+            entity.HasIndex(e => e.UserId, "IX_EmailVerificationTokens_User");
+            entity.HasIndex(e => e.TokenHash, "UX_EmailVerificationTokens_TokenHash").IsUnique();
+
+            entity.Property(e => e.EmailVerificationTokenId).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.TokenHash).HasMaxLength(128);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_EmailVerificationTokens_UserProfiles");
+        });
+    }
+
+    private static void ConfigurePasswordResetTokens(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<PasswordResetToken>(entity =>
+        {
+            entity.ToTable("PasswordResetTokens", "dbo");
+            entity.HasKey(e => e.PasswordResetTokenId);
+
+            entity.HasIndex(e => e.UserId, "IX_PasswordResetTokens_User");
+            entity.HasIndex(e => e.TokenHash, "UX_PasswordResetTokens_TokenHash").IsUnique();
+
+            entity.Property(e => e.PasswordResetTokenId).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.TokenHash).HasMaxLength(128);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_PasswordResetTokens_UserProfiles");
         });
     }
 

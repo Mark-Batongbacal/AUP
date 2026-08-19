@@ -1,8 +1,6 @@
 package com.example.frontend
 
-import androidx.compose.runtime.Composable
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.GoogleMapComposable
+import org.maplibre.android.geometry.LatLng
 
 /**
  * Temporary mock coordinates for verifying only that markers and polylines render.
@@ -19,16 +17,5 @@ object TemporaryMapSamples {
         LatLng(15.1464, 120.5902),
         LatLng(15.1478, 120.5916),
         LatLng(15.1492, 120.5930)
-    )
-}
-
-@Composable
-@GoogleMapComposable
-fun TemporaryMapSampleMarker() {
-    MapMarker(
-        latitude = TemporaryMapSamples.marker.latitude,
-        longitude = TemporaryMapSamples.marker.longitude,
-        title = "Temporary map test point",
-        snippet = "Mock coordinate only; remove when real transport data is available."
     )
 }

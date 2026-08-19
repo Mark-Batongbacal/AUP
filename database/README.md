@@ -32,6 +32,11 @@ restarting the updated backend. This focused script is transactional and
 idempotent. Its final result set reports a non-null byte length for each required
 column.
 
+For favorite trips, run `migrations/20260819_FavoriteTrips.sql`. For email
+verification and password reset, run
+`migrations/20260820_EmailVerificationAndPasswordReset.sql`. Both are
+transactional and idempotent, following the same pattern as the migration above.
+
 Deployments do not modify production schema automatically. Database upgrades
 must be applied explicitly before application code that maps the new columns is
 started.

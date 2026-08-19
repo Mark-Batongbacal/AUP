@@ -9,6 +9,10 @@ public sealed record TrikePoint(
     double Latitude,
     double Longitude);
 
+public sealed record RouteGeometryPoint(
+    double Latitude,
+    double Longitude);
+
 public enum AccessMode
 {
     Walk,
@@ -75,6 +79,7 @@ public sealed class JeepneyTripLeg
     public double? JeepneyTimeSeconds { get; init; }
     public string? TrikePointId { get; init; }
     public string? TrikePointName { get; init; }
+    public List<RouteGeometryPoint> Geometry { get; set; } = [];
 }
 
 public sealed class JeepneyTripPlan
