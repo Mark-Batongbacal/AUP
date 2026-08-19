@@ -19,6 +19,7 @@ import com.example.frontend.auth.GoogleSignInResult
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.auth.RegisterRequest
+import com.example.frontend.data.users.UserProfileDto
 import com.example.frontend.model.FavoriteRoute
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.navigation.AppScreen
@@ -79,6 +80,10 @@ fun TukiApp(
         mutableStateOf(if (hasStoredSession) AppScreen.HOME else AppScreen.ONBOARDING)
     }
 
+    var currentUserProfile by remember {
+        mutableStateOf<UserProfileDto?>(null)
+    }
+
     LaunchedEffect(hasStoredSession) {
         if (hasStoredSession) {
             when (authRepository.getCurrentAuthIdentity()) {
@@ -105,6 +110,18 @@ fun TukiApp(
     }
 
     LaunchedEffect(currentScreen) {
+        if (currentScreen == AppScreen.HOME || currentScreen == AppScreen.PROFILE) {
+            when (val result = dataProvider.userRepository.getCurrentUser()) {
+                is ApiResult.Success -> currentUserProfile = result.data
+                is ApiResult.Failure -> {
+                    if (result.isUnauthorized) {
+                        currentUserProfile = null
+                        currentScreen = AppScreen.LOGIN
+                    }
+                }
+            }
+        }
+
         if (currentScreen == AppScreen.FAVORITES) {
             when (val result = dataProvider.favoritesRepository.getFavorites()) {
                 is ApiResult.Success -> favorites = result.data.map { dto ->
@@ -120,6 +137,18 @@ fun TukiApp(
             }
         }
     }
+
+    val profileDisplayName = currentUserProfile?.let { profile ->
+        listOfNotNull(
+            profile.firstName?.trim()?.takeIf { it.isNotEmpty() },
+            profile.lastName?.trim()?.takeIf { it.isNotEmpty() }
+        ).joinToString(" ")
+    }?.takeIf { it.isNotBlank() } ?: "User"
+
+    val greetingName = currentUserProfile?.firstName
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: profileDisplayName.substringBefore(' ')
 
     when (currentScreen) {
         AppScreen.ONBOARDING -> {
@@ -244,6 +273,7 @@ fun TukiApp(
 
         AppScreen.HOME -> {
             HomeScreen(
+                userName = greetingName,
                 onSearchDestination = { origin, destination ->
                     searchOrigin = origin
                     searchDestination = destination
@@ -291,11 +321,16 @@ fun TukiApp(
 
         AppScreen.PROFILE -> {
             ProfileScreen(
+                userName = profileDisplayName,
+                userEmail = currentUserProfile?.email.orEmpty(),
+                tripsTaken = currentUserProfile?.tripsTaken ?: 0,
+                favoritesCount = currentUserProfile?.favoritesCount ?: 0,
                 onBack = {
                     currentScreen = AppScreen.HOME
                 },
                 onLogoutClick = {
                     authRepository.logoutLocalSession()
+                    currentUserProfile = null
                     currentScreen = AppScreen.LOGIN
                 },
                 onHomeClick = {
