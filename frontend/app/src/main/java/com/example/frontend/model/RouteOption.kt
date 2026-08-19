@@ -1,5 +1,10 @@
 package com.example.frontend.model
 
+data class RoutePoint(
+    val latitude: Double,
+    val longitude: Double
+)
+
 class RouteOption (
     val id: String,
     val label: String,
@@ -10,5 +15,6 @@ class RouteOption (
     val walkMeters: Int = 0,
     val transfers: Int = 0,
     val generalCost: Double = totalFare, // fare + time-value estimate shown on the carousel
-    val isRecommended: Boolean = false
+    val isRecommended: Boolean = false,
+    val routePoints: List<RoutePoint> = emptyList()
 )
