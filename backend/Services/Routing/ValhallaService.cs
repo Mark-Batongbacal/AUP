@@ -8,16 +8,29 @@ namespace backend.Services.Routing;
 
 public class ValhallaService : IValhallaService
 {
+    private const int DefaultMaxConcurrentRequests = 5;
+
     private readonly HttpClient _httpClient;
-
-    private readonly SemaphoreSlim _semaphore = new(5);
-
+    private readonly SemaphoreSlim _semaphore;
     private readonly ITukiTelemetry _telemetry;
 
-    public ValhallaService(HttpClient httpClient, ITukiTelemetry? telemetry = null)
+    public ValhallaService(
+        HttpClient httpClient,
+        IConfiguration configuration,
+        ITukiTelemetry? telemetry = null)
     {
         _httpClient = httpClient;
         _telemetry = telemetry ?? NullTukiTelemetry.Instance;
+
+        var configuredConcurrency = configuration.GetValue<int?>(
+            "Valhalla:MaxConcurrentRequests");
+        var maxConcurrentRequests = configuredConcurrency is > 0
+            ? configuredConcurrency.Value
+            : DefaultMaxConcurrentRequests;
+
+        _semaphore = new SemaphoreSlim(
+            maxConcurrentRequests,
+            maxConcurrentRequests);
     }
 
     public async Task<ValhallaRouteResponse> GetRouteAsync(
@@ -78,57 +91,15 @@ public class ValhallaService : IValhallaService
         return route;
     }
 
-//     public async Task<ValhallaRouteResponse> GetRouteAsync(
-//     double startLatitude,
-//     double startLongitude,
-//     double endLatitude,
-//     double endLongitude,
-//     string costing = "car",
-//     CancellationToken cancellationToken = default)
-// {
-//     var request = new ValhallaRouteRequest
-//     {
-//         Locations =
-//         [
-//             new ValhallaLocation
-//             {
-//                 Lat = startLatitude,
-//                 Lon = startLongitude
-//             },
-//             new ValhallaLocation
-//             {
-//                 Lat = endLatitude,
-//                 Lon = endLongitude
-//             }
-//         ],
-//         Costing = costing
-//     };
-
-//     var response = await _httpClient.PostAsJsonAsync(
-//         "/route",
-//         request,
-//         cancellationToken);
-
-//     response.EnsureSuccessStatusCode();
-
-//     return await response.Content
-//         .ReadFromJsonAsync<ValhallaRouteResponse>(cancellationToken)
-//         ?? throw new InvalidOperationException(
-//             "Valhalla returned an empty response.");
-// }
-
-
     public async Task<IReadOnlyList<ValhallaMatrixResult>> GetMatrixAsync(
         ValhallaLocation source,
         IReadOnlyList<ValhallaLocation> targets,
         string costing = "pedestrian",
         CancellationToken cancellationToken = default)
     {
-        
-        
         if (targets.Count == 0)
             return [];
-        
+
         var request = new ValhallaMatrixRequest
         {
             Sources = [source],
