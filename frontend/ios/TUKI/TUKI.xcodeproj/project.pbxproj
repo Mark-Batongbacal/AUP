@@ -398,6 +398,7 @@
 		};
 		DCBB7E673033F1610059A8C3 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = DC28C3A4303562EA00450666 /* Secrets.generated.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

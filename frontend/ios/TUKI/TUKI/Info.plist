@@ -39,6 +39,24 @@
 		<string>fbshareextension</string>
 	</array>
 	<key>TukiBackendBaseURL</key>
-	<string>http://127.0.0.1:5129/</string>
+	<string>$(BACKEND_BASE_URL)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>tuki-api.japaneast.cloudapp.azure.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>
