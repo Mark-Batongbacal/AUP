@@ -15,6 +15,8 @@ public sealed class NavigationOptions
     public double MinimumLandmarkSeparationMeters { get; init; } = 250;
     public int MaximumLandmarksPerLeg { get; init; } = 5;
     public double LandmarkLookbackFromAlightMeters { get; init; } = 1_500;
+    public double BoardReferenceMaximumDistanceMeters { get; init; } = 300;
+    public double MinimumAlightReferenceLeadMeters { get; init; } = 15;
     public string TricycleRoadCosting { get; init; } = "auto";
     public double WalkingOffRouteMeters { get; init; } = 60;
     public double TransitOffRouteMeters { get; init; } = 150;
@@ -28,7 +30,8 @@ public sealed class NavigationOptions
         MaxForwardProgressMetersPerUpdate > 0 && StateConfirmationSamples >= 2 &&
         PrepareToAlightDistanceMeters > 0 && ArrivalDistanceMeters > 0 &&
         MaximumLandmarkProjectionMeters > 0 && MinimumLandmarkSeparationMeters >= 0 &&
-        MaximumLandmarksPerLeg > 0 && LandmarkLookbackFromAlightMeters > 0 &&
+        MaximumLandmarksPerLeg >= 2 && LandmarkLookbackFromAlightMeters > 0 &&
+        BoardReferenceMaximumDistanceMeters > 0 && MinimumAlightReferenceLeadMeters >= 0 &&
         !string.IsNullOrWhiteSpace(TricycleRoadCosting) &&
         WalkingOffRouteMeters > 0 && TransitOffRouteMeters > 0 &&
         OffRouteDurationSeconds >= 0 && MinimumOffRouteSamples >= 2 &&

@@ -42,6 +42,8 @@ public sealed class TripSession
     public DateTime? OffRouteSuspectedAt { get; set; }
     public string? LastRerouteReason { get; set; }
     public string? LastNavigationStatus { get; set; }
+    public string? LastSpeechEventKey { get; set; }
+    public string? LastSpokenInstruction { get; set; }
     public DateTime? CompletedAt { get; set; }
     public DateTime? CancelledAt { get; set; }
     public decimal? OriginalBudget { get; set; }

@@ -10,6 +10,9 @@
 .cxx
 local.properties
 
+ios/TUKI/Secrets.generated.xcconfig
+ios/TUKI/Config/Secrets.generated.xcconfig
+
 # Xcode user-specific files
 **/xcuserdata/
 *.xcuserstate

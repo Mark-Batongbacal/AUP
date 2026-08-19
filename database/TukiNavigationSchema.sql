@@ -29,6 +29,8 @@ BEGIN TRY
             OffRouteSuspectedAt datetime2(7) NULL,
             LastRerouteReason nvarchar(50) NULL,
             LastNavigationStatus nvarchar(50) NULL,
+            LastSpeechEventKey nvarchar(250) NULL,
+            LastSpokenInstruction nvarchar(500) NULL,
             CompletedAt datetime2(7) NULL,
             CancelledAt datetime2(7) NULL,
             OriginalBudget decimal(10,2) NULL,
@@ -84,9 +86,12 @@ BEGIN TRY
             ExternalPlaceId nvarchar(250) NOT NULL,
             Name nvarchar(200) NOT NULL,
             Category nvarchar(50) NOT NULL,
+            [Role] nvarchar(30) NOT NULL CONSTRAINT DF_TripLandmarkCandidates_Role DEFAULT ('ProgressReference'),
+            Relation nvarchar(30) NOT NULL CONSTRAINT DF_TripLandmarkCandidates_Relation DEFAULT ('AlongRoute'),
             Latitude float NOT NULL,
             Longitude float NOT NULL,
             DistanceFromRouteStartMeters float NOT NULL,
+            DistanceFromTargetMeters float NOT NULL CONSTRAINT DF_TripLandmarkCandidates_TargetDistance DEFAULT (0),
             TriggerBeforeMeters float NOT NULL,
             TriggerAfterMeters float NOT NULL,
             CachedAt datetime2(7) NOT NULL CONSTRAINT DF_TripLandmarkCandidates_CachedAt DEFAULT (sysutcdatetime()),
@@ -100,6 +105,20 @@ BEGIN TRY
         CREATE UNIQUE INDEX UX_TripLandmarkCandidates_SessionLegPlace
             ON dbo.TripLandmarkCandidates (TripSessionId, LegIndex, ExternalPlaceId);
     END;
+
+    IF COL_LENGTH(N'dbo.TripSessions', N'LastSpeechEventKey') IS NULL
+        ALTER TABLE dbo.TripSessions ADD LastSpeechEventKey nvarchar(250) NULL;
+    IF COL_LENGTH(N'dbo.TripSessions', N'LastSpokenInstruction') IS NULL
+        ALTER TABLE dbo.TripSessions ADD LastSpokenInstruction nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.TripLandmarkCandidates', N'Role') IS NULL
+        ALTER TABLE dbo.TripLandmarkCandidates ADD [Role] nvarchar(30) NOT NULL
+            CONSTRAINT DF_TripLandmarkCandidates_Role_Upgrade DEFAULT ('ProgressReference');
+    IF COL_LENGTH(N'dbo.TripLandmarkCandidates', N'Relation') IS NULL
+        ALTER TABLE dbo.TripLandmarkCandidates ADD Relation nvarchar(30) NOT NULL
+            CONSTRAINT DF_TripLandmarkCandidates_Relation_Upgrade DEFAULT ('AlongRoute');
+    IF COL_LENGTH(N'dbo.TripLandmarkCandidates', N'DistanceFromTargetMeters') IS NULL
+        ALTER TABLE dbo.TripLandmarkCandidates ADD DistanceFromTargetMeters float NOT NULL
+            CONSTRAINT DF_TripLandmarkCandidates_TargetDistance_Upgrade DEFAULT (0);
 
     COMMIT TRANSACTION;
 END TRY

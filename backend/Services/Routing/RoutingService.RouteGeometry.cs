@@ -137,9 +137,80 @@ public partial class RoutingService
                         candidate.DistanceMeters);
                 }
             }
+
+            AddSelfInterchanges(routeIds[i]);
         }
 
         return edgesByRoute;
+
+        void AddSelfInterchanges(string routeId)
+        {
+            var samples = routeSamples[routeId];
+            var anchors = _routeSearchAnchors[routeId];
+            var candidates = new List<InterchangePairCandidate>();
+
+            // Both resulting jeepney legs need positive forward progress, so
+            // endpoint pairs cannot produce a usable self-transfer and must
+            // not consume the per-route interchange cap.
+            for (var fromIndex = 1; fromIndex < samples.Count - 1; fromIndex++)
+            {
+                for (var toIndex = fromIndex + 1;
+                     toIndex < samples.Count - 1;
+                     toIndex++)
+                {
+                    var skippedRouteMeters = anchors[toIndex]
+                        .DistanceFromRouteStartMeters - anchors[fromIndex]
+                        .DistanceFromRouteStartMeters;
+                    if (skippedRouteMeters < MinimumSelfTransferProgressMeters)
+                        continue;
+
+                    var shortcutMeters = ApproximateDistanceMeters(
+                        samples[fromIndex].Latitude,
+                        samples[fromIndex].Longitude,
+                        samples[toIndex].Latitude,
+                        samples[toIndex].Longitude);
+                    if (shortcutMeters > MaxTransferWalkMeters ||
+                        skippedRouteMeters < shortcutMeters *
+                            MinimumSelfTransferRouteToWalkRatio)
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(new InterchangePairCandidate(
+                        fromIndex, toIndex, shortcutMeters));
+                }
+            }
+
+            candidates.Sort((left, right) =>
+                left.DistanceMeters.CompareTo(right.DistanceMeters));
+            var selected = new List<InterchangePairCandidate>();
+            foreach (var candidate in candidates)
+            {
+                if (selected.Any(existing =>
+                        IsSameInterchangeArea(candidate, existing)))
+                {
+                    continue;
+                }
+
+                selected.Add(candidate);
+                if (selected.Count >= MaxInterchangesPerRoutePair)
+                    break;
+            }
+
+            foreach (var candidate in selected)
+            {
+                // A self-interchange is intentionally directed. It models
+                // leaving one vehicle and boarding another farther forward on
+                // the same service, never backward travel on either vehicle.
+                AddEdge(
+                    routeId,
+                    candidate.IndexA,
+                    routeId,
+                    routeNamesById[routeId],
+                    candidate.IndexB,
+                    candidate.DistanceMeters);
+            }
+        }
     }
 
     private static bool IsSameInterchangeArea(

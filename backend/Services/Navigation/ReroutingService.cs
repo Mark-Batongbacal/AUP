@@ -75,6 +75,21 @@ public sealed class ReroutingService(
             await sessions.UpdateAsync(session, cancellationToken);
             await instructions.GenerateAsync(session, cancellationToken);
             await landmarkPrefetch.PrefetchAsync(session, cancellationToken);
+            var reroutedLegs = await recommendations.GetOrderedLegsAsync(
+                session.RecommendationId, cancellationToken);
+            var firstLeg = reroutedLegs.OrderBy(item => item.LegOrder).FirstOrDefault();
+            if (firstLeg is null)
+                throw new InvalidOperationException("Reroute produced no journey legs.");
+            var resumedState = IsWalking(firstLeg)
+                ? (reroutedLegs.Count == 1
+                    ? TripNavigationState.WalkingToDestination
+                    : TripNavigationState.WalkingToPickup)
+                : TripNavigationState.WaitingToBoard;
+            if (!stateMachine.CanTransition(session.CurrentNavigationState, resumedState))
+                throw new InvalidOperationException("Reroute produced an invalid resumed state.");
+            session.CurrentNavigationState = resumedState;
+            session.UpdatedAt = DateTime.UtcNow;
+            await sessions.UpdateAsync(session, cancellationToken);
             _telemetry.Event("RerouteSucceeded", sessionId);
             return new(true, "REROUTE_SUCCEEDED", recommendation.RecommendationId);
         }
@@ -138,4 +153,7 @@ public sealed class ReroutingService(
         }
         return recommendation;
     }
+
+    private static bool IsWalking(RecommendationLeg leg) =>
+        leg.TransportMode?.Code is "WALK" or "WALKING" or "PEDESTRIAN";
 }

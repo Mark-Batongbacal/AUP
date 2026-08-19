@@ -1,185 +1,85 @@
-# @backend_HostAddress = http://tuki-api.japaneast.cloudapp.azure.com:5129
-@backend_HostAddress = http://localhost:5129
-@apiKey = REPLACE_AFTER_LOGIN
+# ==============================================================================
+# TUKI BACKEND HTTP SCRATCHPAD
+# Branch contract: dev
+# ==============================================================================
+#
+# Recommended passenger flow:
+#   1) Login
+#   2) Search destination (optional)
+#   3) POST /api/journeys/plan
+#   4) POST /api/navigation/start
+#   5) POST /api/navigation/{sessionId}/location repeatedly
+#   6) Confirm boarding/alighting only when requested by the snapshot
+#
+# Legacy Trips / TripSessions endpoints are kept near the bottom for diagnostics.
+#
+# IMPORTANT:
+# - Copy apiKey from login/register into @apiKey.
+# - Copy recommendationId from /api/journeys/plan into @recommendationId.
+# - Copy sessionId from /api/navigation/start into @sessionId.
+# ==============================================================================
 
-###
+
+# ==============================================================================
+# 00 — ENVIRONMENT / VARIABLES
+# ==============================================================================
+
+# @host = http://localhost:5129
+@host = http://tuki-api.japaneast.cloudapp.azure.com:5129
+
+@apiKey = REPLACE
+
+# Common Porac -> Angeles sample 15.136824336548178, 120.58674703311
+@originLat = 15.12254950605129
+@originLon = 120.5997480979361
+# @originLat = 15.109698583445889
+# @originLon = 120.58240903543013
 
 
-GET {{backend_HostAddress}}/health
+@destinationLat = 15.139582098206548
+@destinationLon = 120.60108373338038
+@destinationName = Diegs
+
+# Replace from API responses
+@recommendationId = 7211433e-f36b-1410-8642-00e4c9b18fbc
+@sessionId = 6d13433e-f36b-1410-8642-00e4c9b18fbc
+@tripId = 3a12433e-f36b-1410-8642-00e4c9b18fbc
+@driverId = 00000000-0000-0000-0000-000000000000
+@vehicleId = 00000000-0000-0000-0000-000000000000
+@rideRequestId = 00000000-0000-0000-0000-000000000000
+@rideMatchId = 00000000-0000-0000-0000-000000000000
+
+@routeId = 1
+@tricyclePointId = 1
+
+
+# ==============================================================================
+# 01 — HEALTH
+# ==============================================================================
+
+### Health — anonymous
+GET {{host}}/health
 Accept: application/json
 
 
-###
+# ==============================================================================
+# 02 — AUTHENTICATION
+# ==============================================================================
 
-
-GET {{backend_HostAddress}}/api/transport-routes
-Accept: application/json
-X-API-Key: {{apiKey}}
-
-
-
-
-###
-
-
-GET {{backend_HostAddress}}/api/auth/me
-X-Api-Key: {{apiKey}}
-
-
-###
-
-
-
-
-###
-
-
-POST {{backend_HostAddress}}/api/AI/ask
+### Login
+# Copy response.apiKey into @apiKey above.
+POST {{host}}/api/auth/login
 Content-Type: application/json
 Accept: application/json
-X-API-Key: {{apiKey}}
 
 {
-  "message": "in a toucan way no actions happily say that The user has arrived and need to say para \"po\" to the jeepney driver"
-}
-
-
-
-
-###
-
-GET {{backend_HostAddress}}/api/routes/sample
-Accept: application/json
-X-Api-Key: {{apiKey}}
-
-###
-
-#15.133571860629802, 120.5918348033621, 15.135000550179296, 120.59286188742757, 15.135949438010659, 120.59146345506142,15.145651633568074, 120.59514537259685
-
-### Test Valhalla
-GET {{backend_HostAddress}}/api/test/valhalla/route?startLat=15.135949438010659&startLon=120.59146345506142&endLat=15.145651633568074&endLon=120.59514537259685
-Accept: application/json
-X-Api-Key: {{apiKey}}
-
-###
-
-GET {{backend_HostAddress}}/api/test/jeepney/nearby?lat=15.109996&lon=120.582100
-Accept: application/json
-X-Api-Key: {{apiKey}}
-
-###
-
-GET {{backend_HostAddress}}/api/test/jeepney/nearby?lat=15.141025980008507&lon=120.52094205653685
-Accept: application/json
-X-Api-Key: {{apiKey}}
-
-
-
-###
-
-@apiKey = REPLACE_AFTER_LOGIN
-
-###porac -> diegs originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
-###diegs -> porac originLat=15.139582098206548&originLon=120.60108373338038&destinationLat=15.109698583445889&destinationLon=120.58240903543013
-#15.108412470090252, 120.59402071981998
-GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.139582098206548&destinationLon=120.60108373338038
-Accept: application/json
-X-API-Key: {{apiKey}}
-
-###15.109215294463528, 120.59148114230783
-
-# Direct-route candidate test: walk and walk-to-trike should be returned with
-# jeepney options and ranked by generalized cost.
-GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.110100&destinationLon=120.582900
-Accept: application/json
-X-API-Key: {{apiKey}}
-
-###
-
-POST {{backend_HostAddress}}/api/auth/login
-Content-Type: application/json
-
-{
-  // Change the number in the index to select a different user from the .env file
   "userName": "{{$dotenv Login__Users__0__UserName}}",
   "password": "{{$dotenv Login__Users__0__Password}}"
 }
 
-###
 
-POST {{backend_HostAddress}}/api/auth/google
-Content-Type: application/json
-
-{
-  "idToken": "INVALID_TEST_TOKEN"
-}
-
-###
-
-POST {{backend_HostAddress}}/api/auth/facebook
-Content-Type: application/json
-
-{
-  "accessToken": "INVALID_TEST_TOKEN"
-}
-
-###
-
-### Generate each consecutive waypoint segment through Valhalla, then create
-### the jeepney route and its ordered geometry in one database write
-POST {{backend_HostAddress}}/api/transport-routes
-Content-Type: application/json
-Accept: application/json
-X-API-Key: {{apiKey}}
-
-{
-  "routeCode": "JEEP-SAMPLE-01",
-  "routeName": "Sample Jeepney Route",
-  "originName": "Sample Origin",
-  "destinationName": "Sample Destination",
-  "description": "Generated through Valhalla from ordered waypoints",
-  "baseFare": 13,
-  "points": [
-  [15.169377198609359, 120.58742919718586],
-  [15.153593638458716, 120.59199321409343],
-  [15.137020841985489, 120.58648839309423],
-  [15.13352281646842, 120.59193626047843],
-  [15.135054463843517, 120.59296855755103],
-  [15.135977137640078, 120.59153481161687],
-  [15.145740649615238, 120.5951524696042],
-  [15.168376954929752, 120.58433902456976],
-  [15.166732688251642, 120.57944465448676],
-  [15.166258325465854, 120.57740906289526]
-]
-}
-
-###
-
-### Add a validated tricycle pickup/service point
-POST {{backend_HostAddress}}/api/tricycle-points
-Content-Type: application/json
-Accept: application/json
-X-API-Key: {{apiKey}}
-
-{
-  "pointCode": "TRIKE-SAMPLE-04",
-  "pointName": "Sample TODA Terminal",
-  "description": "Main tricycle pickup point",
-  "address": "Angeles, Pampanga",
-  "operatorName": "Sample TODA",
-  "coordinates": [15.143206444551234, 120.59700895122185],
-  "radiusMeters": 500,
-  "baseFare": 35,
-  "farePerKilometer": 15,
-  "averageWaitingTimeSeconds": 300,
-  "serviceStartTime": "05:00:00",
-  "serviceEndTime": "23:00:00",
-  "isActive": true
-}
-
-### Register the configured .env account in UserProfiles
-# Run this once before login/protected requests when the profile does not exist.
-POST {{backend_HostAddress}}/api/auth/register
+### Register configured local account
+POST {{host}}/api/auth/register
 Content-Type: application/json
 Accept: application/json
 
@@ -191,192 +91,700 @@ Accept: application/json
   "phoneNumber": null
 }
 
-###############################################################################
-# Tuki phases 2-8 test endpoints
-# These requests reuse your existing backend_HostAddress and apiKey variables.
-# Run place search or AI planning first. If AI returns JOURNEYS_AVAILABLE, copy a
-# journeyId below before testing the TripSession lifecycle.
-###############################################################################
 
-@tukiOriginLat = 15.109698583445889
-@tukiOriginLon = 120.58240903543013
-@tukiDestinationLat = 15.139582098206548
-@tukiDestinationLon = 120.60108373338038
-# Replace after AI returns JOURNEYS_AVAILABLE: journeys[0].journeyId
-@tukiRecommendationId = 140e433e-f36b-1410-8642-00e4c9b18fbc
-# Replace after Create TripSession returns HTTP 201: tripSessionId
-@tukiTripSessionId = 6b0e433e-f36b-1410-8642-00e4c9b18fbc
-# For simulated alighting, copy the latitude/longitude from the generated
-# PrepareToAlight instruction. Do not leave these at zero when sending updates.
-@tukiTestAlightLat = 15.136742
-@tukiTestAlightLon = 120.58635
-
-### Pelias destination autocomplete through Tuki
-GET {{backend_HostAddress}}/api/places/search?q=SM%20City%20Clark&focusLat={{tukiOriginLat}}&focusLon={{tukiOriginLon}}
+### Auth identity
+GET {{host}}/api/auth/me
 Accept: application/json
-X-API-Key: {{apiKey}}
+X-Api-Key: {{apiKey}}
 
-### Deterministic route planning, including graph-based transfers
-GET {{backend_HostAddress}}/api/test/jeepney/plan?originLat={{tukiOriginLat}}&originLon={{tukiOriginLon}}&destinationLat={{tukiDestinationLat}}&destinationLon={{tukiDestinationLon}}
-Accept: application/json
-X-API-Key: {{apiKey}}
 
-### Grounded AI route planning
-# A successful response stores each option and returns its recommendation ID as
-# journeys[n].journeyId. Copy one into tukiRecommendationId above.
-POST {{backend_HostAddress}}/api/AI/ask
+### Google login — replace with a real ID token
+POST {{host}}/api/auth/google
 Content-Type: application/json
 Accept: application/json
-X-API-Key: {{apiKey}}
 
 {
-  "message": "Plan a route to SM City Clark with a budget of 100 pesos",
-  "originLatitude": {{tukiOriginLat}},
-  "originLongitude": {{tukiOriginLon}}
+  "idToken": "REPLACE_WITH_GOOGLE_ID_TOKEN"
 }
 
-### Grounded AI route planning with an explicit Pelias selection
-# Use this when AI planning returns DESTINATION_AMBIGUOUS. Copy one destination
-# id from that response into destinationId.
-POST {{backend_HostAddress}}/api/AI/ask
+
+### Facebook login — Android / access token
+POST {{host}}/api/auth/facebook
 Content-Type: application/json
 Accept: application/json
-X-API-Key: {{apiKey}}
 
 {
-  "message": "Plan a route to SM City Clark with a budget of 100 pesos",
-  "originLatitude": {{tukiOriginLat}},
-  "originLongitude": {{tukiOriginLon}},
-  "destinationId": "openstreetmap:venue:relation/15655696"
+  "accessToken": "REPLACE_WITH_FACEBOOK_ACCESS_TOKEN"
 }
 
-### Grounded AI lost/status question
-# Uses the authenticated user's active trip when tripSessionId is omitted.
-POST {{backend_HostAddress}}/api/AI/ask
+
+### Facebook OIDC login
+POST {{host}}/api/auth/facebook/oidc
 Content-Type: application/json
 Accept: application/json
-X-API-Key: {{apiKey}}
 
 {
-  "message": "Am I still going the right way?"
+  "idToken": "REPLACE_WITH_FACEBOOK_OIDC_ID_TOKEN",
+  "nonce": "REPLACE_WITH_NONCE"
 }
 
-### Create TripSession from an owned stored recommendation
-# Replace tukiRecommendationId with a journeyId returned by AI planning.
-POST {{backend_HostAddress}}/api/tripsessions
+
+# ==============================================================================
+# 03 — CURRENT USER
+# ==============================================================================
+
+### Get current profile
+GET {{host}}/api/users/me
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Update current profile
+PUT {{host}}/api/users/me
 Content-Type: application/json
 Accept: application/json
-X-API-Key: {{apiKey}}
+X-Api-Key: {{apiKey}}
 
 {
-  "recommendationId": "{{tukiRecommendationId}}"
+  "firstName": "Mark",
+  "lastName": "Batongbacal",
+  "phoneNumber": null,
+  "profileImageUrl": null
 }
 
-### Get the authenticated user's active TripSession
-GET {{backend_HostAddress}}/api/tripsessions/active
-Accept: application/json
-X-API-Key: {{apiKey}}
 
-### Get TripSession by ID
-# Copy tripSessionId from the create/active response into tukiTripSessionId.
-GET {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}
-Accept: application/json
-X-API-Key: {{apiKey}}
+# ==============================================================================
+# 04 — DESTINATION / PLACE SEARCH
+# ==============================================================================
 
-### Start navigation
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/start
+### Search destination near current origin
+GET {{host}}/api/places/search?q=jollibee&focusLat={{destinationLat}}&focusLon={{destinationLon}}
 Accept: application/json
-X-API-Key: {{apiKey}}
+X-Api-Key: {{apiKey}}
 
-### Get generated navigation instructions
-GET {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/instructions
+
+### Search without focus coordinates
+GET {{host}}/api/places/search?q=jollibee
 Accept: application/json
-X-API-Key: {{apiKey}}
+X-Api-Key: {{apiKey}}
 
-### Submit a good GPS update for map matching and progress
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/location
+
+# ==============================================================================
+# 05 — JOURNEY PLANNING — RECOMMENDED MOBILE FLOW
+# ==============================================================================
+#
+# This endpoint BOTH:
+# - calculates plans
+# - persists startable recommendations
+#
+# Copy one response[].recommendationId into @recommendationId.
+# ==============================================================================
+
+### Plan + persist journey recommendations
+POST {{host}}/api/journeys/plan
 Content-Type: application/json
 Accept: application/json
-X-API-Key: {{apiKey}}
+X-Api-Key: {{apiKey}}
 
 {
-  "latitude": {{tukiOriginLat}},
-  "longitude": {{tukiOriginLon}},
+  "originLatitude": {{originLat}},
+  "originLongitude": {{originLon}},
+  "destinationName": "{{destinationName}}",
+  "destinationLatitude": {{destinationLat}},
+  "destinationLongitude": {{destinationLon}},
+  "budget": 100,
+  "preference": "efficient"
+}
+
+
+### Plan + persist — no budget/preference
+POST {{host}}/api/journeys/plan
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "originLatitude": {{originLat}},
+  "originLongitude": {{originLon}},
+  "destinationName": "{{destinationName}}",
+  "destinationLatitude": {{destinationLat}},
+  "destinationLongitude": {{destinationLon}}
+}
+
+
+# ==============================================================================
+# 06 — LIVE NAVIGATION — RECOMMENDED MOBILE FLOW
+# ==============================================================================
+#
+# /start creates + starts the TripSession internally.
+# It should also generate deterministic instructions, prefetch landmarks,
+# and return one complete NavigationSnapshot.
+#
+# Copy response.sessionId into @sessionId.
+# ==============================================================================
+
+### Start selected recommendation
+POST {{host}}/api/navigation/start
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "recommendationId": "{{recommendationId}}"
+}
+
+
+### Resume / get active navigation
+GET {{host}}/api/navigation/active
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### GPS update
+# A single call should return the updated NavigationSnapshot.
+POST {{host}}/api/navigation/{{sessionId}}/location
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "latitude": {{originLat}},
+  "longitude": {{originLon}},
   "accuracyMeters": 8,
   "timestamp": "{{$datetime iso8601}}",
   "speedMetersPerSecond": 1.2,
   "bearingDegrees": 45
 }
 
-### Submit an intentionally inaccurate GPS update
-# Expected result: rejected/uncertain GPS without changing route progress.
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/location
+
+### GPS update — intentionally poor accuracy
+# Useful for validating UNCERTAIN_GPS / rejection behavior.
+POST {{host}}/api/navigation/{{sessionId}}/location
 Content-Type: application/json
 Accept: application/json
-X-API-Key: {{apiKey}}
+X-Api-Key: {{apiKey}}
 
 {
-  "latitude": {{tukiOriginLat}},
-  "longitude": {{tukiOriginLon}},
+  "latitude": {{originLat}},
+  "longitude": {{originLon}},
   "accuracyMeters": 250,
   "timestamp": "{{$datetime iso8601}}"
 }
 
-### Confirm boarding after reaching the boarding state
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/boarding-confirmed
-Accept: application/json
-X-API-Key: {{apiKey}}
 
-### SIMULATION: first GPS sample near the planned alighting point
-# Before running this, copy the PrepareToAlight instruction coordinates into
-# tukiTestAlightLat/tukiTestAlightLon. For the easiest test, do not submit the
-# earlier origin GPS example on this TripSession because teleporting can be
-# correctly rejected as IMPOSSIBLE_JUMP.
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/location
+### Confirm boarding
+# Call only when snapshot.requiresBoardingConfirmation is true.
+POST {{host}}/api/navigation/{{sessionId}}/boarding
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Confirm alighting
+# Call only when snapshot.requiresAlightingConfirmation is true.
+POST {{host}}/api/navigation/{{sessionId}}/alighting
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Explicit reroute
+# Normally the facade attempts rerouting automatically after deterministic
+# OFF_ROUTE / MISSED_ALIGHT detection.
+POST {{host}}/api/navigation/{{sessionId}}/reroute
 Content-Type: application/json
 Accept: application/json
-X-API-Key: {{apiKey}}
-
-{
-  "latitude": {{tukiTestAlightLat}},
-  "longitude": {{tukiTestAlightLon}},
-  "accuracyMeters": 5,
-  "timestamp": "{{$datetime iso8601}}",
-  "speedMetersPerSecond": 0
-}
-
-### SIMULATION: second GPS sample near the planned alighting point
-# Run after the first sample. Expected status: ApproachingAlightPoint.
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/location
-Content-Type: application/json
-Accept: application/json
-X-API-Key: {{apiKey}}
-
-{
-  "latitude": {{tukiTestAlightLat}},
-  "longitude": {{tukiTestAlightLon}},
-  "accuracyMeters": 5,
-  "timestamp": "{{$datetime iso8601}}",
-  "speedMetersPerSecond": 0
-}
-
-### Confirm alighting after reaching the alighting state
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/alighting-confirmed
-Accept: application/json
-X-API-Key: {{apiKey}}
-
-### Request rerouting
-# This normally succeeds only after off-route or missed-alight confirmation.
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/reroute
-Content-Type: application/json
-Accept: application/json
-X-API-Key: {{apiKey}}
+X-Api-Key: {{apiKey}}
 
 {
   "reason": "OFF_ROUTE"
 }
 
-### Cancel TripSession
-POST {{backend_HostAddress}}/api/tripsessions/{{tukiTripSessionId}}/cancel
+
+### Cancel navigation
+POST {{host}}/api/navigation/{{sessionId}}/cancel
 Accept: application/json
-X-API-Key: {{apiKey}}
+X-Api-Key: {{apiKey}}
+
+
+# ==============================================================================
+# 07 — TUKI AI
+# ==============================================================================
+#
+# AI is the friendly toucan voice / intent interface.
+# Deterministic routing + navigation remain authoritative.
+# ==============================================================================
+
+### Tuki — plan by natural language
+POST {{host}}/api/AI/ask
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "message": "Tuki, paano ako makakapunta sa SM City Clark? Budget ko 100 pesos.",
+  "originLatitude": {{originLat}},
+  "originLongitude": {{originLon}}
+}
+
+
+### Tuki — navigation/status question using active trip
+POST {{host}}/api/AI/ask
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "message": "Tuki, tama pa ba yung daan natin?"
+}
+
+
+### Tuki — navigation/status question with explicit session
+POST {{host}}/api/AI/ask
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "message": "Nalampasan ko ba yung babaan?",
+  "tripSessionId": "{{sessionId}}"
+}
+
+
+### Tuki — explicit destination selection after ambiguity
+# Replace destinationId with one returned by AssistantResponse.destinations[].
+POST {{host}}/api/AI/ask
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "message": "Plan a route to SM City Clark with a budget of 100 pesos",
+  "originLatitude": {{originLat}},
+  "originLongitude": {{originLon}},
+  "destinationId": "REPLACE_WITH_DESTINATION_ID"
+}
+
+
+# ==============================================================================
+# 08 — ROUTING DIAGNOSTICS / LOW-LEVEL
+# ==============================================================================
+#
+# Good for algorithm testing.
+# New mobile code should use POST /api/journeys/plan instead of /plan below.
+# ==============================================================================
+
+### Nearby jeepney routes — Porac sample
+GET {{host}}/api/test/jeepney/nearby?lat={{originLat}}&lon={{originLon}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Deterministic trip plan — NOT persisted
+GET {{host}}/api/test/jeepney/plan?originLat={{originLat}}&originLon={{originLon}}&destinationLat={{destinationLat}}&destinationLon={{destinationLon}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Very short trip — useful for walk/direct-option behavior
+GET {{host}}/api/test/jeepney/plan?originLat=15.109698583445889&originLon=120.58240903543013&destinationLat=15.110100&destinationLon=120.582900
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Valhalla pedestrian diagnostic
+GET {{host}}/api/test/valhalla/route?startLat={{originLat}}&startLon={{originLon}}&endLat={{destinationLat}}&endLon={{destinationLon}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+# ==============================================================================
+# 09 — TRANSPORT ROUTES — DATA / ADMIN
+# ==============================================================================
+
+### List active routes
+GET {{host}}/api/transport-routes
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Latest encoded route polyline
+GET {{host}}/api/transport-routes/latest/polyline
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Get ordered points for one route
+GET {{host}}/api/transport-routes/{{routeId}}/points
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Create jeepney route from ordered waypoints
+# `points` are [latitude, longitude].
+# Backend asks Valhalla to generate geometry through the supplied waypoints.
+POST {{host}}/api/transport-routes
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "routeCode": "JEEP-SAMPLE-01",
+  "routeName": "Sample Jeepney Route",
+  "originName": "Sample Origin",
+  "destinationName": "Sample Destination",
+  "description": "Generated through Valhalla from ordered waypoints",
+  "baseFare": 13,
+  "points": [
+    [15.169377198609359, 120.58742919718586],
+    [15.153593638458716, 120.59199321409343],
+    [15.137020841985489, 120.58648839309423],
+    [15.133522816468420, 120.59193626047843]
+  ]
+}
+
+
+### Replace route points directly
+# Body is List<List<double>> in [latitude, longitude] order.
+PUT {{host}}/api/transport-routes/{{routeId}}/points
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+[
+  [15.109698583445889, 120.58240903543013],
+  [15.115000000000000, 120.58500000000000],
+  [15.120000000000000, 120.59000000000000]
+]
+
+
+# ==============================================================================
+# 10 — TRICYCLE POINTS — DATA / ADMIN
+# ==============================================================================
+
+### Get tricycle point
+GET {{host}}/api/tricycle-points/{{tricyclePointId}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Create verified tricycle point
+POST {{host}}/api/tricycle-points
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "pointCode": "TRIKE-SAMPLE-01",
+  "pointName": "Sample TODA Terminal",
+  "coordinates": [15.143206444551234, 120.59700895122185],
+  "radiusMeters": 500,
+  "stopId": null,
+  "description": "Main tricycle pickup point",
+  "address": "Angeles, Pampanga",
+  "operatorName": "Sample TODA",
+  "baseFare": 35,
+  "farePerKilometer": 15,
+  "averageWaitingTimeSeconds": 300,
+  "serviceStartTime": "05:00:00",
+  "serviceEndTime": "23:00:00",
+  "isActive": true
+}
+
+
+# ==============================================================================
+# 11 — LEGACY PASSENGER TRIPS
+# ==============================================================================
+#
+# Retained backend contract.
+# New navigation UI should not need this controller just to navigate.
+# ==============================================================================
+
+### Start PassengerTrip
+POST {{host}}/api/trips
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "recommendationId": "{{recommendationId}}",
+  "startedAt": null
+}
+
+
+### Get PassengerTrip
+GET {{host}}/api/trips/{{tripId}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Get PassengerTrip alerts
+GET {{host}}/api/trips/{{tripId}}/alerts
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+# ==============================================================================
+# 12 — LEGACY / LOW-LEVEL TRIP SESSION API
+# ==============================================================================
+#
+# Prefer /api/navigation/* for the mobile navigation flow.
+# Keep these for debugging the underlying state machine directly.
+# ==============================================================================
+
+### Create raw TripSession
+POST {{host}}/api/tripsessions
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "recommendationId": "{{recommendationId}}"
+}
+
+
+### Get raw active TripSession
+GET {{host}}/api/tripsessions/active
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Get raw TripSession
+GET {{host}}/api/tripsessions/{{sessionId}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Start raw TripSession
+POST {{host}}/api/tripsessions/{{sessionId}}/start
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Get generated raw instructions
+GET {{host}}/api/tripsessions/{{sessionId}}/instructions
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Raw location update
+POST {{host}}/api/tripsessions/{{sessionId}}/location
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "latitude": {{originLat}},
+  "longitude": {{originLon}},
+  "accuracyMeters": 8,
+  "timestamp": "{{$datetime iso8601}}",
+  "speedMetersPerSecond": 1.2,
+  "bearingDegrees": 45
+}
+
+
+### Raw boarding confirmation
+POST {{host}}/api/tripsessions/{{sessionId}}/boarding-confirmed
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Raw alighting confirmation
+POST {{host}}/api/tripsessions/{{sessionId}}/alighting-confirmed
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Raw reroute
+POST {{host}}/api/tripsessions/{{sessionId}}/reroute
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "reason": "OFF_ROUTE"
+}
+
+
+### Raw cancel
+POST {{host}}/api/tripsessions/{{sessionId}}/cancel
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+# ==============================================================================
+# 13 — DRIVER API
+# ==============================================================================
+
+### Driver details
+GET {{host}}/api/drivers/{{driverId}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Driver current vehicle
+GET {{host}}/api/drivers/{{driverId}}/vehicle
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Driver availability
+GET {{host}}/api/drivers/{{driverId}}/availability
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Start driver availability
+POST {{host}}/api/drivers/{{driverId}}/availability/start
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "vehicleId": "{{vehicleId}}",
+  "destinationStopId": null,
+  "destinationName": "SM City Clark",
+  "destinationLatitude": 15.1683,
+  "destinationLongitude": 120.5805,
+  "availableSeats": 3,
+  "maximumDetourMeters": 1000,
+  "startedAt": null
+}
+
+
+### Update driver location
+PUT {{host}}/api/drivers/{{driverId}}/location
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "latitude": {{originLat}},
+  "longitude": {{originLon}},
+  "headingDegrees": 90,
+  "speedKph": 25,
+  "accuracyMeters": 8,
+  "updatedAt": null
+}
+
+
+### Stop driver availability
+POST {{host}}/api/drivers/{{driverId}}/availability/stop
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "endedAt": null
+}
+
+
+# ==============================================================================
+# 14 — RIDE MATCHING
+# ==============================================================================
+
+### Create passenger ride request
+POST {{host}}/api/ride-matching/requests
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "pickupName": "Current location",
+  "pickupLatitude": {{originLat}},
+  "pickupLongitude": {{originLon}},
+  "dropoffName": "{{destinationName}}",
+  "dropoffLatitude": {{destinationLat}},
+  "dropoffLongitude": {{destinationLon}},
+  "passengerCount": 1,
+  "transportModeId": null,
+  "maxBudget": 100,
+  "requestedAt": null,
+  "expiresAt": null
+}
+
+
+### Get ride request
+GET {{host}}/api/ride-matching/requests/{{rideRequestId}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Create ride match — normally backend/driver-side workflow
+POST {{host}}/api/ride-matching/requests/{{rideRequestId}}/match
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "driverId": "{{driverId}}",
+  "vehicleId": "{{vehicleId}}",
+  "pickupDistanceMeters": 450,
+  "detourDistanceMeters": 100,
+  "estimatedPickupMinutes": 5,
+  "estimatedTripMinutes": 15,
+  "estimatedFare": 50,
+  "matchScore": 0.9,
+  "offeredAt": null
+}
+
+
+### Get ride match
+GET {{host}}/api/ride-matching/matches/{{rideMatchId}}
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Accept ride match
+POST {{host}}/api/ride-matching/matches/{{rideMatchId}}/accept
+Content-Type: application/json
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+{
+  "acceptedAt": null
+}
+
+
+### Reject ride match
+POST {{host}}/api/ride-matching/matches/{{rideMatchId}}/reject
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+### Cancel ride match
+POST {{host}}/api/ride-matching/matches/{{rideMatchId}}/cancel
+Accept: application/json
+X-Api-Key: {{apiKey}}
+
+
+# ==============================================================================
+# 15 — QUICK END-TO-END CHECKLIST
+# ==============================================================================
+#
+# Run in this order:
+#
+#   [ ] GET  /health
+#   [ ] POST /api/auth/login                 -> copy apiKey
+#   [ ] GET  /api/users/me
+#   [ ] GET  /api/places/search
+#   [ ] POST /api/journeys/plan             -> copy recommendationId
+#   [ ] POST /api/navigation/start           -> copy sessionId
+#   [ ] GET  /api/navigation/active
+#   [ ] POST /api/navigation/{id}/location
+#   [ ] POST boarding/alighting when snapshot asks for confirmation
+#
+# Things worth inspecting in NavigationSnapshot:
+#
+#   state
+#   currentLeg
+#   nextInstruction
+#   spokenInstruction
+#   boardInfo.landmark
+#   alightInfo.landmark
+#   landmark
+#   requiresBoardingConfirmation
+#   requiresAlightingConfirmation
+#   rerouteRequired
+#   status
+#   triggeredEvents
+#
+# ==============================================================================

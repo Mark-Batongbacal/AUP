@@ -1,0 +1,154 @@
+package com.example.frontend.data.navigation
+
+import com.example.frontend.core.network.ApiErrorParser
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.core.network.authenticatedApiCall
+import com.example.frontend.core.storage.AuthSessionStore
+import retrofit2.Response
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.POST
+import retrofit2.http.Path
+import java.math.BigDecimal
+
+data class StartNavigationRequest(val recommendationId: String)
+data class NavigationRerouteRequest(val reason: String = "OFF_ROUTE")
+
+data class NavigationLocationUpdate(
+    val latitude: Double,
+    val longitude: Double,
+    val accuracyMeters: Double,
+    val timestamp: String,
+    val speedMetersPerSecond: Double? = null,
+    val bearingDegrees: Double? = null
+)
+
+data class NavigationLegDto(
+    val legIndex: Int,
+    val transportMode: String,
+    val routeName: String?,
+    val fromName: String?,
+    val toName: String?,
+    val startLatitude: Double?,
+    val startLongitude: Double?,
+    val endLatitude: Double?,
+    val endLongitude: Double?,
+    val distanceMeters: Double?,
+    val fare: BigDecimal
+)
+
+data class NavigationInstructionSnapshotDto(
+    val type: String,
+    val routeName: String?,
+    val transportMode: String?,
+    val distanceMeters: Double?,
+    val requiresConfirmation: Boolean
+)
+
+data class NavigationLandmarkDto(
+    val name: String,
+    val category: String,
+    val role: String,
+    val relation: String,
+    val latitude: Double,
+    val longitude: Double,
+    val distanceFromTargetMeters: Double
+)
+
+data class NavigationStopInfoDto(
+    val routeName: String?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val landmark: NavigationLandmarkDto?
+)
+
+data class NavigationTriggeredEventDto(
+    val type: String,
+    val landmarkName: String?
+)
+
+data class NavigationSnapshotDto(
+    val sessionId: String,
+    val state: String,
+    val currentLegIndex: Int,
+    val currentLeg: NavigationLegDto?,
+    val nextInstruction: NavigationInstructionSnapshotDto?,
+    val spokenInstruction: String?,
+    val remainingDistanceMeters: Double?,
+    val progressMeters: Double,
+    val boardInfo: NavigationStopInfoDto?,
+    val alightInfo: NavigationStopInfoDto?,
+    val landmark: NavigationLandmarkDto?,
+    val requiresBoardingConfirmation: Boolean,
+    val requiresAlightingConfirmation: Boolean,
+    val rerouteRequired: Boolean,
+    val status: String,
+    val triggeredEvents: List<NavigationTriggeredEventDto>
+) {
+    fun displayInstruction(): String? = spokenInstruction?.takeIf { it.isNotBlank() }
+}
+
+interface NavigationApi {
+    @POST("api/navigation/start")
+    suspend fun start(@Body request: StartNavigationRequest): Response<NavigationSnapshotDto>
+
+    @GET("api/navigation/active")
+    suspend fun active(): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/location")
+    suspend fun location(
+        @Path("sessionId") sessionId: String,
+        @Body update: NavigationLocationUpdate
+    ): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/boarding")
+    suspend fun boarding(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/alighting")
+    suspend fun alighting(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/cancel")
+    suspend fun cancel(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/reroute")
+    suspend fun reroute(
+        @Path("sessionId") sessionId: String,
+        @Body request: NavigationRerouteRequest
+    ): Response<NavigationSnapshotDto>
+}
+
+interface NavigationRepository {
+    suspend fun startNavigation(recommendationId: String): ApiResult<NavigationSnapshotDto>
+    suspend fun getActiveNavigation(): ApiResult<NavigationSnapshotDto>
+    suspend fun updateLocation(
+        sessionId: String,
+        update: NavigationLocationUpdate
+    ): ApiResult<NavigationSnapshotDto>
+    suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto>
+    suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto>
+    suspend fun cancel(sessionId: String): ApiResult<NavigationSnapshotDto>
+    suspend fun reroute(
+        sessionId: String,
+        reason: String = "OFF_ROUTE"
+    ): ApiResult<NavigationSnapshotDto>
+}
+
+class NavigationRepositoryImpl(
+    private val api: NavigationApi,
+    private val sessions: AuthSessionStore,
+    private val errors: ApiErrorParser
+) : NavigationRepository {
+    override suspend fun startNavigation(recommendationId: String) =
+        call { api.start(StartNavigationRequest(recommendationId)) }
+    override suspend fun getActiveNavigation() = call { api.active() }
+    override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate) =
+        call { api.location(sessionId, update) }
+    override suspend fun confirmBoarding(sessionId: String) = call { api.boarding(sessionId) }
+    override suspend fun confirmAlighting(sessionId: String) = call { api.alighting(sessionId) }
+    override suspend fun cancel(sessionId: String) = call { api.cancel(sessionId) }
+    override suspend fun reroute(sessionId: String, reason: String) =
+        call { api.reroute(sessionId, NavigationRerouteRequest(reason)) }
+
+    private suspend fun <T : Any> call(block: suspend () -> Response<T>) =
+        authenticatedApiCall(sessions, errors, request = block)
+}
