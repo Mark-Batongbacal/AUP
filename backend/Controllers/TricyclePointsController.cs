@@ -9,6 +9,14 @@ namespace backend.Controllers;
 public sealed class TricyclePointsController(
     ITricyclePointService tricyclePointService) : ControllerBase
 {
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<TricyclePointResponseDto>>> GetActive(
+        CancellationToken cancellationToken)
+    {
+        var points = await tricyclePointService.GetAllActivePointsAsync(cancellationToken);
+        return Ok(points.Select(Map).ToList());
+    }
+
     [HttpGet("{tricyclePointId:long}")]
     public async Task<ActionResult<TricyclePointResponseDto>> GetById(
         [FromRoute] long tricyclePointId,
