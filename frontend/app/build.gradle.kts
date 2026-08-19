@@ -107,7 +107,7 @@ dependencies {
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.google.identity.googleid)
-    implementation(libs.google.maps.compose)
+    implementation("org.maplibre.gl:android-sdk-opengl:13.0.2")
     implementation(libs.facebook.login)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
