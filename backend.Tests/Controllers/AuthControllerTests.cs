@@ -556,7 +556,9 @@ public sealed class AuthControllerTests
             }),
             googleTokens ?? new StubGoogleIdTokenValidator(),
             facebookTokens ?? new StubFacebookAccessTokenValidator(),
-            facebookOidcTokens ?? new StubFacebookOidcTokenValidator());
+            facebookOidcTokens ?? new StubFacebookOidcTokenValidator(),
+            null!,
+            null!);
     }
 
     private sealed class RecordingUserProfileRepository : IUserProfileRepository
