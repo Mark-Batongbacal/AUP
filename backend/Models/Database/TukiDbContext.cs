@@ -23,6 +23,8 @@ public partial class TukiDbContext : DbContext
 
     public virtual DbSet<FareRule> FareRules { get; set; }
 
+    public virtual DbSet<FavoriteTrip> FavoriteTrips { get; set; }
+
     public virtual DbSet<PassengerRideRequest> PassengerRideRequests { get; set; }
 
     public virtual DbSet<PassengerTrip> PassengerTrips { get; set; }
@@ -89,6 +91,7 @@ public partial class TukiDbContext : DbContext
         ConfigureRecommendationLegs(modelBuilder);
         ConfigurePassengerTrips(modelBuilder);
         ConfigureTripAlerts(modelBuilder);
+        ConfigureFavoriteTrips(modelBuilder);
         ConfigureChatConversations(modelBuilder);
         ConfigureChatMessages(modelBuilder);
 
@@ -934,6 +937,34 @@ public partial class TukiDbContext : DbContext
                 .HasForeignKey(e => e.TargetStopId)
                 .OnDelete(DeleteBehavior.NoAction)
                 .HasConstraintName("FK_TripAlerts_TargetStop");
+        });
+    }
+
+    private static void ConfigureFavoriteTrips(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<FavoriteTrip>(entity =>
+        {
+            entity.ToTable("FavoriteTrips", "dbo");
+            entity.HasKey(e => e.FavoriteTripId);
+
+            entity.HasIndex(e => e.UserId, "IX_FavoriteTrips_User");
+            entity.HasIndex(e => new { e.UserId, e.RecommendationId }, "UX_FavoriteTrips_UserAndRecommendation").IsUnique();
+
+            entity.Property(e => e.FavoriteTripId).HasDefaultValueSql("(newsequentialid())");
+            entity.Property(e => e.Note).HasMaxLength(500);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
+
+            entity.HasOne(e => e.User)
+                .WithMany(e => e.FavoriteTrips)
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_FavoriteTrips_UserProfiles");
+
+            entity.HasOne(e => e.Recommendation)
+                .WithMany(e => e.FavoriteTrips)
+                .HasForeignKey(e => e.RecommendationId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_FavoriteTrips_RouteRecommendations");
         });
     }
 

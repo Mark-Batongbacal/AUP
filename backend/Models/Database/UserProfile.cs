@@ -33,6 +33,8 @@ public partial class UserProfile
 
     public virtual Driver? Driver { get; set; }
 
+    public virtual ICollection<FavoriteTrip> FavoriteTrips { get; set; } = new List<FavoriteTrip>();
+
     public virtual ICollection<PassengerRideRequest> PassengerRideRequests { get; set; } = new List<PassengerRideRequest>();
 
     public virtual ICollection<PassengerTrip> PassengerTrips { get; set; } = new List<PassengerTrip>();

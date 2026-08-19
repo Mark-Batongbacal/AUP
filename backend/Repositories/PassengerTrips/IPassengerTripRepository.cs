@@ -15,4 +15,6 @@ public interface IPassengerTripRepository
         CancellationToken cancellationToken = default);
 
     Task<PassengerTrip> AddAsync(PassengerTrip trip, CancellationToken cancellationToken = default);
+
+    Task<int> CountByUserAndRecommendationAsync(Guid userId, Guid recommendationId, CancellationToken cancellationToken = default);
 }

@@ -19,6 +19,7 @@ import com.example.frontend.auth.GoogleSignInResult
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.auth.RegisterRequest
+import com.example.frontend.model.FavoriteRoute
 import com.example.frontend.model.RecentCommute
 import com.example.frontend.navigation.AppScreen
 import com.example.frontend.screens.CommuteDetailScreen
@@ -97,6 +98,27 @@ fun TukiApp(
 
     var searchDestination by remember {
         mutableStateOf("")
+    }
+
+    var favorites by remember {
+        mutableStateOf<List<FavoriteRoute>>(emptyList())
+    }
+
+    LaunchedEffect(currentScreen) {
+        if (currentScreen == AppScreen.FAVORITES) {
+            when (val result = dataProvider.favoritesRepository.getFavorites()) {
+                is ApiResult.Success -> favorites = result.data.map { dto ->
+                    FavoriteRoute(
+                        id = dto.favoriteTripId,
+                        origin = dto.origin ?: "Unknown origin",
+                        destination = dto.destination ?: "Unknown destination",
+                        timesUsed = dto.timesUsed,
+                        note = dto.note.orEmpty()
+                    )
+                }
+                is ApiResult.Failure -> Unit
+            }
+        }
     }
 
     when (currentScreen) {
@@ -254,6 +276,7 @@ fun TukiApp(
 
         AppScreen.FAVORITES -> {
             FavoritesScreen(
+                favorites = favorites,
                 onHomeClick = {
                     currentScreen = AppScreen.HOME
                 },
