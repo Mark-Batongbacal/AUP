@@ -10,6 +10,45 @@ namespace backend.Controllers;
 [Route("api/trips")]
 public sealed class TripsController(ITripService tripService) : ControllerBase
 {
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<PassengerTripHistoryItemDto>>> GetHistory(
+        CancellationToken cancellationToken)
+    {
+        var userId = UserId();
+        if (userId == Guid.Empty)
+        {
+            return Unauthorized();
+        }
+
+        var trips = await tripService.GetPassengerTripsByUserAsync(userId, cancellationToken);
+        var history = new List<PassengerTripHistoryItemDto>(trips.Count);
+
+        foreach (var trip in trips.OrderByDescending(item => item.StartedAt ?? item.CreatedAt))
+        {
+            var recommendation = await tripService.GetRecommendationByIdAsync(
+                trip.RecommendationId,
+                cancellationToken);
+            var search = recommendation is null
+                ? null
+                : await tripService.GetTripSearchByIdAsync(recommendation.TripSearchId, cancellationToken);
+            var recommendationDetails = await tripService.GetRecommendationDetailsAsync(
+                trip.RecommendationId,
+                cancellationToken);
+
+            history.Add(new PassengerTripHistoryItemDto(
+                trip.PassengerTripId,
+                trip.Status,
+                search?.OriginName ?? "Unknown origin",
+                search?.DestinationName ?? "Unknown destination",
+                trip.StartedAt,
+                trip.CompletedAt,
+                trip.CreatedAt,
+                recommendationDetails));
+        }
+
+        return Ok(history);
+    }
+
     [HttpPost]
     public async Task<ActionResult<PassengerTripDetailsDto>> StartTrip(
         [FromBody] StartTripRequest? request,
@@ -140,3 +179,13 @@ public sealed class TripsController(ITripService tripService) : ControllerBase
 
     private static TripErrorResponseDto Error(string message) => new([message]);
 }
+
+public sealed record PassengerTripHistoryItemDto(
+    Guid PassengerTripId,
+    string Status,
+    string OriginName,
+    string DestinationName,
+    DateTime? StartedAt,
+    DateTime? CompletedAt,
+    DateTime CreatedAt,
+    RecommendationDetailsDto? Recommendation);
