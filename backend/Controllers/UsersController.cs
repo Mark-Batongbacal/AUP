@@ -13,7 +13,7 @@ namespace backend.Controllers;
 public sealed class UsersController(
     IUserProfileService userProfileService,
     IUserProfileRepository? userProfileRepository = null,
-    IPassengerTripRepository? passengerTripRepository = null,
+    ITripSessionRepository? tripSessionRepository = null,
     IFavoriteTripRepository? favoriteTripRepository = null) : ControllerBase
 {
     [HttpGet("me")]
@@ -36,7 +36,7 @@ public sealed class UsersController(
         // Direct controller unit tests construct this controller with only the profile service.
         // Normal application DI supplies all three repositories below.
         if (userProfileRepository is null ||
-            passengerTripRepository is null ||
+            tripSessionRepository is null ||
             favoriteTripRepository is null)
         {
             return Ok(profile);
@@ -48,13 +48,13 @@ public sealed class UsersController(
             return NotFound(Error($"User profile {userId} was not found."));
         }
 
-        var trips = await passengerTripRepository.GetByUserAsync(userId, cancellationToken);
+        var tripsTaken = await tripSessionRepository.CountCompletedByUserAsync(userId, cancellationToken);
         var favorites = await favoriteTripRepository.GetByUserAsync(userId, cancellationToken);
 
         return Ok(profile with
         {
             Email = storedProfile.Email,
-            TripsTaken = trips.Count,
+            TripsTaken = tripsTaken,
             FavoritesCount = favorites.Count,
         });
     }
