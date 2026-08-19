@@ -35,6 +35,11 @@ object PreviewMocks {
             focusLatitude: Double?,
             focusLongitude: Double?
         ): ApiResult<List<DestinationSearchResultDto>> = ApiResult.Success(emptyList())
+
+        override suspend fun reverseGeocode(
+            latitude: Double,
+            longitude: Double
+        ): ApiResult<DestinationSearchResultDto> = ApiResult.Failure(null, "Mock")
     }
 
     val routingRepository = object : RoutingRepository {
