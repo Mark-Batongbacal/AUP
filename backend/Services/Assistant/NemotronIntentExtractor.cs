@@ -61,7 +61,8 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
         root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()?.Trim() : null;
     private static decimal? Decimal(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var value) && value.TryGetDecimal(out var number) && number >= 0
+        root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+            value.TryGetDecimal(out var number) && number >= 0
             ? number : null;
     private static string? NormalizePreference(string? value) =>
         value?.ToLowerInvariant() is "fastest" or "cheapest" or "efficient"
