@@ -29,6 +29,8 @@ public partial class RouteRecommendation
 
     public DateTime GeneratedAt { get; set; }
 
+    public virtual ICollection<FavoriteTrip> FavoriteTrips { get; set; } = new List<FavoriteTrip>();
+
     public virtual ICollection<PassengerTrip> PassengerTrips { get; set; } = new List<PassengerTrip>();
 
     public virtual ICollection<RecommendationLeg> RecommendationLegs { get; set; } = new List<RecommendationLeg>();

@@ -74,7 +74,6 @@ var connectionString =
     ?? throw new InvalidOperationException(
         "The TukiDbConnection connection string is missing.");
 
-
 builder.Services.Configure<LoginOptions>(builder.Configuration.GetSection(LoginOptions.SectionName));
 builder.Services.Configure<GoogleOptions>(builder.Configuration.GetSection(GoogleOptions.SectionName));
 builder.Services.Configure<FacebookOptions>(builder.Configuration.GetSection(FacebookOptions.SectionName));
@@ -89,6 +88,7 @@ builder.Services.AddScoped<IDriverLocationRepository, DriverLocationRepository>(
 builder.Services.AddScoped<IDriverRepository, DriverRepository>();
 builder.Services.AddScoped<IDriverVehicleRepository, DriverVehicleRepository>();
 builder.Services.AddScoped<IFareRuleRepository, FareRuleRepository>();
+builder.Services.AddScoped<IFavoriteTripRepository, FavoriteTripRepository>();
 builder.Services.AddScoped<IPassengerRideRequestRepository, PassengerRideRequestRepository>();
 builder.Services.AddScoped<IPassengerTripRepository, PassengerTripRepository>();
 builder.Services.AddScoped<IRecommendationLegRepository, RecommendationLegRepository>();
@@ -143,7 +143,9 @@ builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IDriverService, DriverService>();
 builder.Services.AddScoped<IRideMatchingService, RideMatchingService>();
 builder.Services.AddScoped<ITripService, TripService>();
+builder.Services.AddScoped<IFavoriteTripService, FavoriteTripService>();
 builder.Services.AddScoped<IUserProfileService, UserProfileService>();
+builder.Services.AddScoped<ILocalAuthenticationService, LocalAuthenticationService>();
 builder.Services.AddScoped<IRoutePointService, RoutePointService>();
 builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
@@ -193,7 +195,6 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .Build();
 });
-
 
 var app = builder.Build();
 

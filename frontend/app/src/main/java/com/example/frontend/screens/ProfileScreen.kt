@@ -60,6 +60,7 @@ fun ProfileScreen(
     onEditProfileClick: () -> Unit = {},
     onPrivacySecurityClick: () -> Unit = {},
     onLanguageClick: () -> Unit = {},
+    onLogoutClick: () -> Unit = {},
     onHomeClick: () -> Unit = {},
     onRecentClick: () -> Unit = {},
     onFavoritesClick: () -> Unit = {}
@@ -167,6 +168,20 @@ fun ProfileScreen(
             items(accountRows) { row ->
                 AccountRowItem(row)
                 Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            item {
+                Text(
+                    text = "Log out",
+                    color = Color(0xFFB00020),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(TukiCream2, RoundedCornerShape(14.dp))
+                        .clickable(onClick = onLogoutClick)
+                        .padding(16.dp)
+                )
             }
         }
 

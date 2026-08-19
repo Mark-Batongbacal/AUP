@@ -1,5 +1,6 @@
 package com.example.frontend.core.network
 
+import android.util.Log
 import com.example.frontend.core.storage.AuthSessionStore
 import kotlinx.coroutines.CancellationException
 import retrofit2.Response
@@ -24,6 +25,7 @@ suspend fun <T : Any> apiCall(
 } catch (exception: CancellationException) {
     throw exception
 } catch (exception: IOException) {
+    Log.e("ApiCall_DIAG", "IOException during API call", exception)
     ApiResult.Failure(null, "Network error. Check your connection and try again.", cause = exception)
 } catch (exception: RuntimeException) {
     ApiResult.Failure(null, "The server response could not be processed.", cause = exception)

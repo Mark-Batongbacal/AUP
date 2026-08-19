@@ -14,6 +14,9 @@ import com.example.frontend.data.auth.AuthRepositoryImpl
 import com.example.frontend.data.drivers.DriverRepository
 import com.example.frontend.data.drivers.DriverRepositoryImpl
 import com.example.frontend.data.drivers.DriversApi
+import com.example.frontend.data.favorites.FavoritesApi
+import com.example.frontend.data.favorites.FavoritesRepository
+import com.example.frontend.data.favorites.FavoritesRepositoryImpl
 import com.example.frontend.data.health.HealthApi
 import com.example.frontend.data.health.HealthService
 import com.example.frontend.data.navigation.NavigationApi
@@ -67,5 +70,6 @@ class TukiDataProvider(
     val rideMatchingRepository: RideMatchingRepository = RideMatchingRepositoryImpl(api(RideMatchingApi::class.java), sessionStore, errors)
     val driverRepository: DriverRepository = DriverRepositoryImpl(api(DriversApi::class.java), sessionStore, errors)
     val aiRepository: AiRepository = AiRepositoryImpl(api(AiApi::class.java), sessionStore, errors)
+    val favoritesRepository: FavoritesRepository = FavoritesRepositoryImpl(api(FavoritesApi::class.java), sessionStore, errors)
     val healthService = HealthService(api(HealthApi::class.java), errors)
 }

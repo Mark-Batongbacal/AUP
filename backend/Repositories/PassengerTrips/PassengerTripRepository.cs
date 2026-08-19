@@ -53,4 +53,9 @@ public sealed class PassengerTripRepository(TukiDbContext context) : IPassengerT
         await _context.SaveChangesAsync(cancellationToken);
         return trip;
     }
+
+    public Task<int> CountByUserAndRecommendationAsync(Guid userId, Guid recommendationId, CancellationToken cancellationToken = default) =>
+        _context.PassengerTrips
+            .AsNoTracking()
+            .CountAsync(trip => trip.UserId == userId && trip.RecommendationId == recommendationId, cancellationToken);
 }
