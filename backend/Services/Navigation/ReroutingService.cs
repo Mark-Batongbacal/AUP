@@ -31,18 +31,26 @@ public sealed class ReroutingService(
         using var measurement = _telemetry.Measure("Rerouting");
         var session = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken);
         if (session is null) return new(false, "TRIP_SESSION_NOT_FOUND");
-        if (session.CurrentNavigationState != TripNavigationState.OffRoute)
-            return new(false, "TRIP_NOT_OFF_ROUTE");
+        if (session.CurrentNavigationState is TripNavigationState.Planned or TripNavigationState.Arrived or TripNavigationState.Cancelled)
+            return new(false, "TRIP_NOT_ACTIVE");
+        if (session.CurrentNavigationState == TripNavigationState.Rerouting)
+            return new(false, "REROUTE_IN_PROGRESS");
         if (session.LastRerouteAt is { } last && last.AddSeconds(_options.RerouteCooldownSeconds) > DateTime.UtcNow)
             return new(false, "REROUTE_COOLDOWN");
         if (session.LastLatitude is not { } latitude || session.LastLongitude is not { } longitude)
             return new(false, "NO_RELIABLE_LOCATION");
 
-        if (!stateMachine.CanTransition(session.CurrentNavigationState, TripNavigationState.Rerouting))
+        var previousState = session.CurrentNavigationState;
+        if (!stateMachine.CanTransition(previousState, TripNavigationState.Rerouting))
             return new(false, "INVALID_STATE_TRANSITION");
+
+        var normalizedReason = string.IsNullOrWhiteSpace(reason) ? "MANUAL" : reason.Trim().ToUpperInvariant();
         session.CurrentNavigationState = TripNavigationState.Rerouting;
-        _telemetry.Event("RerouteStarted", sessionId, reason);
+        session.LastNavigationStatus = "REROUTING";
+        session.UpdatedAt = DateTime.UtcNow;
+        _telemetry.Event("RerouteStarted", sessionId, normalizedReason);
         await sessions.UpdateAsync(session, cancellationToken);
+
         try
         {
             var plans = await routing.PlanTripsAsync(latitude, longitude,
@@ -51,28 +59,28 @@ public sealed class ReroutingService(
                 (decimal)plan.TotalFarePesos <= session.OriginalBudget.Value).ToList();
             var selected = Select(eligible, session.OriginalPreference);
             if (selected is null)
-            {
-                if (stateMachine.CanTransition(session.CurrentNavigationState, TripNavigationState.OffRoute))
-                    session.CurrentNavigationState = TripNavigationState.OffRoute;
-                await sessions.UpdateAsync(session, cancellationToken);
-                _telemetry.Event("RerouteFailed", sessionId, "NO_ROUTE");
-                return new(false, "OFF_ROUTE_NO_REROUTE_AVAILABLE");
-            }
+                return await RestoreAfterFailureAsync(session, previousState,
+                    "OFF_ROUTE_NO_REROUTE_AVAILABLE", "NO_ROUTE", cancellationToken);
+
             var recommendation = await PersistAsync(session, selected, latitude, longitude, cancellationToken);
             session.RecommendationId = recommendation.RecommendationId;
             session.CurrentLegIndex = 0;
             session.CurrentProgressMeters = 0;
             session.CurrentRouteProgressMeters = null;
+            session.ConsecutiveStateConfirmationSamples = 0;
             session.ConsecutiveOffRouteSamples = 0;
             session.OffRouteSuspectedAt = null;
             session.LastRerouteAt = DateTime.UtcNow;
-            session.LastRerouteReason = string.IsNullOrWhiteSpace(reason) ? "OFF_ROUTE" : reason.Trim();
+            session.LastRerouteReason = normalizedReason;
+            session.LastNavigationStatus = "REROUTE_SUCCEEDED";
             session.RerouteCount++;
+
             if (!stateMachine.CanTransition(session.CurrentNavigationState, TripNavigationState.Starting))
                 throw new InvalidOperationException("Reroute produced an invalid session transition.");
             session.CurrentNavigationState = TripNavigationState.Starting;
             session.UpdatedAt = DateTime.UtcNow;
             await sessions.UpdateAsync(session, cancellationToken);
+
             await instructions.GenerateAsync(session, cancellationToken);
             await landmarkPrefetch.PrefetchAsync(session, cancellationToken);
             var reroutedLegs = await recommendations.GetOrderedLegsAsync(
@@ -80,6 +88,7 @@ public sealed class ReroutingService(
             var firstLeg = reroutedLegs.OrderBy(item => item.LegOrder).FirstOrDefault();
             if (firstLeg is null)
                 throw new InvalidOperationException("Reroute produced no journey legs.");
+
             var resumedState = IsWalking(firstLeg)
                 ? (reroutedLegs.Count == 1
                     ? TripNavigationState.WalkingToDestination
@@ -90,17 +99,33 @@ public sealed class ReroutingService(
             session.CurrentNavigationState = resumedState;
             session.UpdatedAt = DateTime.UtcNow;
             await sessions.UpdateAsync(session, cancellationToken);
-            _telemetry.Event("RerouteSucceeded", sessionId);
+            _telemetry.Event("RerouteSucceeded", sessionId, normalizedReason);
             return new(true, "REROUTE_SUCCEEDED", recommendation.RecommendationId);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            if (stateMachine.CanTransition(session.CurrentNavigationState, TripNavigationState.OffRoute))
-                session.CurrentNavigationState = TripNavigationState.OffRoute;
-            await sessions.UpdateAsync(session, cancellationToken);
-            _telemetry.Event("RerouteFailed", sessionId, "ERROR");
-            return new(false, "OFF_ROUTE_NO_REROUTE_AVAILABLE");
+            return await RestoreAfterFailureAsync(session, previousState,
+                "OFF_ROUTE_NO_REROUTE_AVAILABLE", "ERROR", cancellationToken);
         }
+    }
+
+    private async Task<RerouteResult> RestoreAfterFailureAsync(
+        TripSession session,
+        TripNavigationState previousState,
+        string status,
+        string telemetryReason,
+        CancellationToken cancellationToken)
+    {
+        var fallback = previousState == TripNavigationState.OffRoute
+            ? TripNavigationState.OffRoute
+            : previousState;
+        if (stateMachine.CanTransition(session.CurrentNavigationState, fallback))
+            session.CurrentNavigationState = fallback;
+        session.LastNavigationStatus = status;
+        session.UpdatedAt = DateTime.UtcNow;
+        await sessions.UpdateAsync(session, cancellationToken);
+        _telemetry.Event("RerouteFailed", session.TripSessionId, telemetryReason);
+        return new(false, status);
     }
 
     private static JeepneyTripPlan? Select(List<JeepneyTripPlan> plans, string? preference) =>
