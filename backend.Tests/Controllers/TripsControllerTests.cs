@@ -2,7 +2,6 @@ using System.Security.Claims;
 using backend.Controllers;
 using backend.Models.Database;
 using backend.Models.Trips;
-using backend.Repositories;
 using backend.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -148,11 +147,63 @@ public sealed class TripsControllerTests
         Assert.Same(alert, Assert.Single(body));
     }
 
+    [Fact]
+    public async Task GetRecent_WhenAuthenticated_ReturnsCurrentUsersRecentJourneys()
+    {
+        var service = new Mock<ITripService>(MockBehavior.Strict);
+        var userId = Guid.NewGuid();
+        var journey = new PassengerTripHistoryItemDto(
+            Guid.NewGuid(),
+            "COMPLETED",
+            "Origin",
+            "Destination",
+            15,
+            120,
+            15.1,
+            120.1,
+            DateTime.UtcNow.AddMinutes(-30),
+            DateTime.UtcNow,
+            DateTime.UtcNow.AddMinutes(-35),
+            null,
+            true,
+            1,
+            "OFF_ROUTE",
+            DateTime.UtcNow.AddMinutes(-10));
+        service
+            .Setup(item => item.GetPassengerTripHistoryAsync(
+                userId,
+                true,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([journey]);
+
+        var controller = CreateController(service, userId);
+        var response = await controller.GetRecent(CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(response.Result);
+        var body = Assert.IsAssignableFrom<IReadOnlyList<PassengerTripHistoryItemDto>>(ok.Value);
+        Assert.Same(journey, Assert.Single(body));
+    }
+
+    [Fact]
+    public async Task GetRecent_WhenGuest_ReturnsUnauthorizedWithoutServiceLookup()
+    {
+        var service = new Mock<ITripService>(MockBehavior.Strict);
+        var controller = CreateController(service, Guid.Empty);
+
+        var response = await controller.GetRecent(CancellationToken.None);
+
+        Assert.IsType<UnauthorizedResult>(response.Result);
+        service.Verify(
+            item => item.GetPassengerTripHistoryAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static TripsController CreateController(Mock<ITripService> service, Guid userId)
     {
-        var controller = new TripsController(
-            service.Object,
-            new Mock<ITripSessionRepository>().Object);
+        var controller = new TripsController(service.Object);
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext

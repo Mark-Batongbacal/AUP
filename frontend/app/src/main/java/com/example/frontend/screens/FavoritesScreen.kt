@@ -42,6 +42,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 @Composable
 fun FavoritesScreen(
     favorites: List<FavoriteRoute> = sampleFavorites,
+    isGuest: Boolean = false,
     onRouteClick: (FavoriteRoute) -> Unit = {},
     onHomeClick: () -> Unit = {},
     onRecentClick: () -> Unit = {},
@@ -69,9 +70,28 @@ fun FavoritesScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            items(favorites, key = { it.id }) { route ->
-                FavoriteRow(route = route, onClick = { onRouteClick(route) })
-                Spacer(modifier = Modifier.height(12.dp))
+            if (isGuest) {
+                item {
+                    Text(
+                        text = "Sign in to save favorite routes.",
+                        color = TukiGray,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            } else if (favorites.isEmpty()) {
+                item {
+                    Text(
+                        text = "No favorite routes yet.",
+                        color = TukiGray,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                items(favorites, key = { it.id }) { route ->
+                    FavoriteRow(route = route, onClick = { onRouteClick(route) })
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
             }
 
             item {

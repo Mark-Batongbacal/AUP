@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using backend.Models.Database;
 using backend.Models.Trips;
-using backend.Repositories;
 using backend.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,9 +8,7 @@ namespace backend.Controllers;
 
 [ApiController]
 [Route("api/trips")]
-public sealed class TripsController(
-    ITripService tripService,
-    ITripSessionRepository tripSessions) : ControllerBase
+public sealed class TripsController(ITripService tripService) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PassengerTripHistoryItemDto>>> GetHistory(
@@ -23,37 +20,26 @@ public sealed class TripsController(
             return Unauthorized();
         }
 
-        var sessions = await tripSessions.GetOwnedHistoryAsync(userId, cancellationToken);
-        var history = new List<PassengerTripHistoryItemDto>(sessions.Count);
+        return Ok(await tripService.GetPassengerTripHistoryAsync(
+            userId,
+            recentOnly: false,
+            cancellationToken));
+    }
 
-        foreach (var session in sessions)
+    [HttpGet("recent")]
+    public async Task<ActionResult<IReadOnlyList<PassengerTripHistoryItemDto>>> GetRecent(
+        CancellationToken cancellationToken)
+    {
+        var userId = UserId();
+        if (userId == Guid.Empty)
         {
-            var recommendation = await tripService.GetRecommendationByIdAsync(
-                session.RecommendationId,
-                cancellationToken);
-            var search = recommendation is null
-                ? null
-                : await tripService.GetTripSearchByIdAsync(recommendation.TripSearchId, cancellationToken);
-            var recommendationDetails = await tripService.GetRecommendationDetailsAsync(
-                session.RecommendationId,
-                cancellationToken);
-
-            history.Add(new PassengerTripHistoryItemDto(
-                session.TripSessionId,
-                session.CurrentNavigationState.ToString(),
-                search?.OriginName ?? "Current location",
-                session.DestinationName ?? search?.DestinationName ?? "Unknown destination",
-                session.OriginLatitude,
-                session.OriginLongitude,
-                session.DestinationLatitude,
-                session.DestinationLongitude,
-                session.StartedAt,
-                session.CompletedAt ?? session.CancelledAt,
-                session.CreatedAt,
-                recommendationDetails));
+            return Unauthorized();
         }
 
-        return Ok(history);
+        return Ok(await tripService.GetPassengerTripHistoryAsync(
+            userId,
+            recentOnly: true,
+            cancellationToken));
     }
 
     [HttpPost]
@@ -186,17 +172,3 @@ public sealed class TripsController(
 
     private static TripErrorResponseDto Error(string message) => new([message]);
 }
-
-public sealed record PassengerTripHistoryItemDto(
-    Guid PassengerTripId,
-    string Status,
-    string OriginName,
-    string DestinationName,
-    double OriginLatitude,
-    double OriginLongitude,
-    double DestinationLatitude,
-    double DestinationLongitude,
-    DateTime? StartedAt,
-    DateTime? CompletedAt,
-    DateTime CreatedAt,
-    RecommendationDetailsDto? Recommendation);

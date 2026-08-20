@@ -2,6 +2,7 @@ package com.example.frontend.data.navigation
 
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
+import com.example.frontend.core.network.apiCall
 import com.example.frontend.core.network.authenticatedApiCall
 import com.example.frontend.core.storage.AuthSessionStore
 import retrofit2.Response
@@ -169,7 +170,7 @@ class NavigationRepositoryImpl(
         endLongitude: Double,
         mode: String,
         routeId: Long?
-    ) = call {
+    ) = apiCall(errors) {
         api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId)
     }
     override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate) =

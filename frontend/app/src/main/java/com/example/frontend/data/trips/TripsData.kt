@@ -107,11 +107,16 @@ data class PassengerTripHistoryItemDto(
     val startedAt: String?,
     val completedAt: String?,
     val createdAt: String,
-    val recommendation: RecommendationDetailsDto?
+    val recommendation: RecommendationDetailsDto?,
+    val rerouted: Boolean = false,
+    val rerouteCount: Int = 0,
+    val lastRerouteReason: String? = null,
+    val lastRerouteAt: String? = null
 )
 
 interface TripsApi {
     @GET("api/trips") suspend fun history(): Response<List<PassengerTripHistoryItemDto>>
+    @GET("api/trips/recent") suspend fun recent(): Response<List<PassengerTripHistoryItemDto>>
     @POST("api/trips") suspend fun start(@Body request: StartTripRequest): Response<PassengerTripDetailsDto>
     @GET("api/trips/{tripId}") suspend fun get(@Path("tripId") tripId: String): Response<PassengerTripDetailsDto>
     @GET("api/trips/{tripId}/alerts") suspend fun alerts(@Path("tripId") tripId: String): Response<List<TripAlertDto>>
@@ -119,6 +124,7 @@ interface TripsApi {
 
 interface TripRepository {
     suspend fun getHistory(): ApiResult<List<PassengerTripHistoryItemDto>>
+    suspend fun getRecentJourneys(): ApiResult<List<PassengerTripHistoryItemDto>>
     suspend fun startTrip(request: StartTripRequest): ApiResult<PassengerTripDetailsDto>
     suspend fun getTrip(tripId: String): ApiResult<PassengerTripDetailsDto>
     suspend fun getTripAlerts(tripId: String): ApiResult<List<TripAlertDto>>
@@ -130,6 +136,7 @@ class TripRepositoryImpl(
     private val errors: ApiErrorParser
 ) : TripRepository {
     override suspend fun getHistory() = authenticatedApiCall(sessions, errors) { api.history() }
+    override suspend fun getRecentJourneys() = authenticatedApiCall(sessions, errors) { api.recent() }
     override suspend fun startTrip(request: StartTripRequest) = authenticatedApiCall(sessions, errors) { api.start(request) }
     override suspend fun getTrip(tripId: String) = authenticatedApiCall(sessions, errors) { api.get(tripId) }
     override suspend fun getTripAlerts(tripId: String) = authenticatedApiCall(sessions, errors) { api.alerts(tripId) }

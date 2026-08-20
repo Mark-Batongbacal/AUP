@@ -2,8 +2,10 @@ package com.example.frontend.data.routing
 
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
-import com.example.frontend.core.network.authenticatedApiCall
+import com.example.frontend.core.network.apiCall
 import com.example.frontend.core.storage.AuthSessionStore
+import com.example.frontend.core.location.LocationNotSupportedShortMessage
+import com.example.frontend.core.location.isRouteSupported
 import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.Body
@@ -64,7 +66,7 @@ data class JeepneyTripLegDto(
     val jeepneyTimeSeconds: Double?,
     val trikePointId: String?,
     val trikePointName: String?,
-    val geometry: List<RouteGeometryPointDto> = emptyList()
+    val geometry: List<RouteGeometryPointDto>? = emptyList()
 )
 
 data class JeepneyTripPlanDto(
@@ -141,7 +143,7 @@ fun JeepneyTripPlanDto.toDomain() = JourneyPlan(
             destination = RouteCoordinate(leg.destinationLatitude, leg.destinationLongitude),
             board = RouteCoordinate(leg.boardLatitude, leg.boardLongitude),
             alight = RouteCoordinate(leg.alightLatitude, leg.alightLongitude),
-            geometry = leg.geometry.map { point ->
+            geometry = leg.geometry.orEmpty().map { point ->
                 RouteCoordinate(point.latitude, point.longitude)
             },
             distanceMeters = leg.distanceMeters,
@@ -182,22 +184,41 @@ class RoutingRepositoryImpl(
     private val sessions: AuthSessionStore,
     private val errors: ApiErrorParser
 ) : RoutingRepository {
-    override suspend fun planJourneys(request: JourneyPlanRequest): ApiResult<List<PlannedJourney>> =
-        when (val result = authenticatedApiCall(sessions, errors) { api.planJourneys(request) }) {
+    override suspend fun planJourneys(request: JourneyPlanRequest): ApiResult<List<PlannedJourney>> {
+        if (!isRouteSupported(
+                request.originLatitude,
+                request.originLongitude,
+                request.destinationLatitude,
+                request.destinationLongitude
+            )
+        ) {
+            return unsupportedLocationFailure()
+        }
+
+        return when (val result = apiCall(errors) { api.planJourneys(request) }) {
             is ApiResult.Success -> ApiResult.Success(result.data.map {
                 PlannedJourney(it.recommendationId, it.plan.toDomain())
             })
             is ApiResult.Failure -> result
         }
+    }
 
     override suspend fun findNearbyRoutes(latitude: Double, longitude: Double) =
-        authenticatedApiCall(sessions, errors) { api.nearby(latitude, longitude) }
+        apiCall(errors) { api.nearby(latitude, longitude) }
 
-    override suspend fun planTrip(originLatitude: Double, originLongitude: Double, destinationLatitude: Double, destinationLongitude: Double): ApiResult<List<JourneyPlan>> =
-        when (val result = authenticatedApiCall(sessions, errors) {
+    override suspend fun planTrip(originLatitude: Double, originLongitude: Double, destinationLatitude: Double, destinationLongitude: Double): ApiResult<List<JourneyPlan>> {
+        if (!isRouteSupported(originLatitude, originLongitude, destinationLatitude, destinationLongitude)) {
+            return unsupportedLocationFailure()
+        }
+
+        return when (val result = apiCall(errors) {
             api.plan(originLatitude, originLongitude, destinationLatitude, destinationLongitude)
         }) {
             is ApiResult.Success -> ApiResult.Success(result.data.map(JeepneyTripPlanDto::toDomain))
             is ApiResult.Failure -> result
         }
+    }
+
+    private fun unsupportedLocationFailure(): ApiResult.Failure =
+        ApiResult.Failure(null, LocationNotSupportedShortMessage)
 }

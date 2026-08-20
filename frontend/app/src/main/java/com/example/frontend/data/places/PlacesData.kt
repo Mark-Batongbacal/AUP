@@ -2,7 +2,7 @@ package com.example.frontend.data.places
 
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
-import com.example.frontend.core.network.authenticatedApiCall
+import com.example.frontend.core.network.apiCall
 import com.example.frontend.core.storage.AuthSessionStore
 import retrofit2.Response
 import retrofit2.http.GET
@@ -44,8 +44,8 @@ class PlacesRepositoryImpl(
     private val errors: ApiErrorParser
 ) : PlacesRepository {
     override suspend fun searchPlaces(query: String, focusLatitude: Double?, focusLongitude: Double?) =
-        authenticatedApiCall(sessions, errors) { api.search(query, focusLatitude, focusLongitude) }
+        apiCall(errors) { api.search(query, focusLatitude, focusLongitude) }
 
     override suspend fun reverseGeocode(latitude: Double, longitude: Double) =
-        authenticatedApiCall(sessions, errors) { api.reverse(latitude, longitude) }
+        apiCall(errors) { api.reverse(latitude, longitude) }
 }

@@ -36,7 +36,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.core.location.LocationDetectionFailureMessage
+import com.example.frontend.core.location.LocationNotSupportedShortMessage
 import com.example.frontend.core.location.currentDeviceLocation
+import com.example.frontend.core.location.isLocationSupported
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.places.PlacesRepository
 import com.example.frontend.data.routing.JourneyPlanRequest
@@ -72,6 +75,7 @@ fun RouteResultsScreen(
     var isLoading by remember { mutableStateOf(true) }
     var routeOptions by remember { mutableStateOf<List<RouteOption>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showUnsupportedLocationDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(
         destinationQuery,
@@ -94,7 +98,14 @@ fun RouteResultsScreen(
         val resolvedOriginLongitude = originLongitude ?: deviceLocation?.longitude
 
         if (resolvedOriginLatitude == null || resolvedOriginLongitude == null) {
-            errorMessage = "Current location is unavailable. Allow location access and try again."
+            errorMessage = LocationDetectionFailureMessage
+            isLoading = false
+            return@LaunchedEffect
+        }
+
+        if (!isLocationSupported(resolvedOriginLatitude, resolvedOriginLongitude)) {
+            showUnsupportedLocationDialog = true
+            errorMessage = LocationNotSupportedShortMessage
             isLoading = false
             return@LaunchedEffect
         }
@@ -139,6 +150,13 @@ fun RouteResultsScreen(
             return@LaunchedEffect
         }
 
+        if (!isLocationSupported(finalDestinationLatitude, finalDestinationLongitude)) {
+            showUnsupportedLocationDialog = true
+            errorMessage = LocationNotSupportedShortMessage
+            isLoading = false
+            return@LaunchedEffect
+        }
+
         when (
             val result = routingRepository.planJourneys(
                 JourneyPlanRequest(
@@ -167,7 +185,7 @@ fun RouteResultsScreen(
                     // visually convincing but incorrect straight road. Missing geometry
                     // is resolved through the navigation geometry API instead.
                     val legRoutePoints = plan.legs.map { leg ->
-                        leg.geometry.map { point ->
+                        leg.geometry.orEmpty().map { point ->
                             RoutePoint(point.latitude, point.longitude)
                         }
                     }
@@ -225,6 +243,12 @@ fun RouteResultsScreen(
         }
 
         isLoading = false
+    }
+
+    if (showUnsupportedLocationDialog) {
+        LocationNotSupportedDialog {
+            showUnsupportedLocationDialog = false
+        }
     }
 
     Column(

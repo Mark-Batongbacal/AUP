@@ -2,6 +2,7 @@ using System.Security.Claims;
 using backend.Services.Navigation;
 using backend.Services.Routing;
 using backend.Services.Transportation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -25,6 +26,7 @@ public sealed class NavigationController(
         Result(await navigation.GetActiveAsync(UserId(), cancellationToken));
 
     [HttpGet("geometry")]
+    [AllowAnonymous]
     public async Task<IActionResult> Geometry(
         [FromQuery] double startLat,
         [FromQuery] double startLon,

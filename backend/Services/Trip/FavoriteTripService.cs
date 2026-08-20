@@ -37,6 +37,11 @@ public sealed class FavoriteTripService(
         string? note,
         CancellationToken cancellationToken = default)
     {
+        if (userId == Guid.Empty)
+        {
+            return new FavoriteTripAddResult(FavoriteTripAddStatus.PersistenceNotAllowed, null);
+        }
+
         var recommendation = await routeRecommendationRepository.GetByIdAsync(recommendationId, cancellationToken);
         if (recommendation is null)
         {

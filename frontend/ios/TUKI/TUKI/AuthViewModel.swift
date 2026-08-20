@@ -14,6 +14,7 @@ final class AuthViewModel: ObservableObject {
     @Published var isAuthenticating = false
     @Published var errorMessage: String?
     @Published private(set) var isAuthenticated: Bool
+    @Published private(set) var isGuest = false
     #if DEBUG
     @Published private(set) var facebookLoginDiagnostic: FacebookLoginDiagnosticReport?
     #endif
@@ -22,6 +23,10 @@ final class AuthViewModel: ObservableObject {
     private let credentialStore: TukiCredentialStore
     private let googleSignInCoordinator: GoogleSignInCoordinator?
     private let facebookSignInCoordinator: FacebookSignInCoordinator?
+
+    var canEnterApp: Bool {
+        isAuthenticated || isGuest
+    }
 
     init() {
         let credentialStore = KeychainTukiCredentialStore()
@@ -193,10 +198,18 @@ final class AuthViewModel: ObservableObject {
         facebookSignInCoordinator?.signOut()
         try? credentialStore.clear()
         isAuthenticated = false
+        isGuest = false
         password = ""
         #if DEBUG
         facebookLoginDiagnostic = nil
         #endif
+    }
+
+    func continueAsGuest() {
+        isGuest = true
+        isAuthenticated = false
+        errorMessage = nil
+        password = ""
     }
 
     private func authenticate(_ operation: @escaping () async -> AuthResult) async {

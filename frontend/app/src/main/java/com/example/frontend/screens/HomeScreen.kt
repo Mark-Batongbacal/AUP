@@ -1,10 +1,7 @@
 package com.example.frontend.screens
 
 import android.Manifest
-import android.content.pm.PackageManager
 import android.location.Geocoder
-import android.location.Location
-import android.location.LocationManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,10 +38,15 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
+import com.example.frontend.core.location.LocationDetectionFailureMessage
+import com.example.frontend.core.location.currentDeviceLocation
+import com.example.frontend.core.location.hasDeviceLocationPermission
+import com.example.frontend.core.location.isLocationSupported
+import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.trips.TripRepository
+import com.example.frontend.data.trips.toRecentCommute
 import com.example.frontend.model.RecentCommute
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -60,6 +62,7 @@ private val TukiCream2 = Color(0xFFFAEBC7)
 fun HomeScreen(
     userName: String = "Juan",
     tripRepository: TripRepository,
+    isGuest: Boolean = false,
     onSearchDestination: (origin: String, destination: String) -> Unit = { _, _ -> },
     onCommuteClick: (RecentCommute) -> Unit = {},
     onRecentClick: () -> Unit = {},
@@ -74,6 +77,7 @@ fun HomeScreen(
     var recentCommutes by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
     var isRefreshingRecent by remember { mutableStateOf(false) }
     var recentErrorMessage by remember { mutableStateOf<String?>(null) }
+    var showUnsupportedLocationDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val inPreview = LocalInspectionMode.current
@@ -95,13 +99,20 @@ fun HomeScreen(
         isRefreshingRecent = true
         recentErrorMessage = null
 
-        // Backend currently doesn't have a list-trips endpoint in TripRepository
-        // Using local mock data for now to maintain UI functionality
-        recentCommutes = listOf(
-            RecentCommute(id = "1", origin = "Sta. Rita", destination = "Guagua Town", legs = 3, minutes = 22),
-            RecentCommute(id = "2", origin = "Dolores", destination = "SM City Clark", legs = 2, minutes = 18),
-            RecentCommute(id = "3", origin = "Porac", destination = "Dau Terminal", legs = 4, minutes = 35)
-        )
+        recentCommutes = if (isGuest) {
+            emptyList()
+        } else {
+            when (val result = tripRepository.getRecentJourneys()) {
+                is ApiResult.Success -> result.data
+                    .distinctBy { it.passengerTripId }
+                    .take(3)
+                    .map { it.toRecentCommute() }
+                is ApiResult.Failure -> {
+                    recentErrorMessage = result.message
+                    emptyList()
+                }
+            }
+        }
 
         isRefreshingRecent = false
 
@@ -110,9 +121,20 @@ fun HomeScreen(
             return@LaunchedEffect
         }
 
-        if (context.hasLocationPermission()) {
-            val label = getCurrentLocationLabel(context)
-            currentLocationLabel = label ?: "Unable to detect location"
+        if (context.hasDeviceLocationPermission()) {
+            val location = context.currentDeviceLocation()
+            if (location == null) {
+                currentLocationLabel = LocationDetectionFailureMessage
+            } else {
+                currentLocationLabel = reverseGeocode(
+                    context,
+                    location.latitude,
+                    location.longitude
+                ) ?: "Detected location"
+                if (!isLocationSupported(location.latitude, location.longitude)) {
+                    showUnsupportedLocationDialog = true
+                }
+            }
             isLocating = false
         } else {
             permissionLauncher.launch(
@@ -217,6 +239,18 @@ fun HomeScreen(
                         fontSize = 14.sp
                     )
                 }
+            } else if (recentCommutes.isEmpty()) {
+                item {
+                    Text(
+                        text = if (isGuest) {
+                            "Sign in to view completed and cancelled journeys."
+                        } else {
+                            "No completed or cancelled trips yet."
+                        },
+                        color = TukiGray,
+                        fontSize = 14.sp
+                    )
+                }
             } else {
                 items(recentCommutes, key = { it.id }) { commute ->
                     RecentCommuteCard(
@@ -240,6 +274,12 @@ fun HomeScreen(
             onFavoritesClick = onFavoritesClick,
             onProfileClick = onProfileClick
         )
+    }
+
+    if (showUnsupportedLocationDialog) {
+        LocationNotSupportedDialog {
+            showUnsupportedLocationDialog = false
+        }
     }
 }
 
@@ -473,7 +513,11 @@ private fun RecentCommuteCard(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "${commute.legs} legs · ${commute.minutes} min",
+            text = buildList {
+                commute.status.takeIf { it.isNotBlank() }?.let(::add)
+                add("${commute.legs} legs")
+                add("${commute.minutes} min")
+            }.joinToString(" · "),
             color = TukiTeal,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
@@ -512,44 +556,6 @@ private fun NewHereBanner(onClick: () -> Unit) {
             fontWeight = FontWeight.Bold
         )
     }
-}
-
-private fun android.content.Context.hasLocationPermission(): Boolean {
-    return ContextCompat.checkSelfPermission(
-        this,
-        Manifest.permission.ACCESS_FINE_LOCATION
-    ) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-}
-
-private suspend fun getCurrentLocationLabel(
-    context: android.content.Context
-): String? {
-    if (!context.hasLocationPermission()) return null
-
-    val locationManager =
-        context.getSystemService(android.content.Context.LOCATION_SERVICE) as? LocationManager
-            ?: return null
-
-    val location: Location? = try {
-        val providers = locationManager.getProviders(true)
-        providers.mapNotNull { provider ->
-            @Suppress("MissingPermission")
-            locationManager.getLastKnownLocation(provider)
-        }.maxByOrNull { it.time }
-    } catch (e: SecurityException) {
-        null
-    }
-
-    location ?: return null
-    return reverseGeocode(
-        context,
-        location.latitude,
-        location.longitude
-    )
 }
 
 private suspend fun reverseGeocode(
