@@ -25,6 +25,7 @@ import com.example.frontend.TransitRouteOverlay
 import com.example.frontend.components.ParaPoOverlay
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import org.maplibre.android.geometry.LatLng
+import java.math.BigDecimal
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -47,9 +48,13 @@ fun TripTrackingScreen(
     navigationSnapshot: NavigationSnapshotDto? = null,
     navigationError: String? = null,
     isNavigationActionInProgress: Boolean = false,
+    tripOptionsEnabled: Boolean = true,
     onBack: () -> Unit = {},
     onEndTrip: () -> Unit = {},
-    onManualReroute: (() -> Unit)? = null,
+    onRerouteNow: () -> Unit = {},
+    onChangePreference: (String) -> Unit = {},
+    onChangeBudget: (BigDecimal?, Boolean) -> Unit = { _, _ -> },
+    onChangeDestination: (String) -> Unit = {},
     onConfirmBoarding: () -> Unit = {},
     onConfirmAlighting: () -> Unit = {},
     onArrivalAcknowledged: () -> Unit = {}
@@ -57,10 +62,12 @@ fun TripTrackingScreen(
     var showParaPoOverlay by remember { mutableStateOf(false) }
     var showExitTripDialog by remember { mutableStateOf(false) }
     var showArrivalDialog by remember { mutableStateOf(false) }
+    var showTripOptions by remember { mutableStateOf(false) }
 
     LaunchedEffect(navigationSnapshot?.state) {
         if (navigationSnapshot?.state.equals("Arrived", ignoreCase = true)) {
             showArrivalDialog = true
+            showTripOptions = false
         }
     }
 
@@ -84,21 +91,12 @@ fun TripTrackingScreen(
 
     val currentLegDistance = navigationSnapshot?.currentLeg?.distanceMeters
     val progressFraction = if (currentLegDistance != null && currentLegDistance > 0.0) {
-        (navigationSnapshot.progressMeters / currentLegDistance)
-            .coerceIn(0.0, 1.0)
-            .toFloat()
-    } else {
-        0f
-    }
+        (navigationSnapshot.progressMeters / currentLegDistance).coerceIn(0.0, 1.0).toFloat()
+    } else 0f
 
-    val currentPosition = if (
-        navigationSnapshot?.currentLatitude != null &&
-        navigationSnapshot.currentLongitude != null
-    ) {
-        LatLng(navigationSnapshot.currentLatitude, navigationSnapshot.currentLongitude)
-    } else {
-        null
-    }
+    val latitude = navigationSnapshot?.currentLatitude
+    val longitude = navigationSnapshot?.currentLongitude
+    val currentPosition = if (latitude != null && longitude != null) LatLng(latitude, longitude) else null
     val visibleRoutePoints = remember(routePoints, currentPosition) {
         routeFromCurrentPosition(routePoints, currentPosition)
     }
@@ -115,9 +113,7 @@ fun TripTrackingScreen(
         if (hasActiveTrip) showExitTripDialog = true else onBack()
     }
 
-    BackHandler(enabled = hasActiveTrip) {
-        showExitTripDialog = true
-    }
+    BackHandler(enabled = hasActiveTrip) { showExitTripDialog = true }
 
     Box(modifier = Modifier.fillMaxSize()) {
         MapScreen(
@@ -146,194 +142,114 @@ fun TripTrackingScreen(
                         .clickable(onClick = ::requestBack),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "‹", color = TukiDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Text("‹", color = TukiDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Current Trip",
-                        color = TukiGray,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "$origin → $destination",
-                        color = TukiDark,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    navigationSnapshot?.currentLeg?.routeName
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { routeName ->
-                            Text(
-                                text = routeName,
-                                color = TukiTeal,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                }
-                if (hasActiveTrip && onManualReroute != null) {
-                    TextButton(
-                        onClick = onManualReroute,
-                        enabled = !isNavigationActionInProgress
-                    ) {
-                        if (isNavigationActionInProgress) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = TukiTeal
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-                        Text("Reroute", color = TukiTeal, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Current Trip", color = TukiGray, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("$origin → $destination", color = TukiDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    navigationSnapshot?.currentLeg?.routeName?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, color = TukiTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
+                }
+                if (hasActiveTrip && tripOptionsEnabled) {
+                    FilledTonalButton(
+                        onClick = { showTripOptions = true },
+                        enabled = !isNavigationActionInProgress,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) { Text("Options", fontWeight = FontWeight.Bold) }
                 }
             }
         }
 
         Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(20.dp),
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(20.dp),
             shape = RoundedCornerShape(24.dp),
             color = Color.White,
             tonalElevation = 8.dp,
             shadowElevation = 8.dp
         ) {
-            Column(modifier = Modifier.padding(24.dp)) {
+            Column(Modifier.padding(24.dp)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "NEXT STEP",
-                            color = TukiTeal,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = instruction,
-                            color = TukiDark,
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = distanceText,
-                            color = TukiGray,
-                            fontSize = 14.sp
-                        )
-
-                        navigationSnapshot?.landmark?.let { landmark ->
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Near ${landmark.name}",
-                                color = TukiTeal,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                    Column(Modifier.weight(1f)) {
+                        Text("NEXT STEP", color = TukiTeal, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(instruction, color = TukiDark, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(distanceText, color = TukiGray, fontSize = 14.sp)
+                        navigationSnapshot?.landmark?.let {
+                            Spacer(Modifier.height(4.dp))
+                            Text("Near ${it.name}", color = TukiTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-
-                        navigationError?.takeIf { it.isNotBlank() }?.let { error ->
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = error,
-                                color = MaterialTheme.colorScheme.error,
-                                fontSize = 12.sp
-                            )
+                        navigationError?.takeIf { it.isNotBlank() }?.let {
+                            Spacer(Modifier.height(6.dp))
+                            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
+                    Spacer(Modifier.width(12.dp))
                     Surface(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clickable(enabled = canUseParaPo && !isNavigationActionInProgress) {
-                                showParaPoOverlay = true
-                            },
+                        modifier = Modifier.size(64.dp).clickable(enabled = canUseParaPo && !isNavigationActionInProgress) {
+                            showParaPoOverlay = true
+                        },
                         shape = CircleShape,
-                        color = if (canUseParaPo) {
-                            TukiOrange.copy(alpha = 0.2f)
-                        } else {
-                            TukiGray.copy(alpha = 0.12f)
-                        }
+                        color = if (canUseParaPo) TukiOrange.copy(alpha = 0.2f) else TukiGray.copy(alpha = 0.12f)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "🔔",
-                                fontSize = 28.sp,
-                                color = if (canUseParaPo) Color.Unspecified else TukiGray
-                            )
-                        }
+                        Box(contentAlignment = Alignment.Center) { Text("🔔", fontSize = 28.sp) }
                     }
                 }
 
                 if (requiresBoarding || requiresAlighting) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(Modifier.height(16.dp))
                     Button(
                         onClick = if (requiresBoarding) onConfirmBoarding else onConfirmAlighting,
                         enabled = !isNavigationActionInProgress,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (requiresBoarding) TukiTeal else TukiOrange,
-                            contentColor = Color.White
-                        )
+                        colors = ButtonDefaults.buttonColors(containerColor = if (requiresBoarding) TukiTeal else TukiOrange)
                     ) {
                         if (isNavigationActionInProgress) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            Spacer(Modifier.width(8.dp))
                         }
-                        Text(
-                            text = if (requiresBoarding) "Confirm Board" else "Confirm Alight",
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text(if (requiresBoarding) "Confirm Board" else "Confirm Alight", fontWeight = FontWeight.Bold)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
-
+                Spacer(Modifier.height(20.dp))
                 LinearProgressIndicator(
                     progress = { progressFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp),
+                    modifier = Modifier.fillMaxWidth().height(8.dp),
                     color = TukiTeal,
                     trackColor = TukiTeal.copy(alpha = 0.1f),
                     strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
-
-                navigationSnapshot?.status?.takeIf { it.isNotBlank() }?.let { status ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = status.replace('_', ' '),
-                        color = TukiGray,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                navigationSnapshot?.status?.takeIf { it.isNotBlank() }?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it.replace('_', ' '), color = TukiGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
 
         if (showParaPoOverlay) {
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.4f))
-                    .clickable { showParaPoOverlay = false },
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)).clickable { showParaPoOverlay = false },
                 contentAlignment = Alignment.Center
-            ) {
-                ParaPoOverlay(onDismiss = { showParaPoOverlay = false })
-            }
+            ) { ParaPoOverlay(onDismiss = { showParaPoOverlay = false }) }
         }
+    }
+
+    if (showTripOptions) {
+        TripOptionsSheet(
+            isWorking = isNavigationActionInProgress,
+            onDismiss = { showTripOptions = false },
+            onRerouteNow = onRerouteNow,
+            onPreferenceChange = onChangePreference,
+            onBudgetChange = onChangeBudget,
+            onDestinationChange = onChangeDestination,
+            onEndTrip = onEndTrip
+        )
     }
 
     if (showExitTripDialog) {
@@ -342,18 +258,12 @@ fun TripTrackingScreen(
             title = { Text("Trip is still active") },
             text = { Text("Going back will not end the navigation session. Continue the trip or end it first?") },
             confirmButton = {
-                TextButton(
-                    onClick = onEndTrip,
-                    enabled = !isNavigationActionInProgress
-                ) {
+                TextButton(onClick = onEndTrip, enabled = !isNavigationActionInProgress) {
                     Text("End Trip", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { showExitTripDialog = false },
-                    enabled = !isNavigationActionInProgress
-                ) {
+                TextButton(onClick = { showExitTripDialog = false }, enabled = !isNavigationActionInProgress) {
                     Text("Continue Trip")
                 }
             }
@@ -367,14 +277,9 @@ fun TripTrackingScreen(
             text = { Text("You've reached $destination. Your trip has been completed automatically.") },
             confirmButton = {
                 Button(
-                    onClick = {
-                        showArrivalDialog = false
-                        onArrivalAcknowledged()
-                    },
+                    onClick = { showArrivalDialog = false; onArrivalAcknowledged() },
                     colors = ButtonDefaults.buttonColors(containerColor = TukiTeal)
-                ) {
-                    Text("Done")
-                }
+                ) { Text("Done") }
             }
         )
     }
