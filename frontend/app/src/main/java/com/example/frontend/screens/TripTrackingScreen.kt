@@ -71,11 +71,29 @@ fun TripTrackingScreen(
 
     val snapshot = optionSnapshot ?: navigationSnapshot
     val working = isNavigationActionInProgress || optionWorking
+    val progressBucket = ((snapshot?.progressMeters ?: 0.0) / 50.0).toInt()
 
     LaunchedEffect(navigationSnapshot?.state) {
         if (navigationSnapshot?.state.equals("Arrived", ignoreCase = true)) {
             showArrivalDialog = true
             showTripOptions = false
+        }
+    }
+
+    LaunchedEffect(
+        snapshot?.sessionId,
+        snapshot?.currentLegIndex,
+        snapshot?.currentLeg?.routeId,
+        snapshot?.currentLeg?.transportMode,
+        progressBucket
+    ) {
+        val current = snapshot ?: return@LaunchedEffect
+        if (current.sessionId.startsWith("guest-") || current.state.equals("Arrived", true) || current.state.equals("Cancelled", true)) {
+            return@LaunchedEffect
+        }
+        when (val geometry = options.currentLegGeometry(current)) {
+            is ApiResult.Success -> optionRoutePoints = geometry.data.points.map { LatLng(it.latitude, it.longitude) }
+            is ApiResult.Failure -> if (optionRoutePoints.isEmpty()) optionError = geometry.message
         }
     }
 
@@ -96,13 +114,12 @@ fun TripTrackingScreen(
                     }
                     when (val geometry = options.currentLegGeometry(result.data)) {
                         is ApiResult.Success -> optionRoutePoints = geometry.data.points.map { LatLng(it.latitude, it.longitude) }
-                        is ApiResult.Failure -> optionRoutePoints = emptyList()
+                        is ApiResult.Failure -> optionError = geometry.message
                     }
                     showTripOptions = false
                     scope.launch {
                         delay(6_000)
                         optionSnapshot = null
-                        optionRoutePoints = emptyList()
                     }
                 }
                 is ApiResult.Failure -> optionError = result.message
@@ -155,9 +172,7 @@ fun TripTrackingScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        Column(
-            Modifier.fillMaxWidth().padding(30.dp).background(Color.White, RoundedCornerShape(20.dp)).padding(20.dp)
-        ) {
+        Column(Modifier.fillMaxWidth().padding(30.dp).background(Color.White, RoundedCornerShape(20.dp)).padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(32.dp).background(TukiCream, RoundedCornerShape(8.dp)).clickable(onClick = ::requestBack),
@@ -219,6 +234,21 @@ fun TripTrackingScreen(
                     color = TukiTeal, trackColor = TukiTeal.copy(alpha = 0.1f), strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
                 snapshot?.status?.takeIf { it.isNotBlank() }?.let { Spacer(Modifier.height(8.dp)); Text(it.replace('_', ' '), color = TukiGray, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+            }
+        }
+
+        if (optionWorking) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center),
+                shape = RoundedCornerShape(18.dp),
+                color = Color.White,
+                shadowElevation = 10.dp
+            ) {
+                Row(Modifier.padding(horizontal = 22.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(24.dp), color = TukiTeal, strokeWidth = 3.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Updating your trip…", color = TukiDark, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
