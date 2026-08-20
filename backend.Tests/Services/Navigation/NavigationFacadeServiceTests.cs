@@ -156,8 +156,9 @@ public sealed class NavigationFacadeServiceTests
         _location.Setup(item => item.ProcessAsync(_userId, _sessionId,
                 It.IsAny<LocationUpdate>(), default))
             .ReturnsAsync(new LocationUpdateResult(true, "OFF_ROUTE"));
-        _rerouting.Setup(item => item.RerouteAsync(_userId, _sessionId, "OFF_ROUTE", default))
-            .ReturnsAsync(new RerouteResult(false, "OFF_ROUTE_NO_REROUTE_AVAILABLE"));
+        _rerouting.Setup(item => item.RerouteAsync(_userId, _sessionId,
+                It.Is<NavigationRerouteRequest>(request => request.Reason == "OFF_ROUTE"), default))
+            .ReturnsAsync(new RerouteResult(false, "NO_REROUTE_AVAILABLE"));
         _speech.Setup(item => item.PhraseAsync(It.IsAny<NavigationSpeechContext>(), default))
             .ReturnsAsync("You have arrived.");
 
