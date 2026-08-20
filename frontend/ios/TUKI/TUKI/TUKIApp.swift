@@ -15,10 +15,13 @@ struct TUKIApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TukiParityRootView()
-                .onOpenURL { url in
-                    AuthCallbackURLHandler.handle(url)
-                }
+            ZStack {
+                TukiParityRootView()
+                TukiTripOptionsOverlay()
+            }
+            .onOpenURL { url in
+                AuthCallbackURLHandler.handle(url)
+            }
         }
     }
 }
