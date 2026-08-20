@@ -15,7 +15,7 @@ struct TUKIApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            TukiParityRootView()
                 .onOpenURL { url in
                     AuthCallbackURLHandler.handle(url)
                 }
@@ -34,7 +34,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         )
         return true
     }
-
 }
 
 private enum AuthCallbackURLHandler {
@@ -47,7 +46,6 @@ private enum AuthCallbackURLHandler {
             annotation: nil
         )
         let handledByGoogle = GIDSignIn.sharedInstance.handle(url)
-
         return handledByFacebook || handledByGoogle
     }
 }
