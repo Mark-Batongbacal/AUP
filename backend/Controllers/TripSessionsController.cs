@@ -59,7 +59,8 @@ public sealed class TripSessionsController(
     [HttpPost("{id:guid}/reroute")]
     public async Task<IActionResult> Reroute(Guid id, RerouteRequest request, CancellationToken cancellationToken)
     {
-        var result = await rerouting.RerouteAsync(UserId(), id, request.Reason, cancellationToken);
+        var result = await rerouting.RerouteAsync(UserId(), id,
+            new NavigationRerouteRequest(request.Reason), cancellationToken);
         return result.Succeeded ? Ok(result) : Conflict(result);
     }
 
