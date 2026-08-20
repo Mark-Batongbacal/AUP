@@ -158,7 +158,7 @@ fun TripTrackingScreen(
     val preparingToAlight = snapshot?.state.equals("ApproachingAlightPoint", true) && !requiresAlighting
     val canUseParaPo = requiresAlighting || snapshot?.nextInstruction?.type?.contains("alight", ignoreCase = true) == true
     val hasActiveTrip = snapshot != null && !snapshot.state.equals("Arrived", true) && !snapshot.state.equals("Cancelled", true)
-    val showFareState = snapshot != null && !snapshot.sessionId.startsWith("guest-")
+    val fareSnapshot = snapshot?.takeUnless { it.sessionId.startsWith("guest-") }
 
     fun requestBack() { if (hasActiveTrip) showExitTripDialog = true else onBack() }
     BackHandler(enabled = hasActiveTrip) { showExitTripDialog = true }
@@ -237,7 +237,7 @@ fun TripTrackingScreen(
                     ) { Box(contentAlignment = Alignment.Center) { Text("🔔", fontSize = 28.sp) } }
                 }
 
-                if (showFareState) {
+                fareSnapshot?.let { fare ->
                     Spacer(Modifier.height(16.dp))
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -248,8 +248,8 @@ fun TripTrackingScreen(
                             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            FareValue("Approx. fare spent", snapshot!!.approxFareSpent)
-                            FareValue("Estimated remaining", snapshot.estimatedRemainingFare)
+                            FareValue("Approx. fare spent", fare.approxFareSpent)
+                            FareValue("Estimated remaining", fare.estimatedRemainingFare)
                         }
                     }
                 }
