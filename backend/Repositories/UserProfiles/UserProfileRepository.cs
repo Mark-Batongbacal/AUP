@@ -104,6 +104,24 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
         return existing;
     }
 
+    public async Task<bool> DeactivateAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _context.UserProfiles.FirstOrDefaultAsync(
+            profile => profile.UserId == userId && profile.IsActive,
+            cancellationToken);
+        if (existing is null)
+        {
+            return false;
+        }
+
+        existing.IsActive = false;
+        existing.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default) =>
         _context.UserProfiles
             .AsNoTracking()
