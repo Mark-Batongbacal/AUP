@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,11 +48,20 @@ fun TripTrackingScreen(
     isNavigationActionInProgress: Boolean = false,
     onBack: () -> Unit = {},
     onEndTrip: () -> Unit = {},
+    onManualReroute: () -> Unit = {},
     onConfirmBoarding: () -> Unit = {},
-    onConfirmAlighting: () -> Unit = {}
+    onConfirmAlighting: () -> Unit = {},
+    onArrivalAcknowledged: () -> Unit = {}
 ) {
     var showParaPoOverlay by remember { mutableStateOf(false) }
     var showExitTripDialog by remember { mutableStateOf(false) }
+    var showArrivalDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(navigationSnapshot?.state) {
+        if (navigationSnapshot?.state.equals("Arrived", ignoreCase = true)) {
+            showArrivalDialog = true
+        }
+    }
 
     val instruction = navigationSnapshot?.displayInstruction()
         ?: navigationSnapshot?.nextInstruction?.let { next ->
@@ -125,7 +135,7 @@ fun TripTrackingScreen(
                     Text(text = "‹", color = TukiDark, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.width(16.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Current Trip",
                         color = TukiGray,
@@ -148,6 +158,22 @@ fun TripTrackingScreen(
                                 fontWeight = FontWeight.Bold
                             )
                         }
+                }
+                if (hasActiveTrip) {
+                    TextButton(
+                        onClick = onManualReroute,
+                        enabled = !isNavigationActionInProgress
+                    ) {
+                        if (isNavigationActionInProgress) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = TukiTeal
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text("Reroute", color = TukiTeal, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -315,6 +341,25 @@ fun TripTrackingScreen(
                     enabled = !isNavigationActionInProgress
                 ) {
                     Text("Continue Trip")
+                }
+            }
+        )
+    }
+
+    if (showArrivalDialog) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("You have arrived 🎉") },
+            text = { Text("You've reached $destination. Your trip has been completed automatically.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showArrivalDialog = false
+                        onArrivalAcknowledged()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TukiTeal)
+                ) {
+                    Text("Done")
                 }
             }
         )
