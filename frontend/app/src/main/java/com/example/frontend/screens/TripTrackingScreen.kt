@@ -26,6 +26,7 @@ import com.example.frontend.navigation.TripOptionsCoordinator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
+import java.math.BigDecimal
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -154,8 +155,10 @@ fun TripTrackingScreen(
 
     val requiresBoarding = snapshot?.requiresBoardingConfirmation == true
     val requiresAlighting = snapshot?.requiresAlightingConfirmation == true
+    val preparingToAlight = snapshot?.state.equals("ApproachingAlightPoint", true) && !requiresAlighting
     val canUseParaPo = requiresAlighting || snapshot?.nextInstruction?.type?.contains("alight", ignoreCase = true) == true
     val hasActiveTrip = snapshot != null && !snapshot.state.equals("Arrived", true) && !snapshot.state.equals("Cancelled", true)
+    val showFareState = snapshot != null && !snapshot.sessionId.startsWith("guest-")
 
     fun requestBack() { if (hasActiveTrip) showExitTripDialog = true else onBack() }
     BackHandler(enabled = hasActiveTrip) { showExitTripDialog = true }
@@ -206,10 +209,24 @@ fun TripTrackingScreen(
                     Column(Modifier.weight(1f)) {
                         Text("NEXT STEP", color = TukiTeal, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
                         Text(instruction, color = TukiDark, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
-                        Spacer(Modifier.height(4.dp)); Text(distanceText, color = TukiGray, fontSize = 14.sp)
-                        snapshot?.landmark?.let { Spacer(Modifier.height(4.dp)); Text("Near ${it.name}", color = TukiTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                        Spacer(Modifier.height(4.dp))
+                        Text(distanceText, color = TukiGray, fontSize = 14.sp)
+                        snapshot?.landmark?.let {
+                            Spacer(Modifier.height(4.dp))
+                            Text("Near ${it.name}", color = TukiTeal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        if (preparingToAlight) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Prepare to alight. Confirm Alight will become available when you're within 75 m of your stop.",
+                                color = TukiOrange,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                         (optionError ?: navigationError)?.takeIf { it.isNotBlank() }?.let {
-                            Spacer(Modifier.height(6.dp)); Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                            Spacer(Modifier.height(6.dp))
+                            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                         }
                     }
                     Spacer(Modifier.width(12.dp))
@@ -219,6 +236,24 @@ fun TripTrackingScreen(
                         color = if (canUseParaPo) TukiOrange.copy(alpha = 0.2f) else TukiGray.copy(alpha = 0.12f)
                     ) { Box(contentAlignment = Alignment.Center) { Text("🔔", fontSize = 28.sp) } }
                 }
+
+                if (showFareState) {
+                    Spacer(Modifier.height(16.dp))
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = TukiCream
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            FareValue("Approx. fare spent", snapshot!!.approxFareSpent)
+                            FareValue("Estimated remaining", snapshot.estimatedRemainingFare)
+                        }
+                    }
+                }
+
                 if (requiresBoarding || requiresAlighting) {
                     Spacer(Modifier.height(16.dp))
                     Button(
@@ -226,7 +261,10 @@ fun TripTrackingScreen(
                         enabled = !working, modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = if (requiresBoarding) TukiTeal else TukiOrange)
                     ) {
-                        if (working) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White); Spacer(Modifier.width(8.dp)) }
+                        if (working) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                        }
                         Text(if (requiresBoarding) "Confirm Board" else "Confirm Alight", fontWeight = FontWeight.Bold)
                     }
                 }
@@ -235,7 +273,10 @@ fun TripTrackingScreen(
                     progress = { progressFraction }, modifier = Modifier.fillMaxWidth().height(8.dp),
                     color = TukiTeal, trackColor = TukiTeal.copy(alpha = 0.1f), strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
-                snapshot?.status?.takeIf { it.isNotBlank() }?.let { Spacer(Modifier.height(8.dp)); Text(it.replace('_', ' '), color = TukiGray, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                snapshot?.status?.takeIf { it.isNotBlank() }?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it.replace('_', ' '), color = TukiGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
@@ -300,6 +341,16 @@ fun TripTrackingScreen(
         )
     }
 }
+
+@Composable
+private fun FareValue(label: String, value: BigDecimal) {
+    Column {
+        Text(label, color = TukiGray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(value.asPeso(), color = TukiDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+    }
+}
+
+private fun BigDecimal.asPeso(): String = "₱${stripTrailingZeros().toPlainString()}"
 
 private fun routeFromCurrentPosition(route: List<LatLng>, current: LatLng?): List<LatLng> {
     if (current == null || route.size < 2) return route
