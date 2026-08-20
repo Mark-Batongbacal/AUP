@@ -10,7 +10,7 @@ namespace backend.Tests.Services.Navigation;
 public sealed class ReroutingServiceTests
 {
     [Fact]
-    public async Task Cooldown_PreventsReroutingLoop()
+    public async Task Cooldown_PreventsAutomaticReroutingLoop()
     {
         var sessions = new Mock<ITripSessionRepository>();
         var session = OffRouteSession();
@@ -22,6 +22,28 @@ public sealed class ReroutingServiceTests
         Assert.Equal("REROUTE_COOLDOWN", result.Status);
         routing.Verify(item => item.PlanTripsAsync(It.IsAny<double>(), It.IsAny<double>(),
             It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ManualReroute_IgnoresAutomaticRecoveryCooldown()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        session.CurrentNavigationState = TripNavigationState.OnJeepney;
+        session.LastRerouteAt = DateTime.UtcNow;
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default)).ReturnsAsync(session);
+        sessions.Setup(item => item.UpdateAsync(session, default)).ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+        routing.Setup(item => item.PlanTripsAsync(session.LastLatitude!.Value, session.LastLongitude!.Value,
+                session.DestinationLatitude, session.DestinationLongitude, default))
+            .ReturnsAsync([]);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest("MANUAL"));
+
+        Assert.Equal("NO_REROUTE_AVAILABLE", result.Status);
+        routing.Verify(item => item.PlanTripsAsync(session.LastLatitude!.Value, session.LastLongitude!.Value,
+            session.DestinationLatitude, session.DestinationLongitude, default), Times.Once);
     }
 
     [Fact]
@@ -100,6 +122,40 @@ public sealed class ReroutingServiceTests
             new NavigationRerouteRequest("PREFERENCE_CHANGED", "random"));
 
         Assert.Equal("INVALID_PREFERENCE", result.Status);
+        routing.Verify(item => item.PlanTripsAsync(It.IsAny<double>(), It.IsAny<double>(),
+            It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task InvalidBudget_IsRejectedBeforeRoutePlanning()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        session.CurrentNavigationState = TripNavigationState.OnJeepney;
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default)).ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest("BUDGET_CHANGED", Budget: 0));
+
+        Assert.Equal("INVALID_BUDGET", result.Status);
+        routing.Verify(item => item.PlanTripsAsync(It.IsAny<double>(), It.IsAny<double>(),
+            It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PartialDestination_IsRejectedBeforeRoutePlanning()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        session.CurrentNavigationState = TripNavigationState.OnJeepney;
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default)).ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest("DESTINATION_CHANGED", DestinationName: "SM Clark"));
+
+        Assert.Equal("INVALID_DESTINATION", result.Status);
         routing.Verify(item => item.PlanTripsAsync(It.IsAny<double>(), It.IsAny<double>(),
             It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
     }
