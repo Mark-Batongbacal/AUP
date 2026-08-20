@@ -1,6 +1,7 @@
 using backend.Models.Database;
 using backend.Repositories;
 using backend.Services.TripSessions;
+using Microsoft.Extensions.Options;
 
 namespace backend.Services.Navigation;
 
@@ -24,8 +25,11 @@ public sealed class NavigationFacadeService(
     ILocationTrackingService locationTracking,
     IReroutingService rerouting,
     INavigationSpeechService speech,
+    IOptions<NavigationOptions> options,
     ILogger<NavigationFacadeService> logger) : INavigationFacadeService
 {
+    private readonly NavigationOptions _options = options.Value;
+
     public async Task<NavigationOperation> StartAsync(Guid userId, Guid recommendationId, CancellationToken cancellationToken = default)
     {
         var created = await tripSessions.CreateAsync(userId, new CreateTripSessionRequest(recommendationId), cancellationToken);
@@ -100,7 +104,7 @@ public sealed class NavigationFacadeService(
             ? new NavigationLandmarkSnapshot(progressLandmark.Text.Replace("You just passed ", "", StringComparison.OrdinalIgnoreCase).TrimEnd('.'), "", "PROGRESS_REFERENCE", "ALONG_ROUTE", progressLandmark.Latitude ?? 0, progressLandmark.Longitude ?? 0, 0)
             : instructionType is "BoardJeepney" or "BoardTricycle" ? MapLandmark(boardLandmark)
             : instructionType is "PrepareToAlight" or "AlightJeepney" or "AlightTricycle" ? MapLandmark(alightLandmark) : null;
-        double? remaining = leg?.DistanceMeters is { } distance ? Math.Max(0, (double)distance - session.CurrentProgressMeters) : null;
+        var remaining = NavigationTripRules.RemainingMeters(session, leg);
         var routeName = leg?.Route?.RouteName ?? leg?.Instructions;
         var mode = leg?.TransportMode?.Code ?? "UNKNOWN";
         var structuredInstruction = new NavigationInstructionSnapshot(instructionType, routeName, mode, remaining,
@@ -121,9 +125,10 @@ public sealed class NavigationFacadeService(
             leg is null ? null : new NavigationStopInfo(routeName, leg.EndLatitude, leg.EndLongitude, MapLandmark(alightLandmark)),
             activeLandmark,
             session.CurrentNavigationState == TripNavigationState.WaitingToBoard,
-            session.CurrentNavigationState == TripNavigationState.ApproachingAlightPoint,
+            NavigationTripRules.CanConfirmAlighting(session, leg, _options),
             session.CurrentNavigationState == TripNavigationState.OffRoute,
-            status, TriggeredEvents(triggered, speechType, status), session.LastLatitude, session.LastLongitude);
+            status, TriggeredEvents(triggered, speechType, status), session.LastLatitude, session.LastLongitude,
+            session.ApproxFareSpent, NavigationTripRules.EstimatedRemainingFare(session, legs));
         return new(snapshot);
     }
 
