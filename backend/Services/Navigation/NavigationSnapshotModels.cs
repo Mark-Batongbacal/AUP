@@ -57,7 +57,9 @@ public sealed record NavigationSnapshot(
     bool RequiresAlightingConfirmation,
     bool RerouteRequired,
     string Status,
-    IReadOnlyList<NavigationTriggeredEvent> TriggeredEvents);
+    IReadOnlyList<NavigationTriggeredEvent> TriggeredEvents,
+    double? CurrentLatitude,
+    double? CurrentLongitude);
 
 public sealed record NavigationOperation(NavigationSnapshot? Snapshot, string? Error = null)
 {
