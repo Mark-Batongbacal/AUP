@@ -10,7 +10,7 @@ namespace backend.Services.Navigation;
 public sealed record RerouteResult(bool Succeeded, string Status, Guid? RecommendationId = null);
 public interface IReroutingService
 {
-    Task<RerouteResult> RerouteAsync(Guid userId, Guid sessionId, string reason, CancellationToken cancellationToken = default);
+    Task<RerouteResult> RerouteAsync(Guid userId, Guid sessionId, NavigationRerouteRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed class ReroutingService(
@@ -26,7 +26,8 @@ public sealed class ReroutingService(
     private readonly NavigationOptions _options = options.Value;
     private readonly ITukiTelemetry _telemetry = telemetry ?? NullTukiTelemetry.Instance;
 
-    public async Task<RerouteResult> RerouteAsync(Guid userId, Guid sessionId, string reason, CancellationToken cancellationToken = default)
+    public async Task<RerouteResult> RerouteAsync(Guid userId, Guid sessionId,
+        NavigationRerouteRequest request, CancellationToken cancellationToken = default)
     {
         using var measurement = _telemetry.Measure("Rerouting");
         var session = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken);
@@ -40,11 +41,26 @@ public sealed class ReroutingService(
         if (session.LastLatitude is not { } latitude || session.LastLongitude is not { } longitude)
             return new(false, "NO_RELIABLE_LOCATION");
 
+        var preference = NormalizePreference(request.Preference ?? session.OriginalPreference);
+        if (request.Preference is not null && preference is null)
+            return new(false, "INVALID_PREFERENCE");
+        var budget = request.ClearBudget ? null : request.Budget ?? session.OriginalBudget;
+        if (budget is <= 0) return new(false, "INVALID_BUDGET");
+
+        var hasAnyDestinationField = request.DestinationName is not null || request.DestinationLatitude is not null || request.DestinationLongitude is not null;
+        var hasCompleteDestination = !string.IsNullOrWhiteSpace(request.DestinationName) && request.DestinationLatitude is not null && request.DestinationLongitude is not null;
+        if (hasAnyDestinationField && !hasCompleteDestination)
+            return new(false, "INVALID_DESTINATION");
+
+        var destinationName = hasCompleteDestination ? request.DestinationName!.Trim() : session.DestinationName;
+        var destinationLatitude = hasCompleteDestination ? request.DestinationLatitude!.Value : session.DestinationLatitude;
+        var destinationLongitude = hasCompleteDestination ? request.DestinationLongitude!.Value : session.DestinationLongitude;
+
         var previousState = session.CurrentNavigationState;
         if (!stateMachine.CanTransition(previousState, TripNavigationState.Rerouting))
             return new(false, "INVALID_STATE_TRANSITION");
 
-        var normalizedReason = string.IsNullOrWhiteSpace(reason) ? "MANUAL" : reason.Trim().ToUpperInvariant();
+        var normalizedReason = string.IsNullOrWhiteSpace(request.Reason) ? "MANUAL" : request.Reason.Trim().ToUpperInvariant();
         session.CurrentNavigationState = TripNavigationState.Rerouting;
         session.LastNavigationStatus = "REROUTING";
         session.UpdatedAt = DateTime.UtcNow;
@@ -54,16 +70,23 @@ public sealed class ReroutingService(
         try
         {
             var plans = await routing.PlanTripsAsync(latitude, longitude,
-                session.DestinationLatitude, session.DestinationLongitude, cancellationToken);
-            var eligible = plans.Where(plan => session.OriginalBudget is null ||
-                (decimal)plan.TotalFarePesos <= session.OriginalBudget.Value).ToList();
-            var selected = Select(eligible, session.OriginalPreference);
+                destinationLatitude, destinationLongitude, cancellationToken);
+            var eligible = plans.Where(plan => budget is null || (decimal)plan.TotalFarePesos <= budget.Value).ToList();
+            var selected = Select(eligible, preference);
             if (selected is null)
                 return await RestoreAfterFailureAsync(session, previousState,
-                    "OFF_ROUTE_NO_REROUTE_AVAILABLE", "NO_ROUTE", cancellationToken);
+                    "NO_REROUTE_AVAILABLE", "NO_ROUTE", cancellationToken);
 
-            var recommendation = await PersistAsync(session, selected, latitude, longitude, cancellationToken);
+            var recommendation = await PersistAsync(session, selected, latitude, longitude,
+                destinationName, destinationLatitude, destinationLongitude, budget, preference, cancellationToken);
+
+            // Commit trip-option changes only after a replacement route has been persisted successfully.
             session.RecommendationId = recommendation.RecommendationId;
+            session.DestinationName = destinationName;
+            session.DestinationLatitude = destinationLatitude;
+            session.DestinationLongitude = destinationLongitude;
+            session.OriginalBudget = budget;
+            session.OriginalPreference = preference;
             session.CurrentLegIndex = 0;
             session.CurrentProgressMeters = 0;
             session.CurrentRouteProgressMeters = null;
@@ -83,16 +106,12 @@ public sealed class ReroutingService(
 
             await instructions.GenerateAsync(session, cancellationToken);
             await landmarkPrefetch.PrefetchAsync(session, cancellationToken);
-            var reroutedLegs = await recommendations.GetOrderedLegsAsync(
-                session.RecommendationId, cancellationToken);
+            var reroutedLegs = await recommendations.GetOrderedLegsAsync(session.RecommendationId, cancellationToken);
             var firstLeg = reroutedLegs.OrderBy(item => item.LegOrder).FirstOrDefault();
-            if (firstLeg is null)
-                throw new InvalidOperationException("Reroute produced no journey legs.");
+            if (firstLeg is null) throw new InvalidOperationException("Reroute produced no journey legs.");
 
             var resumedState = IsWalking(firstLeg)
-                ? (reroutedLegs.Count == 1
-                    ? TripNavigationState.WalkingToDestination
-                    : TripNavigationState.WalkingToPickup)
+                ? (reroutedLegs.Count == 1 ? TripNavigationState.WalkingToDestination : TripNavigationState.WalkingToPickup)
                 : TripNavigationState.WaitingToBoard;
             if (!stateMachine.CanTransition(session.CurrentNavigationState, resumedState))
                 throw new InvalidOperationException("Reroute produced an invalid resumed state.");
@@ -102,25 +121,23 @@ public sealed class ReroutingService(
             _telemetry.Event("RerouteSucceeded", sessionId, normalizedReason);
             return new(true, "REROUTE_SUCCEEDED", recommendation.RecommendationId);
         }
+        catch (RoutingValidationException exception)
+        {
+            return await RestoreAfterFailureAsync(session, previousState, exception.ErrorCode, exception.ErrorCode, cancellationToken);
+        }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return await RestoreAfterFailureAsync(session, previousState,
-                "OFF_ROUTE_NO_REROUTE_AVAILABLE", "ERROR", cancellationToken);
+                "NO_REROUTE_AVAILABLE", "ERROR", cancellationToken);
         }
     }
 
-    private async Task<RerouteResult> RestoreAfterFailureAsync(
-        TripSession session,
-        TripNavigationState previousState,
-        string status,
-        string telemetryReason,
+    private async Task<RerouteResult> RestoreAfterFailureAsync(TripSession session,
+        TripNavigationState previousState, string status, string telemetryReason,
         CancellationToken cancellationToken)
     {
-        var fallback = previousState == TripNavigationState.OffRoute
-            ? TripNavigationState.OffRoute
-            : previousState;
-        if (stateMachine.CanTransition(session.CurrentNavigationState, fallback))
-            session.CurrentNavigationState = fallback;
+        if (stateMachine.CanTransition(session.CurrentNavigationState, previousState))
+            session.CurrentNavigationState = previousState;
         session.LastNavigationStatus = status;
         session.UpdatedAt = DateTime.UtcNow;
         await sessions.UpdateAsync(session, cancellationToken);
@@ -128,22 +145,35 @@ public sealed class ReroutingService(
         return new(false, status);
     }
 
+    private static string? NormalizePreference(string? preference)
+    {
+        if (string.IsNullOrWhiteSpace(preference)) return null;
+        return preference.Trim().ToLowerInvariant() switch
+        {
+            "balanced" or "efficient" => "efficient",
+            "fastest" => "fastest",
+            "cheapest" => "cheapest",
+            _ => null
+        };
+    }
+
     private static JeepneyTripPlan? Select(List<JeepneyTripPlan> plans, string? preference) =>
-        plans.FirstOrDefault(plan => plan.RecommendationType.Split(',').Any(item =>
+        plans.FirstOrDefault(plan => preference is not null && plan.RecommendationType.Split(',').Any(item =>
             string.Equals(item, preference, StringComparison.OrdinalIgnoreCase))) ??
         plans.OrderBy(plan => plan.GeneralizedCostPesos).FirstOrDefault();
 
     private async Task<RouteRecommendation> PersistAsync(TripSession session, JeepneyTripPlan plan,
-        double latitude, double longitude, CancellationToken cancellationToken)
+        double latitude, double longitude, string? destinationName, double destinationLatitude,
+        double destinationLongitude, decimal? budget, string? preference, CancellationToken cancellationToken)
     {
         var search = await searches.AddAsync(new TripSearch
         {
             UserId = session.UserId, OriginName = "Current location",
             OriginLatitude = latitude, OriginLongitude = longitude,
-            DestinationName = session.DestinationName,
-            DestinationLatitude = session.DestinationLatitude,
-            DestinationLongitude = session.DestinationLongitude,
-            Budget = session.OriginalBudget, Preference = session.OriginalPreference,
+            DestinationName = destinationName,
+            DestinationLatitude = destinationLatitude,
+            DestinationLongitude = destinationLongitude,
+            Budget = budget, Preference = preference,
             PassengerCount = 1, RequestedAt = DateTime.UtcNow
         }, cancellationToken);
         var recommendation = await recommendations.AddAsync(new RouteRecommendation
@@ -166,7 +196,7 @@ public sealed class ReroutingService(
             {
                 RecommendationId = recommendation.RecommendationId, LegOrder = index,
                 TransportModeId = mode.TransportModeId, RouteId = route?.RouteId,
-                FromName = leg.RouteName, ToName = session.DestinationName,
+                FromName = leg.RouteName, ToName = destinationName,
                 StartLatitude = leg.OriginLatitude != 0 ? leg.OriginLatitude : leg.BoardLatitude,
                 StartLongitude = leg.OriginLongitude != 0 ? leg.OriginLongitude : leg.BoardLongitude,
                 EndLatitude = leg.DestinationLatitude != 0 ? leg.DestinationLatitude : leg.AlightLatitude,
