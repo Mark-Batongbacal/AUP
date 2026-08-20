@@ -1,163 +1,271 @@
-# TUKI 🚌
+# TUKI
 
-**Your everyday companion for getting around.**
+> **A smart public transportation companion for planning, navigating, and completing everyday trips.**
 
-TUKI is a public transportation and navigation app built for commuters. It combines route planning, live GPS navigation, local transportation data, ride matching, and an AI assistant into one mobile experience.
+TUKI is a mobile transportation application focused on making local commuting easier. It combines journey planning, public transportation data, GPS navigation, AI-assisted trip planning, and ride matching behind a single mobile client and backend API.
 
-> **TUKI** — plan your trip, find your route, and get there.
+---
 
-## What TUKI can do
+## Overview
 
-### 🗺️ Plan a journey
+TUKI is built around the complete commuter journey:
 
-- Search for destinations and places.
-- Plan a trip from your current location or a selected origin.
-- Get transportation routes and route connections.
-- Support transfers between different transportation legs.
-- Find nearby public transportation routes.
-- Support local jeepney routes and tricycle pickup/connection points.
-- Save favorite trips and access recent journeys.
+```text
+Destination
+    ↓
+Journey Planning
+    ↓
+Route Selection
+    ↓
+Navigation
+    ↓
+Boarding / Alighting
+    ↓
+Trip Completion
+```
 
-### 📍 Navigate in real time
+The application supports both traditional route planning and natural-language interaction through its AI assistant.
 
-Once a journey starts, TUKI can follow the commuter throughout the trip.
+## Features
 
-- Live GPS location tracking.
-- Turn-by-turn navigation.
-- Boarding and alighting guidance.
-- Distance and trip progress tracking.
-- Landmark-based navigation references.
-- Off-route detection.
-- Automatic and manual rerouting.
-- Restore an active trip when returning to the app.
+### Journey Planning
 
-### 🤖 Ask TUKI
+- Search for destinations and places
+- Plan journeys from a selected origin or current location
+- Combine multiple transportation legs
+- Support transfers between routes
+- Discover nearby public transportation
+- Local jeepney and tricycle route support
+- Favorite and recent journeys
 
-TUKI includes an AI assistant for natural-language trip planning and navigation support.
+### Navigation
 
-- Ask questions using normal language.
-- Extract journey intent from AI requests.
-- Generate journey plans from natural-language instructions.
-- Send AI-generated plans into the normal navigation flow.
-- Generate AI-assisted navigation speech.
-- Powered by NVIDIA NIM.
+- Live GPS tracking
+- Turn-by-turn navigation
+- Boarding and alighting guidance
+- Trip progress and distance tracking
+- Landmark-based navigation
+- Off-route detection
+- Automatic and manual rerouting
+- Active-trip restoration
 
-### 🚗 Ride matching
+### AI Assistant
 
-TUKI also includes passenger and driver workflows for ride matching.
+TUKI includes an AI-powered assistant that understands natural-language transportation requests.
 
-- Create and manage passenger ride requests.
-- Match passengers with available rides.
-- Accept, reject, and cancel matches.
-- Driver profiles and vehicle information.
-- Driver availability sessions.
-- Driver location updates.
+```text
+User request
+     ↓
+AI intent extraction
+     ↓
+Journey planning
+     ↓
+Route / navigation session
+```
 
-### 🔐 Accounts & authentication
+The AI layer can:
 
-- Username/password authentication.
-- Account registration.
-- Google Sign-In.
-- Facebook Sign-In / OIDC.
-- Email verification.
-- Password recovery.
-- User profile management.
-- API-key authentication between the app and backend.
+- Understand natural-language trip requests
+- Extract journey intent
+- Generate journey plans
+- Pass AI-generated plans into the navigation flow
+- Generate navigation speech
+- Use NVIDIA NIM as the AI provider
 
-## Tech stack
+### Ride Matching
 
-| Layer | Technology |
-|---|---|
-| Mobile | Kotlin + Jetpack Compose |
-| Android | Android SDK |
-| Backend | C# + .NET 9 + ASP.NET Core |
-| ORM | Entity Framework Core |
-| Database | Microsoft SQL Server |
-| Maps | Google Maps SDK for Android |
-| Routing | Valhalla |
-| Search / Geocoding | Pelias |
-| AI | NVIDIA NIM |
-| Authentication | Google, Facebook OIDC, API keys |
-| Deployment | Docker + container hosting |
+TUKI also provides passenger and driver workflows:
+
+- Passenger ride requests
+- Ride matching
+- Match acceptance / rejection / cancellation
+- Driver profiles
+- Vehicle information
+- Driver availability sessions
+- Driver location updates
+
+### Authentication
+
+- Username/password authentication
+- Account registration
+- Google Sign-In
+- Facebook / OIDC authentication
+- Email verification
+- Password recovery
+- User profile management
+- API-key authentication between the mobile app and backend
+
+---
 
 ## Architecture
 
 ```text
-┌─────────────────────────────────┐
-│          TUKI Mobile App        │
-│        Kotlin / Jetpack         │
-│             Compose             │
-│                                 │
-│ Search • Trips • Maps • AI      │
-│ Navigation • Auth • Ride Match  │
-└────────────────┬────────────────┘
-                 │ HTTPS
-                 │ X-Api-Key
-                 ▼
-┌─────────────────────────────────┐
-│       ASP.NET Core Backend      │
-│                                 │
-│ Auth • Users • Journeys         │
-│ Routing • Navigation • AI      │
-│ Trips • Drivers • Ride Matching │
-└───────┬──────────┬──────────────┘
-        │          │
-        ▼          ▼
-┌─────────────┐  ┌────────────────┐
-│ SQL Server  │  │ External APIs  │
-│   TukiDb    │  │                │
-└─────────────┘  │ Valhalla       │
-                 │ Pelias         │
-                 │ NVIDIA NIM     │
-                 │ Google         │
-                 │ Facebook       │
-                 └────────────────┘
+┌──────────────────────────┐
+│       TUKI Mobile        │
+│ Kotlin + Jetpack Compose │
+└────────────┬─────────────┘
+             │ HTTPS
+             │ X-Api-Key
+             ▼
+┌──────────────────────────┐
+│    ASP.NET Core API      │
+│                          │
+│ Auth                     │
+│ Users                    │
+│ Journeys                 │
+│ Navigation               │
+│ Trips                    │
+│ AI                       │
+│ Ride Matching            │
+└──────┬───────────┬───────┘
+       │           │
+       ▼           ▼
+┌────────────┐  ┌────────────────────┐
+│ SQL Server │  │ External Services  │
+│   TukiDb   │  │                    │
+└────────────┘  │ Google Maps        │
+                │ Valhalla           │
+                │ Pelias             │
+                │ NVIDIA NIM         │
+                │ Google / Facebook  │
+                └────────────────────┘
 ```
 
-## Project structure
+### Navigation API flow
+
+```text
+POST /api/journeys/plan
+            │
+            ▼
+POST /api/navigation/start
+            │
+            ▼
+GET /api/navigation/active
+            │
+            ▼
+POST /api/navigation/{sessionId}/location
+            │
+            ├── Boarding / Alighting
+            ├── Off-route detection
+            └── Rerouting
+            │
+            ▼
+       Trip complete
+```
+
+---
+
+## Tech Stack
+
+| Component | Technology |
+|---|---|
+| Mobile | Kotlin |
+| UI | Jetpack Compose |
+| Android | Android SDK |
+| Backend | C# / .NET 9 / ASP.NET Core |
+| Data Access | Entity Framework Core |
+| Database | Microsoft SQL Server |
+| Maps | Google Maps SDK for Android |
+| Routing | Valhalla |
+| Geocoding / Search | Pelias |
+| AI | NVIDIA NIM |
+| Authentication | Google / Facebook OIDC / API keys |
+| Deployment | Docker / Render |
+
+---
+
+## Repository Structure
 
 ```text
 AUP/
-├── frontend/          # Android application
-│   ├── app/           # Jetpack Compose app
-│   ├── ios/           # iOS resources / work in progress
-│   └── API_CONTRACT.md
 │
-├── backend/           # ASP.NET Core Web API
-│   ├── Controllers/
-│   ├── Services/
-│   ├── Repositories/
-│   └── ...
+├── frontend/
+│   ├── app/                 # Android application
+│   ├── ios/                 # iOS project / development
+│   └── API_CONTRACT.md      # Frontend ↔ backend contract
 │
-├── backend.Tests/     # Backend automated tests
-├── database/          # SQL Server scripts and database setup
-├── Dockerfile         # Backend container build
+├── backend/
+│   ├── Controllers/         # HTTP API endpoints
+│   ├── Services/            # Application/business logic
+│   ├── Models/              # API and database models
+│   ├── Helpers/             # Shared utilities
+│   └── Program.cs           # API startup/configuration
+│
+├── backend.Tests/           # Backend tests
+│
+├── database/
+│   ├── TukiDbSchema.sql
+│   ├── TukiNavigationSchema.sql
+│   └── ...                  # SQL Server schema/setup scripts
+│
+├── Dockerfile               # Backend container
 └── README.md
 ```
 
-## Getting started
+---
 
-### Requirements
+## Requirements
 
-- [Android Studio](https://developer.android.com/studio)
-- Android SDK Platform 36 or newer
+### Frontend
+
+- Android Studio
+- Android SDK Platform 36
 - JDK 17+
-- .NET 9 SDK
-- SQL Server for local backend development
-- Git
+- Android emulator API 26+ or a physical Android device
 
-### 1. Clone the repository
+### Backend
+
+- .NET 9 SDK
+- SQL Server
+- Git
+- Docker (optional for local container development)
+
+---
+
+## Getting Started
+
+### 1. Clone
 
 ```bash
 git clone https://github.com/Mark-Batongbacal/AUP.git
 cd AUP
 ```
 
-### 2. Run the Android app
+### 2. Start the backend
 
-Open `frontend/` in Android Studio, select an emulator or Android device, and run the `app` configuration.
+```bash
+cd backend
+dotnet run
+```
 
-Or build from the terminal:
+The default local API is available at:
+
+```text
+http://localhost:5129
+```
+
+For development configuration, use the files/environment variables described in [`backend/README.md`](backend/README.md).
+
+### 3. Configure the Android app
+
+Open `frontend/` in Android Studio and configure `frontend/local.properties`.
+
+For an Android emulator connecting to a backend running on the host machine:
+
+```properties
+GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_OR_SERVER_CLIENT_ID.apps.googleusercontent.com
+BACKEND_BASE_URL=http://10.0.2.2:5129/
+```
+
+For the deployed API:
+
+```properties
+BACKEND_BASE_URL=https://aup-0mjy.onrender.com/
+```
+
+`10.0.2.2` maps the Android emulator to the host machine's `localhost`.
+
+### 4. Build the Android application
 
 **Windows**
 
@@ -173,90 +281,51 @@ cd frontend
 ./gradlew :app:assembleDebug
 ```
 
-### 3. Configure the frontend
+---
 
-Create/update `frontend/local.properties`:
+## Backend Configuration
 
-```properties
-GOOGLE_SERVER_CLIENT_ID=YOUR_WEB_OR_SERVER_CLIENT_ID.apps.googleusercontent.com
-BACKEND_BASE_URL=http://10.0.2.2:5129/
-```
+Development secrets should be kept outside committed source files.
 
-`10.0.2.2` points an Android emulator to the host machine's `localhost`.
-
-For the deployed API:
-
-```properties
-BACKEND_BASE_URL=https://aup-0mjy.onrender.com/
-```
-
-### 4. Configure the backend
-
-During development, backend secrets are loaded from `backend/.env`.
-
-Example:
+Typical backend configuration includes:
 
 ```text
-Login__Users__0__UserName=admin@aup.edu
-Login__Users__0__Password=<secure-password>
-NVIDIA_API_KEY=<your-nvidia-api-key>
+Login__Users__0__UserName=<username>
+Login__Users__0__Password=<password>
+NVIDIA_API_KEY=<nvidia-api-key>
 ConnectionStrings__TukiDbConnection=<sql-server-connection-string>
-Valhalla__BaseUrl=<your-valhalla-base-url>
-Pelias__BaseUrl=<your-pelias-base-url>
-Facebook__AppId=<your-facebook-app-id>
-Facebook__AppSecret=<your-facebook-app-secret>
+Valhalla__BaseUrl=<valhalla-url>
+Pelias__BaseUrl=<pelias-url>
+Facebook__AppId=<facebook-app-id>
+Facebook__AppSecret=<facebook-app-secret>
 ```
 
-**Never commit real credentials or secrets to Git.**
+**Do not commit `.env`, `appsettings.Development.json`, passwords, API keys, OAuth secrets, or database credentials.**
 
-Start the backend:
+See [`backend/README.md`](backend/README.md) for the complete backend configuration and deployment procedure.
 
-**Windows PowerShell**
+---
 
-```powershell
-cd backend
-$env:ASPNETCORE_ENVIRONMENT = "Development"
-dotnet run
-```
+## Database
 
-**macOS / Linux**
+TUKI uses Microsoft SQL Server with Entity Framework Core and the `TukiDb` database.
 
-```bash
-cd backend
-ASPNETCORE_ENVIRONMENT=Development dotnet run
-```
+The repository contains SQL schema and upgrade scripts under [`database/`](database/).
 
-The local API runs on `http://localhost:5129` by default.
+The backend is designed to work with the existing database schema and does **not** automatically modify the production database on startup.
+
+For database changes, follow the workflow documented in [`database/README.md`](database/README.md).
+
+---
 
 ## API
 
-The Android application communicates with the ASP.NET Core backend through HTTPS and API-key authentication.
+The Android application communicates with the backend through the ASP.NET Core Web API.
 
-The main navigation flow is:
+The API currently covers:
 
-```text
-POST /api/journeys/plan
-        │
-        ▼
-POST /api/navigation/start
-        │
-        ▼
-GET /api/navigation/active
-        │
-        ▼
-POST /api/navigation/{sessionId}/location
-        │
-        ├── Boarding / Alighting
-        ├── Off-route detection
-        └── Rerouting
-        │
-        ▼
-   Trip complete
-```
-
-The API also provides endpoints for:
-
-- Authentication and users
+- Authentication
+- User accounts
 - Places and destination search
 - Transportation routes
 - Journey planning
@@ -266,39 +335,42 @@ The API also provides endpoints for:
 - AI assistant
 - Ride matching
 - Drivers
-- Driver availability and location
+- Driver availability
+- Driver location
 - Tricycle points
 - Health monitoring
 
-### Health check
-
-The backend exposes a public health endpoint:
+### Health Check
 
 ```http
 GET /health
 ```
 
-For the deployed backend, it can be used to verify that the API is online.
+Deployed API:
 
-## Backend deployment
+```text
+https://aup-0mjy.onrender.com/health
+```
 
-The backend is containerized using the repository-root `Dockerfile` and can be deployed to a container platform such as Render or Azure Container Apps.
+---
 
-Production configuration should be provided through environment variables/secrets rather than committed configuration files.
+## Deployment
 
-The frontend can then point `BACKEND_BASE_URL` at the deployed API.
+The backend is containerized using the repository-root `Dockerfile`.
 
-## Database
+The current deployment target is Render. Production configuration is supplied through environment variables/secrets rather than committed configuration files.
 
-TUKI uses **Microsoft SQL Server** with the `TukiDb` database through Entity Framework Core.
+The Android client can connect to the deployed API by setting:
 
-Database scripts and setup resources are available under `database/`.
+```properties
+BACKEND_BASE_URL=https://aup-0mjy.onrender.com/
+```
 
-The application does not automatically change the production database schema on startup.
+---
 
-## Development workflow
+## Development Workflow
 
-The project uses separate development and feature branches.
+The project uses a development branch with separate feature branches.
 
 Before starting work:
 
@@ -309,7 +381,7 @@ git switch <your-branch>
 git merge dev
 ```
 
-For a new branch:
+Creating a new feature branch:
 
 ```bash
 git switch dev
@@ -317,38 +389,38 @@ git pull
 git switch -c <your-branch>
 ```
 
-Commit and push your changes:
+Commit and push:
 
 ```bash
 git status
-git add <files-you-changed>
+git add <files>
 git commit -m "Describe your change"
 git push -u origin <your-branch>
 ```
 
-Keep your branch updated with `dev` before opening a pull request.
-
-## Security
-
-- Do not commit `.env` files.
-- Do not commit passwords, API keys, OAuth secrets, or database credentials.
-- Store production secrets in the hosting provider's environment/secrets configuration.
-- Keep local frontend credentials in ignored configuration files.
-- Never use real production credentials in sample configuration.
-
-## Documentation
-
-- [`frontend/README.md`](frontend/README.md) — Android setup and backend connection.
-- [`frontend/API_CONTRACT.md`](frontend/API_CONTRACT.md) — Android/backend API contract.
-- [`backend/README.md`](backend/README.md) — backend setup and deployment.
-- [`database/README.md`](database/README.md) — database setup and schema workflow.
-
-## Status
-
-🚧 **TUKI is actively under development.**
-
-The current project focuses on commuter journey planning, GPS navigation, local transportation routing, AI-assisted travel, and ride matching.
+Keep feature branches synchronized with `dev` before opening a pull request.
 
 ---
 
-Built for commuters. Built with local transportation in mind. 🇵🇭
+## Documentation
+
+| Document | Description |
+|---|---|
+| [`frontend/README.md`](frontend/README.md) | Android setup and API connection |
+| [`frontend/API_CONTRACT.md`](frontend/API_CONTRACT.md) | Frontend/backend API contract |
+| [`backend/README.md`](backend/README.md) | Backend configuration and deployment |
+| [`database/README.md`](database/README.md) | Database setup and schema workflow |
+
+---
+
+## Project Status
+
+**In development.**
+
+Current development areas include transportation routing, real-time navigation, AI-assisted trip planning, local transportation support, and ride matching.
+
+---
+
+## License
+
+This project is currently maintained as an academic/software development project. Licensing information will be added when finalized.
