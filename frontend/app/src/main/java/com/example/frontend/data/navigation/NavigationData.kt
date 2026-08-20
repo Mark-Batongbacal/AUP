@@ -38,6 +38,7 @@ data class NavigationLocationUpdate(
 data class NavigationLegDto(
     val legIndex: Int,
     val transportMode: String,
+    val routeId: Long? = null,
     val routeName: String?,
     val fromName: String?,
     val toName: String?,
@@ -67,17 +68,8 @@ data class NavigationLandmarkDto(
     val distanceFromTargetMeters: Double
 )
 
-data class NavigationStopInfoDto(
-    val routeName: String?,
-    val latitude: Double?,
-    val longitude: Double?,
-    val landmark: NavigationLandmarkDto?
-)
-
-data class NavigationTriggeredEventDto(
-    val type: String,
-    val landmarkName: String?
-)
+data class NavigationStopInfoDto(val routeName: String?, val latitude: Double?, val longitude: Double?, val landmark: NavigationLandmarkDto?)
+data class NavigationTriggeredEventDto(val type: String, val landmarkName: String?)
 
 data class NavigationSnapshotDto(
     val sessionId: String,
@@ -103,14 +95,9 @@ data class NavigationSnapshotDto(
 }
 
 interface NavigationApi {
-    @POST("api/navigation/start")
-    suspend fun start(@Body request: StartNavigationRequest): Response<NavigationSnapshotDto>
-
-    @GET("api/navigation/active")
-    suspend fun active(): Response<NavigationSnapshotDto>
-
-    @GET("api/navigation/geometry")
-    suspend fun geometry(
+    @POST("api/navigation/start") suspend fun start(@Body request: StartNavigationRequest): Response<NavigationSnapshotDto>
+    @GET("api/navigation/active") suspend fun active(): Response<NavigationSnapshotDto>
+    @GET("api/navigation/geometry") suspend fun geometry(
         @Query("startLat") startLatitude: Double,
         @Query("startLon") startLongitude: Double,
         @Query("endLat") endLatitude: Double,
@@ -118,51 +105,22 @@ interface NavigationApi {
         @Query("mode") mode: String,
         @Query("routeId") routeId: Long? = null
     ): Response<NavigationGeometryResponseDto>
-
-    @POST("api/navigation/{sessionId}/location")
-    suspend fun location(
-        @Path("sessionId") sessionId: String,
-        @Body update: NavigationLocationUpdate
-    ): Response<NavigationSnapshotDto>
-
-    @POST("api/navigation/{sessionId}/boarding")
-    suspend fun boarding(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
-
-    @POST("api/navigation/{sessionId}/alighting")
-    suspend fun alighting(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
-
-    @POST("api/navigation/{sessionId}/cancel")
-    suspend fun cancel(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
-
-    @POST("api/navigation/{sessionId}/reroute")
-    suspend fun reroute(
-        @Path("sessionId") sessionId: String,
-        @Body request: NavigationRerouteRequest
-    ): Response<NavigationSnapshotDto>
+    @POST("api/navigation/{sessionId}/location") suspend fun location(@Path("sessionId") sessionId: String, @Body update: NavigationLocationUpdate): Response<NavigationSnapshotDto>
+    @POST("api/navigation/{sessionId}/boarding") suspend fun boarding(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+    @POST("api/navigation/{sessionId}/alighting") suspend fun alighting(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+    @POST("api/navigation/{sessionId}/cancel") suspend fun cancel(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+    @POST("api/navigation/{sessionId}/reroute") suspend fun reroute(@Path("sessionId") sessionId: String, @Body request: NavigationRerouteRequest): Response<NavigationSnapshotDto>
 }
 
 interface NavigationRepository {
     suspend fun startNavigation(recommendationId: String): ApiResult<NavigationSnapshotDto>
     suspend fun getActiveNavigation(): ApiResult<NavigationSnapshotDto>
-    suspend fun getGeometry(
-        startLatitude: Double,
-        startLongitude: Double,
-        endLatitude: Double,
-        endLongitude: Double,
-        mode: String,
-        routeId: Long? = null
-    ): ApiResult<NavigationGeometryResponseDto>
-    suspend fun updateLocation(
-        sessionId: String,
-        update: NavigationLocationUpdate
-    ): ApiResult<NavigationSnapshotDto>
+    suspend fun getGeometry(startLatitude: Double, startLongitude: Double, endLatitude: Double, endLongitude: Double, mode: String, routeId: Long? = null): ApiResult<NavigationGeometryResponseDto>
+    suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto>
     suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto>
     suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto>
     suspend fun cancel(sessionId: String): ApiResult<NavigationSnapshotDto>
-    suspend fun reroute(
-        sessionId: String,
-        request: NavigationRerouteRequest = NavigationRerouteRequest()
-    ): ApiResult<NavigationSnapshotDto>
+    suspend fun reroute(sessionId: String, request: NavigationRerouteRequest = NavigationRerouteRequest()): ApiResult<NavigationSnapshotDto>
 }
 
 class NavigationRepositoryImpl(
@@ -170,27 +128,14 @@ class NavigationRepositoryImpl(
     private val sessions: AuthSessionStore,
     private val errors: ApiErrorParser
 ) : NavigationRepository {
-    override suspend fun startNavigation(recommendationId: String) =
-        call { api.start(StartNavigationRequest(recommendationId)) }
+    override suspend fun startNavigation(recommendationId: String) = call { api.start(StartNavigationRequest(recommendationId)) }
     override suspend fun getActiveNavigation() = call { api.active() }
-    override suspend fun getGeometry(
-        startLatitude: Double,
-        startLongitude: Double,
-        endLatitude: Double,
-        endLongitude: Double,
-        mode: String,
-        routeId: Long?
-    ) = apiCall(errors) {
-        api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId)
-    }
-    override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate) =
-        call { api.location(sessionId, update) }
+    override suspend fun getGeometry(startLatitude: Double, startLongitude: Double, endLatitude: Double, endLongitude: Double, mode: String, routeId: Long?) =
+        apiCall(errors) { api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId) }
+    override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate) = call { api.location(sessionId, update) }
     override suspend fun confirmBoarding(sessionId: String) = call { api.boarding(sessionId) }
     override suspend fun confirmAlighting(sessionId: String) = call { api.alighting(sessionId) }
     override suspend fun cancel(sessionId: String) = call { api.cancel(sessionId) }
-    override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest) =
-        call { api.reroute(sessionId, request) }
-
-    private suspend fun <T : Any> call(block: suspend () -> Response<T>) =
-        authenticatedApiCall(sessions, errors, request = block)
+    override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest) = call { api.reroute(sessionId, request) }
+    private suspend fun <T : Any> call(block: suspend () -> Response<T>) = authenticatedApiCall(sessions, errors, request = block)
 }
