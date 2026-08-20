@@ -89,7 +89,9 @@ data class NavigationSnapshotDto(
     val status: String,
     val triggeredEvents: List<NavigationTriggeredEventDto>,
     val currentLatitude: Double? = null,
-    val currentLongitude: Double? = null
+    val currentLongitude: Double? = null,
+    val approxFareSpent: BigDecimal = BigDecimal.ZERO,
+    val estimatedRemainingFare: BigDecimal = BigDecimal.ZERO
 ) {
     fun displayInstruction(): String? = spokenInstruction?.takeIf { it.isNotBlank() }
 }
