@@ -41,6 +41,24 @@ public sealed class ReroutingServiceTests
         Assert.Equal("cheapest", session.OriginalPreference);
     }
 
+    [Fact]
+    public async Task ManualReroute_FromActiveTrip_ReachesReliableLocationValidation()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        session.CurrentNavigationState = TripNavigationState.OnJeepney;
+        session.LastLatitude = null;
+        session.LastLongitude = null;
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default)).ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId, "MANUAL");
+
+        Assert.Equal("NO_RELIABLE_LOCATION", result.Status);
+        routing.Verify(item => item.PlanTripsAsync(It.IsAny<double>(), It.IsAny<double>(),
+            It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private static (ReroutingService Service, Mock<IRoutingService> Routing) Create(
         Mock<ITripSessionRepository> sessions)
     {
