@@ -14,7 +14,15 @@ import retrofit2.http.Query
 import java.math.BigDecimal
 
 data class StartNavigationRequest(val recommendationId: String)
-data class NavigationRerouteRequest(val reason: String = "OFF_ROUTE")
+data class NavigationRerouteRequest(
+    val reason: String = "MANUAL",
+    val preference: String? = null,
+    val budget: BigDecimal? = null,
+    val clearBudget: Boolean = false,
+    val destinationName: String? = null,
+    val destinationLatitude: Double? = null,
+    val destinationLongitude: Double? = null
+)
 data class NavigationGeometryPointDto(val latitude: Double, val longitude: Double)
 data class NavigationGeometryResponseDto(val points: List<NavigationGeometryPointDto>)
 
@@ -153,7 +161,7 @@ interface NavigationRepository {
     suspend fun cancel(sessionId: String): ApiResult<NavigationSnapshotDto>
     suspend fun reroute(
         sessionId: String,
-        reason: String = "OFF_ROUTE"
+        request: NavigationRerouteRequest = NavigationRerouteRequest()
     ): ApiResult<NavigationSnapshotDto>
 }
 
@@ -180,8 +188,8 @@ class NavigationRepositoryImpl(
     override suspend fun confirmBoarding(sessionId: String) = call { api.boarding(sessionId) }
     override suspend fun confirmAlighting(sessionId: String) = call { api.alighting(sessionId) }
     override suspend fun cancel(sessionId: String) = call { api.cancel(sessionId) }
-    override suspend fun reroute(sessionId: String, reason: String) =
-        call { api.reroute(sessionId, NavigationRerouteRequest(reason)) }
+    override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest) =
+        call { api.reroute(sessionId, request) }
 
     private suspend fun <T : Any> call(block: suspend () -> Response<T>) =
         authenticatedApiCall(sessions, errors, request = block)
