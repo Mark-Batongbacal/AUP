@@ -95,9 +95,9 @@ public sealed class NavigationController(
         Result(await navigation.CancelAsync(UserId(), sessionId, cancellationToken));
 
     [HttpPost("{sessionId:guid}/reroute")]
-    public async Task<IActionResult> Reroute(Guid sessionId, RerouteRequest request,
+    public async Task<IActionResult> Reroute(Guid sessionId, NavigationRerouteRequest request,
         CancellationToken cancellationToken) =>
-        Result(await navigation.RerouteAsync(UserId(), sessionId, request.Reason, cancellationToken));
+        Result(await navigation.RerouteAsync(UserId(), sessionId, request, cancellationToken));
 
     private IActionResult Result(NavigationOperation operation, bool created = false)
     {
