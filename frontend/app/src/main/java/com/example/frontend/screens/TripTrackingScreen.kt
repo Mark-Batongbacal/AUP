@@ -48,7 +48,7 @@ fun TripTrackingScreen(
     isNavigationActionInProgress: Boolean = false,
     onBack: () -> Unit = {},
     onEndTrip: () -> Unit = {},
-    onManualReroute: () -> Unit = {},
+    onManualReroute: (() -> Unit)? = null,
     onConfirmBoarding: () -> Unit = {},
     onConfirmAlighting: () -> Unit = {},
     onArrivalAcknowledged: () -> Unit = {}
@@ -159,7 +159,7 @@ fun TripTrackingScreen(
                             )
                         }
                 }
-                if (hasActiveTrip) {
+                if (hasActiveTrip && onManualReroute != null) {
                     TextButton(
                         onClick = onManualReroute,
                         enabled = !isNavigationActionInProgress
