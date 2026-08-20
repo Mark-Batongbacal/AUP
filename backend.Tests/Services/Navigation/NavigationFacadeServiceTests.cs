@@ -3,6 +3,7 @@ using backend.Repositories;
 using backend.Services.Navigation;
 using backend.Services.TripSessions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 
 namespace backend.Tests.Services.Navigation;
@@ -40,11 +41,12 @@ public sealed class NavigationFacadeServiceTests
         Assert.Equal("WaitingToBoard", result.Snapshot.State);
         Assert.Equal("BoardJeepney", result.Snapshot.NextInstruction!.Type);
         Assert.True(result.Snapshot.RequiresBoardingConfirmation);
+        Assert.Equal(13, result.Snapshot.EstimatedRemainingFare);
         _tripSessions.VerifyAll();
     }
 
     [Fact]
-    public async Task Location_ReturnsUpdatedSnapshotWithoutFollowUpApiOperation()
+    public async Task PrepareToAlight_At200Meters_DoesNotExposeConfirmation()
     {
         var session = Session(TripNavigationState.ApproachingAlightPoint);
         session.CurrentProgressMeters = 800;
@@ -61,6 +63,28 @@ public sealed class NavigationFacadeServiceTests
         Assert.Equal("PrepareToAlight", result.Snapshot.NextInstruction!.Type);
         Assert.Equal("ALIGHT_REFERENCE", result.Snapshot.Landmark!.Role);
         Assert.Equal(200, result.Snapshot.RemainingDistanceMeters);
+        Assert.False(result.Snapshot.RequiresAlightingConfirmation);
+    }
+
+    [Fact]
+    public async Task PrepareToAlight_Within75Meters_ExposesConfirmationAndFareState()
+    {
+        var session = Session(TripNavigationState.ApproachingAlightPoint);
+        session.CurrentProgressMeters = 940;
+        session.ApproxFareSpent = 13;
+        SetupSnapshot(session, includeAlightLandmark: true);
+        _sessions.Setup(item => item.GetOwnedAsync(_sessionId, _userId, default)).ReturnsAsync(session);
+        _location.Setup(item => item.ProcessAsync(_userId, _sessionId,
+                It.IsAny<LocationUpdate>(), default))
+            .ReturnsAsync(new LocationUpdateResult(true, "ApproachingAlightPoint", 940, 940, 3));
+
+        var result = await Service().UpdateLocationAsync(_userId, _sessionId,
+            new LocationUpdate(15, 120, 5, DateTime.UtcNow));
+
+        Assert.True(result.Snapshot!.RequiresAlightingConfirmation);
+        Assert.Equal(60, result.Snapshot.RemainingDistanceMeters);
+        Assert.Equal(13, result.Snapshot.ApproxFareSpent);
+        Assert.Equal(13, result.Snapshot.EstimatedRemainingFare);
     }
 
     [Fact]
@@ -193,7 +217,8 @@ public sealed class NavigationFacadeServiceTests
             .ReturnsAsync((TripSession session, CancellationToken _) => session);
         return new(_tripSessions.Object, _sessions.Object, _recommendations.Object,
             _instructions.Object, _landmarks.Object, _location.Object, _rerouting.Object,
-            _speech.Object, NullLogger<NavigationFacadeService>.Instance);
+            _speech.Object, Options.Create(new NavigationOptions { ConfirmAlightDistanceMeters = 75 }),
+            NullLogger<NavigationFacadeService>.Instance);
     }
 
     private void SetupSnapshot(TripSession session,
