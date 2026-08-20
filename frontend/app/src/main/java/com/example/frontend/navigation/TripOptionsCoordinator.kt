@@ -5,6 +5,7 @@ import com.example.frontend.core.location.LocationDetectionFailureMessage
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.data.navigation.NavigationGeometryResponseDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRerouteRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
@@ -41,6 +42,24 @@ class TripOptionsCoordinator(context: Context) {
             )
         )
 
+    suspend fun currentLegGeometry(snapshot: NavigationSnapshotDto): ApiResult<NavigationGeometryResponseDto> {
+        val leg = snapshot.currentLeg ?: return ApiResult.Failure(null, "Current route leg is unavailable.")
+        val startLat = snapshot.currentLatitude ?: leg.startLatitude
+            ?: return ApiResult.Failure(null, "Current route location is unavailable.")
+        val startLon = snapshot.currentLongitude ?: leg.startLongitude
+            ?: return ApiResult.Failure(null, "Current route location is unavailable.")
+        val endLat = leg.endLatitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
+        val endLon = leg.endLongitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
+        return navigation.getGeometry(
+            startLatitude = startLat,
+            startLongitude = startLon,
+            endLatitude = endLat,
+            endLongitude = endLon,
+            mode = leg.transportMode,
+            routeId = leg.routeId
+        )
+    }
+
     private suspend fun reroute(sessionId: String, request: NavigationRerouteRequest): ApiResult<NavigationSnapshotDto> {
         val location = appContext.currentDeviceLocation()
             ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
@@ -53,7 +72,6 @@ class TripOptionsCoordinator(context: Context) {
             speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null,
             bearingDegrees = if (location.hasBearing()) location.bearing.toDouble() else null
         )
-
         when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
             is ApiResult.Failure -> return update
             is ApiResult.Success -> Unit
