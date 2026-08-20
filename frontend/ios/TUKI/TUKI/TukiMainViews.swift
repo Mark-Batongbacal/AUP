@@ -443,6 +443,13 @@ private struct TukiRecentCommuteCard: View {
     }
 }
 
+private struct TukiRecentSection: Identifiable {
+    let title: String
+    let items: [RecentCommute]
+
+    var id: String { title }
+}
+
 private struct TukiRecentView: View {
     let commutes: [RecentCommute]
     let isGuest: Bool
@@ -474,7 +481,7 @@ private struct TukiRecentView: View {
                         .font(.system(size: 14))
                         .foregroundStyle(TukiPalette.gray)
                 } else {
-                    ForEach(groupedSections, id: \.title) { section in
+                    ForEach(groupedSections) { section in
                         Text(section.title.uppercased())
                             .font(.system(size: 13, weight: .heavy))
                             .foregroundStyle(TukiPalette.gray)
@@ -499,7 +506,7 @@ private struct TukiRecentView: View {
         .background(TukiPalette.cream)
     }
 
-    private var groupedSections: [(title: String, items: [RecentCommute])] {
+    private var groupedSections: [TukiRecentSection] {
         var order: [String] = []
         var grouped: [String: [RecentCommute]] = [:]
         for commute in commutes {
@@ -510,7 +517,7 @@ private struct TukiRecentView: View {
             }
             grouped[key, default: []].append(commute)
         }
-        return order.map { ($0, grouped[$0] ?? []) }
+        return order.map { TukiRecentSection(title: $0, items: grouped[$0] ?? []) }
     }
 }
 
@@ -1054,7 +1061,7 @@ private struct TukiStepRow: View {
     }
     private var detailText: String {
         guard let fare = step.fare else { return "\(step.minutes) min" }
-        return "\(step.minutes) min · ₱\(String(format: \"%.0f\", fare))"
+        return "\(step.minutes) min · ₱\(Int(fare.rounded()))"
     }
 }
 
@@ -1075,7 +1082,7 @@ private struct TukiRouteResultsView: View {
                             HStack {
                                 Text(option.label).font(.system(size: 17, weight: .bold)).foregroundStyle(TukiPalette.dark)
                                 Spacer()
-                                Text("₱\(String(format: \"%.0f\", option.totalFare))").font(.system(size: 16, weight: .bold)).foregroundStyle(TukiPalette.orange)
+                                Text("₱\(Int(option.totalFare.rounded()))").font(.system(size: 16, weight: .bold)).foregroundStyle(TukiPalette.orange)
                             }
                             Text("\(option.steps.count) legs · \(option.totalMinutes) min").font(.system(size: 14, weight: .semibold)).foregroundStyle(TukiPalette.teal).padding(.top, 4)
                             Text(option.steps.map(\.mode).joined(separator: "  →  ")).font(.system(size: 12, weight: .semibold)).foregroundStyle(TukiPalette.dark).padding(.top, 10)
@@ -1099,7 +1106,7 @@ private struct TukiActiveTripView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Current Trip").font(.system(size: 24, weight: .heavy)).foregroundStyle(TukiPalette.dark)
                 Text("\(origin) → \(destination)").font(.system(size: 16, weight: .semibold)).foregroundStyle(TukiPalette.teal).padding(.top, 6)
-                Text("\(option.steps.count) legs · \(option.totalMinutes) min · ₱\(String(format: \"%.0f\", option.totalFare))")
+                Text("\(option.steps.count) legs · \(option.totalMinutes) min · ₱\(Int(option.totalFare.rounded()))")
                     .font(.system(size: 14, weight: .semibold)).foregroundStyle(TukiPalette.gray).padding(.top, 4)
                 ForEach(Array(option.steps.enumerated()), id: \.offset) { indexedStep in
                     TukiStepRow(step: indexedStep.element).padding(.top, 10)
