@@ -339,7 +339,7 @@ fun AppNavigation(
 
                     recentTripsLoading = true
                     recentTripsError = null
-                    when (val result = tripRepository.getRecentJourneys()) {
+                    when (val result = tripRepository.getHistory()) {
                         is ApiResult.Success -> {
                             val mapped = mutableListOf<RecentCommute>()
                             for (item in result.data.distinctBy { it.passengerTripId }) {

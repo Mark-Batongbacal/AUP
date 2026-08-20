@@ -102,7 +102,7 @@ fun HomeScreen(
         recentCommutes = if (isGuest) {
             emptyList()
         } else {
-            when (val result = tripRepository.getRecentJourneys()) {
+            when (val result = tripRepository.getHistory()) {
                 is ApiResult.Success -> result.data
                     .distinctBy { it.passengerTripId }
                     .take(3)
