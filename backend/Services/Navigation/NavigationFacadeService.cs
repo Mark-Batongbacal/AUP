@@ -178,7 +178,9 @@ public sealed class NavigationFacadeService(
             session.CurrentNavigationState == TripNavigationState.ApproachingAlightPoint,
             session.CurrentNavigationState == TripNavigationState.OffRoute,
             status,
-            TriggeredEvents(triggered, speechType, status));
+            TriggeredEvents(triggered, speechType, status),
+            session.LastLatitude,
+            session.LastLongitude);
         return new(snapshot);
     }
 
