@@ -111,10 +111,7 @@ final class TukiTripOptionsModel: ObservableObject {
     func changePreference(_ preference: String) async { await reroute(reason: "PREFERENCE_CHANGED", preference: preference) }
     func changeBudget(_ budget: Double?, clear: Bool) async { await reroute(reason: "BUDGET_CHANGED", budget: budget, clearBudget: clear) }
     func changeDestination(_ place: TukiPlace) async {
-        await reroute(
-            reason: "DESTINATION_CHANGED",
-            destination: place
-        )
+        await reroute(reason: "DESTINATION_CHANGED", destination: place)
     }
 
     func endTrip() async {
@@ -125,7 +122,9 @@ final class TukiTripOptionsModel: ObservableObject {
         case .success:
             activeSnapshot = nil
             sheetPresented = false
-        case .failure(let error): errorMessage = error.message
+            NotificationCenter.default.post(name: .tukiTripEnded, object: nil)
+        case .failure(let error):
+            errorMessage = error.message
         }
         isWorking = false
     }
@@ -173,7 +172,8 @@ final class TukiTripOptionsModel: ObservableObject {
         case .success(let snapshot):
             activeSnapshot = snapshot
             sheetPresented = false
-        case .failure(let error): errorMessage = error.message
+        case .failure(let error):
+            errorMessage = error.message
         }
         isWorking = false
     }
@@ -264,7 +264,9 @@ private struct TukiTripOptionsPanel: View {
                 set: { if !$0 { model.errorMessage = nil } }
             )) {
                 Button("OK") { model.errorMessage = nil }
-            } message: { Text(model.errorMessage ?? "Please try again.") }
+            } message: {
+                Text(model.errorMessage ?? "Please try again.")
+            }
         }
     }
 
@@ -276,11 +278,19 @@ private struct TukiTripOptionsPanel: View {
             optionButton("arrow.trianglehead.2.clockwise.rotate.90", "Reroute now", "Find a new route from your current location.") {
                 Task { await model.rerouteNow() }
             }
-            optionButton("arrow.left.arrow.right", "Change route preference", "Choose fastest, cheapest, or balanced.") { page = .preference }
-            optionButton("pesosign.circle", "Change budget", "Set or remove your maximum fare budget.") { page = .budget }
-            optionButton("mappin.and.ellipse", "Change destination", "Search for a new destination and reroute.") { page = .destination }
+            optionButton("arrow.left.arrow.right", "Change route preference", "Choose fastest, cheapest, or balanced.") {
+                page = .preference
+            }
+            optionButton("pesosign.circle", "Change budget", "Set or remove your maximum fare budget.") {
+                page = .budget
+            }
+            optionButton("mappin.and.ellipse", "Change destination", "Search for a new destination and reroute.") {
+                page = .destination
+            }
             Spacer(minLength: 6)
-            Button(role: .destructive) { Task { await model.endTrip() } } label: {
+            Button(role: .destructive) {
+                Task { await model.endTrip() }
+            } label: {
                 Text("End trip").fontWeight(.bold).frame(maxWidth: .infinity).frame(height: 48)
             }
             .buttonStyle(.borderedProminent)
@@ -294,9 +304,14 @@ private struct TukiTripOptionsPanel: View {
                 Text("Fastest").tag("fastest")
                 Text("Cheapest").tag("cheapest")
                 Text("Balanced").tag("efficient")
-            }.pickerStyle(.segmented)
-            Button("Apply preference") { Task { await model.changePreference(preference) } }
-                .buttonStyle(.borderedProminent).tint(TukiPalette.teal).frame(maxWidth: .infinity)
+            }
+            .pickerStyle(.segmented)
+            Button("Apply preference") {
+                Task { await model.changePreference(preference) }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(TukiPalette.teal)
+            .frame(maxWidth: .infinity)
             Spacer()
         }
     }
@@ -304,12 +319,22 @@ private struct TukiTripOptionsPanel: View {
     private var budgetEditor: some View {
         VStack(spacing: 16) {
             Text("Change budget").font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
-            TextField("Budget (₱)", text: $budgetText).keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
+            TextField("Budget (₱)", text: $budgetText)
+                .keyboardType(.decimalPad)
+                .textFieldStyle(.roundedBorder)
             Button("Apply budget") {
-                guard let value = Double(budgetText), value > 0 else { model.errorMessage = "Enter a valid budget greater than ₱0."; return }
+                guard let value = Double(budgetText), value > 0 else {
+                    model.errorMessage = "Enter a valid budget greater than ₱0."
+                    return
+                }
                 Task { await model.changeBudget(value, clear: false) }
-            }.buttonStyle(.borderedProminent).tint(TukiPalette.teal)
-            Button("Remove budget limit") { Task { await model.changeBudget(nil, clear: true) } }.foregroundStyle(TukiPalette.orange)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(TukiPalette.teal)
+            Button("Remove budget limit") {
+                Task { await model.changeBudget(nil, clear: true) }
+            }
+            .foregroundStyle(TukiPalette.orange)
             Spacer()
         }
     }
@@ -317,8 +342,11 @@ private struct TukiTripOptionsPanel: View {
     private var destinationEditor: some View {
         VStack(spacing: 12) {
             Text("Change destination").font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
-            TextField("New destination", text: $destinationQuery).textFieldStyle(.roundedBorder)
-            if destinationLoading { ProgressView().frame(maxWidth: .infinity) }
+            TextField("New destination", text: $destinationQuery)
+                .textFieldStyle(.roundedBorder)
+            if destinationLoading {
+                ProgressView().frame(maxWidth: .infinity)
+            }
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(destinationResults) { place in
@@ -327,13 +355,16 @@ private struct TukiTripOptionsPanel: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(place.name).fontWeight(.bold).foregroundStyle(TukiPalette.dark)
-                                if let address = place.address, !address.isEmpty { Text(address).font(.caption).foregroundStyle(.secondary) }
+                                if let address = place.address, !address.isEmpty {
+                                    Text(address).font(.caption).foregroundStyle(.secondary)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
                             .background(Color.secondary.opacity(0.08))
                             .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }.buttonStyle(.plain)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -341,7 +372,10 @@ private struct TukiTripOptionsPanel: View {
         }
         .task(id: destinationQuery) {
             let query = destinationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard query.count >= 2 else { destinationResults = []; return }
+            guard query.count >= 2 else {
+                destinationResults = []
+                return
+            }
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
             destinationLoading = true
@@ -350,10 +384,18 @@ private struct TukiTripOptionsPanel: View {
         }
     }
 
-    private func optionButton(_ icon: String, _ title: String, _ subtitle: String, action: @escaping () -> Void) -> some View {
+    private func optionButton(
+        _ icon: String,
+        _ title: String,
+        _ subtitle: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                Image(systemName: icon).font(.title3).foregroundStyle(TukiPalette.teal).frame(width: 28)
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(TukiPalette.teal)
+                    .frame(width: 28)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).fontWeight(.bold).foregroundStyle(TukiPalette.dark)
                     Text(subtitle).font(.caption).foregroundStyle(.secondary)
@@ -363,6 +405,7 @@ private struct TukiTripOptionsPanel: View {
             .padding(13)
             .background(Color.secondary.opacity(0.07))
             .clipShape(RoundedRectangle(cornerRadius: 14))
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
     }
 }
