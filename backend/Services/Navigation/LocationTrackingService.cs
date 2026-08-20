@@ -1,5 +1,6 @@
 using backend.Models.Database;
 using backend.Repositories;
+using backend.Services.Routing;
 using Microsoft.Extensions.Options;
 using backend.Services.Telemetry;
 
@@ -14,6 +15,7 @@ public sealed class LocationTrackingService(
     ITripSessionRepository sessions,
     IRouteRecommendationRepository recommendations,
     IRoutePointRepository routePoints,
+    IValhallaService valhalla,
     IGpsQualityValidator gpsValidator,
     IMapMatchingService matcher,
     ILandmarkService landmarkService,
@@ -44,10 +46,8 @@ public sealed class LocationTrackingService(
         var legEnd = matcher.ProjectProgress(geometry, leg.EndLatitude ?? geometry[^1].Latitude, leg.EndLongitude ?? geometry[^1].Longitude);
         if (legEnd < legStart) (legStart, legEnd) = (legEnd, legStart);
         var match = matcher.Match(update, geometry, legStart, legEnd, session.CurrentRouteProgressMeters);
-        var fullEnd = matcher.ProjectProgress(
-            geometry, geometry[^1].Latitude, geometry[^1].Longitude);
-        var expectedMatch = matcher.Match(
-            update, geometry, legStart, fullEnd, session.CurrentRouteProgressMeters);
+        var fullEnd = matcher.ProjectProgress(geometry, geometry[^1].Latitude, geometry[^1].Longitude);
+        var expectedMatch = matcher.Match(update, geometry, legStart, fullEnd, session.CurrentRouteProgressMeters);
         if (expectedMatch is null) return new(false, "LOCATION_NOT_MATCHED");
         if (session.CurrentNavigationState is TripNavigationState.OnJeepney or TripNavigationState.ApproachingAlightPoint &&
             expectedMatch.DistanceFromGeometryMeters <= _options.TransitOffRouteMeters + update.AccuracyMeters &&
@@ -140,6 +140,7 @@ public sealed class LocationTrackingService(
                     return new(false, "INVALID_STATE_TRANSITION");
                 session.CurrentNavigationState = TripNavigationState.Arrived;
                 session.CompletedAt = DateTime.UtcNow;
+                session.LastNavigationStatus = "ARRIVED";
                 _telemetry.Event("TripArrived", sessionId);
             }
             session.ConsecutiveStateConfirmationSamples = 0;
@@ -156,11 +157,33 @@ public sealed class LocationTrackingService(
         RecommendationLeg leg, CancellationToken cancellationToken)
     {
         if (leg.RouteId is { } routeId)
-            return (await routePoints.GetOrderedByRouteAsync(routeId, cancellationToken))
+        {
+            var stored = (await routePoints.GetOrderedByRouteAsync(routeId, cancellationToken))
                 .Select(point => (point.Latitude, point.Longitude)).ToList();
-        return leg.StartLatitude is { } slat && leg.StartLongitude is { } slon &&
-               leg.EndLatitude is { } elat && leg.EndLongitude is { } elon
-            ? [(slat, slon), (elat, elon)] : [];
+            if (stored.Count >= 2) return stored;
+        }
+
+        if (leg.StartLatitude is not { } startLat || leg.StartLongitude is not { } startLon ||
+            leg.EndLatitude is not { } endLat || leg.EndLongitude is not { } endLon)
+            return [];
+
+        var mode = leg.TransportMode?.Code?.ToUpperInvariant();
+        var costing = mode is "TRICYCLE" or "TRIKE" ? _options.TricycleRoadCosting : "pedestrian";
+        try
+        {
+            var route = await valhalla.GetRouteAsync(
+                startLat, startLon, endLat, endLon, costing, cancellationToken);
+            var points = route.Trip?.Legs
+                .SelectMany(item => item.Points)
+                .Where(point => point.Length >= 2)
+                .Select(point => (Latitude: point[1], Longitude: point[0]))
+                .ToList() ?? [];
+            return points.Count >= 2 ? points : [];
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return [];
+        }
     }
 
     private static bool IsWalking(RecommendationLeg leg) =>
