@@ -137,6 +137,8 @@ struct TukiNavigationSnapshot: Codable, Equatable {
     let rerouteRequired: Bool
     let status: String
     let triggeredEvents: [TukiNavigationEvent]
+    let approxFareSpent: Double
+    let estimatedRemainingFare: Double
 
     var displayInstruction: String {
         if let spokenInstruction, !spokenInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
