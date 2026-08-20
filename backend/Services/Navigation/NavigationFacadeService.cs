@@ -12,7 +12,7 @@ public interface INavigationFacadeService
     Task<NavigationOperation> ConfirmBoardingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<NavigationOperation> ConfirmAlightingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<NavigationOperation> CancelAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
-    Task<NavigationOperation> RerouteAsync(Guid userId, Guid sessionId, string reason, CancellationToken cancellationToken = default);
+    Task<NavigationOperation> RerouteAsync(Guid userId, Guid sessionId, NavigationRerouteRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed class NavigationFacadeService(
@@ -60,7 +60,8 @@ public sealed class NavigationFacadeService(
         var status = result.Status;
         if (result.Accepted && result.Status is "OFF_ROUTE" or "MISSED_ALIGHT")
         {
-            var reroute = await rerouting.RerouteAsync(userId, sessionId, result.Status, cancellationToken);
+            var reroute = await rerouting.RerouteAsync(userId, sessionId,
+                new NavigationRerouteRequest(result.Status), cancellationToken);
             if (reroute.Succeeded)
             {
                 status = "REROUTE_SUCCEEDED";
@@ -90,10 +91,10 @@ public sealed class NavigationFacadeService(
             "CANCELLED", cancellationToken);
 
     public async Task<NavigationOperation> RerouteAsync(
-        Guid userId, Guid sessionId, string reason,
+        Guid userId, Guid sessionId, NavigationRerouteRequest request,
         CancellationToken cancellationToken = default)
     {
-        var result = await rerouting.RerouteAsync(userId, sessionId, reason, cancellationToken);
+        var result = await rerouting.RerouteAsync(userId, sessionId, request, cancellationToken);
         var session = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken);
         return session is null ? Fail("TRIP_SESSION_NOT_FOUND") :
             await BuildAsync(userId, session, result.Status, [], cancellationToken);
@@ -233,8 +234,7 @@ public sealed class NavigationFacadeService(
             return instruction;
 
         return session.CurrentNavigationState == TripNavigationState.Arrived
-            ? all.FirstOrDefault(item =>
-                item.Type == NavigationInstructionType.Arrived)
+            ? all.FirstOrDefault(item => item.Type == NavigationInstructionType.Arrived)
             : null;
     }
 
