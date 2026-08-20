@@ -87,7 +87,9 @@ data class NavigationSnapshotDto(
     val requiresAlightingConfirmation: Boolean,
     val rerouteRequired: Boolean,
     val status: String,
-    val triggeredEvents: List<NavigationTriggeredEventDto>
+    val triggeredEvents: List<NavigationTriggeredEventDto>,
+    val currentLatitude: Double? = null,
+    val currentLongitude: Double? = null
 ) {
     fun displayInstruction(): String? = spokenInstruction?.takeIf { it.isNotBlank() }
 }
