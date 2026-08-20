@@ -58,6 +58,7 @@ private val TukiCream2 = Color(0xFFFAEBC7)
 fun HomeScreen(
     userName: String = "Juan",
     tripRepository: TripRepository,
+    isGuest: Boolean = false,
     onSearchDestination: (origin: String, destination: String) -> Unit = { _, _ -> },
     onCommuteClick: (RecentCommute) -> Unit = {},
     onRecentClick: () -> Unit = {},
