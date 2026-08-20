@@ -46,11 +46,10 @@ private struct TukiOnboardingView: View {
 
     var body: some View {
         ZStack {
-            TukiPalette.teal
-                .ignoresSafeArea()
+            TukiPalette.teal.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer(minLength: 115)
+                Spacer().frame(height: 170)
 
                 Image("TukiLogo")
                     .resizable()
@@ -71,13 +70,14 @@ private struct TukiOnboardingView: View {
                     .foregroundStyle(.white)
                     .padding(.top, 5)
 
-                VStack(spacing: 3) {
-                    Text("Commute smarter.")
-                    Text("Move easier.")
-                }
-                .font(.system(size: 21))
-                .foregroundStyle(.white)
-                .padding(.top, 38)
+                Text("Commute smarter.")
+                    .font(.system(size: 21))
+                    .foregroundStyle(.white)
+                    .padding(.top, 38)
+
+                Text("Move easier.")
+                    .font(.system(size: 21))
+                    .foregroundStyle(.white)
 
                 HStack(spacing: 8) {
                     Capsule()
@@ -92,7 +92,7 @@ private struct TukiOnboardingView: View {
                 }
                 .padding(.top, 28)
 
-                Spacer(minLength: 40)
+                Spacer().frame(height: 40)
 
                 Button(action: onLetsRide) {
                     Text("Let's Ride")
@@ -104,9 +104,11 @@ private struct TukiOnboardingView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 34)
-                .padding(.bottom, 28)
+
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 34)
+            .padding(.bottom, 45)
         }
     }
 }
@@ -119,17 +121,25 @@ private struct TukiLoginView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                TukiLogoHeader()
+                HStack(spacing: 10) {
+                    Image("TukiLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 50, height: 50)
+                    Text("TUKI.")
+                        .font(.system(size: 30, weight: .heavy))
+                        .foregroundStyle(TukiPalette.teal)
+                }
 
                 Text("Welcome back")
-                    .font(.system(size: 26, weight: .heavy))
+                    .font(.system(size: 24, weight: .heavy))
                     .foregroundStyle(.black)
-                    .padding(.top, 35)
+                    .padding(.top, 20)
 
                 Text("Log in to continue your commute")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(TukiPalette.gray)
-                    .padding(.top, 8)
+                    .padding(.top, 4)
 
                 VStack(spacing: 10) {
                     TukiFormField(
@@ -152,53 +162,60 @@ private struct TukiLoginView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .buttonStyle(.plain)
                 }
-                .padding(.top, 40)
-
-                TukiPrimaryButton(
-                    title: "Log in",
-                    isLoading: viewModel.isAuthenticating,
-                    isEnabled: !viewModel.isAuthenticating,
-                    action: viewModel.loginWithPassword
-                )
-                .padding(.top, 28)
-
-                Button(action: onGuest) {
-                    Text("Continue as Guest")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(TukiPalette.teal)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isAuthenticating)
-
-                TukiDividerLabel(text: "OR CONTINUE WITH")
-                    .padding(.vertical, 20)
-
-                VStack(spacing: 12) {
-                    TukiSocialButton(
-                        title: viewModel.isAuthenticating ? "Connecting..." : "Continue with Google",
-                        imageName: "GoogleLogo",
-                        isEnabled: !viewModel.isAuthenticating,
-                        action: viewModel.loginWithGoogle
-                    )
-
-                    TukiSocialButton(
-                        title: viewModel.isAuthenticating ? "Connecting..." : "Continue with Facebook",
-                        imageName: "FacebookLogo",
-                        isEnabled: !viewModel.isAuthenticating,
-                        action: viewModel.loginWithFacebook
-                    )
-                }
+                .padding(.top, 25)
 
                 if let errorMessage = viewModel.errorMessage {
                     Text(errorMessage)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(TukiPalette.error)
                         .multilineTextAlignment(.center)
-                        .padding(.top, 10)
+                        .padding(.top, 12)
                         .accessibilityIdentifier("login-error-message")
                 }
+
+                TukiPrimaryButton(
+                    title: viewModel.isAuthenticating ? "Logging in..." : "Log in",
+                    isLoading: viewModel.isAuthenticating,
+                    isEnabled: !viewModel.isAuthenticating,
+                    action: viewModel.loginWithPassword
+                )
+                .padding(.top, 20)
+
+                TukiDividerLabel(text: "OR")
+                    .padding(.vertical, 15)
+
+                HStack(spacing: 12) {
+                    TukiCompactSocialButton(
+                        title: "Google",
+                        imageName: "GoogleLogo",
+                        isEnabled: !viewModel.isAuthenticating,
+                        action: viewModel.loginWithGoogle
+                    )
+
+                    TukiCompactSocialButton(
+                        title: "Facebook",
+                        imageName: "FacebookLogo",
+                        isEnabled: !viewModel.isAuthenticating,
+                        action: viewModel.loginWithFacebook
+                    )
+                }
+
+                Button(action: onGuest) {
+                    Text("Continue as Guest")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(TukiPalette.dark)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(.white)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(TukiPalette.border, lineWidth: 2)
+                        }
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isAuthenticating)
+                .opacity(viewModel.isAuthenticating ? 0.65 : 1)
+                .padding(.top, 12)
 
                 #if DEBUG
                 if let diagnostic = viewModel.facebookLoginDiagnostic {
@@ -217,11 +234,11 @@ private struct TukiLoginView: View {
                         .buttonStyle(.plain)
                 }
                 .font(.system(size: 17))
-                .padding(.top, 16)
-                .padding(.bottom, 18)
+                .padding(.top, 8)
             }
             .padding(.horizontal, 34)
-            .padding(.top, 22)
+            .padding(.top, 25)
+            .padding(.bottom, 15)
         }
         .background(.white)
         .scrollDismissesKeyboard(.interactively)
@@ -232,12 +249,12 @@ private struct TukiDividerLabel: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 14) {
             Rectangle()
                 .fill(Color.gray.opacity(0.35))
                 .frame(height: 1)
             Text(text)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(TukiPalette.gray)
                 .fixedSize()
             Rectangle()
@@ -247,7 +264,7 @@ private struct TukiDividerLabel: View {
     }
 }
 
-private struct TukiSocialButton: View {
+private struct TukiCompactSocialButton: View {
     let title: String
     let imageName: String
     let isEnabled: Bool
@@ -255,21 +272,21 @@ private struct TukiSocialButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(imageName)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 24, height: 24)
+                    .frame(width: 20, height: 20)
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(TukiPalette.dark)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 70)
+            .frame(height: 56)
             .background(.white)
             .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(TukiPalette.border, lineWidth: 3)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(TukiPalette.border, lineWidth: 2)
             }
         }
         .buttonStyle(.plain)
