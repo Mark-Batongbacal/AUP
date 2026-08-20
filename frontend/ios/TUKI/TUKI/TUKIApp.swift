@@ -34,6 +34,8 @@ private struct TukiAppContent: View {
         ZStack {
             TukiParityRootView()
                 .id(mainFlowId)
+            TukiFareTrackingOverlay()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             TukiTripOptionsOverlay()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
