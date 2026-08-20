@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -55,7 +57,6 @@ fun ProfileScreen(
     userEmail: String = "juan.delacruz@gmail.com",
     tripsTaken: Int = 18,
     favoritesCount: Int = 2,
-    savedCount: Int = 3,
     onBack: () -> Unit = {},
     onEditProfileClick: () -> Unit = {},
     onPrivacySecurityClick: () -> Unit = {},
@@ -95,6 +96,8 @@ fun ProfileScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(TukiCream)
+            .statusBarsPadding()
+            .navigationBarsPadding()
     ) {
         LazyColumn(
             modifier = Modifier
@@ -103,24 +106,6 @@ fun ProfileScreen(
                 .padding(horizontal = 30.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 30.dp, bottom = 20.dp)
         ) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .background(TukiCream2, RoundedCornerShape(12.dp))
-                            .clickable(onClick = onBack),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Text(text = "Profile", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
-            }
-
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -154,7 +139,6 @@ fun ProfileScreen(
                 ) {
                     ProfileStatCard(ProfileStat(tripsTaken.toString(), "TRIPS TAKEN"), Modifier.weight(1f))
                     ProfileStatCard(ProfileStat(favoritesCount.toString(), "FAVORITES"), Modifier.weight(1f))
-                    ProfileStatCard(ProfileStat(savedCount.toString(), "SAVED"), Modifier.weight(1f))
                 }
 
                 Spacer(modifier = Modifier.height(28.dp))
@@ -168,20 +152,6 @@ fun ProfileScreen(
             items(accountRows) { row ->
                 AccountRowItem(row)
                 Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            item {
-                Text(
-                    text = "Log out",
-                    color = Color(0xFFB00020),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(TukiCream2, RoundedCornerShape(14.dp))
-                        .clickable(onClick = onLogoutClick)
-                        .padding(16.dp)
-                )
             }
         }
 

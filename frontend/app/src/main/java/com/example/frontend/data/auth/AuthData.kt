@@ -26,6 +26,11 @@ data class RegisterRequest(
     val phoneNumber: String? = null
 )
 
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val newPassword: String
+)
+
 data class LoginResponseDto(
     val apiKey: String,
     val expiresAt: String,
@@ -54,6 +59,7 @@ interface AuthApi {
     @POST("api/auth/facebook") suspend fun facebook(@Body request: FacebookLoginRequest): Response<LoginResponseDto>
     @POST("api/auth/facebook/oidc") suspend fun facebookOidc(@Body request: FacebookOidcLoginRequest): Response<LoginResponseDto>
     @GET("api/auth/me") suspend fun me(): Response<AuthIdentityDto>
+    @POST("api/auth/change-password") suspend fun changePassword(@Body request: ChangePasswordRequest): Response<Unit>
 }
 
 interface AuthRepository {
@@ -63,6 +69,7 @@ interface AuthRepository {
     suspend fun loginWithFacebook(accessToken: String): ApiResult<AuthenticatedUser>
     suspend fun loginWithFacebookOidc(idToken: String, nonce: String): ApiResult<AuthenticatedUser>
     suspend fun getCurrentAuthIdentity(): ApiResult<AuthIdentityDto>
+    suspend fun changePassword(currentPassword: String, newPassword: String): ApiResult<Unit>
     fun logoutLocalSession()
 }
 
@@ -93,6 +100,11 @@ class AuthRepositoryImpl(
 
     override suspend fun getCurrentAuthIdentity() =
         authenticatedApiCall(sessionStore, errors) { authApi.me() }
+
+    override suspend fun changePassword(currentPassword: String, newPassword: String): ApiResult<Unit> =
+        authenticatedApiCall(sessionStore, errors, noContentValue = Unit) {
+            authApi.changePassword(ChangePasswordRequest(currentPassword, newPassword))
+        }
 
     override fun logoutLocalSession() = sessionStore.clear()
 
