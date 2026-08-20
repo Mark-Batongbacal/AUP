@@ -2,6 +2,15 @@ namespace backend.Services.Navigation;
 
 public sealed record StartNavigationRequest(Guid RecommendationId);
 
+public sealed record NavigationRerouteRequest(
+    string Reason = "MANUAL",
+    string? Preference = null,
+    decimal? Budget = null,
+    bool ClearBudget = false,
+    string? DestinationName = null,
+    double? DestinationLatitude = null,
+    double? DestinationLongitude = null);
+
 public sealed record NavigationLegSnapshot(
     int LegIndex,
     string TransportMode,
