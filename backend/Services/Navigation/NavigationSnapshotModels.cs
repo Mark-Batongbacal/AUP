@@ -69,7 +69,9 @@ public sealed record NavigationSnapshot(
     string Status,
     IReadOnlyList<NavigationTriggeredEvent> TriggeredEvents,
     double? CurrentLatitude,
-    double? CurrentLongitude);
+    double? CurrentLongitude,
+    decimal ApproxFareSpent,
+    decimal EstimatedRemainingFare);
 
 public sealed record NavigationOperation(NavigationSnapshot? Snapshot, string? Error = null)
 {
