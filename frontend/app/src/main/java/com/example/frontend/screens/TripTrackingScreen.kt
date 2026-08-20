@@ -25,6 +25,7 @@ import com.example.frontend.TransitRouteOverlay
 import com.example.frontend.components.ParaPoOverlay
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import org.maplibre.android.geometry.LatLng
+import kotlin.math.pow
 import kotlin.math.roundToInt
 
 private val TukiTeal = Color(0xFF15919B)
@@ -90,6 +91,18 @@ fun TripTrackingScreen(
         0f
     }
 
+    val currentPosition = if (
+        navigationSnapshot?.currentLatitude != null &&
+        navigationSnapshot.currentLongitude != null
+    ) {
+        LatLng(navigationSnapshot.currentLatitude, navigationSnapshot.currentLongitude)
+    } else {
+        null
+    }
+    val visibleRoutePoints = remember(routePoints, currentPosition) {
+        routeFromCurrentPosition(routePoints, currentPosition)
+    }
+
     val requiresBoarding = navigationSnapshot?.requiresBoardingConfirmation == true
     val requiresAlighting = navigationSnapshot?.requiresAlightingConfirmation == true
     val canUseParaPo = requiresAlighting ||
@@ -108,7 +121,8 @@ fun TripTrackingScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         MapScreen(
-            routePoints = routePoints,
+            routePoints = visibleRoutePoints,
+            startPoint = currentPosition,
             futureRouteSegments = futureRouteSegments,
             selectedDestination = legDestination,
             finalDestination = finalDestination,
@@ -363,5 +377,17 @@ fun TripTrackingScreen(
                 }
             }
         )
+    }
+}
+
+private fun routeFromCurrentPosition(route: List<LatLng>, current: LatLng?): List<LatLng> {
+    if (current == null || route.size < 2) return route
+    val nearestIndex = route.indices.minByOrNull { index ->
+        val point = route[index]
+        (point.latitude - current.latitude).pow(2) + (point.longitude - current.longitude).pow(2)
+    } ?: return route
+    return buildList {
+        add(current)
+        addAll(route.drop(nearestIndex))
     }
 }
