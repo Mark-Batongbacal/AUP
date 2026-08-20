@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace backend.Models.Database;
 
 public enum TripNavigationState
@@ -48,6 +50,8 @@ public sealed class TripSession
     public DateTime? CancelledAt { get; set; }
     public decimal? OriginalBudget { get; set; }
     public string? OriginalPreference { get; set; }
+    [Column(TypeName = "decimal(10, 2)")]
+    public decimal ApproxFareSpent { get; set; }
     public DateTime? LastRerouteAt { get; set; }
     public int RerouteCount { get; set; }
     public DateTime CreatedAt { get; set; }
