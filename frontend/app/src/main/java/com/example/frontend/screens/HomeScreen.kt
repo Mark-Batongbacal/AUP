@@ -1,7 +1,10 @@
 package com.example.frontend.screens
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.location.Geocoder
+import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,8 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,15 +39,10 @@ import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
-import com.example.frontend.core.location.LocationDetectionFailureMessage
-import com.example.frontend.core.location.currentDeviceLocation
-import com.example.frontend.core.location.hasDeviceLocationPermission
-import com.example.frontend.core.location.isLocationSupported
-import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.trips.TripRepository
-import com.example.frontend.data.trips.toRecentCommute
 import com.example.frontend.model.RecentCommute
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -74,10 +70,6 @@ fun HomeScreen(
 ) {
     var currentLocationLabel by remember { mutableStateOf("Locating you...") }
     var isLocating by remember { mutableStateOf(true) }
-    var recentCommutes by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
-    var isRefreshingRecent by remember { mutableStateOf(false) }
-    var recentErrorMessage by remember { mutableStateOf<String?>(null) }
-    var showUnsupportedLocationDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val inPreview = LocalInspectionMode.current
@@ -96,45 +88,14 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
-        isRefreshingRecent = true
-        recentErrorMessage = null
-
-        recentCommutes = if (isGuest) {
-            emptyList()
-        } else {
-            when (val result = tripRepository.getHistory()) {
-                is ApiResult.Success -> result.data
-                    .distinctBy { it.passengerTripId }
-                    .take(3)
-                    .map { it.toRecentCommute() }
-                is ApiResult.Failure -> {
-                    recentErrorMessage = result.message
-                    emptyList()
-                }
-            }
-        }
-
-        isRefreshingRecent = false
-
         if (inPreview) {
             isLocating = false
             return@LaunchedEffect
         }
 
-        if (context.hasDeviceLocationPermission()) {
-            val location = context.currentDeviceLocation()
-            if (location == null) {
-                currentLocationLabel = LocationDetectionFailureMessage
-            } else {
-                currentLocationLabel = reverseGeocode(
-                    context,
-                    location.latitude,
-                    location.longitude
-                ) ?: "Detected location"
-                if (!isLocationSupported(location.latitude, location.longitude)) {
-                    showUnsupportedLocationDialog = true
-                }
-            }
+        if (context.hasLocationPermission()) {
+            val label = getCurrentLocationLabel(context)
+            currentLocationLabel = label ?: "Unable to detect location"
             isLocating = false
         } else {
             permissionLauncher.launch(
@@ -151,120 +112,61 @@ fun HomeScreen(
             .fillMaxSize()
             .background(TukiCream)
     ) {
-        LazyColumn(
+
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 30.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 30.dp,
-                bottom = 20.dp
-            )
+                .padding(horizontal = 24.dp)
         ) {
-            item {
-                Text(
-                    text = "Hello, $userName 👋",
-                    color = TukiGray,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
 
-                Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-                Text(
-                    text = "Where are you going?",
-                    color = TukiDark,
-                    fontSize = 27.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+            Text(
+                text = "Hello, $userName 👋",
+                color = TukiGray,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold
+            )
 
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text = "Pick a destination yourself, or tell our AI where you want to go.",
-                    color = TukiGray,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
+            Text(
+                text = "Where are you going?",
+                color = TukiDark,
+                fontSize = 25.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
 
-                Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-                CurrentLocationPill(
-                    currentLocationLabel = currentLocationLabel,
-                    isLocating = isLocating
-                )
+            Text(
+                text = "Pick a destination yourself, or tell our AI where you want to go.",
+                color = TukiGray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
 
-                Spacer(modifier = Modifier.height(20.dp))
-            }
+            Spacer(modifier = Modifier.height(14.dp))
 
-            item {
-                PinDestinationCard(
-                    onClick = { onPinDestinationClick(currentLocationLabel) }
-                )
+            CurrentLocationPill(
+                currentLocationLabel = currentLocationLabel,
+                isLocating = isLocating
+            )
 
-                Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-                AskAiCard(onClick = onAskAiClick)
-
-                Spacer(modifier = Modifier.height(30.dp))
-            }
-
-            item {
-                Text(
-                    text = "RECENT COMMUTES",
-                    color = TukiDark,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            if (isRefreshingRecent) {
-                item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = TukiTeal,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+            PinDestinationCard(
+                onClick = {
+                    onPinDestinationClick(currentLocationLabel)
                 }
-            } else if (recentErrorMessage != null) {
-                item {
-                    Text(
-                        text = "Could not load recent commutes",
-                        color = Color.Red,
-                        fontSize = 14.sp
-                    )
-                }
-            } else if (recentCommutes.isEmpty()) {
-                item {
-                    Text(
-                        text = if (isGuest) {
-                            "Sign in to view completed and cancelled journeys."
-                        } else {
-                            "No completed or cancelled trips yet."
-                        },
-                        color = TukiGray,
-                        fontSize = 14.sp
-                    )
-                }
-            } else {
-                items(recentCommutes, key = { it.id }) { commute ->
-                    RecentCommuteCard(
-                        commute = commute,
-                        onClick = { onCommuteClick(commute) }
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
-            }
+            )
 
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                NewHereBanner(onClick = onNewHereClick)
-            }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            AskAiCard(
+                onClick = onAskAiClick
+            )
         }
 
         BottomBar(
@@ -274,12 +176,6 @@ fun HomeScreen(
             onFavoritesClick = onFavoritesClick,
             onProfileClick = onProfileClick
         )
-    }
-
-    if (showUnsupportedLocationDialog) {
-        LocationNotSupportedDialog {
-            showUnsupportedLocationDialog = false
-        }
     }
 }
 
@@ -493,69 +389,42 @@ private fun IconBadge(emoji: String) {
     }
 }
 
-@Composable
-private fun RecentCommuteCard(
-    commute: RecentCommute,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(color = TukiCream2, shape = RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "${commute.origin} to ${commute.destination}",
-            color = TukiDark,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = buildList {
-                commute.status.takeIf { it.isNotBlank() }?.let(::add)
-                add("${commute.legs} legs")
-                add("${commute.minutes} min")
-            }.joinToString(" · "),
-            color = TukiTeal,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
+private fun android.content.Context.hasLocationPermission(): Boolean {
+    return ContextCompat.checkSelfPermission(
+        this,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
 }
 
-@Composable
-private fun NewHereBanner(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(color = TukiTeal, shape = RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(20.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "New here?",
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Learn how “para po” works",
-                color = Color.White.copy(alpha = 0.85f),
-                fontSize = 14.sp
-            )
-        }
-        Text(
-            text = "→",
-            color = Color.White,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold
-        )
+private suspend fun getCurrentLocationLabel(
+    context: android.content.Context
+): String? {
+    if (!context.hasLocationPermission()) return null
+
+    val locationManager =
+        context.getSystemService(android.content.Context.LOCATION_SERVICE) as? LocationManager
+            ?: return null
+
+    val location: Location? = try {
+        val providers = locationManager.getProviders(true)
+        providers.mapNotNull { provider ->
+            @Suppress("MissingPermission")
+            locationManager.getLastKnownLocation(provider)
+        }.maxByOrNull { it.time }
+    } catch (e: SecurityException) {
+        null
     }
+
+    location ?: return null
+    return reverseGeocode(
+        context,
+        location.latitude,
+        location.longitude
+    )
 }
 
 private suspend fun reverseGeocode(
