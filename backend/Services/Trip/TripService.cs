@@ -1,4 +1,5 @@
 using backend.Models.Database;
+using backend.Models.Trips;
 using backend.Repositories;
 using backend.Services.Transportation;
 
@@ -9,8 +10,11 @@ public sealed class TripService(
     IRouteRecommendationRepository routeRecommendationRepository,
     IRecommendationLegRepository recommendationLegRepository,
     IPassengerTripRepository passengerTripRepository,
-    ITripAlertRepository tripAlertRepository) : ITripService
+    ITripAlertRepository tripAlertRepository,
+    ITripSessionRepository tripSessionRepository) : ITripService
 {
+    private const string CompletedStatus = "COMPLETED";
+    private const string CancelledStatus = "CANCELLED";
     private const string InProgressStatus = "IN_PROGRESS";
     private const int InitialLegOrder = 1;
     private readonly ITripSearchRepository _tripSearchRepository = tripSearchRepository;
@@ -18,6 +22,7 @@ public sealed class TripService(
     private readonly IRecommendationLegRepository _recommendationLegRepository = recommendationLegRepository;
     private readonly IPassengerTripRepository _passengerTripRepository = passengerTripRepository;
     private readonly ITripAlertRepository _tripAlertRepository = tripAlertRepository;
+    private readonly ITripSessionRepository _tripSessionRepository = tripSessionRepository;
 
     public Task<TripSearch?> GetTripSearchByIdAsync(Guid tripSearchId, CancellationToken cancellationToken = default)
     {
@@ -149,6 +154,52 @@ public sealed class TripService(
         }
 
         return _passengerTripRepository.GetByUserAsync(userId, cancellationToken);
+    }
+
+    public async Task<List<PassengerTripHistoryItemDto>> GetPassengerTripHistoryAsync(
+        Guid userId,
+        bool recentOnly = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+        {
+            return [];
+        }
+
+        var sessions = recentOnly
+            ? await _tripSessionRepository.GetOwnedRecentHistoryAsync(userId, cancellationToken)
+            : await _tripSessionRepository.GetOwnedHistoryAsync(userId, cancellationToken);
+        var history = new List<PassengerTripHistoryItemDto>(sessions.Count);
+
+        foreach (var session in sessions)
+        {
+            history.Add(await MapTripSessionHistoryItemAsync(session, recentOnly, cancellationToken));
+        }
+
+        if (!recentOnly)
+        {
+            return history;
+        }
+
+        var sessionRecommendationIds = sessions
+            .Select(session => session.RecommendationId)
+            .ToHashSet();
+        var legacyTrips = await _passengerTripRepository.GetByUserAsync(userId, cancellationToken);
+
+        foreach (var trip in legacyTrips)
+        {
+            if (!IsLegacyRecentPassengerTrip(trip) ||
+                sessionRecommendationIds.Contains(trip.RecommendationId))
+            {
+                continue;
+            }
+
+            history.Add(await MapLegacyPassengerTripHistoryItemAsync(trip, cancellationToken));
+        }
+
+        return history
+            .OrderByDescending(HistorySortDate)
+            .ToList();
     }
 
     public async Task<PassengerTrip?> StartPassengerTripAsync(
@@ -381,6 +432,102 @@ public sealed class TripService(
             leg.EstimatedFare,
             leg.Instructions,
             leg.CreatedAt);
+
+    private static string RecentStatus(TripNavigationState state) => state switch
+    {
+        TripNavigationState.Arrived => CompletedStatus,
+        TripNavigationState.Cancelled => CancelledStatus,
+        _ => state.ToString()
+    };
+
+    private async Task<PassengerTripHistoryItemDto> MapTripSessionHistoryItemAsync(
+        TripSession session,
+        bool recentOnly,
+        CancellationToken cancellationToken)
+    {
+        var recommendation = await GetRecommendationByIdAsync(
+            session.RecommendationId,
+            cancellationToken);
+        var search = recommendation is null
+            ? null
+            : await GetTripSearchByIdAsync(recommendation.TripSearchId, cancellationToken);
+        var recommendationDetails = await GetRecommendationDetailsAsync(
+            session.RecommendationId,
+            cancellationToken);
+
+        return new PassengerTripHistoryItemDto(
+            session.TripSessionId,
+            recentOnly ? RecentStatus(session.CurrentNavigationState) : session.CurrentNavigationState.ToString(),
+            search?.OriginName ?? "Current location",
+            session.DestinationName ?? search?.DestinationName ?? "Unknown destination",
+            session.OriginLatitude,
+            session.OriginLongitude,
+            session.DestinationLatitude,
+            session.DestinationLongitude,
+            session.StartedAt,
+            session.CompletedAt ?? session.CancelledAt,
+            session.CreatedAt,
+            recommendationDetails,
+            session.RerouteCount > 0 || session.LastRerouteAt != null,
+            session.RerouteCount,
+            session.LastRerouteReason,
+            session.LastRerouteAt);
+    }
+
+    private async Task<PassengerTripHistoryItemDto> MapLegacyPassengerTripHistoryItemAsync(
+        PassengerTrip trip,
+        CancellationToken cancellationToken)
+    {
+        var recommendation = trip.Recommendation is not null &&
+            trip.Recommendation.RecommendationId == trip.RecommendationId
+            ? trip.Recommendation
+            : await GetRecommendationByIdAsync(trip.RecommendationId, cancellationToken);
+        var search = recommendation is null
+            ? null
+            : await GetTripSearchByIdAsync(recommendation.TripSearchId, cancellationToken);
+        var recommendationDetails = await GetRecommendationDetailsAsync(
+            trip.RecommendationId,
+            cancellationToken);
+
+        return new PassengerTripHistoryItemDto(
+            trip.PassengerTripId,
+            LegacyRecentStatus(trip),
+            search?.OriginName ?? "Current location",
+            search?.DestinationName ?? "Unknown destination",
+            search?.OriginLatitude ?? 0,
+            search?.OriginLongitude ?? 0,
+            search?.DestinationLatitude ?? 0,
+            search?.DestinationLongitude ?? 0,
+            trip.StartedAt,
+            LegacyTripEndedAt(trip),
+            trip.CreatedAt,
+            recommendationDetails,
+            false,
+            0,
+            null,
+            null);
+    }
+
+    private static bool IsLegacyRecentPassengerTrip(PassengerTrip trip) =>
+        LegacyRecentStatus(trip) is CompletedStatus or CancelledStatus;
+
+    private static string LegacyRecentStatus(PassengerTrip trip)
+    {
+        var status = trip.Status?.Trim() ?? string.Empty;
+        var normalizedStatus = status.ToUpperInvariant();
+        return normalizedStatus switch
+        {
+            CompletedStatus => CompletedStatus,
+            CancelledStatus => CancelledStatus,
+            _ => status
+        };
+    }
+
+    private static DateTime? LegacyTripEndedAt(PassengerTrip trip) =>
+        trip.CompletedAt ?? trip.UpdatedAt;
+
+    private static DateTime HistorySortDate(PassengerTripHistoryItemDto item) =>
+        item.CompletedAt ?? item.StartedAt ?? item.CreatedAt;
 
     private static PassengerTripDetailsDto MapPassengerTripDetails(
         PassengerTrip trip,

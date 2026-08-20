@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,11 +40,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.MapScreen
+import com.example.frontend.core.location.LocationDetectionFailureMessage
 import com.example.frontend.core.location.currentDeviceLocation
+import com.example.frontend.core.location.isLocationSupported
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.places.PlacesRepository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 
 private val TukiTeal = Color(0xFF15919B)
@@ -53,6 +57,11 @@ private val TukiCream2 = Color(0xFFFAEBC7)
 private val TukiDark = Color(0xFF173B43)
 private val TukiGray = Color(0xFF9AA6A9)
 
+private enum class MapPickMode {
+    Origin,
+    Destination
+}
+
 @Composable
 fun DestinationSearchScreen(
     origin: String,
@@ -60,38 +69,98 @@ fun DestinationSearchScreen(
     onBack: () -> Unit = {},
     onFindRoutes: (
         destination: DestinationSearchResultDto,
+        originName: String,
         originLatitude: Double,
         originLongitude: Double
-    ) -> Unit = { _, _, _ -> }
+    ) -> Unit = { _, _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
+    var originText by remember { mutableStateOf(origin) }
     var destinationText by remember { mutableStateOf("") }
     var showMap by remember { mutableStateOf(false) }
+    var mapPickMode by remember { mutableStateOf(MapPickMode.Destination) }
     var currentLatitude by remember { mutableStateOf<Double?>(null) }
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
     var currentLocationLabel by remember { mutableStateOf(origin) }
+    var originSearchResults by remember { mutableStateOf<List<DestinationSearchResultDto>>(emptyList()) }
+    var isSearchingOrigin by remember { mutableStateOf(false) }
+    var originSearchError by remember { mutableStateOf<String?>(null) }
+    var locationError by remember { mutableStateOf<String?>(null) }
     var selectedDestination by remember { mutableStateOf<DestinationSearchResultDto?>(null) }
     var searchResults by remember { mutableStateOf<List<DestinationSearchResultDto>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
+    var showUnsupportedLocationDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(showMap) {
-        if (!showMap) {
-            context.currentDeviceLocation()?.let { location ->
-                currentLatitude = location.latitude
-                currentLongitude = location.longitude
-            }
+    fun validateSupported(latitude: Double, longitude: Double): Boolean {
+        val supported = isLocationSupported(latitude, longitude)
+        if (!supported) {
+            showUnsupportedLocationDialog = true
         }
+        return supported
+    }
+
+    suspend fun useCurrentDeviceLocation() {
+        locationError = null
+        val location = context.currentDeviceLocation()
+        if (location == null) {
+            locationError = LocationDetectionFailureMessage
+            return
+        }
+
+        currentLatitude = location.latitude
+        currentLongitude = location.longitude
+        currentLocationLabel = "Current location"
+        originText = "Current location"
+        originSearchResults = emptyList()
+        validateSupported(location.latitude, location.longitude)
+    }
+
+    LaunchedEffect(Unit) {
+        useCurrentDeviceLocation()
     }
 
     LaunchedEffect(currentLatitude, currentLongitude) {
         val lat = currentLatitude ?: return@LaunchedEffect
         val lon = currentLongitude ?: return@LaunchedEffect
         when (val result = placesRepository.reverseGeocode(lat, lon)) {
-            is ApiResult.Success -> currentLocationLabel = result.data.name
+            is ApiResult.Success -> {
+                currentLocationLabel = result.data.name
+                originText = result.data.name
+            }
             is ApiResult.Failure -> Unit
         }
+    }
+
+    LaunchedEffect(originText, currentLatitude, currentLongitude) {
+        val query = originText.trim()
+        if (query.length < 2 || currentLocationLabel == query) {
+            originSearchResults = emptyList()
+            originSearchError = null
+            return@LaunchedEffect
+        }
+
+        delay(350)
+        isSearchingOrigin = true
+        originSearchError = null
+
+        when (
+            val result = placesRepository.searchPlaces(
+                query = query,
+                focusLatitude = currentLatitude,
+                focusLongitude = currentLongitude
+            )
+        ) {
+            is ApiResult.Success -> originSearchResults = result.data.take(5)
+            is ApiResult.Failure -> {
+                originSearchResults = emptyList()
+                originSearchError = result.message
+            }
+        }
+
+        isSearchingOrigin = false
     }
 
     LaunchedEffect(selectedDestination?.latitude, selectedDestination?.longitude, selectedDestination?.source) {
@@ -141,8 +210,22 @@ fun DestinationSearchScreen(
         isSearching = false
     }
 
+    if (showUnsupportedLocationDialog) {
+        LocationNotSupportedDialog {
+            showUnsupportedLocationDialog = false
+        }
+    }
+
     if (showMap) {
         BackHandler { showMap = false }
+        val isPickingOrigin = mapPickMode == MapPickMode.Origin
+        val mapOriginLatitude = currentLatitude
+        val mapOriginLongitude = currentLongitude
+        val mapOriginPoint = if (isPickingOrigin && mapOriginLatitude != null && mapOriginLongitude != null) {
+            LatLng(mapOriginLatitude, mapOriginLongitude)
+        } else {
+            null
+        }
 
         Box(
             modifier = Modifier
@@ -162,7 +245,7 @@ fun DestinationSearchScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Pick destination",
+                        text = if (isPickingOrigin) "Pick origin" else "Pick destination",
                         color = TukiDark,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -187,20 +270,32 @@ fun DestinationSearchScreen(
                     MapScreen(
                         routePoints = emptyList(),
                         modifier = Modifier.fillMaxSize(),
-                        selectedDestination = selectedDestination?.let {
+                        startPoint = mapOriginPoint,
+                        selectedDestination = if (!isPickingOrigin) selectedDestination?.let {
                             LatLng(it.latitude, it.longitude)
-                        },
+                        } else null,
                         onMapClick = { point ->
-                            selectedDestination = DestinationSearchResultDto(
-                                id = "map-pin-${point.latitude}-${point.longitude}",
-                                name = "Pinned destination",
-                                latitude = point.latitude,
-                                longitude = point.longitude,
-                                category = "map",
-                                source = "map",
-                                address = null
-                            )
-                            destinationText = "Pinned destination"
+                            if (isPickingOrigin) {
+                                currentLatitude = point.latitude
+                                currentLongitude = point.longitude
+                                currentLocationLabel = "Pinned origin"
+                                originText = "Pinned origin"
+                                originSearchResults = emptyList()
+                                locationError = null
+                                validateSupported(point.latitude, point.longitude)
+                            } else {
+                                selectedDestination = DestinationSearchResultDto(
+                                    id = "map-pin-${point.latitude}-${point.longitude}",
+                                    name = "Pinned destination",
+                                    latitude = point.latitude,
+                                    longitude = point.longitude,
+                                    category = "map",
+                                    source = "map",
+                                    address = null
+                                )
+                                destinationText = "Pinned destination"
+                                validateSupported(point.latitude, point.longitude)
+                            }
                         }
                     )
                 }
@@ -208,14 +303,24 @@ fun DestinationSearchScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = selectedDestination?.let {
-                        "📍 ${it.name} · %.5f, %.5f".format(it.latitude, it.longitude)
-                    } ?: "Tap the map to choose a destination",
+                    text = if (isPickingOrigin) {
+                        if (mapOriginLatitude != null && mapOriginLongitude != null) {
+                            "📍 $currentLocationLabel · %.5f, %.5f".format(mapOriginLatitude, mapOriginLongitude)
+                        } else {
+                            "Tap the map to choose your origin"
+                        }
+                    } else {
+                        selectedDestination?.let {
+                            "📍 ${it.name} · %.5f, %.5f".format(it.latitude, it.longitude)
+                        } ?: "Tap the map to choose a destination"
+                    },
                     color = TukiGray,
                     fontSize = 13.sp
                 )
 
-                if (selectedDestination != null) {
+                if ((isPickingOrigin && mapOriginPoint != null) ||
+                    (!isPickingOrigin && selectedDestination != null)
+                ) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
                         modifier = Modifier
@@ -226,7 +331,7 @@ fun DestinationSearchScreen(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "Use This Destination",
+                            text = if (isPickingOrigin) "Use This Origin" else "Use This Destination",
                             color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
@@ -282,21 +387,150 @@ fun DestinationSearchScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(TukiCream2, RoundedCornerShape(14.dp))
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                Box(modifier = Modifier.size(10.dp).background(TukiTeal, CircleShape))
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = "$currentLocationLabel (current location)",
-                    color = TukiDark,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(10.dp).background(TukiTeal, CircleShape))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Current Location / Origin",
+                        color = TukiDark,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                TextField(
+                    value = originText,
+                    onValueChange = { value ->
+                        originText = value
+                        if (value != currentLocationLabel) {
+                            currentLatitude = null
+                            currentLongitude = null
+                        }
+                    },
+                    placeholder = {
+                        Text(
+                            text = "Search or edit origin",
+                            color = TukiGray,
+                            fontSize = 14.sp
+                        )
+                    },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White.copy(alpha = 0.65f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.65f),
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                        focusedTextColor = TukiDark,
+                        unfocusedTextColor = TukiDark
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
                 )
+
+                if (isSearchingOrigin) {
+                    Row(
+                        modifier = Modifier.padding(top = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = TukiTeal
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Searching origins...", color = TukiGray, fontSize = 12.sp)
+                    }
+                }
+
+                originSearchResults.forEach { result ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .background(Color.White.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+                            .clickable {
+                                currentLatitude = result.latitude
+                                currentLongitude = result.longitude
+                                currentLocationLabel = result.name
+                                originText = result.name
+                                originSearchResults = emptyList()
+                                locationError = null
+                                validateSupported(result.latitude, result.longitude)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    ) {
+                        Column {
+                            Text(result.name, color = TukiDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            result.address?.takeIf { it.isNotBlank() }?.let { address ->
+                                Text(address, color = TukiGray, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+
+                originSearchError?.let { message ->
+                    Text(
+                        text = message,
+                        color = Color.Red,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                locationError?.let { message ->
+                    Text(
+                        text = message,
+                        color = Color.Red,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(TukiTeal, RoundedCornerShape(12.dp))
+                            .clickable {
+                                coroutineScope.launch {
+                                    useCurrentDeviceLocation()
+                                }
+                            }
+                            .padding(vertical = 11.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text("Use Current Location", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(TukiDark, RoundedCornerShape(12.dp))
+                            .clickable {
+                                mapPickMode = MapPickMode.Origin
+                                showMap = true
+                            }
+                            .padding(vertical = 11.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text("Pick Origin on Map", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -380,6 +614,7 @@ fun DestinationSearchScreen(
                                 selectedDestination = result
                                 destinationText = result.name
                                 searchResults = emptyList()
+                                validateSupported(result.latitude, result.longitude)
                             }
                             .padding(horizontal = 12.dp, vertical = 10.dp)
                     ) {
@@ -407,7 +642,10 @@ fun DestinationSearchScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-                        .clickable { showMap = true }
+                        .clickable {
+                            mapPickMode = MapPickMode.Destination
+                            showMap = true
+                        }
                         .padding(vertical = 12.dp),
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -427,10 +665,21 @@ fun DestinationSearchScreen(
                         RoundedCornerShape(14.dp)
                     )
                     .clickable(enabled = canSubmit) {
+                        val originLat = currentLatitude!!
+                        val originLon = currentLongitude!!
+                        val destination = selectedDestination!!
+                        if (!isLocationSupported(originLat, originLon) ||
+                            !isLocationSupported(destination.latitude, destination.longitude)
+                        ) {
+                            showUnsupportedLocationDialog = true
+                            return@clickable
+                        }
+
                         onFindRoutes(
-                            selectedDestination!!,
-                            currentLatitude!!,
-                            currentLongitude!!
+                            destination,
+                            originText.ifBlank { currentLocationLabel },
+                            originLat,
+                            originLon
                         )
                     }
                     .padding(vertical = 14.dp),

@@ -401,6 +401,264 @@ public sealed class TripServiceTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task GetPassengerTripHistoryAsync_WhenRecentOnly_MapsCompletedCancelledAndRerouteMetadata()
+    {
+        var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var recommendationId = Guid.NewGuid();
+        var searchId = Guid.NewGuid();
+        var completed = new TripSession
+        {
+            TripSessionId = Guid.NewGuid(),
+            UserId = userId,
+            RecommendationId = recommendationId,
+            CurrentNavigationState = TripNavigationState.Arrived,
+            OriginLatitude = 15,
+            OriginLongitude = 120,
+            DestinationLatitude = 15.1,
+            DestinationLongitude = 120.1,
+            DestinationName = "Market",
+            StartedAt = new DateTime(2026, 8, 20, 1, 0, 0, DateTimeKind.Utc),
+            CompletedAt = new DateTime(2026, 8, 20, 1, 30, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 8, 20, 0, 55, 0, DateTimeKind.Utc),
+            RerouteCount = 2,
+            LastRerouteReason = "OFF_ROUTE",
+            LastRerouteAt = new DateTime(2026, 8, 20, 1, 10, 0, DateTimeKind.Utc),
+        };
+        var cancelled = new TripSession
+        {
+            TripSessionId = Guid.NewGuid(),
+            UserId = userId,
+            RecommendationId = recommendationId,
+            CurrentNavigationState = TripNavigationState.Cancelled,
+            OriginLatitude = 15,
+            OriginLongitude = 120,
+            DestinationLatitude = 15.2,
+            DestinationLongitude = 120.2,
+            DestinationName = "Terminal",
+            CancelledAt = new DateTime(2026, 8, 20, 2, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 8, 20, 1, 50, 0, DateTimeKind.Utc),
+        };
+
+        context.TripSessionRepository
+            .Setup(repository => repository.GetOwnedRecentHistoryAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([completed, cancelled]);
+        context.PassengerTripRepository
+            .Setup(repository => repository.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        context.RouteRecommendationRepository
+            .Setup(repository => repository.GetByIdAsync(recommendationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RouteRecommendation
+            {
+                RecommendationId = recommendationId,
+                TripSearchId = searchId,
+                RecommendationType = "efficient",
+                RankNumber = 1,
+                TotalFare = 35,
+                TotalMinutes = 25,
+                WalkingDistanceMeters = 200,
+                TransferCount = 1,
+                GeneratedAt = DateTime.UtcNow,
+            });
+        context.TripSearchRepository
+            .Setup(repository => repository.GetByIdAsync(searchId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TripSearch
+            {
+                TripSearchId = searchId,
+                UserId = userId,
+                OriginName = "Origin",
+                DestinationName = "Original destination",
+                PassengerCount = 1,
+            });
+        context.RecommendationLegRepository
+            .Setup(repository => repository.GetOrderedByRecommendationAsync(recommendationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([CreateLeg(recommendationId, 0, "Origin", "Market")]);
+
+        var result = await context.Service.GetPassengerTripHistoryAsync(userId, recentOnly: true);
+
+        Assert.Equal(2, result.Count);
+        var completedItem = Assert.Single(result, item => item.PassengerTripId == completed.TripSessionId);
+        Assert.Equal("COMPLETED", completedItem.Status);
+        Assert.True(completedItem.Rerouted);
+        Assert.Equal(2, completedItem.RerouteCount);
+        Assert.Equal("OFF_ROUTE", completedItem.LastRerouteReason);
+        Assert.Equal(completed.LastRerouteAt, completedItem.LastRerouteAt);
+        var cancelledItem = Assert.Single(result, item => item.PassengerTripId == cancelled.TripSessionId);
+        Assert.Equal("CANCELLED", cancelledItem.Status);
+        Assert.False(cancelledItem.Rerouted);
+        Assert.Equal(cancelled.CancelledAt, cancelledItem.CompletedAt);
+    }
+
+    [Fact]
+    public async Task GetPassengerTripHistoryAsync_WhenRecentOnly_IncludesLegacyCompletedAndCancelledTrips()
+    {
+        var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var completedRecommendationId = Guid.NewGuid();
+        var completedSearchId = Guid.NewGuid();
+        var cancelledRecommendationId = Guid.NewGuid();
+        var cancelledSearchId = Guid.NewGuid();
+        var inProgressRecommendationId = Guid.NewGuid();
+        var completed = new PassengerTrip
+        {
+            PassengerTripId = Guid.NewGuid(),
+            UserId = userId,
+            RecommendationId = completedRecommendationId,
+            Recommendation = CreateRecommendation(completedRecommendationId, completedSearchId),
+            Status = "COMPLETED",
+            StartedAt = new DateTime(2026, 8, 19, 8, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 8, 19, 7, 55, 0, DateTimeKind.Utc),
+            UpdatedAt = new DateTime(2026, 8, 19, 8, 35, 0, DateTimeKind.Utc),
+        };
+        var cancelled = new PassengerTrip
+        {
+            PassengerTripId = Guid.NewGuid(),
+            UserId = userId,
+            RecommendationId = cancelledRecommendationId,
+            Recommendation = CreateRecommendation(cancelledRecommendationId, cancelledSearchId),
+            Status = "CANCELLED",
+            StartedAt = new DateTime(2026, 8, 20, 9, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 8, 20, 8, 55, 0, DateTimeKind.Utc),
+            UpdatedAt = new DateTime(2026, 8, 20, 9, 5, 0, DateTimeKind.Utc),
+        };
+        var inProgress = new PassengerTrip
+        {
+            PassengerTripId = Guid.NewGuid(),
+            UserId = userId,
+            RecommendationId = inProgressRecommendationId,
+            Status = "IN_PROGRESS",
+            StartedAt = new DateTime(2026, 8, 20, 10, 0, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 8, 20, 9, 55, 0, DateTimeKind.Utc),
+            UpdatedAt = new DateTime(2026, 8, 20, 10, 5, 0, DateTimeKind.Utc),
+        };
+
+        context.TripSessionRepository
+            .Setup(repository => repository.GetOwnedRecentHistoryAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        context.PassengerTripRepository
+            .Setup(repository => repository.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([completed, cancelled, inProgress]);
+        SetupRecommendationDetails(
+            context,
+            completedRecommendationId,
+            completedSearchId,
+            userId,
+            "Home",
+            "Office",
+            15.1,
+            120.1,
+            15.2,
+            120.2);
+        SetupRecommendationDetails(
+            context,
+            cancelledRecommendationId,
+            cancelledSearchId,
+            userId,
+            "Campus",
+            "Clinic",
+            15.3,
+            120.3,
+            15.4,
+            120.4);
+
+        var result = await context.Service.GetPassengerTripHistoryAsync(userId, recentOnly: true);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(cancelled.PassengerTripId, result[0].PassengerTripId);
+        Assert.Equal("CANCELLED", result[0].Status);
+        Assert.Equal(cancelled.UpdatedAt, result[0].CompletedAt);
+        Assert.Equal("Campus", result[0].OriginName);
+        Assert.Equal("Clinic", result[0].DestinationName);
+        Assert.Equal(cancelledRecommendationId, result[0].Recommendation?.RecommendationId);
+        Assert.Equal(2, result[0].Recommendation?.Legs.Count);
+        Assert.Equal(completed.PassengerTripId, result[1].PassengerTripId);
+        Assert.Equal("COMPLETED", result[1].Status);
+        Assert.Equal(completed.UpdatedAt, result[1].CompletedAt);
+        Assert.Equal("Home", result[1].OriginName);
+        Assert.Equal("Office", result[1].DestinationName);
+        Assert.DoesNotContain(result, item => item.PassengerTripId == inProgress.PassengerTripId);
+    }
+
+    [Fact]
+    public async Task GetPassengerTripHistoryAsync_WhenRecentOnly_DeduplicatesLegacyTripWithMatchingSession()
+    {
+        var context = CreateContext();
+        var userId = Guid.NewGuid();
+        var recommendationId = Guid.NewGuid();
+        var searchId = Guid.NewGuid();
+        var session = new TripSession
+        {
+            TripSessionId = Guid.NewGuid(),
+            UserId = userId,
+            RecommendationId = recommendationId,
+            CurrentNavigationState = TripNavigationState.Arrived,
+            OriginLatitude = 15,
+            OriginLongitude = 120,
+            DestinationLatitude = 15.1,
+            DestinationLongitude = 120.1,
+            DestinationName = "Market",
+            StartedAt = new DateTime(2026, 8, 20, 1, 0, 0, DateTimeKind.Utc),
+            CompletedAt = new DateTime(2026, 8, 20, 1, 30, 0, DateTimeKind.Utc),
+            CreatedAt = new DateTime(2026, 8, 20, 0, 55, 0, DateTimeKind.Utc),
+        };
+        var legacyTrip = new PassengerTrip
+        {
+            PassengerTripId = Guid.NewGuid(),
+            UserId = userId,
+            RecommendationId = recommendationId,
+            Status = "COMPLETED",
+            StartedAt = session.StartedAt,
+            CompletedAt = session.CompletedAt,
+            CreatedAt = session.CreatedAt,
+            UpdatedAt = session.CompletedAt.Value,
+        };
+
+        context.TripSessionRepository
+            .Setup(repository => repository.GetOwnedRecentHistoryAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([session]);
+        context.PassengerTripRepository
+            .Setup(repository => repository.GetByUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([legacyTrip]);
+        SetupRecommendationDetails(
+            context,
+            recommendationId,
+            searchId,
+            userId,
+            "Origin",
+            "Market",
+            15,
+            120,
+            15.1,
+            120.1);
+
+        var result = await context.Service.GetPassengerTripHistoryAsync(userId, recentOnly: true);
+
+        var item = Assert.Single(result);
+        Assert.Equal(session.TripSessionId, item.PassengerTripId);
+        Assert.Equal("COMPLETED", item.Status);
+    }
+
+    [Fact]
+    public async Task GetPassengerTripHistoryAsync_WhenUserIsEmpty_ReturnsEmptyWithoutRepositoryLookup()
+    {
+        var context = CreateContext();
+
+        var result = await context.Service.GetPassengerTripHistoryAsync(Guid.Empty, recentOnly: true);
+
+        Assert.Empty(result);
+        context.TripSessionRepository.Verify(
+            repository => repository.GetOwnedRecentHistoryAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+        context.PassengerTripRepository.Verify(
+            repository => repository.GetByUserAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static TestContext CreateContext()
     {
         var tripSearchRepository = new Mock<ITripSearchRepository>(MockBehavior.Strict);
@@ -408,6 +666,7 @@ public sealed class TripServiceTests
         var recommendationLegRepository = new Mock<IRecommendationLegRepository>(MockBehavior.Strict);
         var passengerTripRepository = new Mock<IPassengerTripRepository>(MockBehavior.Strict);
         var tripAlertRepository = new Mock<ITripAlertRepository>(MockBehavior.Strict);
+        var tripSessionRepository = new Mock<ITripSessionRepository>(MockBehavior.Strict);
 
         return new TestContext(
             new TripService(
@@ -415,12 +674,14 @@ public sealed class TripServiceTests
                 routeRecommendationRepository.Object,
                 recommendationLegRepository.Object,
                 passengerTripRepository.Object,
-                tripAlertRepository.Object),
+                tripAlertRepository.Object,
+                tripSessionRepository.Object),
             tripSearchRepository,
             routeRecommendationRepository,
             recommendationLegRepository,
             passengerTripRepository,
-            tripAlertRepository);
+            tripAlertRepository,
+            tripSessionRepository);
     }
 
     private static RecommendationLeg CreateLeg(
@@ -451,11 +712,65 @@ public sealed class TripServiceTests
             CreatedAt = DateTime.UtcNow,
         };
 
+    private static RouteRecommendation CreateRecommendation(Guid recommendationId, Guid searchId) =>
+        new()
+        {
+            RecommendationId = recommendationId,
+            TripSearchId = searchId,
+            RecommendationType = "efficient",
+            RankNumber = 1,
+            TotalFare = 42,
+            TotalMinutes = 30,
+            WalkingDistanceMeters = 250,
+            TransferCount = 1,
+            GeneratedAt = DateTime.UtcNow,
+        };
+
+    private static void SetupRecommendationDetails(
+        TestContext context,
+        Guid recommendationId,
+        Guid searchId,
+        Guid userId,
+        string originName,
+        string destinationName,
+        double originLatitude,
+        double originLongitude,
+        double destinationLatitude,
+        double destinationLongitude)
+    {
+        var recommendation = CreateRecommendation(recommendationId, searchId);
+
+        context.RouteRecommendationRepository
+            .Setup(repository => repository.GetByIdAsync(recommendationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(recommendation);
+        context.TripSearchRepository
+            .Setup(repository => repository.GetByIdAsync(searchId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TripSearch
+            {
+                TripSearchId = searchId,
+                UserId = userId,
+                OriginName = originName,
+                OriginLatitude = originLatitude,
+                OriginLongitude = originLongitude,
+                DestinationName = destinationName,
+                DestinationLatitude = destinationLatitude,
+                DestinationLongitude = destinationLongitude,
+                PassengerCount = 1,
+            });
+        context.RecommendationLegRepository
+            .Setup(repository => repository.GetOrderedByRecommendationAsync(recommendationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                CreateLeg(recommendationId, 1, originName, "Transfer"),
+                CreateLeg(recommendationId, 2, "Transfer", destinationName),
+            ]);
+    }
+
     private sealed record TestContext(
         TripService Service,
         Mock<ITripSearchRepository> TripSearchRepository,
         Mock<IRouteRecommendationRepository> RouteRecommendationRepository,
         Mock<IRecommendationLegRepository> RecommendationLegRepository,
         Mock<IPassengerTripRepository> PassengerTripRepository,
-        Mock<ITripAlertRepository> TripAlertRepository);
+        Mock<ITripAlertRepository> TripAlertRepository,
+        Mock<ITripSessionRepository> TripSessionRepository);
 }

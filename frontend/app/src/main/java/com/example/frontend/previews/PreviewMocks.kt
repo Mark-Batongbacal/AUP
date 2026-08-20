@@ -51,6 +51,7 @@ object PreviewMocks {
 
     val tripRepository = object : TripRepository {
         override suspend fun getHistory(): ApiResult<List<PassengerTripHistoryItemDto>> = ApiResult.Success(emptyList())
+        override suspend fun getRecentJourneys(): ApiResult<List<PassengerTripHistoryItemDto>> = ApiResult.Success(emptyList())
         override suspend fun startTrip(request: StartTripRequest): ApiResult<PassengerTripDetailsDto> = ApiResult.Failure(null, "Mock")
         override suspend fun getTrip(tripId: String): ApiResult<PassengerTripDetailsDto> = ApiResult.Failure(null, "Mock")
         override suspend fun getTripAlerts(tripId: String): ApiResult<List<TripAlertDto>> = ApiResult.Success(emptyList())

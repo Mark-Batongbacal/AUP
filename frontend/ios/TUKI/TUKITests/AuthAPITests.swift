@@ -23,7 +23,10 @@ final class AuthAPITests: XCTestCase {
 
         MockURLProtocol.requestHandler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/auth/google")
+            try Self.assertAbsoluteHTTPURL(
+                request.url,
+                expected: "https://example.test/api/auth/google"
+            )
 
             let body = try XCTUnwrap(request.bodyData)
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
@@ -188,7 +191,10 @@ final class AuthAPITests: XCTestCase {
 
         MockURLProtocol.requestHandler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.absoluteString, "https://example.test/api/auth/facebook/oidc")
+            try Self.assertAbsoluteHTTPURL(
+                request.url,
+                expected: "https://example.test/api/auth/facebook/oidc"
+            )
 
             let body = try XCTUnwrap(request.bodyData)
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: String])
@@ -276,6 +282,190 @@ final class AuthAPITests: XCTestCase {
 
         XCTAssertEqual(result, .failure("Facebook login was rejected. Try again."))
         XCTAssertNil(store.savedCredential)
+    }
+
+    func testRecentJourneysUsesCredentialAndMapsCompletedCancelledTrips() async throws {
+        let store = RecordingCredentialStore()
+        store.savedCredential = TukiCredential(
+            loginResponse: LoginResponse(
+                apiKey: "TUKI_API_KEY",
+                expiresAt: nil,
+                authenticationScheme: "ApiKey",
+                headerName: "X-Api-Key"
+            )
+        )
+        let api = TukiJourneyAPI(
+            baseURL: try XCTUnwrap(URL(string: "https://example.test/")),
+            credentialStore: store,
+            session: makeSession()
+        )
+
+        MockURLProtocol.requestHandler = { request in
+            try Self.assertAbsoluteHTTPURL(
+                request.url,
+                expected: "https://example.test/api/trips/recent"
+            )
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Api-Key"), "TUKI_API_KEY")
+
+            let data = try XCTUnwrap(
+                """
+                [
+                  {
+                    "passengerTripId": "trip-1",
+                    "status": "COMPLETED",
+                    "originName": "Sta. Rita",
+                    "destinationName": "Guagua Town",
+                    "startedAt": "2026-08-20T01:00:00Z",
+                    "completedAt": "2026-08-20T01:30:00Z",
+                    "createdAt": "2026-08-20T00:55:00Z",
+                    "rerouted": true,
+                    "rerouteCount": 1,
+                    "recommendation": {
+                      "totalMinutes": 22,
+                      "legs": [
+                        {
+                          "legOrder": 0,
+                          "transportMode": { "name": "Jeepney" },
+                          "route": null,
+                          "fromStop": null,
+                          "toStop": null,
+                          "fromName": "Sta. Rita",
+                          "toName": "Guagua Plaza",
+                          "estimatedMinutes": 14,
+                          "estimatedFare": 15
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "passengerTripId": "trip-2",
+                    "status": "CANCELLED",
+                    "originName": "Porac",
+                    "destinationName": "Dau Terminal",
+                    "startedAt": null,
+                    "completedAt": "2026-08-20T02:00:00Z",
+                    "createdAt": "2026-08-20T01:50:00Z",
+                    "rerouted": false,
+                    "rerouteCount": 0,
+                    "recommendation": null
+                  }
+                ]
+                """.data(using: .utf8)
+            )
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )
+            )
+
+            return (response, data)
+        }
+
+        let result = await api.recentJourneys()
+
+        switch result {
+        case .success(let journeys):
+            XCTAssertEqual(journeys.count, 2)
+            XCTAssertEqual(journeys[0].status, "Completed")
+            XCTAssertTrue(journeys[0].wasRerouted)
+            XCTAssertEqual(journeys[0].steps.first?.mode, "Jeepney")
+            XCTAssertEqual(journeys[1].status, "Cancelled")
+        case .failure(let error):
+            XCTFail("Expected recent journeys, got \(error)")
+        }
+    }
+
+    func testRecentJourneysWithoutCredentialDoesNotSendRequest() async throws {
+        let store = RecordingCredentialStore()
+        let api = TukiJourneyAPI(
+            baseURL: try XCTUnwrap(URL(string: "https://example.test/")),
+            credentialStore: store,
+            session: makeSession()
+        )
+        var requestSent = false
+        MockURLProtocol.requestHandler = { request in
+            requestSent = true
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: nil
+                )
+            )
+            return (response, Data())
+        }
+
+        let result = await api.recentJourneys()
+
+        XCTAssertEqual(result, .failure(.notAuthenticated))
+        XCTAssertFalse(requestSent)
+    }
+
+    func testFavoritesUsesCredentialAndMapsSavedRoutes() async throws {
+        let store = RecordingCredentialStore()
+        store.savedCredential = TukiCredential(
+            loginResponse: LoginResponse(
+                apiKey: "TUKI_API_KEY",
+                expiresAt: nil,
+                authenticationScheme: "ApiKey",
+                headerName: "X-Api-Key"
+            )
+        )
+        let api = TukiJourneyAPI(
+            baseURL: try XCTUnwrap(URL(string: "https://example.test/")),
+            credentialStore: store,
+            session: makeSession()
+        )
+
+        MockURLProtocol.requestHandler = { request in
+            try Self.assertAbsoluteHTTPURL(
+                request.url,
+                expected: "https://example.test/api/favorite-trips"
+            )
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Api-Key"), "TUKI_API_KEY")
+
+            let data = try XCTUnwrap(
+                """
+                [
+                  {
+                    "favoriteTripId": "favorite-1",
+                    "userId": "user-1",
+                    "recommendationId": "recommendation-1",
+                    "origin": "Porac",
+                    "destination": "Angeles",
+                    "timesUsed": 4,
+                    "note": "work",
+                    "createdAt": "2026-08-20T01:00:00Z"
+                  }
+                ]
+                """.data(using: .utf8)
+            )
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )
+            )
+
+            return (response, data)
+        }
+
+        let result = await api.favorites()
+
+        switch result {
+        case .success(let favorites):
+            XCTAssertEqual(favorites.first?.origin, "Porac")
+            XCTAssertEqual(favorites.first?.destination, "Angeles")
+            XCTAssertEqual(favorites.first?.timesUsed, 4)
+        case .failure(let error):
+            XCTFail("Expected favorites, got \(error)")
+        }
     }
 
     func testFacebookLoginDoesNotSaveCredentialWhenBackendResponseIsMalformed() async throws {
@@ -578,6 +768,17 @@ final class AuthAPITests: XCTestCase {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
         return URLSession(configuration: configuration)
+    }
+
+    private static func assertAbsoluteHTTPURL(
+        _ url: URL?,
+        expected: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let url = try XCTUnwrap(url, file: file, line: line)
+        XCTAssertEqual(url.absoluteString, expected, file: file, line: line)
+        XCTAssertTrue(url.isAbsoluteHTTPURL, file: file, line: line)
     }
 
     private static var validLoginResponseData: Data? {

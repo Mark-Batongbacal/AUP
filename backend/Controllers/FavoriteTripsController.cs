@@ -63,6 +63,7 @@ public sealed class FavoriteTripsController(IFavoriteTripService favoriteTripSer
 
         return result.Status switch
         {
+            FavoriteTripAddStatus.PersistenceNotAllowed => Unauthorized(),
             FavoriteTripAddStatus.RecommendationNotFound =>
                 NotFound(Error($"Route recommendation {request.RecommendationId.Value} was not found.")),
             FavoriteTripAddStatus.AlreadyFavorited => Ok(result.Favorite),

@@ -1,4 +1,5 @@
 using backend.Services.Destinations;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace backend.Controllers;
@@ -10,6 +11,7 @@ public sealed class PlacesController(
     IReverseGeocodingService reverseGeocoding) : ControllerBase
 {
     [HttpGet("search")]
+    [AllowAnonymous]
     public async Task<IActionResult> Search(
         [FromQuery] string q,
         [FromQuery] double? focusLat,
@@ -22,6 +24,7 @@ public sealed class PlacesController(
     }
 
     [HttpGet("reverse")]
+    [AllowAnonymous]
     public async Task<IActionResult> Reverse(
         [FromQuery] double lat,
         [FromQuery] double lon,

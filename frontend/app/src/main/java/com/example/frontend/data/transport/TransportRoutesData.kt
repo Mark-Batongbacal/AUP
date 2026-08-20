@@ -2,7 +2,7 @@ package com.example.frontend.data.transport
 
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
-import com.example.frontend.core.network.authenticatedApiCall
+import com.example.frontend.core.network.apiCall
 import com.example.frontend.core.storage.AuthSessionStore
 import retrofit2.Response
 import retrofit2.http.Body
@@ -51,8 +51,7 @@ interface TransportRouteRepository {
 }
 
 class TransportRouteRepositoryImpl(private val api: TransportRoutesApi, private val sessions: AuthSessionStore, private val errors: ApiErrorParser) : TransportRouteRepository {
-    override suspend fun getActiveRoutes() = authenticatedApiCall(sessions, errors) { api.activeRoutes() }
-    override suspend fun getLatestPolyline() = authenticatedApiCall(sessions, errors) { api.latestPolyline() }
-    override suspend fun getRoutePoints(routeId: Long) = authenticatedApiCall(sessions, errors) { api.points(routeId) }
+    override suspend fun getActiveRoutes() = apiCall(errors) { api.activeRoutes() }
+    override suspend fun getLatestPolyline() = apiCall(errors) { api.latestPolyline() }
+    override suspend fun getRoutePoints(routeId: Long) = apiCall(errors) { api.points(routeId) }
 }
-

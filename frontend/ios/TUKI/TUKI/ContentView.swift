@@ -6,8 +6,8 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            if authViewModel.isAuthenticated {
-                TukiMainView {
+            if authViewModel.canEnterApp {
+                TukiMainView(isGuest: authViewModel.isGuest) {
                     authViewModel.signOut()
                     entryScreen = .login
                 }
@@ -22,7 +22,8 @@ struct ContentView: View {
                 case .login:
                     TukiLoginView(
                         viewModel: authViewModel,
-                        onSignUp: { entryScreen = .signup }
+                        onSignUp: { entryScreen = .signup },
+                        onGuest: { authViewModel.continueAsGuest() }
                     )
                 case .signup:
                     TukiSignupView(onLogin: { entryScreen = .login })
@@ -113,6 +114,7 @@ private struct TukiOnboardingView: View {
 private struct TukiLoginView: View {
     @ObservedObject var viewModel: AuthViewModel
     let onSignUp: () -> Void
+    let onGuest: () -> Void
 
     var body: some View {
         ScrollView {
@@ -159,6 +161,16 @@ private struct TukiLoginView: View {
                     action: viewModel.loginWithPassword
                 )
                 .padding(.top, 28)
+
+                Button(action: onGuest) {
+                    Text("Continue as Guest")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(TukiPalette.teal)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isAuthenticating)
 
                 TukiDividerLabel(text: "OR CONTINUE WITH")
                     .padding(.vertical, 20)

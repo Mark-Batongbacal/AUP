@@ -58,6 +58,7 @@ private val TukiCream2 = Color(0xFFFAEBC7)
 fun HomeScreen(
     userName: String = "Juan",
     tripRepository: TripRepository,
+    isGuest: Boolean = false,
     onSearchDestination: (origin: String, destination: String) -> Unit = { _, _ -> },
     onCommuteClick: (RecentCommute) -> Unit = {},
     onRecentClick: () -> Unit = {},
@@ -387,7 +388,6 @@ private fun IconBadge(emoji: String) {
         Text(text = emoji, fontSize = 16.sp)
     }
 }
-
 
 private fun android.content.Context.hasLocationPermission(): Boolean {
     return ContextCompat.checkSelfPermission(

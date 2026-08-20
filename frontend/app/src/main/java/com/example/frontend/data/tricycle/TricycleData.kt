@@ -2,7 +2,7 @@ package com.example.frontend.data.tricycle
 
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
-import com.example.frontend.core.network.authenticatedApiCall
+import com.example.frontend.core.network.apiCall
 import com.example.frontend.core.storage.AuthSessionStore
 import retrofit2.Response
 import retrofit2.http.Body
@@ -63,6 +63,6 @@ class TricycleRepositoryImpl(
     private val sessions: AuthSessionStore,
     private val errors: ApiErrorParser
 ) : TricycleRepository {
-    override suspend fun getActivePoints() = authenticatedApiCall(sessions, errors) { api.active() }
-    override suspend fun getPoint(id: Long) = authenticatedApiCall(sessions, errors) { api.get(id) }
+    override suspend fun getActivePoints() = apiCall(errors) { api.active() }
+    override suspend fun getPoint(id: Long) = apiCall(errors) { api.get(id) }
 }

@@ -1,4 +1,5 @@
 using backend.Services.Routing;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace backend.Controllers.Test;
@@ -17,6 +18,7 @@ public class RoutingController : ControllerBase
 
 
     [HttpGet("nearby")]
+    [AllowAnonymous]
     public async Task<IActionResult> FindNearby(
         [FromQuery] double lat,
         [FromQuery] double lon,
@@ -31,6 +33,7 @@ public class RoutingController : ControllerBase
         return Ok(results);
     }
     [HttpGet("plan")]
+    [AllowAnonymous]
     public async Task<IActionResult> PlanRoute(
         [FromQuery] double originLat,
         [FromQuery] double originLon,

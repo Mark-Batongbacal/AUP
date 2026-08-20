@@ -90,6 +90,7 @@ public sealed class TripSessionServiceTests
         var service = Service();
         var cancelled = await service.CancelAsync(_userId, Guid.Parse("10000000-0000-0000-0000-000000000001"));
         Assert.Equal(TripNavigationState.Cancelled, cancelled.Session!.CurrentNavigationState);
+        Assert.NotNull(cancelled.Session.CancelledAt);
         var restart = await service.StartAsync(_userId, cancelled.Session.TripSessionId);
         Assert.Equal("INVALID_STATE_TRANSITION", restart.Error);
     }

@@ -2,10 +2,33 @@ import Foundation
 import SwiftUI
 
 struct TukiMainView: View {
+    let isGuest: Bool
     let onSignOut: () -> Void
 
     @State private var selectedTab = TukiTab.home
     @State private var overlay: TukiMainOverlay?
+    @State private var recentCommutes: [RecentCommute] = []
+    @State private var favorites: [FavoriteRoute] = []
+    @State private var isLoadingRecent = false
+    @State private var isLoadingFavorites = false
+    @State private var recentError: String?
+    @State private var favoritesError: String?
+
+    private let journeyAPI: TukiJourneyAPI?
+
+    init(isGuest: Bool = false, onSignOut: @escaping () -> Void) {
+        self.isGuest = isGuest
+        self.onSignOut = onSignOut
+
+        if let configuration = try? AppConfiguration.load() {
+            self.journeyAPI = TukiJourneyAPI(
+                baseURL: configuration.backendBaseURL,
+                credentialStore: KeychainTukiCredentialStore()
+            )
+        } else {
+            self.journeyAPI = nil
+        }
+    }
 
     var body: some View {
         Group {
@@ -13,7 +36,19 @@ struct TukiMainView: View {
             case .some(.commute(let commute)):
                 TukiCommuteDetailView(commute: commute) { overlay = nil }
             case .some(.routes(let origin, let destination)):
-                TukiRouteResultsView(origin: origin, destination: destination) { overlay = nil }
+                TukiRouteResultsView(
+                    origin: origin,
+                    destination: destination,
+                    onBack: { overlay = nil },
+                    onRouteSelected: { option in
+                        overlay = .activeTrip(origin: origin, destination: destination, option: option)
+                    }
+                )
+            case .some(.activeTrip(let origin, let destination, let option)):
+                TukiActiveTripView(origin: origin, destination: destination, option: option) {
+                    overlay = nil
+                    selectedTab = .home
+                }
             case .none:
                 VStack(spacing: 0) {
                     tabContent
@@ -24,6 +59,9 @@ struct TukiMainView: View {
                 .background(TukiPalette.cream.ignoresSafeArea())
             }
         }
+        .task(id: isGuest) {
+            await loadPersonalData()
+        }
     }
 
     @ViewBuilder
@@ -31,24 +69,81 @@ struct TukiMainView: View {
         switch selectedTab {
         case .home:
             TukiHomeView(
+                isGuest: isGuest,
+                recentCommutes: recentCommutes,
+                isLoadingRecent: isLoadingRecent,
+                recentError: recentError,
                 onSearch: { origin, destination in
                     overlay = .routes(origin: origin, destination: destination)
                 },
                 onCommute: { overlay = .commute($0) }
             )
         case .recent:
-            TukiRecentView(onCommute: { overlay = .commute($0) })
+            TukiRecentView(
+                commutes: recentCommutes,
+                isGuest: isGuest,
+                isLoading: isLoadingRecent,
+                errorMessage: recentError,
+                onCommute: { overlay = .commute($0) }
+            )
         case .favorites:
-            TukiFavoritesView()
+            TukiFavoritesView(
+                favorites: favorites,
+                isGuest: isGuest,
+                isLoading: isLoadingFavorites,
+                errorMessage: favoritesError
+            )
         case .profile:
-            TukiProfileView(onBack: { selectedTab = .home }, onSignOut: onSignOut)
+            TukiProfileView(isGuest: isGuest, onBack: { selectedTab = .home }, onSignOut: onSignOut)
         }
+    }
+
+    @MainActor
+    private func loadPersonalData() async {
+        guard !isGuest else {
+            recentCommutes = []
+            favorites = []
+            recentError = nil
+            favoritesError = nil
+            isLoadingRecent = false
+            isLoadingFavorites = false
+            return
+        }
+
+        guard let journeyAPI else {
+            recentError = "TUKI history is not configured."
+            favoritesError = "TUKI favorites are not configured."
+            return
+        }
+
+        isLoadingRecent = true
+        switch await journeyAPI.recentJourneys() {
+        case .success(let commutes):
+            recentCommutes = commutes
+            recentError = nil
+        case .failure(let error):
+            recentCommutes = []
+            recentError = error.message
+        }
+        isLoadingRecent = false
+
+        isLoadingFavorites = true
+        switch await journeyAPI.favorites() {
+        case .success(let loadedFavorites):
+            favorites = loadedFavorites
+            favoritesError = nil
+        case .failure(let error):
+            favorites = []
+            favoritesError = error.message
+        }
+        isLoadingFavorites = false
     }
 }
 
 private enum TukiMainOverlay {
     case commute(RecentCommute)
     case routes(origin: String, destination: String)
+    case activeTrip(origin: String, destination: String, option: RouteOption)
 }
 
 private enum TukiTab: CaseIterable, Hashable {
@@ -110,6 +205,10 @@ private struct TukiBottomBar: View {
 }
 
 private struct TukiHomeView: View {
+    let isGuest: Bool
+    let recentCommutes: [RecentCommute]
+    let isLoadingRecent: Bool
+    let recentError: String?
     let onSearch: (String, String) -> Void
     let onCommute: (RecentCommute) -> Void
 
@@ -119,7 +218,7 @@ private struct TukiHomeView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                Text("Hello, Juan 👋")
+                Text(isGuest ? "Hello, Guest" : "Hello")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(TukiPalette.gray)
 
@@ -141,12 +240,29 @@ private struct TukiHomeView: View {
                     .padding(.top, 30)
                     .padding(.bottom, 12)
 
-                ForEach(Array(TukiSamples.recentCommutes.prefix(3))) { commute in
-                    Button { onCommute(commute) } label: {
-                        TukiRecentCommuteCard(commute: commute)
+                if isLoadingRecent {
+                    Text("Loading recent journeys...")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(TukiPalette.gray)
+                        .padding(.bottom, 14)
+                } else if let recentError {
+                    Text(recentError)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(TukiPalette.gray)
+                        .padding(.bottom, 14)
+                } else if recentCommutes.isEmpty {
+                    Text(isGuest ? "Sign in to view completed and cancelled journeys." : "No completed or cancelled trips yet.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(TukiPalette.gray)
+                        .padding(.bottom, 14)
+                } else {
+                    ForEach(Array(recentCommutes.prefix(3))) { commute in
+                        Button { onCommute(commute) } label: {
+                            TukiRecentCommuteCard(commute: commute)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 14)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 14)
                 }
 
                 Button(action: {}) {
@@ -230,17 +346,37 @@ private struct TukiRecentCommuteCard: View {
             Text("\(commute.legs) legs · \(commute.minutes) min")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(TukiPalette.teal)
+            if !commute.status.isEmpty || commute.wasRerouted {
+                Text(metaText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(TukiPalette.gray)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(TukiPalette.creamCard)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
+
+    private var metaText: String {
+        var parts: [String] = []
+        if !commute.status.isEmpty {
+            parts.append(commute.status)
+        }
+        if commute.wasRerouted {
+            parts.append(commute.rerouteCount > 1 ? "Rerouted \(commute.rerouteCount)x" : "Rerouted")
+        }
+        return parts.joined(separator: " · ")
+    }
 }
 
 private struct TukiRecentView: View {
+    let commutes: [RecentCommute]
+    let isGuest: Bool
+    let isLoading: Bool
+    let errorMessage: String?
     let onCommute: (RecentCommute) -> Void
-    private let sections = ["Today", "Yesterday", "Earlier this week"]
+    private let sections = ["Today", "Yesterday", "Earlier"]
 
     var body: some View {
         ScrollView {
@@ -250,22 +386,36 @@ private struct TukiRecentView: View {
                     .foregroundStyle(TukiPalette.dark)
                     .padding(.bottom, 24)
 
-                ForEach(sections, id: \.self) { section in
-                    let commutes = TukiSamples.recentCommutes.filter { $0.dateGroup == section }
-                    if !commutes.isEmpty {
-                        Text(section.uppercased())
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(TukiPalette.gray)
-                            .padding(.bottom, 10)
+                if isLoading {
+                    Text("Loading recent journeys...")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(TukiPalette.gray)
+                } else if let errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(TukiPalette.gray)
+                } else if commutes.isEmpty {
+                    Text(isGuest ? "Sign in to view your recent journeys." : "No completed or cancelled trips yet.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(TukiPalette.gray)
+                } else {
+                    ForEach(sections, id: \.self) { section in
+                        let sectionCommutes = commutes.filter { $0.dateGroup == section }
+                        if !sectionCommutes.isEmpty {
+                            Text(section.uppercased())
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(TukiPalette.gray)
+                                .padding(.bottom, 10)
 
-                        ForEach(commutes) { commute in
-                            Button { onCommute(commute) } label: {
-                                TukiRecentCommuteCard(commute: commute)
+                            ForEach(sectionCommutes) { commute in
+                                Button { onCommute(commute) } label: {
+                                    TukiRecentCommuteCard(commute: commute)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.bottom, 12)
                             }
-                            .buttonStyle(.plain)
-                            .padding(.bottom, 12)
+                            Spacer().frame(height: 10)
                         }
-                        Spacer().frame(height: 10)
                     }
                 }
             }
@@ -277,6 +427,11 @@ private struct TukiRecentView: View {
 }
 
 private struct TukiFavoritesView: View {
+    let favorites: [FavoriteRoute]
+    let isGuest: Bool
+    let isLoading: Bool
+    let errorMessage: String?
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -290,28 +445,50 @@ private struct TukiFavoritesView: View {
                     .foregroundStyle(TukiPalette.gray)
                     .padding(.bottom, 10)
 
-                ForEach(TukiSamples.favorites) { route in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(route.origin) to \(route.destination)")
-                                .font(.system(size: 17, weight: .bold))
-                                .foregroundStyle(TukiPalette.dark)
-                            Text("Used \(route.timesUsed) times · \(route.note)")
-                                .font(.system(size: 13))
-                                .foregroundStyle(TukiPalette.gray)
+                if isLoading {
+                    Text("Loading favorite routes...")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(TukiPalette.gray)
+                        .padding(.bottom, 12)
+                } else if let errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(TukiPalette.gray)
+                        .padding(.bottom, 12)
+                } else if isGuest {
+                    Text("Sign in to save favorite routes.")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(TukiPalette.gray)
+                        .padding(.bottom, 12)
+                } else if favorites.isEmpty {
+                    Text("No favorite routes yet.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(TukiPalette.gray)
+                        .padding(.bottom, 12)
+                } else {
+                    ForEach(favorites) { route in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(route.origin) to \(route.destination)")
+                                    .font(.system(size: 17, weight: .bold))
+                                    .foregroundStyle(TukiPalette.dark)
+                                Text("Used \(route.timesUsed) times · \(route.note)")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(TukiPalette.gray)
+                            }
+                            Spacer()
+                            Image("FavoriteIcon")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .foregroundStyle(TukiPalette.orange)
+                                .frame(width: 22, height: 22)
                         }
-                        Spacer()
-                        Image("FavoriteIcon")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .foregroundStyle(TukiPalette.orange)
-                            .frame(width: 22, height: 22)
+                        .padding(16)
+                        .background(TukiPalette.creamCard)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(.bottom, 12)
                     }
-                    .padding(16)
-                    .background(TukiPalette.creamCard)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .padding(.bottom, 12)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -336,6 +513,7 @@ private struct TukiFavoritesView: View {
 }
 
 private struct TukiProfileView: View {
+    let isGuest: Bool
     let onBack: () -> Void
     let onSignOut: () -> Void
 
@@ -359,19 +537,19 @@ private struct TukiProfileView: View {
                 }
 
                 VStack(spacing: 0) {
-                    Text("JD")
+                    Text(isGuest ? "G" : "JD")
                         .font(.system(size: 30, weight: .heavy))
                         .foregroundStyle(.white)
                         .frame(width: 90, height: 90)
                         .background(TukiPalette.teal)
                         .clipShape(Circle())
 
-                    Text("Juan Dela Cruz")
+                    Text(isGuest ? "Guest" : "Juan Dela Cruz")
                         .font(.system(size: 21, weight: .heavy))
                         .foregroundStyle(TukiPalette.dark)
                         .padding(.top, 14)
 
-                    Text("juan.delacruz@gmail.com")
+                    Text(isGuest ? "Guest mode" : "juan.delacruz@gmail.com")
                         .font(.system(size: 15))
                         .foregroundStyle(TukiPalette.gray)
                         .padding(.top, 4)
@@ -380,9 +558,9 @@ private struct TukiProfileView: View {
                 .padding(.top, 28)
 
                 HStack(spacing: 12) {
-                    TukiProfileStat(value: "18", label: "TRIPS TAKEN")
-                    TukiProfileStat(value: "2", label: "FAVORITES")
-                    TukiProfileStat(value: "3", label: "SAVED")
+                    TukiProfileStat(value: isGuest ? "0" : "18", label: "TRIPS TAKEN")
+                    TukiProfileStat(value: isGuest ? "0" : "2", label: "FAVORITES")
+                    TukiProfileStat(value: isGuest ? "0" : "3", label: "SAVED")
                 }
                 .padding(.top, 24)
 
@@ -543,6 +721,7 @@ private struct TukiRouteResultsView: View {
     let origin: String
     let destination: String
     let onBack: () -> Void
+    let onRouteSelected: (RouteOption) -> Void
 
     var body: some View {
         ScrollView {
@@ -561,7 +740,7 @@ private struct TukiRouteResultsView: View {
                     .padding(.bottom, 24)
 
                 ForEach(TukiSamples.routes(origin: origin, destination: destination)) { option in
-                    Button(action: {}) {
+                    Button { onRouteSelected(option) } label: {
                         VStack(alignment: .leading, spacing: 0) {
                             HStack {
                                 Text(option.label)
@@ -591,6 +770,53 @@ private struct TukiRouteResultsView: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 14)
                 }
+            }
+            .padding(30)
+        }
+        .background(TukiPalette.cream.ignoresSafeArea())
+    }
+}
+
+private struct TukiActiveTripView: View {
+    let origin: String
+    let destination: String
+    let option: RouteOption
+    let onCancel: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Current Trip")
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundStyle(TukiPalette.dark)
+
+                Text("\(origin) → \(destination)")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(TukiPalette.teal)
+                    .padding(.top, 6)
+
+                Text("\(option.steps.count) legs · \(option.totalMinutes) min · ₱\(String(format: "%.0f", option.totalFare))")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(TukiPalette.gray)
+                    .padding(.top, 4)
+
+                ForEach(Array(option.steps.enumerated()), id: \.offset) { indexedStep in
+                    TukiStepRow(step: indexedStep.element)
+                        .padding(.top, 10)
+                }
+                .padding(.top, 18)
+
+                Button(action: onCancel) {
+                    Text("Cancel Trip")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(TukiPalette.orange)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 24)
             }
             .padding(30)
         }
