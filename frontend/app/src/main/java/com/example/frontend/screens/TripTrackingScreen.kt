@@ -66,6 +66,7 @@ fun TripTrackingScreen(
     var optionRoutePoints by remember { mutableStateOf<List<LatLng>>(emptyList()) }
     var optionError by remember { mutableStateOf<String?>(null) }
     var optionWorking by remember { mutableStateOf(false) }
+    var hasRerouted by remember { mutableStateOf(false) }
     var activeDestinationName by remember(destination) { mutableStateOf(destination) }
     var activeFinalDestination by remember(finalDestination) { mutableStateOf(finalDestination) }
 
@@ -107,6 +108,7 @@ fun TripTrackingScreen(
             optionError = null
             when (val result = request()) {
                 is ApiResult.Success -> {
+                    hasRerouted = true
                     optionSnapshot = result.data
                     destinationUpdate?.let {
                         activeDestinationName = it.name
@@ -162,8 +164,8 @@ fun TripTrackingScreen(
         MapScreen(
             routePoints = visibleRoutePoints,
             startPoint = currentPosition,
-            futureRouteSegments = if (optionSnapshot != null) emptyList() else futureRouteSegments,
-            selectedDestination = if (optionSnapshot != null) snapshot?.currentLeg?.let { leg ->
+            futureRouteSegments = if (hasRerouted) emptyList() else futureRouteSegments,
+            selectedDestination = if (hasRerouted) snapshot?.currentLeg?.let { leg ->
                 if (leg.endLatitude != null && leg.endLongitude != null) LatLng(leg.endLatitude, leg.endLongitude) else null
             } else legDestination,
             finalDestination = activeFinalDestination,
