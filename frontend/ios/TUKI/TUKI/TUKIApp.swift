@@ -9,20 +9,36 @@ import SwiftUI
 import FacebookCore
 import GoogleSignIn
 
+extension Notification.Name {
+    static let tukiTripEnded = Notification.Name("tuki.trip.ended")
+}
+
 @main
 struct TUKIApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup {
-            ZStack {
-                TukiParityRootView()
-                TukiTripOptionsOverlay()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            }
-            .onOpenURL { url in
-                AuthCallbackURLHandler.handle(url)
-            }
+            TukiAppContent()
+                .onOpenURL { url in
+                    AuthCallbackURLHandler.handle(url)
+                }
+        }
+    }
+}
+
+private struct TukiAppContent: View {
+    @State private var mainFlowId = UUID()
+
+    var body: some View {
+        ZStack {
+            TukiParityRootView()
+                .id(mainFlowId)
+            TukiTripOptionsOverlay()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .tukiTripEnded)) { _ in
+            mainFlowId = UUID()
         }
     }
 }
