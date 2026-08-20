@@ -18,6 +18,7 @@ struct TUKIApp: App {
             ZStack {
                 TukiParityRootView()
                 TukiTripOptionsOverlay()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
             .onOpenURL { url in
                 AuthCallbackURLHandler.handle(url)
