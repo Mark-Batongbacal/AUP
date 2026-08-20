@@ -14,6 +14,7 @@ public sealed record NavigationRerouteRequest(
 public sealed record NavigationLegSnapshot(
     int LegIndex,
     string TransportMode,
+    long? RouteId,
     string? RouteName,
     string? FromName,
     string? ToName,
