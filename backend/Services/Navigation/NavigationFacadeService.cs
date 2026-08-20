@@ -74,8 +74,11 @@ public sealed class NavigationFacadeService(
     public async Task<NavigationOperation> RerouteAsync(Guid userId, Guid sessionId, NavigationRerouteRequest request, CancellationToken cancellationToken = default)
     {
         var result = await rerouting.RerouteAsync(userId, sessionId, request, cancellationToken);
+        if (!result.Succeeded) return Fail(result.Status);
         var session = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken);
-        return session is null ? Fail("TRIP_SESSION_NOT_FOUND") : await BuildAsync(userId, session, result.Status, [], cancellationToken);
+        return session is null
+            ? Fail("TRIP_SESSION_NOT_FOUND")
+            : await BuildAsync(userId, session, result.Status, [], cancellationToken);
     }
 
     private async Task<NavigationOperation> FromSessionOperationAsync(Guid userId, TripSessionOperation operation, string status, CancellationToken cancellationToken) =>
