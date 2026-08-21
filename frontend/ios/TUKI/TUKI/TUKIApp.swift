@@ -39,9 +39,18 @@ private struct TukiAppContent: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .allowsHitTesting(false)
 
-            // Keep this overlay at its intrinsic size. Stretching it to the
-            // full window creates a transparent hit-testing layer above the
-            // login screen and can block Google/Facebook sign-in buttons.
+            TukiNavigationEnhancementsOverlay()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(.leading, 18)
+                .padding(.bottom, 210)
+
+            TukiNavigationCameraOverlay()
+                .padding(.top, 108)
+                .padding(.trailing, 18)
+
+            // Keep interactive trip controls at their intrinsic size. A
+            // full-window transparent overlay would block Google/Facebook
+            // sign-in buttons on the login screen.
             TukiTripOptionsOverlay()
         }
         .onReceive(NotificationCenter.default.publisher(for: .tukiTripEnded)) { _ in
