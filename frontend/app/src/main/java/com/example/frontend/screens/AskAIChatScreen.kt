@@ -42,14 +42,10 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.core.location.LocationDetectionFailureMessage
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
-import com.example.frontend.data.ai.AiRepository
+import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantRequest
 import com.example.frontend.data.places.DestinationSearchResultDto
-import com.example.frontend.data.routing.TransitMode
-import com.example.frontend.model.CommuteStep
-import com.example.frontend.model.RouteOption
-import com.example.frontend.model.RoutePoint
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -64,6 +60,7 @@ private data class AiChatMessage(
     val id: Long,
     val text: String,
     val isFromUser: Boolean,
+    val requestText: String? = null,
     val journeys: List<AssistantJourneyDto> = emptyList(),
     val destination: DestinationSearchResultDto? = null,
     val destinationChoices: List<DestinationSearchResultDto> = emptyList()
@@ -77,13 +74,16 @@ private val quickPrompts = listOf(
 @Composable
 fun AskAiChatScreen(
     userName: String = "Juan",
-    aiRepository: AiRepository,
     onBack: () -> Unit = {},
-    onRouteSelected: (RouteOption, DestinationSearchResultDto, Double, Double) -> Unit = { _, _, _, _ -> },
+    onDestinationConfirmed: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val aiRepository = remember(context.applicationContext) {
+        TukiDataProvider(context.applicationContext).aiRepository
+    }
+
     var messages by remember {
         mutableStateOf(
             listOf(
@@ -140,11 +140,13 @@ fun AskAiChatScreen(
                         id = System.currentTimeMillis() + 1,
                         text = response.message,
                         isFromUser = false,
+                        requestText = trimmed,
                         journeys = response.journeys.orEmpty(),
                         destination = response.destination,
                         destinationChoices = response.destinations.orEmpty()
                     )
                 }
+
                 is ApiResult.Failure -> {
                     messages = messages + AiChatMessage(
                         id = System.currentTimeMillis() + 1,
@@ -159,7 +161,10 @@ fun AskAiChatScreen(
 
     Column(modifier = modifier.fillMaxSize().background(TukiCream)) {
         Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
@@ -167,9 +172,13 @@ fun AskAiChatScreen(
             }
             Spacer(modifier = Modifier.width(4.dp))
             Box(
-                modifier = Modifier.size(38.dp).background(TukiTeal.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(TukiTeal.copy(alpha = 0.12f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
-            ) { Text("✨", fontSize = 18.sp) }
+            ) {
+                Text("✨", fontSize = 18.sp)
+            }
             Spacer(modifier = Modifier.width(10.dp))
             Column {
                 Text("Ask our AI", color = TukiDark, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
@@ -179,25 +188,20 @@ fun AskAiChatScreen(
 
         LazyColumn(
             state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
             contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
         ) {
             items(messages, key = { it.id }) { message ->
                 AiMessageBubble(
                     message = message,
-                    onRouteSelected = { journey, destination ->
-                        val location = context.currentDeviceLocation()
-                        if (location != null) {
-                            onRouteSelected(
-                                journey.toRouteOption("Current location", destination.name),
-                                destination,
-                                location.latitude,
-                                location.longitude
-                            )
-                        }
+                    onRouteSelected = { destination ->
+                        onDestinationConfirmed(destination.name)
                     },
                     onDestinationSelected = { place ->
-                        askAssistant(message.text, place.id)
+                        askAssistant(message.requestText ?: place.name, place.id)
                     }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -226,7 +230,11 @@ fun AskAiChatScreen(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().background(TukiDark).navigationBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(TukiDark)
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextField(
@@ -247,6 +255,7 @@ fun AskAiChatScreen(
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier.weight(1f).padding(end = 8.dp)
             )
+
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -266,7 +275,7 @@ fun AskAiChatScreen(
 @Composable
 private fun AiMessageBubble(
     message: AiChatMessage,
-    onRouteSelected: (AssistantJourneyDto, DestinationSearchResultDto) -> Unit,
+    onRouteSelected: (DestinationSearchResultDto) -> Unit,
     onDestinationSelected: (DestinationSearchResultDto) -> Unit
 ) {
     Row(
@@ -279,7 +288,10 @@ private fun AiMessageBubble(
         ) {
             Box(
                 modifier = Modifier
-                    .background(if (message.isFromUser) TukiOrange else TukiChatBubble, RoundedCornerShape(16.dp))
+                    .background(
+                        if (message.isFromUser) TukiOrange else TukiChatBubble,
+                        RoundedCornerShape(16.dp)
+                    )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Text(message.text, color = Color.White, fontSize = 14.sp)
@@ -300,7 +312,7 @@ private fun AiMessageBubble(
                     AiRouteCard(
                         journey = journey,
                         fallbackAlternativeNumber = index + 1,
-                        onClick = { onRouteSelected(journey, destination) }
+                        onClick = { onRouteSelected(destination) }
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                 }
@@ -315,17 +327,20 @@ private fun AiRouteCard(
     fallbackAlternativeNumber: Int,
     onClick: () -> Unit
 ) {
-    val tags = journey.recommendationType.split(',').map { it.trim().lowercase() }.filter { it.isNotBlank() }
-    val label = when {
-        "efficient" in tags -> "Balanced"
-        "cheapest" in tags -> "Cheapest"
-        "fastest" in tags -> "Fastest"
-        else -> "Alternative $fallbackAlternativeNumber"
+    val tags = journey.recommendationType
+        .split(',')
+        .map { it.trim().lowercase() }
+        .filter { it.isNotBlank() }
+    val objectiveLabels = buildList {
+        if ("efficient" in tags) add("Balanced")
+        if ("cheapest" in tags) add("Cheapest")
+        if ("fastest" in tags) add("Fastest")
     }
-    val icon = when (label) {
-        "Balanced" -> "⚖️"
-        "Cheapest" -> "₱"
-        "Fastest" -> "⚡"
+    val label = objectiveLabels.joinToString(" · ").ifBlank { "Alternative $fallbackAlternativeNumber" }
+    val icon = when {
+        "efficient" in tags -> "⚖️"
+        "cheapest" in tags -> "₱"
+        "fastest" in tags -> "⚡"
         else -> "🔄"
     }
     val modes = journey.legs.map { leg ->
@@ -333,7 +348,8 @@ private fun AiRouteCard(
             "TRIKE" -> "Tricycle"
             "WALK" -> "Walk"
             "JEEPNEY" -> leg.routeName?.takeIf { it.isNotBlank() } ?: "Jeepney"
-            else -> leg.routeName?.takeIf { it.isNotBlank() } ?: leg.mode.lowercase().replaceFirstChar { it.titlecase() }
+            else -> leg.routeName?.takeIf { it.isNotBlank() }
+                ?: leg.mode.lowercase().replaceFirstChar { it.titlecase() }
         }
     }.joinToString(" → ")
 
@@ -344,16 +360,25 @@ private fun AiRouteCard(
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text("$icon $label", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
             Text("View route ›", color = TukiOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(modifier = Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("₱${journey.farePesos.roundToInt()}", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Text("~${(journey.durationSeconds / 60).roundToInt()} min", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text("${journey.walkingMeters.roundToInt()} m walk", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            "${journey.walkingMeters.roundToInt()} m walk",
+            color = Color.White.copy(alpha = 0.75f),
+            fontSize = 12.sp
+        )
         if (modes.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(modes, color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
@@ -387,7 +412,9 @@ private fun DestinationChoiceCard(place: DestinationSearchResultDto, onClick: ()
 private fun ThinkingBubble() {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Box(
-            modifier = Modifier.background(TukiChatBubble, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 10.dp)
+            modifier = Modifier
+                .background(TukiChatBubble, RoundedCornerShape(16.dp))
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
             Text("•••", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, fontWeight = FontWeight.Bold)
         }
@@ -404,56 +431,4 @@ private fun QuickPromptChip(text: String, onClick: () -> Unit) {
     ) {
         Text(text, color = TukiDark, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
-}
-
-private fun AssistantJourneyDto.toRouteOption(origin: String, destination: String): RouteOption {
-    val tags = recommendationType.split(',').map { it.trim().lowercase() }.filter { it.isNotBlank() }
-    val legRoutePoints = plan.legs.map { leg ->
-        leg.geometry.orEmpty().map { point -> RoutePoint(point.latitude, point.longitude) }
-    }
-    val legEndPoints = plan.legs.map { leg -> RoutePoint(leg.destinationLatitude, leg.destinationLongitude) }
-    val routePoints = buildList {
-        legRoutePoints.forEach { segment ->
-            segment.forEach { point -> if (lastOrNull() != point) add(point) }
-        }
-    }
-    val walkMeters = (
-        plan.originAccess.walkDistanceMeters +
-            plan.destinationAccess.walkDistanceMeters +
-            plan.transferWalkDistancesMeters.sum()
-        ).roundToInt()
-
-    return RouteOption(
-        id = journeyId,
-        label = when {
-            "efficient" in tags -> "Balanced"
-            "cheapest" in tags -> "Cheapest"
-            "fastest" in tags -> "Fastest"
-            else -> "Alternative Ride"
-        },
-        totalMinutes = (plan.totalTimeSeconds / 60).roundToInt(),
-        totalFare = plan.totalFarePesos,
-        walkMeters = walkMeters,
-        transfers = plan.transferCount,
-        generalCost = plan.generalizedCostPesos,
-        isRecommended = "efficient" in tags,
-        routePoints = routePoints,
-        legRoutePoints = legRoutePoints,
-        legEndPoints = legEndPoints,
-        steps = plan.legs.mapIndexed { index, leg ->
-            val mode = when (TransitMode.fromWireValue(leg.mode)) {
-                TransitMode.Walk -> "Walk"
-                TransitMode.Trike -> "Tricycle"
-                TransitMode.Jeepney -> "Jeepney"
-                is TransitMode.Unknown -> "Transit"
-            }
-            CommuteStep(
-                mode = mode,
-                from = if (index == 0) origin else leg.routeName ?: "Transfer point",
-                to = if (index == plan.legs.lastIndex) destination else leg.routeName ?: "Transfer point",
-                minutes = (leg.durationSeconds / 60).roundToInt(),
-                fare = leg.farePesos
-            )
-        }
-    )
 }
