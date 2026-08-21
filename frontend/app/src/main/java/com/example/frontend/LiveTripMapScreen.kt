@@ -1,6 +1,7 @@
 package com.example.frontend
 
 import android.view.MotionEvent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -159,20 +160,21 @@ fun LiveTripMapScreen(
         if (currentPosition != null) {
             Surface(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 18.dp, bottom = recenterBottomPadding)
-                    .size(52.dp)
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 16.dp)
+                    .size(50.dp)
                     .clickable {
                         followLocation = true
                         mapLibreMap?.let { map -> animateLiveTripCamera(map, currentPosition, routePoints) }
                     },
                 shape = CircleShape,
                 color = Color(0xFFFFFBF0),
-                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, Color(0xFFE2DDD2)),
+                shadowElevation = 9.dp,
                 tonalElevation = 2.dp
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text("⌖", color = Color(0xFF153E4B), fontSize = 26.sp)
+                    Text("◎", color = Color(0xFF153E4B), fontSize = 27.sp)
                 }
             }
         }
@@ -262,14 +264,7 @@ private fun updateLiveTripFinalDestination(style: Style, point: LatLng?) {
     updateLiveTripPoint(style, point, LiveTripFinalSource, LiveTripFinalLayer, "#F59A3A", 7f)
 }
 
-private fun updateLiveTripPoint(
-    style: Style,
-    point: LatLng?,
-    sourceId: String,
-    layerId: String,
-    color: String,
-    radius: Float
-) {
+private fun updateLiveTripPoint(style: Style, point: LatLng?, sourceId: String, layerId: String, color: String, radius: Float) {
     if (point == null) {
         style.removeLayer(layerId)
         style.removeSource(sourceId)

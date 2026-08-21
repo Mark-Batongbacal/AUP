@@ -189,11 +189,6 @@ fun TripTrackingScreen(
         ?: "₱0"
     val totalLegs = max(1, (snapshot?.currentLegIndex ?: 0) + 1 + futureRouteSegments.size)
     val currentLegIndex = (snapshot?.currentLegIndex ?: 0).coerceAtLeast(0)
-    val panelClearance = when {
-        requiresBoarding || requiresAlighting || canParaPo -> 350.dp
-        following != null || preparingToAlight -> 318.dp
-        else -> 286.dp
-    }
 
     fun requestBack() { if (activeTrip) showBackDialog = true else onBack() }
     BackHandler(enabled = activeTrip) { showBackDialog = true }
@@ -207,25 +202,28 @@ fun TripTrackingScreen(
             } else legDestination,
             finalDestination = activeFinalDestination,
             futureRouteSegments = if (hasRerouted) emptyList() else futureRouteSegments,
-            recenterBottomPadding = panelClearance,
             modifier = Modifier.fillMaxSize()
         )
 
+        // Only the header itself owns an opaque cream background. The current-leg card
+        // floats over the map so the map remains visible around and behind it.
         Column(
-            Modifier
+            modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .background(TripScreen.copy(alpha = 0.97f))
                 .statusBarsPadding()
         ) {
-            LiveTripHeader(
-                showOptions = activeTrip && !guestTrip,
-                activeTrip = activeTrip,
-                working = working,
-                onBack = ::requestBack,
-                onOptions = { showOptions = true },
-                onEnd = { showEndDialog = true }
-            )
+            Surface(color = TripScreen.copy(alpha = 0.97f), shadowElevation = 1.dp) {
+                LiveTripHeader(
+                    showOptions = activeTrip && !guestTrip,
+                    activeTrip = activeTrip,
+                    working = working,
+                    onBack = ::requestBack,
+                    onOptions = { showOptions = true },
+                    onEnd = { showEndDialog = true }
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             CurrentLegCard(
                 icon = modeIcon,
                 title = legTitle,
@@ -237,13 +235,7 @@ fun TripTrackingScreen(
                     else -> null
                 }
             )
-            Spacer(Modifier.height(8.dp))
         }
-
-        NextStopCard(
-            targetName,
-            Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = panelClearance + 14.dp)
-        )
 
         InstructionPanel(
             instruction = instruction,
@@ -304,6 +296,24 @@ fun TripTrackingScreen(
             onDismiss = { showOptions = false },
             onRerouteNow = { applyOption { options.rerouteNow(snapshot.sessionId) } },
             onPreferenceChange = { preference -> applyOption { options.changePreference(snapshot.sessionId, preference) } },
+            onLoadPreferencePreviews = {
+                val destinationPoint = activeFinalDestination
+                when (
+                    val result = options.loadPreferencePreviews(
+                        originLatitude = snapshot.currentLatitude,
+                        originLongitude = snapshot.currentLongitude,
+                        destinationName = activeDestinationName,
+                        destinationLatitude = destinationPoint?.latitude,
+                        destinationLongitude = destinationPoint?.longitude
+                    )
+                ) {
+                    is ApiResult.Success -> result.data
+                    is ApiResult.Failure -> {
+                        optionError = result.message
+                        emptyList()
+                    }
+                }
+            },
             onBudgetChange = { budget, clear -> applyOption { options.changeBudget(snapshot.sessionId, budget, clear) } },
             onDestinationSearch = { query ->
                 when (val result = options.searchDestinations(query, snapshot.currentLatitude, snapshot.currentLongitude)) {
@@ -420,10 +430,10 @@ private fun LiveTripHeader(
 @Composable
 private fun CurrentLegCard(icon: String, title: String, eta: String, fare: String, status: String?) {
     Surface(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 18.dp),
         shape = RoundedCornerShape(20.dp),
-        color = TripSurface,
-        shadowElevation = 5.dp
+        color = TripSurface.copy(alpha = 0.96f),
+        shadowElevation = 6.dp
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(Modifier.size(46.dp), shape = RoundedCornerShape(14.dp), color = TripSoftTeal) {
@@ -438,20 +448,6 @@ private fun CurrentLegCard(icon: String, title: String, eta: String, fare: Strin
                     Spacer(Modifier.height(2.dp))
                     Text(it, color = TripOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NextStopCard(name: String, modifier: Modifier = Modifier) {
-    Surface(modifier.widthIn(max = 228.dp), shape = RoundedCornerShape(18.dp), color = TripSurface, shadowElevation = 7.dp) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
-            Text("●", color = TripTeal, fontSize = 13.sp)
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text("Next stop", color = TripGray, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Text(name, color = TripDark, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
         }
     }
