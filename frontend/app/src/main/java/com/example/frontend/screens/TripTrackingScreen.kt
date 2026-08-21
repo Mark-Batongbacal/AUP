@@ -187,7 +187,7 @@ fun TripTrackingScreen(
             finalDestination = activeFinalDestination,
             transitRoutes = nearbyJeepneyRoutes,
             todaPoints = todaPoints,
-            navigationTrackingEnabled = hasActiveTrip,
+            navigationTrackingEnabled = hasActiveTrip && currentPosition != null,
             navigationTrackingPoint = currentPosition,
             modifier = Modifier.fillMaxSize()
         )
