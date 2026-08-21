@@ -5,17 +5,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -23,10 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
-import com.example.frontend.core.network.ApiResult
-import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.model.FavoriteRoute
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val FavoriteBg = Color(0xFFF8F5EC)
@@ -44,6 +42,9 @@ private val FavoriteDanger = Color(0xFFDF5D58)
 fun FavoritesScreen(
     favorites: List<FavoriteRoute> = emptyList(),
     isGuest: Boolean = false,
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    removingFavoriteIds: Set<String> = emptySet(),
     onBack: (() -> Unit)? = null,
     onRouteClick: (FavoriteRoute) -> Unit = {},
     onRemoveFavorite: (FavoriteRoute) -> Unit = {},
@@ -51,62 +52,8 @@ fun FavoritesScreen(
     onRecentClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
-    val context = LocalContext.current
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
-    val scope = rememberCoroutineScope()
-    val repository = remember(context) { TukiDataProvider(context.applicationContext).favoritesRepository }
-    var liveFavorites by remember { mutableStateOf(favorites) }
-    var loading by remember { mutableStateOf(!isGuest) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var removingId by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(favorites) {
-        if (liveFavorites.isEmpty() && favorites.isNotEmpty()) liveFavorites = favorites
-    }
-
-    LaunchedEffect(isGuest) {
-        if (isGuest) {
-            liveFavorites = emptyList()
-            loading = false
-            return@LaunchedEffect
-        }
-        loading = true
-        error = null
-        when (val result = repository.getFavorites()) {
-            is ApiResult.Success -> liveFavorites = result.data.map { dto ->
-                FavoriteRoute(
-                    id = dto.favoriteTripId,
-                    recommendationId = dto.recommendationId,
-                    origin = dto.origin ?: "Unknown origin",
-                    destination = dto.destination ?: "Unknown destination",
-                    recommendationType = dto.recommendationType,
-                    minutes = dto.totalMinutes.roundToInt(),
-                    totalFare = dto.totalFare,
-                    walkingMeters = dto.walkingDistanceMeters.roundToInt(),
-                    timesUsed = dto.timesUsed,
-                    note = dto.note.orEmpty()
-                )
-            }
-            is ApiResult.Failure -> error = result.message
-        }
-        loading = false
-    }
-
-    fun removeFavorite(route: FavoriteRoute) {
-        if (removingId != null) return
-        scope.launch {
-            removingId = route.id
-            error = null
-            when (val result = repository.removeFavorite(route.id)) {
-                is ApiResult.Success -> {
-                    liveFavorites = liveFavorites.filterNot { it.id == route.id }
-                    onRemoveFavorite(route)
-                }
-                is ApiResult.Failure -> error = result.message
-            }
-            removingId = null
-        }
-    }
+    val uniqueFavorites = remember(favorites) { favorites.distinctBy { it.uniqueFavoriteIdentity() } }
 
     Column(Modifier.fillMaxSize().background(FavoriteBg)) {
         LazyColumn(
@@ -147,24 +94,24 @@ fun FavoritesScreen(
                 Spacer(Modifier.height(10.dp))
             }
 
-            if (!error.isNullOrBlank()) {
-                item { Text(error!!, color = FavoriteDanger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+            if (!errorMessage.isNullOrBlank()) {
+                item { Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
             }
 
             when {
                 isGuest -> item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
-                loading -> item {
+                isLoading -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = FavoriteTeal)
                     }
                 }
-                liveFavorites.isEmpty() -> item { EmptyFavoriteCard("No favorite routes yet.\nTap the star on a route to save it here.") }
-                else -> items(liveFavorites, key = { it.id }) { route ->
+                uniqueFavorites.isEmpty() -> item { EmptyFavoriteCard("No favorite routes yet.\nTap the star on a route to save it here.") }
+                else -> itemsIndexed(uniqueFavorites, key = { index, route -> route.favoriteListKey(index) }) { _, route ->
                     FavoriteRouteCard(
                         route = route,
-                        removing = removingId == route.id,
+                        removing = route.id in removingFavoriteIds,
                         onClick = { onRouteClick(route) },
-                        onRemove = { removeFavorite(route) }
+                        onRemove = { onRemoveFavorite(route) }
                     )
                 }
             }
@@ -265,3 +212,11 @@ private fun routeIcon(type: String): String = when (formatRecommendation(type)) 
     "Cheapest" -> "₱"
     else -> "🛺"
 }
+
+private fun FavoriteRoute.uniqueFavoriteIdentity(): String =
+    recommendationId.takeIf { it.isNotBlank() }
+        ?: id.takeIf { it.isNotBlank() }
+        ?: listOf(origin, destination, recommendationType).joinToString("|")
+
+private fun FavoriteRoute.favoriteListKey(index: Int): String =
+    "${uniqueFavoriteIdentity()}-$index"

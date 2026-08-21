@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,17 +52,22 @@ fun RecentScreen(
     isGuest: Boolean = false,
     isLoading: Boolean = false,
     errorMessage: String? = null,
+    favoriteRecommendationIds: Set<String> = emptySet(),
+    favoriteWorkingRecommendationIds: Set<String> = emptySet(),
+    favoriteErrorMessage: String? = null,
+    onToggleFavorite: (RecentCommute) -> Unit = {},
     onCommuteClick: (RecentCommute) -> Unit = {},
     onHomeClick: () -> Unit = {},
     onFavoritesClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
     var filter by rememberSaveable { mutableStateOf(RecentFilter.All) }
-    val filtered = remember(commutes, filter) {
+    val uniqueCommutes = remember(commutes) { commutes.distinctBy { it.uniqueRecentIdentity() } }
+    val filtered = remember(uniqueCommutes, filter) {
         when (filter) {
-            RecentFilter.All -> commutes
-            RecentFilter.Completed -> commutes.filter { it.status.equals("Completed", true) }
-            RecentFilter.Cancelled -> commutes.filter { it.status.equals("Cancelled", true) }
+            RecentFilter.All -> uniqueCommutes
+            RecentFilter.Completed -> uniqueCommutes.filter { it.status.equals("Completed", true) }
+            RecentFilter.Cancelled -> uniqueCommutes.filter { it.status.equals("Cancelled", true) }
         }
     }
 
@@ -87,6 +93,9 @@ fun RecentScreen(
                 !errorMessage.isNullOrBlank() -> item {
                     Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
+                !favoriteErrorMessage.isNullOrBlank() -> item {
+                    Text(favoriteErrorMessage, color = MaterialTheme.colorScheme.error, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
                 filtered.isEmpty() -> item {
                     Surface(
                         Modifier.fillMaxWidth().padding(top = 18.dp),
@@ -98,8 +107,16 @@ fun RecentScreen(
                         }
                     }
                 }
-                else -> items(filtered, key = { it.id }) { commute ->
-                    RecentTripCard(commute = commute, onClick = { onCommuteClick(commute) })
+                else -> itemsIndexed(filtered, key = { index, commute -> commute.recentListKey(index) }) { _, commute ->
+                    val recommendationId = commute.recommendationId
+                    RecentTripCard(
+                        commute = commute,
+                        isFavorite = recommendationId != null && recommendationId in favoriteRecommendationIds,
+                        favoriteWorking = recommendationId != null && recommendationId in favoriteWorkingRecommendationIds,
+                        canFavorite = !isGuest && !recommendationId.isNullOrBlank(),
+                        onFavoriteClick = { onToggleFavorite(commute) },
+                        onClick = { onCommuteClick(commute) }
+                    )
                 }
             }
         }
@@ -135,7 +152,14 @@ private fun RecentTabs(selected: RecentFilter, onSelected: (RecentFilter) -> Uni
 }
 
 @Composable
-private fun RecentTripCard(commute: RecentCommute, onClick: () -> Unit) {
+private fun RecentTripCard(
+    commute: RecentCommute,
+    isFavorite: Boolean,
+    favoriteWorking: Boolean,
+    canFavorite: Boolean,
+    onFavoriteClick: () -> Unit,
+    onClick: () -> Unit
+) {
     val completed = commute.status.equals("Completed", true)
     val icon = when {
         commute.steps.any { it.mode.contains("jeep", true) || it.mode.contains("bus", true) } -> "🚌"
@@ -145,53 +169,74 @@ private fun RecentTripCard(commute: RecentCommute, onClick: () -> Unit) {
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth(),
         color = RecentCard,
         shape = RoundedCornerShape(18.dp),
         shadowElevation = 2.dp
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(
-                Modifier.size(46.dp),
-                shape = RoundedCornerShape(14.dp),
-                color = if (completed) RecentIconCream else RecentIconBlue
-            ) { Box(contentAlignment = Alignment.Center) { Text(icon, fontSize = 21.sp) } }
-
-            Spacer(Modifier.width(11.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "${commute.origin} → ${commute.destination}",
-                    color = RecentDark,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    "${formatRecentDate(commute.endedAt)} • ${commute.minutes} min • ₱${commute.totalFare.roundToInt()}",
-                    color = RecentMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.weight(1f).clickable(onClick = onClick),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Surface(
-                    shape = RoundedCornerShape(11.dp),
-                    color = if (completed) RecentGreenBg else RecentRedBg
-                ) {
+                    Modifier.size(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (completed) RecentIconCream else RecentIconBlue
+                ) { Box(contentAlignment = Alignment.Center) { Text(icon, fontSize = 21.sp) } }
+
+                Spacer(Modifier.width(11.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
-                        commute.status.ifBlank { if (completed) "Completed" else "Cancelled" },
-                        Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                        color = if (completed) RecentGreen else RecentRed,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
+                        "${commute.origin} → ${commute.destination}",
+                        color = RecentDark,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "${formatRecentDate(commute.endedAt)} • ${commute.minutes} min • ₱${commute.totalFare.roundToInt()}",
+                        color = RecentMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(11.dp),
+                        color = if (completed) RecentGreenBg else RecentRedBg
+                    ) {
+                        Text(
+                            commute.status.ifBlank { if (completed) "Completed" else "Cancelled" },
+                            Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            color = if (completed) RecentGreen else RecentRed,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
             Spacer(Modifier.width(8.dp))
-            Text("›", color = RecentDark, fontSize = 28.sp, fontWeight = FontWeight.Medium)
+            Box(
+                modifier = Modifier.size(40.dp).clickable(enabled = canFavorite && !favoriteWorking, onClick = onFavoriteClick),
+                contentAlignment = Alignment.Center
+            ) {
+                if (favoriteWorking) {
+                    CircularProgressIndicator(Modifier.size(18.dp), color = RecentTeal, strokeWidth = 2.dp)
+                } else {
+                    Text(if (isFavorite) "♥" else "♡", color = RecentRed, fontSize = 28.sp)
+                }
+            }
+            Text(
+                "›",
+                modifier = Modifier.clickable(onClick = onClick).padding(start = 2.dp),
+                color = RecentDark,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -205,3 +250,16 @@ private fun formatRecentDate(value: String?): String {
         .getOrNull() ?: return "Recent trip"
     return date.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
 }
+
+private fun RecentCommute.uniqueRecentIdentity(): String =
+    id.takeIf { it.isNotBlank() }
+        ?: listOf(
+            recommendationId.orEmpty(),
+            origin,
+            destination,
+            endedAt.orEmpty(),
+            status
+        ).joinToString("|")
+
+private fun RecentCommute.recentListKey(index: Int): String =
+    "${uniqueRecentIdentity()}-$index"

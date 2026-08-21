@@ -21,6 +21,8 @@ import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.auth.RegisterRequest
+import com.example.frontend.data.favorites.toFavoriteRouteOrNull
+import com.example.frontend.data.favorites.withoutDuplicateFavorites
 import com.example.frontend.data.navigation.NavigationInstructionSnapshotDto
 import com.example.frontend.data.navigation.NavigationLegDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
@@ -75,6 +77,10 @@ fun AppNavigation(
 
     var currentUserProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var favorites by remember { mutableStateOf<List<FavoriteRoute>>(emptyList()) }
+    var favoritesLoading by remember { mutableStateOf(false) }
+    var favoritesError by remember { mutableStateOf<String?>(null) }
+    var favoriteActionRecommendationIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var removingFavoriteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var recentCommutes by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
     var recentTripsLoading by remember { mutableStateOf(false) }
     var recentTripsError by remember { mutableStateOf<String?>(null) }
@@ -116,6 +122,109 @@ fun AppNavigation(
         "${AppScreen.TRIP_TRACKING.name}/${Uri.encode(origin)}/${Uri.encode(destination)}"
 
     fun isAuthenticated(): Boolean = dataProvider.sessionStore.validSession() != null
+
+    fun List<RecentCommute>.withoutDuplicateTrips(): List<RecentCommute> =
+        distinctBy { commute ->
+            commute.id.takeIf { it.isNotBlank() }
+                ?: listOf(
+                    commute.recommendationId.orEmpty(),
+                    commute.origin,
+                    commute.destination,
+                    commute.endedAt.orEmpty(),
+                    commute.status
+                ).joinToString("|")
+        }
+
+    suspend fun refreshFavorites() {
+        if (!isAuthenticated()) {
+            favorites = emptyList()
+            favoritesLoading = false
+            favoritesError = null
+            return
+        }
+
+        favoritesLoading = true
+        favoritesError = null
+        when (val result = dataProvider.favoritesRepository.getFavorites()) {
+            is ApiResult.Success -> favorites = result.data
+                .mapNotNull { it.toFavoriteRouteOrNull() }
+                .withoutDuplicateFavorites()
+            is ApiResult.Failure -> {
+                favorites = emptyList()
+                favoritesError = result.message
+                if (result.isUnauthorized) {
+                    navController.navigate(AppScreen.LOGIN.name) { popUpTo(0) }
+                }
+            }
+        }
+        favoritesLoading = false
+    }
+
+    fun toggleRecentFavorite(commute: RecentCommute) {
+        val recommendationId = commute.recommendationId?.takeIf { it.isNotBlank() } ?: return
+        if (!isAuthenticated() || recommendationId in favoriteActionRecommendationIds) {
+            return
+        }
+
+        coroutineScope.launch {
+            favoriteActionRecommendationIds = favoriteActionRecommendationIds + recommendationId
+            favoritesError = null
+
+            val existing = favorites.firstOrNull { it.recommendationId == recommendationId }
+            if (existing != null) {
+                when (val result = dataProvider.favoritesRepository.removeFavorite(existing.id)) {
+                    is ApiResult.Success -> favorites = favorites
+                        .filterNot { it.recommendationId == recommendationId }
+                        .withoutDuplicateFavorites()
+                    is ApiResult.Failure -> favoritesError = result.message
+                }
+            } else {
+                when (val result = dataProvider.favoritesRepository.addFavorite(recommendationId)) {
+                    is ApiResult.Success -> {
+                        val favorite = result.data.toFavoriteRouteOrNull()
+                        if (favorite != null) {
+                            favorites = favorites
+                                .filterNot { it.recommendationId == recommendationId }
+                                .plus(favorite)
+                                .withoutDuplicateFavorites()
+                        } else {
+                            favoritesError = "Favorite route details could not be loaded."
+                        }
+                    }
+                    is ApiResult.Failure -> favoritesError = result.message
+                }
+            }
+
+            favoriteActionRecommendationIds = favoriteActionRecommendationIds - recommendationId
+        }
+    }
+
+    fun removeFavoriteRoute(route: FavoriteRoute) {
+        if (route.id in removingFavoriteIds) {
+            return
+        }
+
+        coroutineScope.launch {
+            removingFavoriteIds = removingFavoriteIds + route.id
+            val recommendationId = route.recommendationId.takeIf { it.isNotBlank() }
+            if (recommendationId != null) {
+                favoriteActionRecommendationIds = favoriteActionRecommendationIds + recommendationId
+            }
+            favoritesError = null
+
+            when (val result = dataProvider.favoritesRepository.removeFavorite(route.id)) {
+                is ApiResult.Success -> favorites = favorites
+                    .filterNot { it.id == route.id || (recommendationId != null && it.recommendationId == recommendationId) }
+                    .withoutDuplicateFavorites()
+                is ApiResult.Failure -> favoritesError = result.message
+            }
+
+            removingFavoriteIds = removingFavoriteIds - route.id
+            if (recommendationId != null) {
+                favoriteActionRecommendationIds = favoriteActionRecommendationIds - recommendationId
+            }
+        }
+    }
 
     fun clearActiveNavigationState() {
         activeNavigationSessionId = null
@@ -330,6 +439,10 @@ fun AppNavigation(
 
             composable(route = AppScreen.RECENT.name) {
                 LaunchedEffect(Unit) {
+                    refreshFavorites()
+                }
+
+                LaunchedEffect(Unit) {
                     if (!isAuthenticated()) {
                         recentCommutes = emptyList()
                         recentTripsLoading = false
@@ -370,7 +483,7 @@ fun AppNavigation(
                                     destinationName = destinationName
                                 )
                             }
-                            recentCommutes = mapped
+                            recentCommutes = mapped.withoutDuplicateTrips()
                         }
                         is ApiResult.Failure -> {
                             recentCommutes = emptyList()
@@ -388,6 +501,12 @@ fun AppNavigation(
                     isGuest = !isAuthenticated(),
                     isLoading = recentTripsLoading,
                     errorMessage = recentTripsError,
+                    favoriteRecommendationIds = favorites
+                        .mapNotNull { it.recommendationId.takeIf { id -> id.isNotBlank() } }
+                        .toSet(),
+                    favoriteWorkingRecommendationIds = favoriteActionRecommendationIds,
+                    favoriteErrorMessage = favoritesError,
+                    onToggleFavorite = ::toggleRecentFavorite,
                     onCommuteClick = { commute ->
                         selectedCommute = commute
                         navController.navigate(AppScreen.COMMUTE_DETAIL.name)
@@ -406,30 +525,16 @@ fun AppNavigation(
 
             composable(route = AppScreen.FAVORITES.name) {
                 LaunchedEffect(Unit) {
-                    if (isAuthenticated()) {
-                        when (val result = dataProvider.favoritesRepository.getFavorites()) {
-                            is ApiResult.Success -> {
-                                favorites = result.data.map { dto ->
-                                    FavoriteRoute(
-                                        id = dto.favoriteTripId,
-                                        origin = dto.origin ?: "Unknown origin",
-                                        destination = dto.destination ?: "Unknown destination",
-                                        timesUsed = dto.timesUsed,
-                                        note = dto.note.orEmpty()
-                                    )
-                                }
-                            }
-
-                            is ApiResult.Failure -> Unit
-                        }
-                    } else {
-                        favorites = emptyList()
-                    }
+                    refreshFavorites()
                 }
 
                 FavoritesScreen(
                     favorites = favorites,
                     isGuest = !isAuthenticated(),
+                    isLoading = favoritesLoading,
+                    errorMessage = favoritesError,
+                    removingFavoriteIds = removingFavoriteIds,
+                    onRemoveFavorite = ::removeFavoriteRoute,
                     onHomeClick = {
                         navController.navigate(AppScreen.HOME.name)
                     },

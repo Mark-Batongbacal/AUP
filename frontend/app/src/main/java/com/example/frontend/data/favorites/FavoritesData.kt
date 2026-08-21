@@ -14,19 +14,19 @@ import retrofit2.http.Path
 data class AddFavoriteTripRequest(val recommendationId: String, val note: String? = null)
 
 data class FavoriteTripDto(
-    val favoriteTripId: String,
-    val userId: String,
-    val recommendationId: String,
+    val favoriteTripId: String?,
+    val userId: String?,
+    val recommendationId: String?,
     val origin: String?,
     val destination: String?,
-    val recommendationType: String,
-    val totalMinutes: Double,
-    val totalFare: Double,
-    val walkingDistanceMeters: Double,
-    val transferCount: Int,
-    val timesUsed: Int,
+    val recommendationType: String?,
+    val totalMinutes: Double?,
+    val totalFare: Double?,
+    val walkingDistanceMeters: Double?,
+    val transferCount: Int?,
+    val timesUsed: Int?,
     val note: String?,
-    val createdAt: String
+    val createdAt: String?
 )
 
 interface FavoritesApi {
