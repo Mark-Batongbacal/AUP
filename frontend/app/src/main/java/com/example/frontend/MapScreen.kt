@@ -66,6 +66,7 @@ private val DefaultMapCenter = LatLng(15.1453, 120.5887)
 private const val DefaultMapZoom = 14.0
 private const val NavigationMapZoom = 16.5
 private const val OpenFreeMapStyleUrl = "https://tiles.openfreemap.org/styles/liberty"
+private const val LiveTripLikeMapStyleUrl = "https://tiles.openfreemap.org/styles/positron"
 private const val RouteSourceId = "tuki-route-source"
 private const val RouteLayerId = "tuki-route-layer"
 private const val DestinationSourceId = "tuki-destination-source"
@@ -80,13 +81,15 @@ private const val FutureLegPrefix = "tuki-future-leg"
 private const val TransitRoutePrefix = "tuki-transit-route"
 
 private val TransitRouteColors = listOf(
-    "#2563EB",
-    "#7C3AED",
-    "#0F766E",
-    "#DC2626",
-    "#C2410C",
-    "#4F46E5"
+    "#0D8B97",
+    "#F4881F",
+    "#0A5B48",
+    "#FABE3A",
+    "#076773",
+    "#112E36"
 )
+
+enum class MapVisualStyle { General, LiveTrip }
 
 data class TransitRouteOverlay(
     val routeId: Long,
@@ -124,6 +127,8 @@ fun MapScreen(
     onMapClick: ((LatLng) -> Unit)? = null,
     navigationTrackingEnabled: Boolean = false,
     navigationTrackingPoint: LatLng? = null,
+    visualStyle: MapVisualStyle = MapVisualStyle.General,
+    showDeviceLocation: Boolean = true,
 ) {
     if (LocalInspectionMode.current) {
         MapPreviewPlaceholder(modifier)
@@ -193,10 +198,12 @@ fun MapScreen(
         }
     }
 
-    LaunchedEffect(mapView) {
+    LaunchedEffect(mapView, visualStyle, showDeviceLocation) {
         mapView.getMapAsync { map ->
             mapLibreMap = map
-            map.setStyle(OpenFreeMapStyleUrl) { style ->
+            map.uiSettings.isCompassEnabled = visualStyle != MapVisualStyle.LiveTrip
+            val mapStyleUrl = if (visualStyle == MapVisualStyle.LiveTrip) LiveTripLikeMapStyleUrl else OpenFreeMapStyleUrl
+            map.setStyle(mapStyleUrl) { style ->
                 loadedStyle = style
 
                 val cameraTarget = if (navigationTrackingEnabled) navigationTrackingPoint else null
@@ -211,13 +218,13 @@ fun MapScreen(
                     .build()
 
                 updateTransitRouteLayers(style, transitRoutes, selectedTransitRouteId)
-                updateFutureLegLayers(style, futureRouteSegments)
-                updateRouteLayer(style, routePoints)
-                updateTodaLayer(style, todaPoints)
-                updateStartLayer(style, startPoint)
-                updateDestinationLayer(style, selectedDestination)
-                updateFinalDestinationLayer(style, finalDestination)
-                configureLocationComponent(context, map, style, hasLocationPermission)
+                updateFutureLegLayers(style, futureRouteSegments, visualStyle)
+                updateRouteLayer(style, routePoints, visualStyle)
+                updateTodaLayer(style, todaPoints, visualStyle)
+                updateStartLayer(style, startPoint, visualStyle)
+                updateDestinationLayer(style, selectedDestination, visualStyle)
+                updateFinalDestinationLayer(style, finalDestination, visualStyle)
+                configureLocationComponent(context, map, style, hasLocationPermission && showDeviceLocation)
             }
         }
     }
@@ -301,38 +308,38 @@ fun MapScreen(
         )
     }
 
-    LaunchedEffect(loadedStyle, routePoints) {
-        loadedStyle?.let { updateRouteLayer(it, routePoints) }
+    LaunchedEffect(loadedStyle, routePoints, visualStyle) {
+        loadedStyle?.let { updateRouteLayer(it, routePoints, visualStyle) }
     }
 
-    LaunchedEffect(loadedStyle, startPoint) {
-        loadedStyle?.let { updateStartLayer(it, startPoint) }
+    LaunchedEffect(loadedStyle, startPoint, visualStyle) {
+        loadedStyle?.let { updateStartLayer(it, startPoint, visualStyle) }
     }
 
-    LaunchedEffect(loadedStyle, selectedDestination) {
-        loadedStyle?.let { updateDestinationLayer(it, selectedDestination) }
+    LaunchedEffect(loadedStyle, selectedDestination, visualStyle) {
+        loadedStyle?.let { updateDestinationLayer(it, selectedDestination, visualStyle) }
     }
 
-    LaunchedEffect(loadedStyle, finalDestination) {
-        loadedStyle?.let { updateFinalDestinationLayer(it, finalDestination) }
+    LaunchedEffect(loadedStyle, finalDestination, visualStyle) {
+        loadedStyle?.let { updateFinalDestinationLayer(it, finalDestination, visualStyle) }
     }
 
-    LaunchedEffect(loadedStyle, futureRouteSegments) {
-        loadedStyle?.let { updateFutureLegLayers(it, futureRouteSegments) }
+    LaunchedEffect(loadedStyle, futureRouteSegments, visualStyle) {
+        loadedStyle?.let { updateFutureLegLayers(it, futureRouteSegments, visualStyle) }
     }
 
     LaunchedEffect(loadedStyle, transitRoutes, selectedTransitRouteId) {
         loadedStyle?.let { updateTransitRouteLayers(it, transitRoutes, selectedTransitRouteId) }
     }
 
-    LaunchedEffect(loadedStyle, todaPoints) {
-        loadedStyle?.let { updateTodaLayer(it, todaPoints) }
+    LaunchedEffect(loadedStyle, todaPoints, visualStyle) {
+        loadedStyle?.let { updateTodaLayer(it, todaPoints, visualStyle) }
     }
 
-    LaunchedEffect(loadedStyle, hasLocationPermission) {
+    LaunchedEffect(loadedStyle, hasLocationPermission, showDeviceLocation) {
         val style = loadedStyle ?: return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
-        configureLocationComponent(context, map, style, hasLocationPermission)
+        configureLocationComponent(context, map, style, hasLocationPermission && showDeviceLocation)
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -373,7 +380,7 @@ fun MapScreen(
             }
         }
 
-        if (!hasLocationPermission) {
+        if (showDeviceLocation && !hasLocationPermission) {
             LocationPermissionBanner(
                 canRequestAgain = activity?.shouldShowLocationPermissionRationale() != false || !hasRequestedLocationPermission,
                 onRequestPermission = requestLocationPermission,
@@ -417,7 +424,11 @@ private fun updateTransitRouteLayers(
     }
 }
 
-private fun updateFutureLegLayers(style: Style, segments: List<List<LatLng>>) {
+private fun updateFutureLegLayers(
+    style: Style,
+    segments: List<List<LatLng>>,
+    visualStyle: MapVisualStyle
+) {
     repeat(24) { index ->
         style.removeLayer("$FutureLegPrefix-layer-$index")
         style.removeSource("$FutureLegPrefix-source-$index")
@@ -433,7 +444,13 @@ private fun updateFutureLegLayers(style: Style, segments: List<List<LatLng>>) {
         style.addSource(GeoJsonSource(sourceId, geometry))
         style.addLayer(
             LineLayer(layerId, sourceId).withProperties(
-                PropertyFactory.lineColor(if (index == 0) "#FF9318" else "#64748B"),
+                PropertyFactory.lineColor(
+                    if (visualStyle == MapVisualStyle.LiveTrip) {
+                        if (index == 0) "#F59A3A" else "#829093"
+                    } else {
+                        if (index == 0) "#F4881F" else "#112E36"
+                    }
+                ),
                 PropertyFactory.lineWidth(if (index == 0) 4.5f else 3f),
                 PropertyFactory.lineOpacity(if (index == 0) 0.72f else 0.28f),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
@@ -443,7 +460,11 @@ private fun updateFutureLegLayers(style: Style, segments: List<List<LatLng>>) {
     }
 }
 
-private fun updateRouteLayer(style: Style, routePoints: List<LatLng>) {
+private fun updateRouteLayer(
+    style: Style,
+    routePoints: List<LatLng>,
+    visualStyle: MapVisualStyle
+) {
     if (routePoints.size < 2) {
         style.removeLayer(RouteLayerId)
         style.removeSource(RouteSourceId)
@@ -463,7 +484,7 @@ private fun updateRouteLayer(style: Style, routePoints: List<LatLng>) {
     style.addSource(GeoJsonSource(RouteSourceId, routeGeometry))
     style.addLayer(
         LineLayer(RouteLayerId, RouteSourceId).withProperties(
-            PropertyFactory.lineColor("#15919B"),
+            PropertyFactory.lineColor(if (visualStyle == MapVisualStyle.LiveTrip) "#153E4B" else "#0D8B97"),
             PropertyFactory.lineWidth(6f),
             PropertyFactory.lineOpacity(1f),
             PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
@@ -472,7 +493,11 @@ private fun updateRouteLayer(style: Style, routePoints: List<LatLng>) {
     )
 }
 
-private fun updateTodaLayer(style: Style, points: List<TodaPointOverlay>) {
+private fun updateTodaLayer(
+    style: Style,
+    points: List<TodaPointOverlay>,
+    visualStyle: MapVisualStyle
+) {
     if (points.isEmpty()) {
         style.removeLayer(TodaLayerId)
         style.removeSource(TodaSourceId)
@@ -492,16 +517,16 @@ private fun updateTodaLayer(style: Style, points: List<TodaPointOverlay>) {
     style.addSource(GeoJsonSource(TodaSourceId, collection))
     style.addLayer(
         CircleLayer(TodaLayerId, TodaSourceId).withProperties(
-            PropertyFactory.circleColor("#7C3AED"),
+            PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#3478F6" else "#076773"),
             PropertyFactory.circleRadius(6f),
             PropertyFactory.circleOpacity(0.78f),
-            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeColor(if (visualStyle == MapVisualStyle.LiveTrip) "#FFFFFF" else "#FFF9E9"),
             PropertyFactory.circleStrokeWidth(2f)
         )
     )
 }
 
-private fun updateStartLayer(style: Style, start: LatLng?) {
+private fun updateStartLayer(style: Style, start: LatLng?, visualStyle: MapVisualStyle) {
     if (start == null) {
         style.removeLayer(StartLayerId)
         style.removeSource(StartSourceId)
@@ -518,15 +543,15 @@ private fun updateStartLayer(style: Style, start: LatLng?) {
     style.addSource(GeoJsonSource(StartSourceId, point))
     style.addLayer(
         CircleLayer(StartLayerId, StartSourceId).withProperties(
-            PropertyFactory.circleColor("#15919B"),
+            PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#3478F6" else "#0D8B97"),
             PropertyFactory.circleRadius(8f),
-            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeColor(if (visualStyle == MapVisualStyle.LiveTrip) "#FFFFFF" else "#FFF9E9"),
             PropertyFactory.circleStrokeWidth(3f)
         )
     )
 }
 
-private fun updateDestinationLayer(style: Style, destination: LatLng?) {
+private fun updateDestinationLayer(style: Style, destination: LatLng?, visualStyle: MapVisualStyle) {
     if (destination == null) {
         style.removeLayer(DestinationLayerId)
         style.removeSource(DestinationSourceId)
@@ -544,15 +569,15 @@ private fun updateDestinationLayer(style: Style, destination: LatLng?) {
     style.addSource(GeoJsonSource(DestinationSourceId, point))
     style.addLayer(
         CircleLayer(DestinationLayerId, DestinationSourceId).withProperties(
-            PropertyFactory.circleColor("#FF9318"),
+            PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#EE5B57" else "#F4881F"),
             PropertyFactory.circleRadius(9f),
-            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeColor(if (visualStyle == MapVisualStyle.LiveTrip) "#FFFFFF" else "#FFF9E9"),
             PropertyFactory.circleStrokeWidth(3f)
         )
     )
 }
 
-private fun updateFinalDestinationLayer(style: Style, destination: LatLng?) {
+private fun updateFinalDestinationLayer(style: Style, destination: LatLng?, visualStyle: MapVisualStyle) {
     if (destination == null) {
         style.removeLayer(FinalDestinationLayerId)
         style.removeSource(FinalDestinationSourceId)
@@ -569,9 +594,9 @@ private fun updateFinalDestinationLayer(style: Style, destination: LatLng?) {
     style.addSource(GeoJsonSource(FinalDestinationSourceId, point))
     style.addLayer(
         CircleLayer(FinalDestinationLayerId, FinalDestinationSourceId).withProperties(
-            PropertyFactory.circleColor("#E11D48"),
+            PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#F59A3A" else "#EE5B57"),
             PropertyFactory.circleRadius(11f),
-            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeColor(if (visualStyle == MapVisualStyle.LiveTrip) "#FFFFFF" else "#FFF9E9"),
             PropertyFactory.circleStrokeWidth(4f)
         )
     )

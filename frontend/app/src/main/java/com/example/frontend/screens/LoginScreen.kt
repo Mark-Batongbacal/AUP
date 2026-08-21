@@ -119,7 +119,8 @@ fun LoginScreen(
                 text = "TUKI.",
                 color = TukiTeal,
                 fontSize = 30.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
             )
         }
 
@@ -129,7 +130,8 @@ fun LoginScreen(
             text = "Welcome back",
             color = Color.Black,
             fontSize = 24.sp,
-            fontWeight = FontWeight.ExtraBold
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
         )
 
         Spacer(modifier = Modifier.height(4.dp))
