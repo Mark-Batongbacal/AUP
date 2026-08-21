@@ -79,7 +79,8 @@ fun LanguageScreen(
                 text = "Language",
                 color = TukiDark,
                 fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
             )
         }
 

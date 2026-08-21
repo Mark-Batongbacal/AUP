@@ -43,11 +43,12 @@ import com.example.frontend.R
 import com.example.frontend.data.auth.AuthRepository
 import kotlinx.coroutines.launch
 
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiError = Color(0xFFB00020)
+private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
+private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
+private val TukiCream = com.example.frontend.ui.theme.TukiCream
+private val TukiDark = com.example.frontend.ui.theme.TukiInk
+private val TukiGray = com.example.frontend.ui.theme.TukiMuted
+private val TukiError = com.example.frontend.ui.theme.TukiError
 
 @Composable
 fun SignupScreen(
@@ -98,16 +99,18 @@ fun SignupScreen(
                 text = "TUKI.",
                 color = TukiTeal,
                 fontSize = 32.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = "Create an account",
-                color = Color.Black,
+                color = TukiDark,
                 fontSize = 26.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -259,7 +262,7 @@ private fun SignUpTextField(
     Column {
         Text(
             text = label,
-            color = Color.Black,
+            color = TukiDark,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium
         )
@@ -288,7 +291,7 @@ private fun PasswordField(
     Column {
         Text(
             text = label,
-            color = Color.Black,
+            color = TukiDark,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium
         )

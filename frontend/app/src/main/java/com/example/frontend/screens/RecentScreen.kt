@@ -79,7 +79,13 @@ fun RecentScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Text("Recent Trips", color = RecentDark, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    "Recent Trips",
+                    color = RecentDark,
+                    fontSize = 27.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                )
                 Spacer(Modifier.height(12.dp))
                 RecentTabs(selected = filter, onSelected = { filter = it })
                 Spacer(Modifier.height(6.dp))
@@ -202,6 +208,7 @@ private fun RecentTripCard(
                         color = RecentMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
+                        fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

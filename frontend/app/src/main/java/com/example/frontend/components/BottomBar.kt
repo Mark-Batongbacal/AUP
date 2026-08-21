@@ -22,9 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 
-private val TukiTeal = Color(0xFF2C8E95)
-private val TukiGray = Color(0xFF8B989C)
-private val TukiNavSurface = Color(0xFFFFFBF0)
+private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
+private val TukiGray = com.example.frontend.ui.theme.TukiMuted
+private val TukiNavSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
 
 enum class TukiTab { HOME, RECENT, FAVORITES, PROFILE }
 

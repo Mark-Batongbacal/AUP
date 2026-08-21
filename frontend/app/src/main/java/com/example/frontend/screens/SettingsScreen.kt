@@ -52,7 +52,8 @@ fun SettingsScreen(
                 text = "Settings",
                 color = TukiDark,
                 fontSize = 22.sp,
-                fontWeight = FontWeight.ExtraBold
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
             )
         }
 

@@ -40,16 +40,16 @@ import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-private val TripScreen = Color(0xFFF8F5EC)
-private val TripCream = Color(0xFFFFF0C7)
-private val TripSurface = Color(0xFFFFFBF0)
-private val TripTile = Color(0xFFF5F1E7)
-private val TripDark = Color(0xFF153E4B)
-private val TripTeal = Color(0xFF2C8E95)
-private val TripOrange = Color(0xFFF59A3A)
-private val TripGray = Color(0xFF7A898E)
-private val TripSoftTeal = Color(0xFFE5F1ED)
-private val TripDanger = Color(0xFFEE5B57)
+private val TripScreen = com.example.frontend.ui.theme.TukiCream
+private val TripCream = com.example.frontend.ui.theme.TukiGoldSurface
+private val TripSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val TripTile = com.example.frontend.ui.theme.TukiSky.copy(alpha = 0.30f)
+private val TripDark = com.example.frontend.ui.theme.TukiInk
+private val TripTeal = com.example.frontend.ui.theme.TukiTeal
+private val TripOrange = com.example.frontend.ui.theme.TukiOrange
+private val TripGray = com.example.frontend.ui.theme.TukiMuted
+private val TripSoftTeal = com.example.frontend.ui.theme.TukiTealSurface
+private val TripDanger = com.example.frontend.ui.theme.TukiDanger
 
 @Composable
 fun TripTrackingScreen(
@@ -302,7 +302,7 @@ fun TripTrackingScreen(
 
     if (showParaPo) {
         Box(
-            Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)).clickable { showParaPo = false },
+            Modifier.fillMaxSize().background(TripDark.copy(alpha = 0.4f)).clickable { showParaPo = false },
             contentAlignment = Alignment.Center
         ) { ParaPoOverlay(onDismiss = { showParaPo = false }) }
     }
@@ -422,6 +422,7 @@ private fun LiveTripHeader(
             color = TripDark,
             fontSize = 20.sp,
             fontWeight = FontWeight.ExtraBold,
+            fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily,
             textAlign = TextAlign.Center
         )
         if (showOptions) {
@@ -460,7 +461,13 @@ private fun CurrentLegCard(icon: String, title: String, eta: String, fare: Strin
             Column(Modifier.weight(1f)) {
                 Text(title, color = TripDark, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(3.dp))
-                Text("$eta remaining  •  $fare", color = TripGray, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "$eta remaining  •  $fare",
+                    color = TripGray,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
+                )
                 status?.let {
                     Spacer(Modifier.height(2.dp))
                     Text(it, color = TripOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
@@ -482,7 +489,7 @@ private fun RecenterButton(
             .clickable(enabled = enabled, onClick = onClick),
         shape = CircleShape,
         color = if (enabled) TripSurface else TripTile,
-        border = BorderStroke(1.dp, Color(0xFFE2DDD2)),
+        border = BorderStroke(1.dp, com.example.frontend.ui.theme.TukiOutline),
         shadowElevation = 10.dp,
         tonalElevation = 2.dp
     ) {
@@ -700,7 +707,15 @@ private fun TripMetric(label: String, value: String, modifier: Modifier = Modifi
     ) {
         Text(label, color = TripGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(2.dp))
-        Text(value, color = TripDark, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(
+            value,
+            color = TripDark,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -708,7 +723,12 @@ private fun TripMetric(label: String, value: String, modifier: Modifier = Modifi
 private fun SummaryRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, color = TripGray, fontWeight = FontWeight.SemiBold)
-        Text(value, color = TripDark, fontWeight = FontWeight.ExtraBold)
+        Text(
+            value,
+            color = TripDark,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
+        )
     }
 }
 

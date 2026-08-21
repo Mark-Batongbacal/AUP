@@ -75,6 +75,7 @@ fun FavoritesScreen(
                         color = FavoriteDark,
                         fontSize = 25.sp,
                         fontWeight = FontWeight.ExtraBold,
+                        fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily,
                         textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.size(38.dp))
@@ -120,7 +121,7 @@ fun FavoritesScreen(
                 Spacer(Modifier.height(10.dp))
                 Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = FavoriteTip) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
-                        Surface(Modifier.size(27.dp), shape = CircleShape, color = Color(0xFFD9913C)) {
+                        Surface(Modifier.size(27.dp), shape = CircleShape, color = com.example.frontend.ui.theme.TukiGold) {
                             Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, fontWeight = FontWeight.Bold) }
                         }
                         Spacer(Modifier.width(11.dp))
@@ -185,7 +186,15 @@ private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: 
 @Composable
 private fun FavoritePill(text: String, color: Color, textColor: Color) {
     Surface(shape = RoundedCornerShape(11.dp), color = color) {
-        Text(text, Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = textColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        Text(
+            text,
+            Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            color = textColor,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily,
+            maxLines = 1
+        )
     }
 }
 

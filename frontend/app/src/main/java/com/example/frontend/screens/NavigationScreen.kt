@@ -23,14 +23,14 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.model.CommuteStep
 import kotlin.math.roundToInt
 
-private val NavBg = Color(0xFFF8F5EC)
-private val NavSurface = Color(0xFFFFFBF0)
-private val NavDark = Color(0xFF153E4B)
-private val NavTeal = Color(0xFF2C8E95)
-private val NavMuted = Color(0xFF7A898E)
-private val NavOrange = Color(0xFFF4BF52)
-private val NavIconBlue = Color(0xFFE7F2F3)
-private val NavTip = Color(0xFFE8F0EB)
+private val NavBg = com.example.frontend.ui.theme.TukiCream
+private val NavSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val NavDark = com.example.frontend.ui.theme.TukiInk
+private val NavTeal = com.example.frontend.ui.theme.TukiTeal
+private val NavMuted = com.example.frontend.ui.theme.TukiMuted
+private val NavOrange = com.example.frontend.ui.theme.TukiGold
+private val NavIconBlue = com.example.frontend.ui.theme.TukiSky
+private val NavTip = com.example.frontend.ui.theme.TukiForestSurface
 
 @Composable
 fun NavigationScreen(
@@ -75,7 +75,8 @@ fun NavigationScreen(
                         Modifier.weight(1f),
                         color = NavDark,
                         fontSize = 23.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
                     )
                 }
             }
@@ -115,7 +116,7 @@ fun NavigationScreen(
             }
 
             navigationStartError?.let { message ->
-                item { Text(message, color = Color.Red, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                item { Text(message, color = com.example.frontend.ui.theme.TukiDanger, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
             }
 
             item {
@@ -181,7 +182,13 @@ private fun RouteMetric(icon: String, value: String, modifier: Modifier = Modifi
     Row(modifier, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         Text(icon, color = NavDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(6.dp))
-        Text(value, color = NavDark, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+        Text(
+            value,
+            color = NavDark,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
+        )
     }
 }
 
@@ -235,7 +242,7 @@ private fun RouteTimelineCard(step: CommuteStep) {
                         Text("• ${step.to}", color = NavMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Text("⌖", color = Color(0xFF4D8DFF), fontSize = 18.sp)
+                Text("⌖", color = com.example.frontend.ui.theme.TukiTeal, fontSize = 18.sp)
             }
         }
     }

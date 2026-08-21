@@ -254,7 +254,8 @@ fun ProfileScreen(
                         text = displayName,
                         color = TukiDark,
                         fontSize = 21.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = displayEmail, color = TukiGray, fontSize = 15.sp)

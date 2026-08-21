@@ -23,14 +23,14 @@ import com.example.frontend.model.RecentCommute
 import org.maplibre.android.geometry.LatLng
 import kotlin.math.roundToInt
 
-private val DetailBg = Color(0xFFF8F5EC)
-private val DetailSurface = Color(0xFFFFFBF0)
-private val DetailDark = Color(0xFF153E4B)
-private val DetailTeal = Color(0xFF2C8E95)
-private val DetailMuted = Color(0xFF7A898E)
-private val DetailOrange = Color(0xFFF4BF52)
-private val DetailIconBlue = Color(0xFFE7F2F3)
-private val DetailTip = Color(0xFFE8F0EB)
+private val DetailBg = com.example.frontend.ui.theme.TukiCream
+private val DetailSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val DetailDark = com.example.frontend.ui.theme.TukiInk
+private val DetailTeal = com.example.frontend.ui.theme.TukiTeal
+private val DetailMuted = com.example.frontend.ui.theme.TukiMuted
+private val DetailOrange = com.example.frontend.ui.theme.TukiGold
+private val DetailIconBlue = com.example.frontend.ui.theme.TukiSky
+private val DetailTip = com.example.frontend.ui.theme.TukiForestSurface
 
 @Composable
 fun CommuteDetailScreen(
@@ -50,7 +50,14 @@ fun CommuteDetailScreen(
                 Box(Modifier.size(40.dp).clickable(onClick = onBack), contentAlignment = Alignment.Center) {
                     Text("←", color = DetailDark, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 }
-                Text("Route Details", Modifier.weight(1f), color = DetailDark, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    "Route Details",
+                    Modifier.weight(1f),
+                    color = DetailDark,
+                    fontSize = 23.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                )
             }
         }
 
@@ -128,7 +135,13 @@ private fun SummaryMetric(icon: String, value: String, modifier: Modifier = Modi
     Row(modifier, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         Text(icon, color = DetailDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.width(6.dp))
-        Text(value, color = DetailDark, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+        Text(
+            value,
+            color = DetailDark,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
+        )
     }
 }
 
@@ -166,7 +179,7 @@ private fun StepTimelineCard(step: CommuteStep) {
                         Text("• ${step.to}", color = DetailMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Text("⌖", color = Color(0xFF4D8DFF), fontSize = 18.sp)
+                Text("⌖", color = com.example.frontend.ui.theme.TukiTeal, fontSize = 18.sp)
             }
         }
     }

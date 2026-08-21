@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.frontend.MapScreen
+import com.example.frontend.MapVisualStyle
 import com.example.frontend.R
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
@@ -66,13 +68,15 @@ import org.maplibre.android.geometry.LatLng
 private val HomeBg = Color(0xFFF8F5EC)
 private val HomeSurface = Color(0xFFFFFBF0)
 private val HomeSoft = Color(0xFFEAF1EE)
+private val HomeCurrentSky = Color(0xFFDAF1F7)
 private val HomeWarm = Color(0xFFFFF0D5)
 private val HomeDark = Color(0xFF153E4B)
 private val HomeTeal = Color(0xFF2C8E95)
 private val HomeOrange = Color(0xFFFF8A1D)
 private val HomeMuted = Color(0xFF707A80)
 private val HomeDivider = Color(0xFFD4D6D1)
-private val MapPanel = Color(0xFF20242D)
+private val HomeAiSurface = HomeDark
+private val MapPanel = Color(0xFF173B43)
 private val MapYellow = Color(0xFFFFCA19)
 
 private enum class HomeMapPickMode { Origin, Destination }
@@ -298,7 +302,8 @@ fun HomeScreen(
                     color = HomeDark,
                     fontSize = 34.sp,
                     lineHeight = 37.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
                 )
                 Spacer(Modifier.height(5.dp))
                 Text(
@@ -413,7 +418,8 @@ private fun HomeHeader() {
             text = "TUKI.",
             color = HomeTeal,
             fontSize = 32.sp,
-            fontWeight = FontWeight.ExtraBold
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
         )
     }
 }
@@ -427,14 +433,14 @@ private fun CurrentLocationCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        color = HomeSoft,
+        color = HomeCurrentSky,
         shadowElevation = 2.dp
     ) {
         Row(
             Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = Color(0xFFDDEBE7)) {
+            Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = Color.White.copy(alpha = 0.42f)) {
                 Box(contentAlignment = Alignment.Center) {
                     Text("⊙", color = HomeTeal, fontSize = 35.sp, fontWeight = FontWeight.Bold)
                 }
@@ -461,10 +467,10 @@ private fun CurrentLocationCard(
                 }
                 Text("Mabalacat City", color = HomeMuted, fontSize = 14.sp)
             }
-            Box(Modifier.width(1.dp).height(55.dp).background(HomeDivider))
+            Box(Modifier.width(1.dp).height(55.dp).background(HomeTeal.copy(alpha = 0.18f)))
             Column(
                 Modifier
-                    .width(90.dp)
+                    .width(86.dp)
                     .clickable(onClick = onChangeClick)
                     .padding(start = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -487,16 +493,16 @@ private fun DestinationCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(22.dp),
-        color = HomeWarm,
+        color = HomeSurface,
         shadowElevation = 3.dp
     ) {
         Row(
             Modifier
                 .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 13.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = Color(0xFFFFE8CC)) {
+            Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = HomeWarm) {
                 Box(contentAlignment = Alignment.Center) {
                     Text("●", color = HomeOrange, fontSize = 31.sp, fontWeight = FontWeight.Bold)
                     Text("⌄", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
@@ -512,22 +518,25 @@ private fun DestinationCard(
                     fontSize = 20.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
                 )
-                Spacer(Modifier.height(9.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(
                     Modifier
-                        .fillMaxWidth()
-                        .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(17.dp))
-                        .padding(horizontal = 15.dp, vertical = 11.dp),
+                        .fillMaxWidth(0.82f)
+                        .height(40.dp)
+                        .widthIn(min = 190.dp, max = 250.dp)
+                        .background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 13.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("⌕", color = HomeDark, fontSize = 22.sp)
-                    Spacer(Modifier.width(10.dp))
+                    Text("⌕", color = HomeDark, fontSize = 20.sp)
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         if (selectedDestination == null) "Search or enter a place" else "Tap to change destination",
                         color = HomeMuted,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -546,8 +555,8 @@ private fun DestinationCard(
                     }
                 }
             }
-            Spacer(Modifier.width(6.dp))
-            Text("›", color = HomeDark, fontSize = 38.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(4.dp))
+            Text("›", color = HomeDark, fontSize = 32.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -616,7 +625,7 @@ private fun RecentPlaceCard(commute: RecentCommute, onClick: () -> Unit) {
             Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Surface(Modifier.size(40.dp), shape = CircleShape, color = HomeSoft) {
+            Surface(Modifier.size(40.dp), shape = CircleShape, color = HomeWarm) {
                 Box(contentAlignment = Alignment.Center) { Text(recentIcon(commute), color = HomeTeal, fontSize = 22.sp) }
             }
             Spacer(Modifier.height(7.dp))
@@ -629,7 +638,12 @@ private fun RecentPlaceCard(commute: RecentCommute, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 fontWeight = FontWeight.ExtraBold
             )
-            Text("${commute.minutes.coerceAtLeast(0)} min", color = HomeMuted, fontSize = 11.sp)
+            Text(
+                "${commute.minutes.coerceAtLeast(0)} min",
+                color = HomeMuted,
+                fontSize = 11.sp,
+                fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
+            )
         }
     }
 }
@@ -649,7 +663,7 @@ private fun AddShortcutCard(onClick: () -> Unit) {
             Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Surface(Modifier.size(40.dp), shape = CircleShape, color = HomeSoft) {
+            Surface(Modifier.size(40.dp), shape = CircleShape, color = HomeWarm) {
                 Box(contentAlignment = Alignment.Center) { Text("+", color = HomeTeal, fontSize = 29.sp, fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.height(10.dp))
@@ -670,7 +684,7 @@ private fun EmptyRecentPlacesCard(onClick: () -> Unit) {
         shadowElevation = 1.dp
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(Modifier.size(42.dp), shape = CircleShape, color = HomeSoft) {
+            Surface(Modifier.size(42.dp), shape = CircleShape, color = HomeWarm) {
                 Box(contentAlignment = Alignment.Center) { Text("+", color = HomeTeal, fontSize = 28.sp, fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.width(12.dp))
@@ -692,7 +706,7 @@ private fun AskTukiAiCard(onClick: () -> Unit) {
             .height(88.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(22.dp),
-        color = HomeDark,
+        color = HomeAiSurface,
         shadowElevation = 4.dp
     ) {
         Row(Modifier.padding(horizontal = 15.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -737,13 +751,18 @@ private fun HomeMapPickerOverlay(
 ) {
     val selectedPoint = selection?.let { LatLng(it.latitude, it.longitude) }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    val markerColor = HomeTeal
+    val markerSurface = HomeSoft
+
+    Box(Modifier.fillMaxSize().background(MapPanel)) {
         MapScreen(
             routePoints = emptyList(),
             modifier = Modifier.fillMaxSize(),
             startPoint = if (mode == HomeMapPickMode.Origin) selectedPoint ?: originPoint else originPoint,
-            selectedDestination = selectedPoint,
-            onMapClick = onMapClick
+            selectedDestination = null,
+            onMapClick = onMapClick,
+            visualStyle = MapVisualStyle.LiveTrip,
+            showDeviceLocation = false
         )
 
         Column(
@@ -768,7 +787,7 @@ private fun HomeMapPickerOverlay(
                         .background(MapYellow, RoundedCornerShape(10.dp))
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
-                    Text("Mabalacat", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Mabalacat", color = HomeDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Spacer(Modifier.width(8.dp))
                 TextField(
@@ -805,7 +824,7 @@ private fun HomeMapPickerOverlay(
                             Text("Searching nearby places...", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
                         }
                     }
-                    searchError?.let { Text(it, Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = Color(0xFFFFB4AB), fontSize = 12.sp) }
+                    searchError?.let { Text(it, Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = com.example.frontend.ui.theme.TukiDanger, fontSize = 12.sp) }
                     searchResults.forEach { result ->
                         Row(
                             Modifier
@@ -830,15 +849,6 @@ private fun HomeMapPickerOverlay(
             }
         }
 
-        Box(
-            Modifier
-                .align(Alignment.Center)
-                .padding(bottom = 60.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("📍", fontSize = 44.sp)
-        }
-
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -855,8 +865,8 @@ private fun HomeMapPickerOverlay(
             )
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(34.dp).background(Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(25.dp).background(Color.Red, CircleShape))
+                Box(Modifier.size(34.dp).background(markerSurface, CircleShape), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(25.dp).background(markerColor, CircleShape))
                     Box(Modifier.size(15.dp).background(MapPanel, CircleShape))
                 }
                 Spacer(Modifier.width(16.dp))
@@ -886,7 +896,7 @@ private fun HomeMapPickerOverlay(
                     .padding(vertical = 17.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Done", color = Color.Black, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Done", color = HomeDark, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
     }

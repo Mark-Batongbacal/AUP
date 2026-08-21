@@ -52,14 +52,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 
-private val TukiTeal = Color(0xFF2C8E95)
-private val TukiOrange = Color(0xFFFF8A1D)
-private val TukiCream = Color(0xFFF8F5EC)
-private val TukiCream2 = Color(0xFFFFF0D5)
-private val TukiSurface = Color(0xFFFFFBF0)
-private val TukiSoft = Color(0xFFEAF1EE)
-private val TukiDark = Color(0xFF153E4B)
-private val TukiGray = Color(0xFF707A80)
+private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
+private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
+private val TukiCream = com.example.frontend.ui.theme.TukiCream
+private val TukiCream2 = com.example.frontend.ui.theme.TukiOrangeSurface
+private val TukiSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val TukiSoft = com.example.frontend.ui.theme.TukiTealSurface
+private val TukiDark = com.example.frontend.ui.theme.TukiInk
+private val TukiGray = com.example.frontend.ui.theme.TukiMuted
 
 private enum class MapPickMode {
     Origin,
@@ -234,7 +234,7 @@ fun DestinationSearchScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.35f)),
+                .background(TukiDark.copy(alpha = 0.35f)),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -374,7 +374,13 @@ fun DestinationSearchScreen(
                     Text("‹", color = TukiDark, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 Spacer(Modifier.width(12.dp))
-                Text("Where are you going?", color = TukiDark, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    "Where are you going?",
+                    color = TukiDark,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                )
             }
 
             Spacer(Modifier.height(8.dp))
@@ -629,7 +635,7 @@ private fun InlineSearchStatus(text: String) {
 private fun InlineError(message: String) {
     Text(
         text = message,
-        color = Color(0xFFD94C45),
+        color = com.example.frontend.ui.theme.TukiDanger,
         fontSize = 11.sp,
         modifier = Modifier.padding(top = 8.dp)
     )

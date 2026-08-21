@@ -118,7 +118,13 @@ fun EditProfileScreen(
                 Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(modifier = Modifier.width(14.dp))
-            Text(text = "Edit profile", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                text = "Edit profile",
+                color = TukiDark,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold,
+                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+            )
         }
 
         Spacer(modifier = Modifier.height(28.dp))
