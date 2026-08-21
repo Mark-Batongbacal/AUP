@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 private struct ParityAIMessage: Identifiable {
