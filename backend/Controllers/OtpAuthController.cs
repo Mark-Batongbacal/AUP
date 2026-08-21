@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using backend.Authentication;
 using backend.Models.Database;
 using backend.Services;
 using backend.Services.Authentication.ApiKey;
@@ -18,7 +19,6 @@ namespace backend.Controllers;
 public sealed class OtpAuthController(
     TukiDbContext context,
     IEmailSender emailSender,
-    IPasswordResetService passwordResetService,
     ILocalAuthenticationService localAuthenticationService,
     IUserProfileService userProfileService,
     IApiKeyService apiKeyService,
@@ -160,28 +160,6 @@ public sealed class OtpAuthController(
             : BadRequest(new { message = "The reset code is invalid or has expired." });
     }
 
-    [HttpPost("change-password/request-otp")]
-    [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
-    public async Task<IActionResult> RequestChangePasswordOtp(
-        ChangePasswordOtpRequest request,
-        CancellationToken cancellationToken)
-    {
-        var userId = UserId();
-        if (userId == Guid.Empty)
-        {
-            return Unauthorized();
-        }
-
-        var sent = await passwordResetService.RequestPasswordChangeAsync(
-            userId,
-            request.CurrentPassword,
-            cancellationToken);
-
-        return sent
-            ? Ok(new { message = "A confirmation code was sent to your account email." })
-            : BadRequest(new { message = "The current password is incorrect." });
-    }
-
     [HttpPost("change-password/verify-otp")]
     [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
     public async Task<IActionResult> VerifyChangePasswordOtp(
@@ -217,35 +195,6 @@ public sealed class OtpAuthController(
         return valid
             ? Ok(new { message = "Code verified." })
             : BadRequest(new { message = "The confirmation code is invalid or has expired." });
-    }
-
-    [HttpPost("change-password")]
-    [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
-    public async Task<IActionResult> ChangePassword(
-        ChangePasswordRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (request.NewPassword.Length < 8)
-        {
-            return BadRequest(new { message = "The new password must be at least 8 characters." });
-        }
-
-        var userId = UserId();
-        if (userId == Guid.Empty)
-        {
-            return Unauthorized();
-        }
-
-        var changed = await passwordResetService.ChangePasswordAsync(
-            userId,
-            request.CurrentPassword,
-            request.Code,
-            request.NewPassword,
-            cancellationToken);
-
-        return changed
-            ? Ok(new { message = "Password changed." })
-            : BadRequest(new { message = "The current password or confirmation code is invalid or has expired." });
     }
 
     private Guid UserId() =>
@@ -287,17 +236,9 @@ public sealed record PasswordOtpVerifyRequest(
     [Required, EmailAddress, StringLength(255)] string Email,
     [Required, RegularExpression("^[0-9]{8}$")] string Code);
 
-public sealed record ChangePasswordOtpRequest(
-    [Required, StringLength(256, MinimumLength = 8)] string CurrentPassword);
-
 public sealed record ChangePasswordVerifyRequest(
     [Required, StringLength(256, MinimumLength = 8)] string CurrentPassword,
     [Required, RegularExpression("^[0-9]{8}$")] string Code);
-
-public sealed record ChangePasswordRequest(
-    [Required, StringLength(256, MinimumLength = 8)] string CurrentPassword,
-    [Required, RegularExpression("^[0-9]{8}$")] string Code,
-    [Required, StringLength(256, MinimumLength = 8)] string NewPassword);
 
 internal static class RegistrationOtpStore
 {
