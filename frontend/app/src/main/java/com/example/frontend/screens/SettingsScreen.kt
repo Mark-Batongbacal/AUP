@@ -7,6 +7,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,9 +28,18 @@ private val TukiOrange = Color(0xFFFF9318)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit = {},
-    onPrivacySecurityClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {}
 ) {
+    var showChangePassword by remember { mutableStateOf(false) }
+
+    if (showChangePassword) {
+        ChangePasswordScreen(
+            onBack = { showChangePassword = false },
+            onPasswordChanged = { showChangePassword = false }
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -66,9 +79,9 @@ fun SettingsScreen(
             item {
                 SettingsSection(title = "ACCOUNT") {
                     SettingsRow(
-                        title = "Privacy & security",
-                        subtitle = "Password and account security",
-                        onClick = onPrivacySecurityClick
+                        title = "Change password",
+                        subtitle = "Confirm changes with an email OTP",
+                        onClick = { showChangePassword = true }
                     )
                 }
             }
