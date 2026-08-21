@@ -42,6 +42,8 @@ data class ChangePasswordRequest(
     val newPassword: String
 )
 
+data class MessageResponseDto(val message: String?)
+
 data class LoginResponseDto(
     val apiKey: String,
     val expiresAt: String,
@@ -70,12 +72,18 @@ interface AuthApi {
     @POST("api/auth/facebook") suspend fun facebook(@Body request: FacebookLoginRequest): Response<LoginResponseDto>
     @POST("api/auth/facebook/oidc") suspend fun facebookOidc(@Body request: FacebookOidcLoginRequest): Response<LoginResponseDto>
     @GET("api/auth/me") suspend fun me(): Response<AuthIdentityDto>
-    @POST("api/auth/forgot-password") suspend fun forgotPassword(@Body request: ForgotPasswordRequest): Response<Unit>
-    @POST("api/auth/reset-password") suspend fun resetPassword(@Body request: ResetPasswordRequest): Response<Unit>
+    @POST("api/auth/forgot-password") suspend fun forgotPassword(
+        @Body request: ForgotPasswordRequest
+    ): Response<MessageResponseDto>
+    @POST("api/auth/reset-password") suspend fun resetPassword(
+        @Body request: ResetPasswordRequest
+    ): Response<MessageResponseDto>
     @POST("api/auth/change-password/request-otp") suspend fun requestChangePasswordOtp(
         @Body request: ChangePasswordOtpRequest
-    ): Response<Unit>
-    @POST("api/auth/change-password") suspend fun changePassword(@Body request: ChangePasswordRequest): Response<Unit>
+    ): Response<MessageResponseDto>
+    @POST("api/auth/change-password") suspend fun changePassword(
+        @Body request: ChangePasswordRequest
+    ): Response<MessageResponseDto>
 }
 
 interface AuthRepository {
@@ -121,15 +129,15 @@ class AuthRepositoryImpl(
         authenticatedApiCall(sessionStore, errors) { authApi.me() }
 
     override suspend fun requestPasswordReset(email: String): ApiResult<Unit> =
-        apiCall(errors, noContentValue = Unit) {
+        toUnit(apiCall(errors) {
             authApi.forgotPassword(ForgotPasswordRequest(email.trim()))
-        }
+        })
 
     override suspend fun resetPassword(
         email: String,
         code: String,
         newPassword: String
-    ): ApiResult<Unit> = apiCall(errors, noContentValue = Unit) {
+    ): ApiResult<Unit> = toUnit(apiCall(errors) {
         authApi.resetPassword(
             ResetPasswordRequest(
                 email = email.trim(),
@@ -137,22 +145,27 @@ class AuthRepositoryImpl(
                 newPassword = newPassword
             )
         )
-    }
+    })
 
     override suspend fun requestChangePasswordOtp(currentPassword: String): ApiResult<Unit> =
-        authenticatedApiCall(sessionStore, errors, noContentValue = Unit) {
+        toUnit(authenticatedApiCall(sessionStore, errors) {
             authApi.requestChangePasswordOtp(ChangePasswordOtpRequest(currentPassword))
-        }
+        })
 
     override suspend fun changePassword(
         currentPassword: String,
         code: String,
         newPassword: String
-    ): ApiResult<Unit> = authenticatedApiCall(sessionStore, errors, noContentValue = Unit) {
+    ): ApiResult<Unit> = toUnit(authenticatedApiCall(sessionStore, errors) {
         authApi.changePassword(ChangePasswordRequest(currentPassword, code.trim(), newPassword))
-    }
+    })
 
     override fun logoutLocalSession() = sessionStore.clear()
+
+    private fun toUnit(result: ApiResult<MessageResponseDto>): ApiResult<Unit> = when (result) {
+        is ApiResult.Success -> ApiResult.Success(Unit)
+        is ApiResult.Failure -> result
+    }
 
     private suspend fun authenticate(call: suspend () -> Response<LoginResponseDto>): ApiResult<AuthenticatedUser> =
         when (val response = apiCall(errors, request = call)) {
