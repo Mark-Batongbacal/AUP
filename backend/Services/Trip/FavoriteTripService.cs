@@ -83,13 +83,19 @@ public sealed class FavoriteTripService(
             favorite.UserId,
             favorite.RecommendationId,
             cancellationToken);
+        var recommendation = favorite.Recommendation;
 
         return new FavoriteTripDto(
             favorite.FavoriteTripId,
             favorite.UserId,
             favorite.RecommendationId,
-            favorite.Recommendation?.TripSearch?.OriginName,
-            favorite.Recommendation?.TripSearch?.DestinationName,
+            recommendation?.TripSearch?.OriginName,
+            recommendation?.TripSearch?.DestinationName,
+            recommendation?.RecommendationType ?? string.Empty,
+            recommendation?.TotalMinutes ?? 0m,
+            recommendation?.TotalFare ?? 0m,
+            recommendation?.WalkingDistanceMeters ?? 0m,
+            recommendation?.TransferCount ?? 0,
             timesUsed,
             favorite.Note,
             favorite.CreatedAt);
