@@ -12,16 +12,20 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RecentCommute
+import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 import kotlin.math.roundToInt
 
@@ -47,6 +51,63 @@ fun CommuteDetailScreen(
     onToggleFavorite: () -> Unit = {},
     onRepeatTrip: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val favoritesRepository = remember(context) { TukiDataProvider(context.applicationContext).favoritesRepository }
+    var liveFavorite by remember(commute.id) { mutableStateOf(isFavorite) }
+    var favoriteTripId by remember(commute.id) { mutableStateOf<String?>(null) }
+    var internalWorking by remember(commute.id) { mutableStateOf(false) }
+    var internalError by remember(commute.id) { mutableStateOf<String?>(null) }
+    val recommendationId = commute.recommendationId
+
+    LaunchedEffect(commute.id, recommendationId) {
+        if (recommendationId.isNullOrBlank()) return@LaunchedEffect
+        when (val result = favoritesRepository.getFavorites()) {
+            is ApiResult.Success -> {
+                val existing = result.data.firstOrNull { it.recommendationId == recommendationId }
+                liveFavorite = existing != null
+                favoriteTripId = existing?.favoriteTripId
+            }
+            is ApiResult.Failure -> internalError = result.message
+        }
+    }
+
+    fun toggleFavorite() {
+        if (recommendationId.isNullOrBlank() || internalWorking || favoriteWorking) return
+        scope.launch {
+            internalWorking = true
+            internalError = null
+            if (liveFavorite) {
+                val id = favoriteTripId
+                if (id == null) {
+                    liveFavorite = false
+                } else {
+                    when (val result = favoritesRepository.removeFavorite(id)) {
+                        is ApiResult.Success -> {
+                            liveFavorite = false
+                            favoriteTripId = null
+                            onToggleFavorite()
+                        }
+                        is ApiResult.Failure -> internalError = result.message
+                    }
+                }
+            } else {
+                when (val result = favoritesRepository.addFavorite(recommendationId)) {
+                    is ApiResult.Success -> {
+                        liveFavorite = true
+                        favoriteTripId = result.data.favoriteTripId
+                        onToggleFavorite()
+                    }
+                    is ApiResult.Failure -> internalError = result.message
+                }
+            }
+            internalWorking = false
+        }
+    }
+
+    val working = favoriteWorking || internalWorking
+    val shownError = internalError ?: favoriteError
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(DetailBg),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 22.dp),
@@ -57,51 +118,28 @@ fun CommuteDetailScreen(
                 Box(Modifier.size(40.dp).clickable(onClick = onBack), contentAlignment = Alignment.Center) {
                     Text("←", color = DetailDark, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 }
-                Text(
-                    "Route Details",
-                    Modifier.weight(1f),
-                    color = DetailDark,
-                    fontSize = 23.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+                Text("Route Details", Modifier.weight(1f), color = DetailDark, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
                 Box(
-                    Modifier.size(44.dp).clickable(enabled = !favoriteWorking && commute.recommendationId != null, onClick = onToggleFavorite),
+                    Modifier.size(44.dp).clickable(enabled = !working && !recommendationId.isNullOrBlank(), onClick = ::toggleFavorite),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (favoriteWorking) {
-                        CircularProgressIndicator(Modifier.size(20.dp), color = DetailTeal, strokeWidth = 2.dp)
-                    } else {
-                        Text(if (isFavorite) "♥" else "♡", color = if (isFavorite) DetailDanger else DetailDanger, fontSize = 30.sp)
-                    }
+                    if (working) CircularProgressIndicator(Modifier.size(20.dp), color = DetailTeal, strokeWidth = 2.dp)
+                    else Text(if (liveFavorite) "♥" else "♡", color = DetailDanger, fontSize = 30.sp)
                 }
             }
         }
 
         item {
-            Text(
-                "${commute.origin} →\n${commute.destination}",
-                color = DetailDark,
-                fontSize = 17.sp,
-                lineHeight = 23.sp,
-                fontWeight = FontWeight.ExtraBold
-            )
-            if (!favoriteError.isNullOrBlank()) {
+            Text("${commute.origin} →\n${commute.destination}", color = DetailDark, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.ExtraBold)
+            if (!shownError.isNullOrBlank()) {
                 Spacer(Modifier.height(5.dp))
-                Text(favoriteError, color = DetailDanger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(shownError, color = DetailDanger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
 
         item {
-            Surface(
-                Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = DetailSurface,
-                shadowElevation = 1.dp
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = DetailSurface, shadowElevation = 1.dp) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     SummaryMetric("◷", "${commute.minutes} min", Modifier.weight(1f))
                     VerticalDivider()
                     SummaryMetric("₱", "₱${commute.totalFare.roundToInt()}", Modifier.weight(1f))
@@ -111,9 +149,7 @@ fun CommuteDetailScreen(
             }
         }
 
-        item {
-            Text("Step-by-step guide", color = DetailDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-        }
+        item { Text("Step-by-step guide", color = DetailDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold) }
 
         if (commute.steps.isEmpty()) {
             item {
@@ -134,13 +170,7 @@ fun CommuteDetailScreen(
                         Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                     }
                     Spacer(Modifier.width(10.dp))
-                    Text(
-                        "Tip: Prepare exact fare or have small bills for a smoother ride.",
-                        color = DetailDark,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Text("Tip: Prepare exact fare or have small bills for a smoother ride.", color = DetailDark, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -153,9 +183,7 @@ fun CommuteDetailScreen(
                 modifier = Modifier.fillMaxWidth().height(54.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
                 shape = RoundedCornerShape(18.dp)
-            ) {
-                Text("Start Trip  →", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-            }
+            ) { Text("Start Trip  →", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold) }
         }
     }
 }
@@ -176,19 +204,14 @@ private fun VerticalDivider() {
 
 @Composable
 private fun StepTimelineCard(step: CommuteStep, isFirst: Boolean, isLast: Boolean) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Stretch) {
-        Box(Modifier.width(18.dp).fillMaxHeight()) {
-            if (!isFirst) Box(Modifier.align(Alignment.TopCenter).width(2.dp).fillMaxHeight(0.5f).background(DetailOrange))
-            if (!isLast) Box(Modifier.align(Alignment.BottomCenter).width(2.dp).fillMaxHeight(0.5f).background(DetailOrange))
-            Box(Modifier.align(Alignment.Center).size(10.dp).background(DetailOrange, CircleShape))
+    Row(Modifier.fillMaxWidth()) {
+        Column(Modifier.width(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (!isFirst) Box(Modifier.width(2.dp).height(18.dp).background(DetailOrange)) else Spacer(Modifier.height(18.dp))
+            Box(Modifier.size(10.dp).background(DetailOrange, CircleShape))
+            if (!isLast) Box(Modifier.width(2.dp).height(86.dp).background(DetailOrange))
         }
         Spacer(Modifier.width(3.dp))
-        Surface(
-            Modifier.weight(1f),
-            shape = RoundedCornerShape(18.dp),
-            color = DetailSurface,
-            shadowElevation = 1.dp
-        ) {
+        Surface(Modifier.weight(1f), shape = RoundedCornerShape(18.dp), color = DetailSurface, shadowElevation = 1.dp) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
                 Surface(Modifier.size(48.dp), shape = RoundedCornerShape(14.dp), color = DetailIconBlue) {
                     Box(contentAlignment = Alignment.Center) { Text(stepIcon(step.mode), fontSize = 23.sp) }
