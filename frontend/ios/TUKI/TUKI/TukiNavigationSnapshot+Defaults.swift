@@ -36,8 +36,12 @@ extension TukiNavigationSnapshot {
             rerouteRequired: rerouteRequired,
             status: status,
             triggeredEvents: triggeredEvents,
+            currentLatitude: nil,
+            currentLongitude: nil,
             approxFareSpent: 0,
-            estimatedRemainingFare: 0
+            estimatedRemainingFare: 0,
+            followingInstruction: nil,
+            tripSummary: nil
         )
     }
 }
