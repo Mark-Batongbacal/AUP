@@ -61,7 +61,12 @@ struct TukiUnifiedDestinationSearchView: View {
                 TukiPrimaryButton(title: "Find Routes", isEnabled: selected != nil) {
                     guard let selected else { return }
                     Task {
-                        let origin = initialOrigin ?? await location.requestCurrentLocation()?.coordinate
+                        let origin: CLLocationCoordinate2D?
+                        if let initialOrigin {
+                            origin = initialOrigin
+                        } else {
+                            origin = await location.requestCurrentLocation()?.coordinate
+                        }
                         guard let origin else { return }
                         onFind(initialOriginName, origin, selected)
                     }
