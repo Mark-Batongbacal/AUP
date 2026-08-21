@@ -216,17 +216,18 @@ fun TripTrackingScreen(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .statusBarsPadding()
         ) {
             Surface(color = TripScreen.copy(alpha = 0.97f), shadowElevation = 1.dp) {
-                LiveTripHeader(
-                    showOptions = activeTrip && !guestTrip,
-                    activeTrip = activeTrip,
-                    working = working,
-                    onBack = ::requestBack,
-                    onOptions = { showOptions = true },
-                    onEnd = { showEndDialog = true }
-                )
+                Column(Modifier.fillMaxWidth().statusBarsPadding()) {
+                    LiveTripHeader(
+                        showOptions = activeTrip && !guestTrip,
+                        activeTrip = activeTrip,
+                        working = working,
+                        onBack = ::requestBack,
+                        onOptions = { showOptions = true },
+                        onEnd = { showEndDialog = true }
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             CurrentLegCard(

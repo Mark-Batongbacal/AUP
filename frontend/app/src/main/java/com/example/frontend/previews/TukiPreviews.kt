@@ -71,7 +71,10 @@ fun SignUpPreview() {
 @Composable
 fun HomePreview() {
     FrontendTheme {
-        HomeScreen(tripRepository = PreviewMocks.tripRepository)
+        HomeScreen(
+            tripRepository = PreviewMocks.tripRepository,
+            placesRepository = PreviewMocks.placesRepository
+        )
     }
 }
 

@@ -41,6 +41,7 @@ private val RecentGreenBg = Color(0xFFE8F2D9)
 private val RecentGreen = Color(0xFF5C9A4A)
 private val RecentRedBg = Color(0xFFFFE2DE)
 private val RecentRed = Color(0xFFDF5D58)
+private val RecentOrange = Color(0xFFF4BF52)
 private val RecentIconCream = Color(0xFFFFF0C7)
 private val RecentIconBlue = Color(0xFFE7F1F3)
 
@@ -227,7 +228,7 @@ private fun RecentTripCard(
                 if (favoriteWorking) {
                     CircularProgressIndicator(Modifier.size(18.dp), color = RecentTeal, strokeWidth = 2.dp)
                 } else {
-                    Text(if (isFavorite) "♥" else "♡", color = RecentRed, fontSize = 28.sp)
+                    Text(if (isFavorite) "★" else "☆", color = RecentOrange, fontSize = 28.sp)
                 }
             }
             Text(

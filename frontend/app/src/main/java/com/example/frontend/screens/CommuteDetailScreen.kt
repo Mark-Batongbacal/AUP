@@ -4,28 +4,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.frontend.core.network.ApiResult
-import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RecentCommute
-import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 import kotlin.math.roundToInt
 
@@ -37,77 +31,15 @@ private val DetailMuted = Color(0xFF7A898E)
 private val DetailOrange = Color(0xFFF4BF52)
 private val DetailIconBlue = Color(0xFFE7F2F3)
 private val DetailTip = Color(0xFFE8F0EB)
-private val DetailDanger = Color(0xFFEE5B57)
 
 @Composable
 fun CommuteDetailScreen(
     commute: RecentCommute,
     legGeometries: List<List<LatLng>> = emptyList(),
     isGeometryLoading: Boolean = false,
-    isFavorite: Boolean = false,
-    favoriteWorking: Boolean = false,
-    favoriteError: String? = null,
     onBack: () -> Unit = {},
-    onToggleFavorite: () -> Unit = {},
     onRepeatTrip: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val favoritesRepository = remember(context) { TukiDataProvider(context.applicationContext).favoritesRepository }
-    var liveFavorite by remember(commute.id) { mutableStateOf(isFavorite) }
-    var favoriteTripId by remember(commute.id) { mutableStateOf<String?>(null) }
-    var internalWorking by remember(commute.id) { mutableStateOf(false) }
-    var internalError by remember(commute.id) { mutableStateOf<String?>(null) }
-    val recommendationId = commute.recommendationId
-
-    LaunchedEffect(commute.id, recommendationId) {
-        if (recommendationId.isNullOrBlank()) return@LaunchedEffect
-        when (val result = favoritesRepository.getFavorites()) {
-            is ApiResult.Success -> {
-                val existing = result.data.firstOrNull { it.recommendationId == recommendationId }
-                liveFavorite = existing != null
-                favoriteTripId = existing?.favoriteTripId
-            }
-            is ApiResult.Failure -> internalError = result.message
-        }
-    }
-
-    fun toggleFavorite() {
-        if (recommendationId.isNullOrBlank() || internalWorking || favoriteWorking) return
-        scope.launch {
-            internalWorking = true
-            internalError = null
-            if (liveFavorite) {
-                val id = favoriteTripId
-                if (id == null) {
-                    liveFavorite = false
-                } else {
-                    when (val result = favoritesRepository.removeFavorite(id)) {
-                        is ApiResult.Success -> {
-                            liveFavorite = false
-                            favoriteTripId = null
-                            onToggleFavorite()
-                        }
-                        is ApiResult.Failure -> internalError = result.message
-                    }
-                }
-            } else {
-                when (val result = favoritesRepository.addFavorite(recommendationId)) {
-                    is ApiResult.Success -> {
-                        liveFavorite = true
-                        favoriteTripId = result.data.favoriteTripId
-                        onToggleFavorite()
-                    }
-                    is ApiResult.Failure -> internalError = result.message
-                }
-            }
-            internalWorking = false
-        }
-    }
-
-    val working = favoriteWorking || internalWorking
-    val shownError = internalError ?: favoriteError
-
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(DetailBg),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 22.dp),
@@ -119,22 +51,11 @@ fun CommuteDetailScreen(
                     Text("←", color = DetailDark, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 }
                 Text("Route Details", Modifier.weight(1f), color = DetailDark, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
-                Box(
-                    Modifier.size(44.dp).clickable(enabled = !working && !recommendationId.isNullOrBlank(), onClick = ::toggleFavorite),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (working) CircularProgressIndicator(Modifier.size(20.dp), color = DetailTeal, strokeWidth = 2.dp)
-                    else Text(if (liveFavorite) "♥" else "♡", color = DetailDanger, fontSize = 30.sp)
-                }
             }
         }
 
         item {
             Text("${commute.origin} →\n${commute.destination}", color = DetailDark, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.ExtraBold)
-            if (!shownError.isNullOrBlank()) {
-                Spacer(Modifier.height(5.dp))
-                Text(shownError, color = DetailDanger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            }
         }
 
         item {
@@ -158,9 +79,7 @@ fun CommuteDetailScreen(
                 }
             }
         } else {
-            itemsIndexed(commute.steps) { index, step ->
-                StepTimelineCard(step = step, isFirst = index == 0, isLast = index == commute.steps.lastIndex)
-            }
+            item { TimelineSteps(commute.steps) }
         }
 
         item {
@@ -189,6 +108,22 @@ fun CommuteDetailScreen(
 }
 
 @Composable
+private fun TimelineSteps(steps: List<CommuteStep>) {
+    Box(Modifier.fillMaxWidth()) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .padding(start = 8.dp, top = 20.dp, bottom = 20.dp)
+        ) {
+            Box(Modifier.width(2.dp).fillMaxHeight().background(DetailOrange))
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            steps.forEach { step -> StepTimelineCard(step = step) }
+        }
+    }
+}
+
+@Composable
 private fun SummaryMetric(icon: String, value: String, modifier: Modifier = Modifier) {
     Row(modifier, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         Text(icon, color = DetailDark, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -203,12 +138,10 @@ private fun VerticalDivider() {
 }
 
 @Composable
-private fun StepTimelineCard(step: CommuteStep, isFirst: Boolean, isLast: Boolean) {
+private fun StepTimelineCard(step: CommuteStep) {
     Row(Modifier.fillMaxWidth()) {
-        Column(Modifier.width(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            if (!isFirst) Box(Modifier.width(2.dp).height(18.dp).background(DetailOrange)) else Spacer(Modifier.height(18.dp))
+        Box(Modifier.width(18.dp).padding(top = 18.dp), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.size(10.dp).background(DetailOrange, CircleShape))
-            if (!isLast) Box(Modifier.width(2.dp).height(86.dp).background(DetailOrange))
         }
         Spacer(Modifier.width(3.dp))
         Surface(Modifier.weight(1f), shape = RoundedCornerShape(18.dp), color = DetailSurface, shadowElevation = 1.dp) {

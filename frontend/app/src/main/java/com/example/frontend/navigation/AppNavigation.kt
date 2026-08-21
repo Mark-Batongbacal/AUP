@@ -402,12 +402,20 @@ fun AppNavigation(
                 HomeScreen(
                     userName = greetingName,
                     tripRepository = tripRepository,
+                    placesRepository = placesRepository,
                     isGuest = !isAuthenticated(),
                     onSearchDestination = { origin, destination ->
                         selectedRoutingDestination = null
                         selectedRoutingOriginLatitude = null
                         selectedRoutingOriginLongitude = null
                         navController.navigate(routeResults(origin, destination))
+                    },
+                    onFindRoutes = { destination, originName, originLatitude, originLongitude ->
+                        selectedRoutingDestination = destination
+                        selectedRoutingOriginLatitude = originLatitude
+                        selectedRoutingOriginLongitude = originLongitude
+                        selectedRouteOption = null
+                        navController.navigate(routeResults(originName, destination.name))
                     },
                     onCommuteClick = { commute ->
                         selectedCommute = commute
@@ -718,6 +726,9 @@ fun AppNavigation(
                     origin = origin,
                     destination = destination,
                     steps = selectedRouteOption?.steps.orEmpty(),
+                    totalMinutes = selectedRouteOption?.totalMinutes,
+                    totalFare = selectedRouteOption?.totalFare,
+                    legCount = selectedRouteOption?.steps?.size,
                     isStartingNavigation = isStartingNavigation,
                     navigationStartError = navigationStartError,
                     hasActiveTrip = hasExistingActiveTrip,
