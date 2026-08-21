@@ -71,20 +71,11 @@ public sealed class EmailVerificationService(
 
 internal static class VerificationCode
 {
-    private const string Alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    public const int Length = 8;
 
-    public static string Generate()
-    {
-        var bytes = RandomNumberGenerator.GetBytes(8);
-        var builder = new StringBuilder(8);
-        foreach (var b in bytes)
-        {
-            builder.Append(Alphabet[b % Alphabet.Length]);
-        }
-
-        return builder.ToString();
-    }
+    public static string Generate() =>
+        RandomNumberGenerator.GetInt32(0, 100_000_000).ToString("D8");
 
     public static string Hash(string code) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim().ToUpperInvariant())));
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim())));
 }

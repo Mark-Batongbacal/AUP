@@ -90,16 +90,20 @@ public sealed class NavigationFacadeServiceTests
     [Fact]
     public async Task BoardLandmark_IsPassedToSpeechAsTrustedStructuredFact()
     {
-        var session = Session(TripNavigationState.WaitingToBoard);
-        SetupSnapshot(session, includeBoardLandmark: true);
+        var planned = Session(TripNavigationState.Planned);
+        var started = Session(TripNavigationState.WaitingToBoard);
+        SetupSnapshot(started, includeBoardLandmark: true);
         NavigationSpeechContext? received = null;
         _speech.Setup(item => item.PhraseAsync(It.IsAny<NavigationSpeechContext>(), default))
             .Callback((NavigationSpeechContext context, CancellationToken _) => received = context)
             .ReturnsAsync("Sumakay ka ng Marisol jeep sa may McDonald's.");
-        _tripSessions.Setup(item => item.GetActiveAsync(_userId, default))
-            .ReturnsAsync(new TripSessionOperation(session));
+        _tripSessions.Setup(item => item.CreateAsync(_userId,
+                new CreateTripSessionRequest(_recommendationId), default))
+            .ReturnsAsync(new TripSessionOperation(planned));
+        _tripSessions.Setup(item => item.StartAsync(_userId, _sessionId, default))
+            .ReturnsAsync(new TripSessionOperation(started));
 
-        var result = await Service().GetActiveAsync(_userId);
+        var result = await Service().StartAsync(_userId, _recommendationId);
 
         Assert.Equal("Marisol", received!.RouteName);
         Assert.Equal("McDonald's", received.LandmarkName);
@@ -110,14 +114,18 @@ public sealed class NavigationFacadeServiceTests
     [Fact]
     public async Task AiFailure_UsesFallbackAndNavigationStillSucceeds()
     {
-        var session = Session(TripNavigationState.WaitingToBoard);
-        SetupSnapshot(session, includeBoardLandmark: true);
+        var planned = Session(TripNavigationState.Planned);
+        var started = Session(TripNavigationState.WaitingToBoard);
+        SetupSnapshot(started, includeBoardLandmark: true);
         _speech.Setup(item => item.PhraseAsync(It.IsAny<NavigationSpeechContext>(), default))
             .ThrowsAsync(new HttpRequestException("provider unavailable"));
-        _tripSessions.Setup(item => item.GetActiveAsync(_userId, default))
-            .ReturnsAsync(new TripSessionOperation(session));
+        _tripSessions.Setup(item => item.CreateAsync(_userId,
+                new CreateTripSessionRequest(_recommendationId), default))
+            .ReturnsAsync(new TripSessionOperation(planned));
+        _tripSessions.Setup(item => item.StartAsync(_userId, _sessionId, default))
+            .ReturnsAsync(new TripSessionOperation(started));
 
-        var result = await Service().GetActiveAsync(_userId);
+        var result = await Service().StartAsync(_userId, _recommendationId);
 
         Assert.True(result.Succeeded);
         Assert.Contains("McDonald's", result.Snapshot!.SpokenInstruction);
@@ -195,10 +203,10 @@ public sealed class NavigationFacadeServiceTests
     }
 
     [Fact]
-    public async Task ActiveResume_ReusesPersistedSpeechForSameEvent()
+    public async Task ActiveResume_DoesNotCallSpeechProvider()
     {
         var session = Session(TripNavigationState.WaitingToBoard);
-        SetupSnapshot(session);
+        SetupSnapshot(session, includeBoardLandmark: true);
         _tripSessions.Setup(item => item.GetActiveAsync(_userId, default))
             .ReturnsAsync(new TripSessionOperation(session));
         var service = Service();
@@ -206,9 +214,11 @@ public sealed class NavigationFacadeServiceTests
         var first = await service.GetActiveAsync(_userId);
         var second = await service.GetActiveAsync(_userId);
 
+        Assert.True(first.Succeeded);
         Assert.Equal(first.Snapshot!.SpokenInstruction, second.Snapshot!.SpokenInstruction);
+        Assert.Contains("McDonald's", first.Snapshot.SpokenInstruction);
         _speech.Verify(item => item.PhraseAsync(
-            It.IsAny<NavigationSpeechContext>(), default), Times.Once);
+            It.IsAny<NavigationSpeechContext>(), default), Times.Never);
     }
 
     private NavigationFacadeService Service()

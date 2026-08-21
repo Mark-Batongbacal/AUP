@@ -1,9 +1,12 @@
+using System.Text.Json;
 using backend.Models.Database;
 using backend.Models.Routing;
 using backend.Repositories;
 using backend.Services.Destinations;
 using backend.Services.Routing;
 using backend.Services.Telemetry;
+using OpenAI;
+using OpenAI.Chat;
 
 namespace backend.Services.Assistant;
 
@@ -18,10 +21,12 @@ public sealed class TukiAssistantService(
     INavigationInstructionRepository instructions,
     IJourneyPlanPersistenceService persistence,
     ILogger<TukiAssistantService> logger,
-    ITukiTelemetry? telemetry = null)
+    ITukiTelemetry? telemetry = null,
+    IConfiguration? configuration = null)
     : ITukiAssistantService
 {
     private readonly ITukiTelemetry _telemetry = telemetry ?? NullTukiTelemetry.Instance;
+    private readonly ChatClient? _voiceClient = CreateQwenClient(configuration);
 
     public async Task<AssistantResponse> RespondAsync(Guid userId, AssistantRequest request, CancellationToken cancellationToken = default)
     {
@@ -43,14 +48,101 @@ public sealed class TukiAssistantService(
 
         intent.TripSessionId ??= request.TripSessionId;
         _telemetry.Event("AIIntentParsed", outcome: intent.Intent.ToString());
-        return intent.Intent switch
+        var response = intent.Intent switch
         {
             AssistantIntentType.PlanRoute => await PlanAsync(userId, intent, request, cancellationToken),
             AssistantIntentType.Lost or AssistantIntentType.NavigationQuestion => await NavigationStatusAsync(userId, intent, cancellationToken),
-            AssistantIntentType.CancelTrip => new("ACTION_REQUIRED", "Use the trip cancellation command after confirming you want to cancel."),
-            AssistantIntentType.StartNavigation => new("ACTION_REQUIRED", "Select a stored journey before starting navigation."),
-            _ => new("CLARIFICATION_REQUIRED", "Tell me the destination or ask about your active trip.")
+            AssistantIntentType.CancelTrip => new AssistantResponse("ACTION_REQUIRED", "Use the trip cancellation command after confirming you want to cancel."),
+            AssistantIntentType.StartNavigation => new AssistantResponse("ACTION_REQUIRED", "Select a stored journey before starting navigation."),
+            _ => new AssistantResponse("CLARIFICATION_REQUIRED", "Tell me the destination or ask about your active trip.")
         };
+
+        return await ApplyTukiVoiceAsync(normalizedMessage, response, cancellationToken);
+    }
+
+    private async Task<AssistantResponse> ApplyTukiVoiceAsync(
+        string userMessage,
+        AssistantResponse response,
+        CancellationToken cancellationToken)
+    {
+        if (_voiceClient is null || response.Status is "AI_UNAVAILABLE" or "INVALID_REQUEST")
+            return response;
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                userMessage,
+                response.Status,
+                canonicalResponse = response.Message
+            });
+            var completion = await _voiceClient.CompleteChatAsync(
+            [
+                new SystemChatMessage("""
+                    You are Tuki, a cheerful Filipino commute buddy and friendly toucan.
+                    Rewrite ONLY the supplied canonical response into Tuki's natural conversational voice.
+
+                    VOICE:
+                    - Sound like a trusted local friend commuting with the user.
+                    - Be energetic, warm, encouraging, and concise.
+                    - Match the user's language naturally. If they use Filipino or Taglish, answer in natural Taglish. If they use English, keep it mostly English with light Filipino flavor only when it feels natural.
+                    - Expressions like "Tara!", "Ayun!", "Sige!", "Konti na lang!", and light playful reactions are welcome when appropriate.
+                    - Use natural commute words such as sakay, baba, lakad, tawid, kanto, terminal, jeep, and TODA when the canonical response supports them.
+                    - Never sound like customer support, a formal travel guide, or a GPS robot.
+                    - Keep it to at most two short sentences. Emoji is optional and should be occasional, not automatic.
+
+                    GROUNDING IS MORE IMPORTANT THAN PERSONALITY:
+                    - Preserve every factual detail in canonicalResponse.
+                    - Do not invent or infer routes, stops, landmarks, fares, distances, times, transport modes, directions, availability, or trip state.
+                    - Do not promise an action the system has not actually performed.
+                    - If canonicalResponse is asking for clarification, keep the same clarification request.
+                    - Return plain text only. No JSON, markdown, labels, or explanation.
+
+                    Tone examples only:
+                    canonical: "Tuki found 2 supported journey options to AUF."
+                    style: "Ayun! May 2 route options tayo papuntang AUF — pili tayo ng pinaka-okay sa'yo."
+
+                    canonical: "You are still on route. Next: Get off at Checkpoint."
+                    style: "Ayun, tama pa tayo! Next, baba ka sa Checkpoint."
+
+                    canonical: "Which destination do you mean?"
+                    style: "Sige! Aling destination exactly yung gusto mong puntahan?"
+                    """),
+                new UserChatMessage(payload)
+            ], cancellationToken: cancellationToken);
+
+            var styled = completion.Value.Content.FirstOrDefault()?.Text?.Trim();
+            return string.IsNullOrWhiteSpace(styled) ? response : response with { Message = styled };
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Qwen Tuki voice generation failed; using canonical assistant response");
+            _telemetry.Event("AIVoiceFallback");
+            return response;
+        }
+    }
+
+    private static ChatClient? CreateQwenClient(IConfiguration? configuration)
+    {
+        if (configuration is null)
+            return null;
+
+        var apiKey = Environment.GetEnvironmentVariable(
+            configuration["Qwen:ApiKeyEnvironmentVariable"] ??
+            configuration["Nvidia:ApiKeyEnvironmentVariable"] ??
+            "NVIDIA_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return null;
+
+        return new ChatClient(
+            configuration["Qwen:Model"] ?? "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+            new System.ClientModel.ApiKeyCredential(apiKey),
+            new OpenAIClientOptions
+            {
+                Endpoint = new Uri(configuration["Qwen:BaseUrl"] ??
+                    configuration["Nvidia:BaseUrl"] ??
+                    "https://integrate.api.nvidia.com/v1")
+            });
     }
 
     private static AssistantIntent? NavigationIntent(string message, Guid? tripSessionId)

@@ -159,16 +159,25 @@ fun ProfileScreen(
         ProfilePage.CHANGE_PASSWORD -> {
             ChangePasswordScreen(
                 onBack = { page = ProfilePage.PRIVACY_SECURITY },
-                onChangePassword = { currentPassword, newPassword ->
+                onRequestOtp = { currentPassword ->
+                    when (val result = dataProvider.authRepository.requestChangePasswordOtp(currentPassword)) {
+                        is ApiResult.Success -> ChangePasswordResult.Success
+                        is ApiResult.Failure -> ChangePasswordResult.Error(
+                            result.message.ifBlank { "Couldn't send the password change OTP." }
+                        )
+                    }
+                },
+                onChangePassword = { currentPassword, code, newPassword ->
                     when (
                         val result = dataProvider.authRepository.changePassword(
                             currentPassword,
+                            code,
                             newPassword
                         )
                     ) {
                         is ApiResult.Success -> ChangePasswordResult.Success
                         is ApiResult.Failure -> ChangePasswordResult.Error(
-                            result.message.ifBlank { "Current password is incorrect." }
+                            result.message.ifBlank { "The password or OTP is invalid." }
                         )
                     }
                 },
@@ -254,8 +263,7 @@ fun ProfileScreen(
                         text = displayName,
                         color = TukiDark,
                         fontSize = 21.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                        fontWeight = FontWeight.ExtraBold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = displayEmail, color = TukiGray, fontSize = 15.sp)

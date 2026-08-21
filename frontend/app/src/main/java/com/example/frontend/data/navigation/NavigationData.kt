@@ -5,6 +5,7 @@ import com.example.frontend.core.network.ApiResult
 import com.example.frontend.core.network.apiCall
 import com.example.frontend.core.network.authenticatedApiCall
 import com.example.frontend.core.storage.AuthSessionStore
+import com.example.frontend.data.tripsessions.TripSessionDto
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -120,7 +121,7 @@ interface NavigationApi {
     @POST("api/navigation/{sessionId}/location") suspend fun location(@Path("sessionId") sessionId: String, @Body update: NavigationLocationUpdate): Response<NavigationSnapshotDto>
     @POST("api/navigation/{sessionId}/boarding") suspend fun boarding(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
     @POST("api/navigation/{sessionId}/alighting") suspend fun alighting(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
-    @POST("api/navigation/{sessionId}/cancel") suspend fun cancel(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+    @POST("api/tripsessions/{sessionId}/cancel") suspend fun cancel(@Path("sessionId") sessionId: String): Response<TripSessionDto>
     @POST("api/navigation/{sessionId}/reroute") suspend fun reroute(@Path("sessionId") sessionId: String, @Body request: NavigationRerouteRequest): Response<NavigationSnapshotDto>
 }
 
@@ -131,7 +132,7 @@ interface NavigationRepository {
     suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto>
     suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto>
     suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto>
-    suspend fun cancel(sessionId: String): ApiResult<NavigationSnapshotDto>
+    suspend fun cancel(sessionId: String): ApiResult<TripSessionDto>
     suspend fun reroute(sessionId: String, request: NavigationRerouteRequest = NavigationRerouteRequest()): ApiResult<NavigationSnapshotDto>
 }
 

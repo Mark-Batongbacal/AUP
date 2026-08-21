@@ -7,6 +7,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,12 +30,21 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
     onLogoutClick: () -> Unit = {}
 ) {
+    var showChangePassword by remember { mutableStateOf(false) }
+
+    if (showChangePassword) {
+        ChangePasswordScreen(
+            onBack = { showChangePassword = false },
+            onPasswordChanged = { showChangePassword = false }
+        )
+        return
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(TukiCream)
     ) {
-        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -52,8 +65,7 @@ fun SettingsScreen(
                 text = "Settings",
                 color = TukiDark,
                 fontSize = 22.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                fontWeight = FontWeight.ExtraBold
             )
         }
 
@@ -64,6 +76,16 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
             contentPadding = PaddingValues(bottom = 40.dp)
         ) {
+            item {
+                SettingsSection(title = "ACCOUNT") {
+                    SettingsRow(
+                        title = "Change password",
+                        subtitle = "Confirm changes with an email OTP",
+                        onClick = { showChangePassword = true }
+                    )
+                }
+            }
+
             item {
                 SettingsSection(title = "GENERAL") {
                     SettingsRow(title = "Notifications", subtitle = "Manage alerts & sounds")

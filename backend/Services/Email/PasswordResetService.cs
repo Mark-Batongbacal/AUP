@@ -38,6 +38,7 @@ public sealed class PasswordResetService(
     private const string ChangePurpose = "Change";
     private static readonly TimeSpan ResetCodeLifetime = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan ChangeCodeLifetime = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan OtpSendCooldown = TimeSpan.FromMinutes(3);
     private readonly EmailOptions _options = options.Value;
 
     public async Task RequestResetAsync(string email, CancellationToken cancellationToken = default)
@@ -52,6 +53,12 @@ public sealed class PasswordResetService(
         }
 
         var code = await CreateOtpAsync(user.UserId, ResetPurpose, ResetCodeLifetime, cancellationToken);
+        if (code is null)
+        {
+            // Keep the public response generic while enforcing the send cooldown server-side.
+            return;
+        }
+
         var subject = $"Reset your {_options.AppDisplayName} password";
         var html = BuildOtpEmail(
             "Password reset",
@@ -111,6 +118,12 @@ public sealed class PasswordResetService(
         }
 
         var code = await CreateOtpAsync(user.UserId, ChangePurpose, ChangeCodeLifetime, cancellationToken);
+        if (code is null)
+        {
+            // The password was valid, but a code was already sent recently.
+            return true;
+        }
+
         var subject = $"Confirm your {_options.AppDisplayName} password change";
         var html = BuildOtpEmail(
             "Confirm password change",
@@ -165,13 +178,27 @@ public sealed class PasswordResetService(
         return true;
     }
 
-    private async Task<string> CreateOtpAsync(
+    private async Task<string?> CreateOtpAsync(
         Guid userId,
         string purpose,
         TimeSpan lifetime,
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
+        var cooldownCutoff = now.Subtract(OtpSendCooldown);
+        var recentlySent = await context.PasswordResetTokens
+            .AsNoTracking()
+            .AnyAsync(token =>
+                token.UserId == userId &&
+                token.Purpose == purpose &&
+                token.CreatedAt > cooldownCutoff,
+                cancellationToken);
+
+        if (recentlySent)
+        {
+            return null;
+        }
+
         var previousTokens = await context.PasswordResetTokens
             .Where(token =>
                 token.UserId == userId &&

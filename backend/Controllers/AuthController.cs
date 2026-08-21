@@ -274,7 +274,7 @@ public sealed class AuthController(
         {
             return Unauthorized(new { message = "Invalid Facebook token." });
         }
-        catch (FacebookOidcTokenValidationUnavailableException)
+        catch (FacebookTokenValidationUnavailableException)
         {
             return Problem(
                 title: "Facebook login is temporarily unavailable.",
