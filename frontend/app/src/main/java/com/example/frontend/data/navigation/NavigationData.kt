@@ -55,7 +55,8 @@ data class NavigationInstructionSnapshotDto(
     val routeName: String?,
     val transportMode: String?,
     val distanceMeters: Double?,
-    val requiresConfirmation: Boolean
+    val requiresConfirmation: Boolean,
+    val text: String? = null
 )
 
 data class NavigationLandmarkDto(
@@ -70,6 +71,13 @@ data class NavigationLandmarkDto(
 
 data class NavigationStopInfoDto(val routeName: String?, val latitude: Double?, val longitude: Double?, val landmark: NavigationLandmarkDto?)
 data class NavigationTriggeredEventDto(val type: String, val landmarkName: String?)
+data class NavigationTripSummaryDto(
+    val destinationName: String,
+    val durationMinutes: Int?,
+    val approxFareSpent: BigDecimal,
+    val transitLegs: Int,
+    val transfers: Int
+)
 
 data class NavigationSnapshotDto(
     val sessionId: String,
@@ -91,7 +99,9 @@ data class NavigationSnapshotDto(
     val currentLatitude: Double? = null,
     val currentLongitude: Double? = null,
     val approxFareSpent: BigDecimal = BigDecimal.ZERO,
-    val estimatedRemainingFare: BigDecimal = BigDecimal.ZERO
+    val estimatedRemainingFare: BigDecimal = BigDecimal.ZERO,
+    val followingInstruction: NavigationInstructionSnapshotDto? = null,
+    val tripSummary: NavigationTripSummaryDto? = null
 ) {
     fun displayInstruction(): String? = spokenInstruction?.takeIf { it.isNotBlank() }
 }
