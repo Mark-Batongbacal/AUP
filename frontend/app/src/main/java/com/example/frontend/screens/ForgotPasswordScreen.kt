@@ -13,12 +13,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -29,22 +32,14 @@ private val TukiDark = Color(0xFF173B43)
 private val TukiGray = Color(0xFF9AA6A9)
 private val TukiError = Color(0xFFB00020)
 
-sealed interface PasswordResetActionResult {
-    data object Success : PasswordResetActionResult
-    data class Error(val message: String) : PasswordResetActionResult
-}
-
 @Composable
 fun ForgotPasswordScreen(
     onBack: () -> Unit = {},
-    onRequestReset: suspend (email: String) -> PasswordResetActionResult = {
-        PasswordResetActionResult.Error("Password reset isn't wired up yet.")
-    },
-    onResetPassword: suspend (email: String, code: String, newPassword: String) -> PasswordResetActionResult = { _, _, _ ->
-        PasswordResetActionResult.Error("Password reset isn't wired up yet.")
-    },
-    onPasswordReset: () -> Unit = {}
+    onResetSent: () -> Unit = {}
 ) {
+    val context = LocalContext.current.applicationContext
+    val authRepository = remember(context) { TukiDataProvider(context).authRepository }
+
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
@@ -67,12 +62,12 @@ fun ForgotPasswordScreen(
             isWorking = true
             error = null
             successMessage = null
-            when (val result = onRequestReset(email.trim())) {
-                PasswordResetActionResult.Success -> {
+            when (val result = authRepository.requestPasswordReset(email.trim())) {
+                is ApiResult.Success -> {
                     codeSent = true
                     successMessage = "OTP sent. Check your email."
                 }
-                is PasswordResetActionResult.Error -> error = result.message
+                is ApiResult.Failure -> error = result.message
             }
             isWorking = false
         }
@@ -89,13 +84,13 @@ fun ForgotPasswordScreen(
                     isWorking = true
                     error = null
                     successMessage = null
-                    when (val result = onResetPassword(email.trim(), code.trim(), newPassword)) {
-                        PasswordResetActionResult.Success -> {
+                    when (val result = authRepository.resetPassword(email.trim(), code.trim(), newPassword)) {
+                        is ApiResult.Success -> {
                             successMessage = "Password reset successfully."
                             delay(900)
-                            onPasswordReset()
+                            onResetSent()
                         }
-                        is PasswordResetActionResult.Error -> error = result.message
+                        is ApiResult.Failure -> error = result.message
                     }
                     isWorking = false
                 }
