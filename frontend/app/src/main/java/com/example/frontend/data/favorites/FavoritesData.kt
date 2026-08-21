@@ -19,6 +19,11 @@ data class FavoriteTripDto(
     val recommendationId: String,
     val origin: String?,
     val destination: String?,
+    val recommendationType: String,
+    val totalMinutes: Double,
+    val totalFare: Double,
+    val walkingDistanceMeters: Double,
+    val transferCount: Int,
     val timesUsed: Int,
     val note: String?,
     val createdAt: String
