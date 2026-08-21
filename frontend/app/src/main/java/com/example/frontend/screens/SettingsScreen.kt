@@ -24,6 +24,7 @@ private val TukiOrange = Color(0xFFFF9318)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit = {},
+    onPrivacySecurityClick: () -> Unit = {},
     onLogoutClick: () -> Unit = {}
 ) {
     Column(
@@ -31,7 +32,6 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(TukiCream)
     ) {
-        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -63,6 +63,16 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
             contentPadding = PaddingValues(bottom = 40.dp)
         ) {
+            item {
+                SettingsSection(title = "ACCOUNT") {
+                    SettingsRow(
+                        title = "Privacy & security",
+                        subtitle = "Password and account security",
+                        onClick = onPrivacySecurityClick
+                    )
+                }
+            }
+
             item {
                 SettingsSection(title = "GENERAL") {
                     SettingsRow(title = "Notifications", subtitle = "Manage alerts & sounds")
