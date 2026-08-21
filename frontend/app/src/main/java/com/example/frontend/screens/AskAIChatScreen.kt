@@ -46,10 +46,9 @@ import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantRequest
 import com.example.frontend.data.places.DestinationSearchResultDto
-import com.example.frontend.data.routing.TransitMode
-import com.example.frontend.model.CommuteStep
-import com.example.frontend.model.RouteOption
-import com.example.frontend.model.RoutePoint
+import com.example.frontend.data.routing.PendingAiRouteSelection
+import com.example.frontend.data.routing.PlannedJourney
+import com.example.frontend.data.routing.toDomain
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -202,9 +201,9 @@ fun AskAiChatScreen(
                 AiMessageBubble(
                     message = message,
                     onRouteSelected = { journey, destination ->
-                        AiRouteSelectionStore.save(
+                        PendingAiRouteSelection.save(
                             destination.name,
-                            journey.toRouteOption("Current location", destination.name)
+                            PlannedJourney(journey.journeyId, journey.plan.toDomain())
                         )
                         onDestinationConfirmed(destination.name)
                     },
@@ -439,70 +438,4 @@ private fun QuickPromptChip(text: String, onClick: () -> Unit) {
     ) {
         Text(text, color = TukiDark, fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
-}
-
-private fun AssistantJourneyDto.toRouteOption(origin: String, destination: String): RouteOption {
-    val tags = recommendationType
-        .split(',')
-        .map { it.trim().lowercase() }
-        .filter { it.isNotBlank() }
-    val objectiveLabels = buildList {
-        if ("efficient" in tags) add("Balanced")
-        if ("cheapest" in tags) add("Cheapest")
-        if ("fastest" in tags) add("Fastest")
-    }
-    val label = objectiveLabels.joinToString(" · ").ifBlank { "Alternative" }
-    val legRoutePoints = plan.legs.map { leg ->
-        leg.geometry.orEmpty().map { point -> RoutePoint(point.latitude, point.longitude) }
-    }
-    val legEndPoints = plan.legs.map { leg ->
-        RoutePoint(leg.destinationLatitude, leg.destinationLongitude)
-    }
-    val routePoints = buildList {
-        legRoutePoints.forEach { segment ->
-            segment.forEach { point -> if (lastOrNull() != point) add(point) }
-        }
-    }
-    val walkMeters = (
-        plan.originAccess.walkDistanceMeters +
-            plan.destinationAccess.walkDistanceMeters +
-            plan.transferWalkDistancesMeters.sum()
-        ).roundToInt()
-
-    return RouteOption(
-        id = journeyId,
-        label = label,
-        totalMinutes = (plan.totalTimeSeconds / 60).roundToInt(),
-        totalFare = plan.totalFarePesos,
-        walkMeters = walkMeters,
-        transfers = plan.transferCount,
-        generalCost = plan.generalizedCostPesos,
-        isRecommended = "efficient" in tags,
-        routePoints = routePoints,
-        legRoutePoints = legRoutePoints,
-        legEndPoints = legEndPoints,
-        steps = plan.legs.mapIndexed { index, leg ->
-            val mode = when (TransitMode.fromWireValue(leg.mode)) {
-                TransitMode.Walk -> "Walk"
-                TransitMode.Trike -> "Tricycle"
-                TransitMode.Jeepney -> "Jeepney"
-                is TransitMode.Unknown -> "Transit"
-            }
-            CommuteStep(
-                mode = mode,
-                from = when {
-                    index == 0 -> origin
-                    leg.routeName?.isNotBlank() == true -> leg.routeName
-                    else -> "Transfer point"
-                },
-                to = when {
-                    index == plan.legs.lastIndex -> destination
-                    leg.routeName?.isNotBlank() == true -> leg.routeName
-                    else -> "Transfer point"
-                },
-                minutes = (leg.durationSeconds / 60).roundToInt(),
-                fare = leg.farePesos
-            )
-        }
-    )
 }
