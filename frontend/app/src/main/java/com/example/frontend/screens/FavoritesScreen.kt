@@ -2,101 +2,109 @@ package com.example.frontend.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
 import com.example.frontend.model.FavoriteRoute
-import com.example.frontend.R
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.size
-import androidx.compose.ui.res.painterResource
+import kotlin.math.roundToInt
 
-
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiCream2 = Color(0xFFFAEBC7)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-
-//BACKEND: replace sampleFavorites (bottom of file) with the user's real starred routes
+private val FavoriteBg = Color(0xFFF8F5EC)
+private val FavoriteSurface = Color(0xFFFFFBF0)
+private val FavoriteDark = Color(0xFF153E4B)
+private val FavoriteTeal = Color(0xFF2C8E95)
+private val FavoriteMuted = Color(0xFF7A898E)
+private val FavoriteOrange = Color(0xFFF4BF52)
+private val FavoriteTip = Color(0xFFFFF0C7)
+private val FavoriteBlue = Color(0xFFE8F2F2)
+private val FavoriteGreen = Color(0xFFE7F1D8)
 
 @Composable
 fun FavoritesScreen(
-    favorites: List<FavoriteRoute> = sampleFavorites,
+    favorites: List<FavoriteRoute> = emptyList(),
     isGuest: Boolean = false,
+    onBack: () -> Unit = {},
     onRouteClick: (FavoriteRoute) -> Unit = {},
+    onRemoveFavorite: (FavoriteRoute) -> Unit = {},
     onHomeClick: () -> Unit = {},
     onRecentClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TukiCream)
-    ) {
+    Column(Modifier.fillMaxSize().background(FavoriteBg)) {
         LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 30.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 30.dp, bottom = 20.dp)
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Text(text = "Favorites", color = TukiDark, fontSize = 27.sp, fontWeight = FontWeight.ExtraBold)
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-
-            item {
-                Text(text = "STARRED ROUTES", color = TukiGray, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
-            if (isGuest) {
-                item {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(38.dp).clickable(onClick = onBack), contentAlignment = Alignment.Center) {
+                        Text("←", color = FavoriteDark, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                    }
                     Text(
-                        text = "Sign in to save favorite routes.",
-                        color = TukiGray,
+                        "Favorites",
+                        Modifier.weight(1f),
+                        color = FavoriteDark,
+                        fontSize = 25.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.size(38.dp))
+                }
+                Spacer(Modifier.height(5.dp))
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("🌟", fontSize = 57.sp)
+                    Text(
+                        "Save your favorite routes\nfor quick access",
+                        color = FavoriteMuted,
                         fontSize = 14.sp,
+                        lineHeight = 18.sp,
+                        textAlign = TextAlign.Center,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+                Spacer(Modifier.height(10.dp))
+            }
+
+            if (isGuest) {
+                item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
             } else if (favorites.isEmpty()) {
-                item {
-                    Text(
-                        text = "No favorite routes yet.",
-                        color = TukiGray,
-                        fontSize = 14.sp
-                    )
-                }
+                item { EmptyFavoriteCard("No favorite routes yet.\nTap the star on a route to save it here.") }
             } else {
                 items(favorites, key = { it.id }) { route ->
-                    FavoriteRow(route = route, onClick = { onRouteClick(route) })
-                    Spacer(modifier = Modifier.height(12.dp))
+                    FavoriteRouteCard(route, onClick = { onRouteClick(route) }, onRemove = { onRemoveFavorite(route) })
                 }
             }
 
             item {
-                Spacer(modifier = Modifier.height(10.dp))
-                TipBanner()
+                Spacer(Modifier.height(10.dp))
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = FavoriteTip) {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
+                        Surface(Modifier.size(27.dp), shape = CircleShape, color = Color(0xFFD9913C)) {
+                            Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, fontWeight = FontWeight.Bold) }
+                        }
+                        Spacer(Modifier.width(11.dp))
+                        Column {
+                            Text("How to add favorites?", color = FavoriteDark, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                            Spacer(Modifier.height(5.dp))
+                            Text("Tap the star on any route to save it here.", color = FavoriteMuted, fontSize = 12.sp, lineHeight = 17.sp)
+                        }
+                    }
+                }
             }
         }
 
@@ -111,59 +119,69 @@ fun FavoritesScreen(
 }
 
 @Composable
-private fun FavoriteRow(route: FavoriteRoute, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(TukiCream2, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+private fun FavoriteRouteCard(route: FavoriteRoute, onClick: () -> Unit, onRemove: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = FavoriteSurface,
+        shadowElevation = 2.dp
     ) {
-        Column {
-            Text(
-                text = "${route.origin} to ${route.destination}",
-                color = TukiDark,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Used ${route.timesUsed} times \u00B7 ${route.note}",
-                color = TukiGray,
-                fontSize = 13.sp
-            )
+        Row(Modifier.padding(horizontal = 11.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = FavoriteGreen) {
+                Box(contentAlignment = Alignment.Center) { Text(routeIcon(route.recommendationType), fontSize = 21.sp) }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "${route.origin} → ${route.destination}",
+                    color = FavoriteDark,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FavoritePill(formatRecommendation(route.recommendationType), FavoriteBlue, FavoriteDark)
+                    FavoritePill("${route.minutes} min", Color(0xFFE9ECE8), FavoriteDark)
+                    FavoritePill("₱${route.totalFare.roundToInt()}", Color(0xFFE9ECE8), FavoriteDark)
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+            Box(Modifier.size(40.dp).clickable(onClick = onRemove), contentAlignment = Alignment.Center) {
+                Text("★", color = FavoriteOrange, fontSize = 26.sp)
+            }
         }
-
-        Image(
-            painter = painterResource(R.drawable.favorite),
-            contentDescription = "Star",
-            modifier = Modifier.size(22.dp)
-        )
     }
 }
 
 @Composable
-private fun TipBanner() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(TukiTeal, RoundedCornerShape(18.dp))
-            .padding(20.dp)
-    ) {
-        Text(text = "Tip", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = "Tap the star on any route to save it here",
-            color = Color.White.copy(alpha = 0.85f),
-            fontSize = 14.sp
-        )
+private fun FavoritePill(text: String, color: Color, textColor: Color) {
+    Surface(shape = RoundedCornerShape(11.dp), color = color) {
+        Text(text, Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = textColor, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
-private val sampleFavorites = listOf(
-    FavoriteRoute(id = "1", origin = "Porac", destination = "Angeles", timesUsed = 14, note = "daily commute"),
-    FavoriteRoute(id = "2", origin = "Angeles", destination = "Porac", timesUsed = 12, note = "return trip"),
-    FavoriteRoute(id = "3", origin = "Sta. Rita", destination = "Guagua Town", timesUsed = 6, note = "weekend market run")
-)
+@Composable
+private fun EmptyFavoriteCard(message: String) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = FavoriteSurface) {
+        Text(message, Modifier.padding(22.dp), color = FavoriteMuted, fontSize = 13.sp, lineHeight = 18.sp, textAlign = TextAlign.Center)
+    }
+}
+
+private fun formatRecommendation(type: String): String {
+    val tags = type.split(',').map { it.trim().lowercase() }
+    return when {
+        "fastest" in tags -> "Fastest"
+        "cheapest" in tags -> "Cheapest"
+        "efficient" in tags || "balanced" in tags -> "Balanced"
+        type.isBlank() -> "Route"
+        else -> type.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    }
+}
+
+private fun routeIcon(type: String): String = when (formatRecommendation(type)) {
+    "Fastest" -> "⚡"
+    "Cheapest" -> "₱"
+    else -> "🛺"
+}
