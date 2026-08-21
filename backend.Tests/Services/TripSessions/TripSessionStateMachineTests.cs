@@ -11,6 +11,7 @@ public sealed class TripSessionStateMachineTests
     [InlineData(TripNavigationState.Planned, TripNavigationState.Starting)]
     [InlineData(TripNavigationState.Planned, TripNavigationState.Cancelled)]
     [InlineData(TripNavigationState.WaitingToBoard, TripNavigationState.OnJeepney)]
+    [InlineData(TripNavigationState.ApproachingAlightPoint, TripNavigationState.Arrived)]
     [InlineData(TripNavigationState.WalkingToDestination, TripNavigationState.Arrived)]
     [InlineData(TripNavigationState.WalkingToPickup, TripNavigationState.Rerouting)]
     [InlineData(TripNavigationState.WaitingToBoard, TripNavigationState.Rerouting)]
