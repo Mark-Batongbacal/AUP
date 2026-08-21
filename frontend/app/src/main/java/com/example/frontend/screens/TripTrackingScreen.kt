@@ -137,6 +137,19 @@ fun TripTrackingScreen(
             listOfNotNull(next.type.takeIf { it.isNotBlank() }, mode, next.routeName?.takeIf { it.isNotBlank() }).joinToString(" · ")
         } ?: "Waiting for navigation guidance…"
 
+    val followingText = snapshot?.followingInstruction?.let { following ->
+        following.text?.takeIf { it.isNotBlank() } ?: run {
+            val mode = following.transportMode?.lowercase()?.replaceFirstChar {
+                if (it.isLowerCase()) it.titlecase() else it.toString()
+            }
+            listOfNotNull(
+                following.type.takeIf { it.isNotBlank() },
+                mode,
+                following.routeName?.takeIf { it.isNotBlank() }
+            ).joinToString(" · ").takeIf { it.isNotBlank() }
+        }
+    }
+
     val remainingDistance = snapshot?.remainingDistanceMeters
     val distanceText = when {
         remainingDistance == null -> "Waiting for location update"
@@ -174,6 +187,8 @@ fun TripTrackingScreen(
             finalDestination = activeFinalDestination,
             transitRoutes = nearbyJeepneyRoutes,
             todaPoints = todaPoints,
+            navigationTrackingEnabled = hasActiveTrip,
+            navigationTrackingPoint = currentPosition,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -209,6 +224,11 @@ fun TripTrackingScreen(
                     Column(Modifier.weight(1f)) {
                         Text("NEXT STEP", color = TukiTeal, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
                         Text(instruction, color = TukiDark, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+                        followingText?.let {
+                            Spacer(Modifier.height(8.dp))
+                            Text("THEN", color = TukiGray, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(it, color = TukiDark.copy(alpha = 0.72f), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
                         Spacer(Modifier.height(4.dp))
                         Text(distanceText, color = TukiGray, fontSize = 14.sp)
                         snapshot?.landmark?.let {
@@ -331,12 +351,26 @@ fun TripTrackingScreen(
     }
 
     if (showArrivalDialog) {
+        val summary = snapshot?.tripSummary
         AlertDialog(
             onDismissRequest = {},
             title = { Text("You have arrived 🎉") },
-            text = { Text("You've reached $activeDestinationName. Your trip has been completed automatically.") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("You've reached ${summary?.destinationName ?: activeDestinationName}.")
+                    summary?.durationMinutes?.let { SummaryRow("Travel time", "$it min") }
+                    summary?.let {
+                        SummaryRow("Approx. fare spent", it.approxFareSpent.asPeso())
+                        SummaryRow("Transit legs", it.transitLegs.toString())
+                        SummaryRow("Transfers", it.transfers.toString())
+                    }
+                }
+            },
             confirmButton = {
-                Button(onClick = { showArrivalDialog = false; onArrivalAcknowledged() }, colors = ButtonDefaults.buttonColors(containerColor = TukiTeal)) { Text("Done") }
+                Button(
+                    onClick = { showArrivalDialog = false; onArrivalAcknowledged() },
+                    colors = ButtonDefaults.buttonColors(containerColor = TukiTeal)
+                ) { Text("Done") }
             }
         )
     }
@@ -347,6 +381,14 @@ private fun FareValue(label: String, value: BigDecimal) {
     Column {
         Text(label, color = TukiGray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         Text(value.asPeso(), color = TukiDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+    }
+}
+
+@Composable
+private fun SummaryRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = TukiGray, fontWeight = FontWeight.SemiBold)
+        Text(value, color = TukiDark, fontWeight = FontWeight.ExtraBold)
     }
 }
 
