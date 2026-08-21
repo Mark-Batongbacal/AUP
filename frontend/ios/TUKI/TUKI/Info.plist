@@ -40,8 +40,12 @@
 	</array>
 	<key>TukiBackendBaseURL</key>
 	<string>$(BACKEND_BASE_URL)</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>TUKI uses your location to plan and guide your commute.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
 			<key>tuki-api.japaneast.cloudapp.azure.com</key>

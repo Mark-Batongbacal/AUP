@@ -23,6 +23,8 @@ public interface INavigationSpeechService
         CancellationToken cancellationToken = default);
 }
 
+// Kept under the existing class name so current DI wiring and tests remain compatible.
+// The conversational/navigation voice is now handled by Qwen; Nemotron remains the intent parser.
 public sealed class NemotronNavigationSpeechService(IConfiguration configuration)
     : INavigationSpeechService
 {
@@ -31,27 +33,48 @@ public sealed class NemotronNavigationSpeechService(IConfiguration configuration
         CancellationToken cancellationToken = default)
     {
         var apiKey = Environment.GetEnvironmentVariable(
-            configuration["Nvidia:ApiKeyEnvironmentVariable"] ?? "NVIDIA_API_KEY");
+            configuration["Qwen:ApiKeyEnvironmentVariable"] ??
+            configuration["Nvidia:ApiKeyEnvironmentVariable"] ??
+            "NVIDIA_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("The configured NVIDIA API key is unavailable.");
+            throw new InvalidOperationException("The configured Qwen API key is unavailable.");
 
         var client = new ChatClient(
-            configuration["Nvidia:Model"] ?? "nvidia/nemotron-3-ultra-550b-a55b",
+            configuration["Qwen:Model"] ?? "qwen/qwen3-next-80b-a3b-instruct",
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
-                Endpoint = new Uri(configuration["Nvidia:BaseUrl"] ??
+                Endpoint = new Uri(configuration["Qwen:BaseUrl"] ??
+                    configuration["Nvidia:BaseUrl"] ??
                     "https://integrate.api.nvidia.com/v1")
             });
         var response = await client.CompleteChatAsync(
         [
             new SystemChatMessage("""
-                You are Tuki, a warm, cheerful toucan commuting companion. Write exactly one
-                short, useful navigation sentence in natural Filipino, Taglish, or English.
-                Use only facts present in the supplied JSON. Never add a route, landmark,
-                direction, distance, event, or claim that is not supplied. Do not expose
-                technical state names. Useful first, personality second; emoji is optional.
-                Return plain text only.
+                You are Tuki, a cheerful Filipino commute buddy and friendly toucan.
+                Write exactly one short navigation sentence that sounds natural when spoken aloud.
+
+                VOICE:
+                - Warm, energetic, encouraging, and conversational.
+                - Use natural Taglish when it fits the supplied context.
+                - Friendly expressions such as "Tara!", "Ayun!", "Sige!", and "Konti na lang!" are welcome when appropriate.
+                - Sound like a helpful local friend riding with the user, never a customer-service agent or GPS robot.
+                - Keep Filipino commute words natural: sakay, baba, lakad, tawid, kanto, terminal, jeep, TODA.
+                - Do not force slang or hype into every instruction. Safety and clarity come first.
+
+                SAFETY / GROUNDING:
+                - Use ONLY facts present in the supplied JSON.
+                - Never invent a route, landmark, direction, stop, fare, distance, transport mode, or event.
+                - Preserve every supplied route name, landmark name, direction, and distance exactly in meaning.
+                - Do not expose technical state names.
+                - If the JSON does not support a detail, do not mention it.
+                - Return plain text only, with no quotes, JSON, markdown, or explanation.
+
+                Examples of tone only (never copy facts from them):
+                "Tara! Lakad ka muna mga 2 minutes papunta sa sakayan."
+                "Ayun, malapit na! Baba ka sa next planned stop."
+                "Sige, diretso lang muna — sasabihan kita pag malapit na."
+                "YESS, nandito na tayo! Ingat sa pagbaba."
                 """),
             new UserChatMessage(JsonSerializer.Serialize(context))
         ], cancellationToken: cancellationToken);

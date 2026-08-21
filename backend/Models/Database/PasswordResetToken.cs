@@ -8,6 +8,8 @@ public sealed class PasswordResetToken
 
     public string TokenHash { get; set; } = null!;
 
+    public string Purpose { get; set; } = "Reset";
+
     public DateTime ExpiresAt { get; set; }
 
     public DateTime? ConsumedAt { get; set; }

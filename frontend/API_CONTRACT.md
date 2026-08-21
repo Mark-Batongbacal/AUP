@@ -8,7 +8,7 @@ Android should use `NavigationRepository` for an active journey. Each operation 
 
 | Flow | Endpoint | Repository method |
 |---|---|---|
-| Plan and persist recommendations | `POST api/journeys/plan` | `RoutingRepository.planJourneys(request)` |
+| Plan recommendations | `POST api/journeys/plan` | `RoutingRepository.planJourneys(request)` |
 | Start a selected recommendation | `POST api/navigation/start` | `startNavigation(recommendationId)` |
 | Restore the active journey | `GET api/navigation/active` | `getActiveNavigation()` |
 | Send GPS and receive updated state | `POST api/navigation/{sessionId}/location` | `updateLocation(sessionId, update)` |
@@ -19,7 +19,9 @@ Android should use `NavigationRepository` for an active journey. Each operation 
 
 `NavigationSnapshotDto.state`, `nextInstruction`, confirmation flags, distances, leg data, and landmark role/relation are authoritative. `spokenInstruction` is presentation text produced by the backend and may be absent; clients must never parse it to determine state. Landmark wire roles are `BOARD_REFERENCE`, `ALIGHT_REFERENCE`, and `PROGRESS_REFERENCE`; relevant relations are `NEAR_BOARD_POINT`, `BEFORE_ALIGHT`, and `ALONG_ROUTE`.
 
-Use `RoutingRepository.planJourneys` for the mobile flow; it returns each deterministic plan with its persisted recommendation ID for `startNavigation`. The older `planTrip` method remains available for compatibility and diagnostics but does not create startable recommendations.
+Use `RoutingRepository.planJourneys` for the mobile flow. Authenticated requests return persisted recommendation IDs that can be passed to `startNavigation`; guest requests return transient in-memory recommendation IDs for route inspection and local guest tracking only. Guest clients must not call authenticated persistence endpoints for recents, favorites, or backend navigation sessions.
+
+Recent journeys are persisted only for authenticated users and are exposed through `GET api/trips/recent`. The response includes completed/cancelled trip sessions only, plus reroute metadata when the saved session has rerouted.
 
 ## Low-level / legacy / internal APIs
 
@@ -61,7 +63,8 @@ The APIs below remain supported for compatibility and administrative/internal wo
 | Drivers | `POST .../availability/start`, `stop`; `PUT .../location` | corresponding `DriversApi` method | corresponding `DriverRepository` method | session DTO / `204 Unit` / location DTO |
 | AI | `POST api/AI/ask` | `AiApi.ask` | `AiRepository.ask` | `AssistantResponseDto` |
 | Health | `GET health` | `HealthApi.getHealth` | `HealthService.check` | `HealthResponseDto` |
+| Trips | `GET api/trips/recent` | `TripsApi.recent` | `TripRepository.getRecentJourneys` | `List<PassengerTripHistoryItemDto>` |
 
-`X-Api-Key` is attached centrally using the header name returned by login/register. The authentication scheme is metadata and is not sent as a Bearer prefix. ASP.NET default numeric enum values are retained as `Int` on the wire and converted through fallback-safe UI/domain helpers.
+`X-Api-Key` is attached centrally using the header name returned by login/register. The authentication scheme is metadata and is not sent as a Bearer prefix. ASP.NET default numeric enum values are retained as `Int` on the wire and converted through fallback-safe UI/domain helpers. Guest mode is represented by the absence of a valid stored credential.
 
 Not represented: `ValhallaTestController` and the anonymous `/test` route, because they are diagnostics and no Android production feature uses them. Chat service/database types are also omitted because `dev` exposes no chat controller.

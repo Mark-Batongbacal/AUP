@@ -11,6 +11,10 @@ data class RecentCommute(
     val destinationLongitude: Double? = null,
     val legs: Int,
     val minutes: Int,
+    val status: String = "",
+    val endedAt: String? = null,
+    val wasRerouted: Boolean = false,
+    val rerouteCount: Int = 0,
     val dateGroup: String = "",
     val steps: List<CommuteStep> = emptyList(),
     val historyLegs: List<HistoryLeg> = emptyList()

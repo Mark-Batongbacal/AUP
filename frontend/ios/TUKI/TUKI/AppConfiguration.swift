@@ -17,7 +17,7 @@ struct AppConfiguration {
     static func load(infoDictionary: [String: Any]) throws -> AppConfiguration {
         guard
             let baseURLString = infoDictionary["TukiBackendBaseURL"] as? String,
-            let backendBaseURL = URL(string: baseURLString.normalizedBaseURL)
+            let backendBaseURL = URL(validBackendBaseURLString: baseURLString)
         else {
             throw AppConfigurationError.missingBackendBaseURL
         }
@@ -73,6 +73,38 @@ struct FacebookOAuthConfiguration: Equatable {
 
 enum AppConfigurationError: Error, Equatable {
     case missingBackendBaseURL
+}
+
+extension URL {
+    init?(validBackendBaseURLString rawValue: String) {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.hasPrefix("$("),
+              let url = URL(string: trimmed.normalizedBaseURL),
+              url.isAbsoluteHTTPURL else {
+            return nil
+        }
+
+        self = url
+    }
+
+    var isAbsoluteHTTPURL: Bool {
+        guard let scheme = scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              host != nil else {
+            return false
+        }
+
+        return true
+    }
+
+    func appendingBackendPath(_ path: String) -> URL {
+        path
+            .split(separator: "/")
+            .reduce(self) { url, component in
+                url.appendingPathComponent(String(component))
+            }
+    }
 }
 
 private extension String {

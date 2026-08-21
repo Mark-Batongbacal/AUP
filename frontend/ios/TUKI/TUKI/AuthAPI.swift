@@ -89,7 +89,7 @@ final class TukiAuthAPI: AuthAPI {
     #endif
 
     func authenticatedRequest(path: String) -> URLRequest {
-        let url = baseURL.appendingPathComponent(path)
+        let url = baseURL.appendingBackendPath(path)
         var request = URLRequest(url: url)
 
         if let credential = credentialStore.credential {
@@ -152,7 +152,7 @@ final class TukiAuthAPI: AuthAPI {
         path: String,
         body: RequestBody
     ) throws -> URLRequest {
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
+        var request = URLRequest(url: baseURL.appendingBackendPath(path))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

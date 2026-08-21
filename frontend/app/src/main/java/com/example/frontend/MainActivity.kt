@@ -11,21 +11,6 @@ import androidx.compose.ui.platform.LocalContext
 import com.example.frontend.auth.FacebookSignInClient
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.navigation.AppNavigation
-import com.example.frontend.data.auth.RegisterRequest
-import com.example.frontend.data.users.UserProfileDto
-import com.example.frontend.model.FavoriteRoute
-import com.example.frontend.model.RecentCommute
-import com.example.frontend.navigation.AppScreen
-import com.example.frontend.screens.CommuteDetailScreen
-import com.example.frontend.screens.FavoritesScreen
-import com.example.frontend.screens.HomeScreen
-import com.example.frontend.screens.LoginActionResult
-import com.example.frontend.screens.LoginScreen
-import com.example.frontend.screens.OnboardingScreen
-import com.example.frontend.screens.ProfileScreen
-import com.example.frontend.screens.RecentScreen
-import com.example.frontend.screens.RouteResultsScreen
-import com.example.frontend.screens.SignupScreen
 import com.example.frontend.ui.theme.FrontendTheme
 
 class MainActivity : ComponentActivity() {
@@ -56,7 +41,7 @@ fun TukiApp(
 ) {
     val context = LocalContext.current
     val dataProvider = remember { TukiDataProvider(context.applicationContext) }
-    
+
     AppNavigation(
         dataProvider = dataProvider,
         facebookSignInClient = facebookSignInClient

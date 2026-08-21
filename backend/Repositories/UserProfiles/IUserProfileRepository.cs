@@ -32,5 +32,7 @@ public interface IUserProfileRepository
         string? profileImageUrl,
         CancellationToken cancellationToken = default);
 
+    Task<bool> DeactivateAsync(Guid userId, CancellationToken cancellationToken = default);
+
     Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default);
 }

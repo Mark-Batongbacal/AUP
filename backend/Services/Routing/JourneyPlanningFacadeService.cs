@@ -31,9 +31,9 @@ public sealed class JourneyPlanningFacadeService(
         Guid userId, JourneyPlanRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (userId == Guid.Empty || string.IsNullOrWhiteSpace(request.DestinationName))
+        if (string.IsNullOrWhiteSpace(request.DestinationName))
             throw new RoutingValidationException("INVALID_REQUEST",
-                "A user and destination name are required.");
+                "A destination name is required.");
         var plans = await routing.PlanTripsAsync(
             request.OriginLatitude, request.OriginLongitude,
             request.DestinationLatitude, request.DestinationLongitude,
@@ -47,6 +47,12 @@ public sealed class JourneyPlanningFacadeService(
 
         if (routing is IJourneyGeometryEnricher geometryEnricher)
             await geometryEnricher.EnrichSelectedPlanGeometryAsync(eligible, cancellationToken);
+
+        if (userId == Guid.Empty)
+        {
+            return eligible.Select(plan => new MobileJourneyRecommendation(
+                Guid.NewGuid(), plan)).ToList();
+        }
 
         var stored = await persistence.PersistAsync(userId,
             request.OriginLatitude, request.OriginLongitude,

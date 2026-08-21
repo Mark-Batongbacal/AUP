@@ -93,6 +93,29 @@ public sealed class UsersController(
         };
     }
 
+    [HttpDelete("me")]
+    [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
+    public async Task<IActionResult> DeleteCurrent(CancellationToken cancellationToken)
+    {
+        var userId = UserId();
+        if (userId == Guid.Empty)
+        {
+            return Unauthorized();
+        }
+
+        if (userProfileRepository is null)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                Error("Account deletion is unavailable in this environment."));
+        }
+
+        var deactivated = await userProfileRepository.DeactivateAsync(userId, cancellationToken);
+        return deactivated
+            ? NoContent()
+            : NotFound(Error($"User profile {userId} was not found."));
+    }
+
     private Guid UserId() =>
         Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
 

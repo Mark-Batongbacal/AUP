@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using backend.Services.Routing;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace backend.Controllers;
@@ -9,6 +10,7 @@ namespace backend.Controllers;
 public sealed class JourneysController(IJourneyPlanningFacadeService journeys) : ControllerBase
 {
     [HttpPost("plan")]
+    [AllowAnonymous]
     public async Task<IActionResult> Plan(
         JourneyPlanRequest request, CancellationToken cancellationToken)
     {

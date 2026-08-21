@@ -6,6 +6,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -41,6 +42,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.location.LocationComponentActivationOptions
 import org.maplibre.android.maps.MapLibreMap
@@ -62,6 +64,7 @@ import kotlin.math.sqrt
 
 private val DefaultMapCenter = LatLng(15.1453, 120.5887)
 private const val DefaultMapZoom = 14.0
+private const val NavigationMapZoom = 16.5
 private const val OpenFreeMapStyleUrl = "https://tiles.openfreemap.org/styles/liberty"
 private const val RouteSourceId = "tuki-route-source"
 private const val RouteLayerId = "tuki-route-layer"
@@ -119,6 +122,8 @@ fun MapScreen(
     transitRoutes: List<TransitRouteOverlay> = emptyList(),
     todaPoints: List<TodaPointOverlay> = emptyList(),
     onMapClick: ((LatLng) -> Unit)? = null,
+    navigationTrackingEnabled: Boolean = false,
+    navigationTrackingPoint: LatLng? = null,
 ) {
     if (LocalInspectionMode.current) {
         MapPreviewPlaceholder(modifier)
@@ -135,6 +140,7 @@ fun MapScreen(
     var loadedStyle by remember { mutableStateOf<Style?>(null) }
     var selectedTransitRouteId by remember { mutableStateOf<Long?>(null) }
     var selectionInfo by remember { mutableStateOf<MapSelectionInfo?>(null) }
+    var followNavigationLocation by rememberSaveable(navigationTrackingEnabled) { mutableStateOf(navigationTrackingEnabled) }
 
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -193,14 +199,15 @@ fun MapScreen(
             map.setStyle(OpenFreeMapStyleUrl) { style ->
                 loadedStyle = style
 
-                val cameraTarget = routePoints.firstOrNull()
+                val cameraTarget = if (navigationTrackingEnabled) navigationTrackingPoint else null
+                    ?: routePoints.firstOrNull()
                     ?: startPoint
                     ?: selectedDestination
                     ?: finalDestination
                     ?: DefaultMapCenter
                 map.cameraPosition = CameraPosition.Builder()
                     .target(cameraTarget)
-                    .zoom(DefaultMapZoom)
+                    .zoom(if (navigationTrackingEnabled && navigationTrackingPoint != null) NavigationMapZoom else DefaultMapZoom)
                     .build()
 
                 updateTransitRouteLayers(style, transitRoutes, selectedTransitRouteId)
@@ -212,6 +219,21 @@ fun MapScreen(
                 updateFinalDestinationLayer(style, finalDestination)
                 configureLocationComponent(context, map, style, hasLocationPermission)
             }
+        }
+    }
+
+    DisposableEffect(mapView, navigationTrackingEnabled) {
+        if (!navigationTrackingEnabled) {
+            mapView.setOnTouchListener(null)
+            onDispose { }
+        } else {
+            mapView.setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN && followNavigationLocation) {
+                    followNavigationLocation = false
+                }
+                false
+            }
+            onDispose { mapView.setOnTouchListener(null) }
         }
     }
 
@@ -261,6 +283,22 @@ fun MapScreen(
             map.addOnMapClickListener(listener)
             onDispose { map.removeOnMapClickListener(listener) }
         }
+    }
+
+    LaunchedEffect(mapLibreMap, navigationTrackingPoint, followNavigationLocation, navigationTrackingEnabled) {
+        if (!navigationTrackingEnabled || !followNavigationLocation) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+        val point = navigationTrackingPoint ?: return@LaunchedEffect
+        val currentZoom = map.cameraPosition.zoom.takeIf { it >= NavigationMapZoom } ?: NavigationMapZoom
+        map.animateCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder()
+                    .target(point)
+                    .zoom(currentZoom)
+                    .build()
+            ),
+            650
+        )
     }
 
     LaunchedEffect(loadedStyle, routePoints) {
@@ -323,6 +361,15 @@ fun MapScreen(
                         modifier = Modifier.padding(top = 4.dp)
                     )
                 }
+            }
+        }
+
+        if (navigationTrackingEnabled && navigationTrackingPoint != null && !followNavigationLocation) {
+            Button(
+                onClick = { followNavigationLocation = true },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp)
+            ) {
+                Text("◎ Recenter")
             }
         }
 

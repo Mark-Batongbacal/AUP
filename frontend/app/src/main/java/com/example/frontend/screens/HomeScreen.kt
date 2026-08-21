@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,6 +58,7 @@ private val TukiCream2 = Color(0xFFFAEBC7)
 fun HomeScreen(
     userName: String = "Juan",
     tripRepository: TripRepository,
+    isGuest: Boolean = false,
     onSearchDestination: (origin: String, destination: String) -> Unit = { _, _ -> },
     onCommuteClick: (RecentCommute) -> Unit = {},
     onRecentClick: () -> Unit = {},
@@ -71,9 +70,6 @@ fun HomeScreen(
 ) {
     var currentLocationLabel by remember { mutableStateOf("Locating you...") }
     var isLocating by remember { mutableStateOf(true) }
-    var recentCommutes by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
-    var isRefreshingRecent by remember { mutableStateOf(false) }
-    var recentErrorMessage by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val inPreview = LocalInspectionMode.current
@@ -92,19 +88,6 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
-        isRefreshingRecent = true
-        recentErrorMessage = null
-
-        // Backend currently doesn't have a list-trips endpoint in TripRepository
-        // Using local mock data for now to maintain UI functionality
-        recentCommutes = listOf(
-            RecentCommute(id = "1", origin = "Sta. Rita", destination = "Guagua Town", legs = 3, minutes = 22),
-            RecentCommute(id = "2", origin = "Dolores", destination = "SM City Clark", legs = 2, minutes = 18),
-            RecentCommute(id = "3", origin = "Porac", destination = "Dau Terminal", legs = 4, minutes = 35)
-        )
-
-        isRefreshingRecent = false
-
         if (inPreview) {
             isLocating = false
             return@LaunchedEffect
@@ -129,108 +112,61 @@ fun HomeScreen(
             .fillMaxSize()
             .background(TukiCream)
     ) {
-        LazyColumn(
+
+        Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 30.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 30.dp,
-                bottom = 20.dp
-            )
+                .padding(horizontal = 24.dp)
         ) {
-            item {
-                Text(
-                    text = "Hello, $userName 👋",
-                    color = TukiGray,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
 
-                Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-                Text(
-                    text = "Where are you going?",
-                    color = TukiDark,
-                    fontSize = 27.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+            Text(
+                text = "Hello, $userName 👋",
+                color = TukiGray,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold
+            )
 
-                Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-                Text(
-                    text = "Pick a destination yourself, or tell our AI where you want to go.",
-                    color = TukiGray,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
+            Text(
+                text = "Where are you going?",
+                color = TukiDark,
+                fontSize = 25.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
 
-                Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-                CurrentLocationPill(
-                    currentLocationLabel = currentLocationLabel,
-                    isLocating = isLocating
-                )
+            Text(
+                text = "Pick a destination yourself, or tell our AI where you want to go.",
+                color = TukiGray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
 
-                Spacer(modifier = Modifier.height(20.dp))
-            }
+            Spacer(modifier = Modifier.height(14.dp))
 
-            item {
-                PinDestinationCard(
-                    onClick = { onPinDestinationClick(currentLocationLabel) }
-                )
+            CurrentLocationPill(
+                currentLocationLabel = currentLocationLabel,
+                isLocating = isLocating
+            )
 
-                Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-                AskAiCard(onClick = onAskAiClick)
-
-                Spacer(modifier = Modifier.height(30.dp))
-            }
-
-            item {
-                Text(
-                    text = "RECENT COMMUTES",
-                    color = TukiDark,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            if (isRefreshingRecent) {
-                item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            color = TukiTeal,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+            PinDestinationCard(
+                onClick = {
+                    onPinDestinationClick(currentLocationLabel)
                 }
-            } else if (recentErrorMessage != null) {
-                item {
-                    Text(
-                        text = "Could not load recent commutes",
-                        color = Color.Red,
-                        fontSize = 14.sp
-                    )
-                }
-            } else {
-                items(recentCommutes, key = { it.id }) { commute ->
-                    RecentCommuteCard(
-                        commute = commute,
-                        onClick = { onCommuteClick(commute) }
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
-                }
-            }
+            )
 
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                NewHereBanner(onClick = onNewHereClick)
-            }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            AskAiCard(
+                onClick = onAskAiClick
+            )
         }
 
         BottomBar(
@@ -450,67 +386,6 @@ private fun IconBadge(emoji: String) {
         contentAlignment = Alignment.Center
     ) {
         Text(text = emoji, fontSize = 16.sp)
-    }
-}
-
-@Composable
-private fun RecentCommuteCard(
-    commute: RecentCommute,
-    onClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(color = TukiCream2, shape = RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "${commute.origin} to ${commute.destination}",
-            color = TukiDark,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = "${commute.legs} legs · ${commute.minutes} min",
-            color = TukiTeal,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
-@Composable
-private fun NewHereBanner(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(color = TukiTeal, shape = RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(20.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "New here?",
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Learn how “para po” works",
-                color = Color.White.copy(alpha = 0.85f),
-                fontSize = 14.sp
-            )
-        }
-        Text(
-            text = "→",
-            color = Color.White,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold
-        )
     }
 }
 

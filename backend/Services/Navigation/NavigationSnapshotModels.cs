@@ -2,9 +2,19 @@ namespace backend.Services.Navigation;
 
 public sealed record StartNavigationRequest(Guid RecommendationId);
 
+public sealed record NavigationRerouteRequest(
+    string Reason = "MANUAL",
+    string? Preference = null,
+    decimal? Budget = null,
+    bool ClearBudget = false,
+    string? DestinationName = null,
+    double? DestinationLatitude = null,
+    double? DestinationLongitude = null);
+
 public sealed record NavigationLegSnapshot(
     int LegIndex,
     string TransportMode,
+    long? RouteId,
     string? RouteName,
     string? FromName,
     string? ToName,
@@ -20,7 +30,8 @@ public sealed record NavigationInstructionSnapshot(
     string? RouteName,
     string? TransportMode,
     double? DistanceMeters,
-    bool RequiresConfirmation);
+    bool RequiresConfirmation,
+    string? Text = null);
 
 public sealed record NavigationLandmarkSnapshot(
     string Name,
@@ -41,6 +52,13 @@ public sealed record NavigationTriggeredEvent(
     string Type,
     string? LandmarkName = null);
 
+public sealed record NavigationTripSummarySnapshot(
+    string DestinationName,
+    int? DurationMinutes,
+    decimal ApproxFareSpent,
+    int TransitLegs,
+    int Transfers);
+
 public sealed record NavigationSnapshot(
     Guid SessionId,
     string State,
@@ -57,7 +75,13 @@ public sealed record NavigationSnapshot(
     bool RequiresAlightingConfirmation,
     bool RerouteRequired,
     string Status,
-    IReadOnlyList<NavigationTriggeredEvent> TriggeredEvents);
+    IReadOnlyList<NavigationTriggeredEvent> TriggeredEvents,
+    double? CurrentLatitude,
+    double? CurrentLongitude,
+    decimal ApproxFareSpent,
+    decimal EstimatedRemainingFare,
+    NavigationInstructionSnapshot? FollowingInstruction = null,
+    NavigationTripSummarySnapshot? TripSummary = null);
 
 public sealed record NavigationOperation(NavigationSnapshot? Snapshot, string? Error = null)
 {

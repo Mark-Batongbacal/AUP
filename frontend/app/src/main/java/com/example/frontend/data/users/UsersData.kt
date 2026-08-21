@@ -6,6 +6,7 @@ import com.example.frontend.core.network.authenticatedApiCall
 import com.example.frontend.core.storage.AuthSessionStore
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PUT
 
@@ -36,11 +37,16 @@ interface UsersApi {
 
     @PUT("api/users/me")
     suspend fun updateCurrentUser(@Body request: UpdateUserProfileRequest): Response<UserProfileDto>
+
+    @DELETE("api/users/me")
+    suspend fun deleteCurrentUser(): Response<Unit>
 }
 
 interface UserRepository {
     suspend fun getCurrentUser(): ApiResult<UserProfileDto>
     suspend fun updateCurrentUser(request: UpdateUserProfileRequest): ApiResult<UserProfileDto>
+
+    suspend fun deleteCurrentUser(): ApiResult<Unit>
 }
 
 class UserRepositoryImpl(
@@ -53,4 +59,7 @@ class UserRepositoryImpl(
 
     override suspend fun updateCurrentUser(request: UpdateUserProfileRequest) =
         authenticatedApiCall(sessionStore, errors) { api.updateCurrentUser(request) }
+
+    override suspend fun deleteCurrentUser(): ApiResult<Unit> =
+        authenticatedApiCall(sessionStore, errors, noContentValue = Unit) { api.deleteCurrentUser() }
 }

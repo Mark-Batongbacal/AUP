@@ -1,4 +1,5 @@
 using backend.Services.Transportation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace backend.Controllers;
@@ -11,6 +12,7 @@ public sealed class TransportRoutesController(
     IRouteGeneratorService routeGeneratorService) : ControllerBase
 {
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<IReadOnlyList<TransportRouteListItemDto>>> GetActiveRoutes(
         CancellationToken cancellationToken)
     {
@@ -27,6 +29,7 @@ public sealed class TransportRoutesController(
     }
 
     [HttpGet("latest/polyline")]
+    [AllowAnonymous]
     public async Task<ActionResult<TransportRoutePolylineDto>> GetLatestPolyline(
         CancellationToken cancellationToken)
     {
@@ -114,6 +117,7 @@ public sealed class TransportRoutesController(
     }
 
     [HttpGet("{routeId:long}/points")]
+    [AllowAnonymous]
     public async Task<ActionResult<RoutePointsResponseDto>> GetRoutePoints(
         [FromRoute] long routeId,
         CancellationToken cancellationToken)

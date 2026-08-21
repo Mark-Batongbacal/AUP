@@ -157,7 +157,14 @@ struct RecentCommute: Identifiable, Hashable {
     let destination: String
     let legs: Int
     let minutes: Int
+    var status = ""
+    var wasRerouted = false
+    var rerouteCount = 0
     var dateGroup = ""
+    var originLatitude: Double? = nil
+    var originLongitude: Double? = nil
+    var destinationLatitude: Double? = nil
+    var destinationLongitude: Double? = nil
     var steps: [CommuteStep] = []
 }
 

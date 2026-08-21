@@ -1,4 +1,5 @@
 using backend.Models.Database;
+using backend.Models.Trips;
 using backend.Services.Transportation;
 
 namespace backend.Services;
@@ -32,6 +33,11 @@ public interface ITripService
     Task<PassengerTrip?> GetPassengerTripByIdAsync(Guid passengerTripId, CancellationToken cancellationToken = default);
 
     Task<List<PassengerTrip>> GetPassengerTripsByUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<List<PassengerTripHistoryItemDto>> GetPassengerTripHistoryAsync(
+        Guid userId,
+        bool recentOnly = false,
+        CancellationToken cancellationToken = default);
 
     Task<PassengerTrip?> StartPassengerTripAsync(
         Guid userId,

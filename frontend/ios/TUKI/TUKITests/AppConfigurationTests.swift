@@ -37,9 +37,45 @@ final class AppConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.facebookOAuth?.clientToken, "facebook-client-token")
     }
 
+    func testLoadAcceptsLocalSimulatorHTTPBackendURL() throws {
+        let configuration = try AppConfiguration.load(infoDictionary: [
+            "TukiBackendBaseURL": "http://127.0.0.1:5129"
+        ])
+
+        XCTAssertEqual(configuration.backendBaseURL.absoluteString, "http://127.0.0.1:5129/")
+        XCTAssertTrue(configuration.backendBaseURL.isAbsoluteHTTPURL)
+    }
+
     func testLoadRequiresBackendBaseURL() {
         XCTAssertThrowsError(try AppConfiguration.load(infoDictionary: [:])) { error in
             XCTAssertEqual(error as? AppConfigurationError, .missingBackendBaseURL)
         }
+    }
+
+    func testLoadRejectsRelativeBackendBaseURL() {
+        XCTAssertThrowsError(try AppConfiguration.load(infoDictionary: [
+            "TukiBackendBaseURL": "/"
+        ])) { error in
+            XCTAssertEqual(error as? AppConfigurationError, .missingBackendBaseURL)
+        }
+    }
+
+    func testLoadRejectsUnresolvedBackendBaseURLBuildSetting() {
+        XCTAssertThrowsError(try AppConfiguration.load(infoDictionary: [
+            "TukiBackendBaseURL": "$(BACKEND_BASE_URL)"
+        ])) { error in
+            XCTAssertEqual(error as? AppConfigurationError, .missingBackendBaseURL)
+        }
+    }
+
+    func testBackendPathConstructionProducesAbsoluteHTTPURL() throws {
+        let configuration = try AppConfiguration.load(infoDictionary: [
+            "TukiBackendBaseURL": "http://127.0.0.1:5129"
+        ])
+
+        let url = configuration.backendBaseURL.appendingBackendPath("/api/auth/google")
+
+        XCTAssertEqual(url.absoluteString, "http://127.0.0.1:5129/api/auth/google")
+        XCTAssertTrue(url.isAbsoluteHTTPURL)
     }
 }

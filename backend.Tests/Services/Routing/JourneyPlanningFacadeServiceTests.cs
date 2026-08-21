@@ -40,4 +40,42 @@ public sealed class JourneyPlanningFacadeServiceTests
         Assert.Equal(recommendationId, recommendation.RecommendationId);
         Assert.Same(plan, recommendation.Plan);
     }
+
+    [Fact]
+    public async Task Plan_WhenGuest_ReturnsTransientRecommendationsWithoutPersistence()
+    {
+        var plan = new JeepneyTripPlan
+        {
+            RecommendationType = "fastest",
+            TotalFarePesos = 13,
+            OriginAccess = new JeepneyAccessSegment { Mode = AccessMode.Walk },
+            DestinationAccess = new JeepneyAccessSegment { Mode = AccessMode.Walk },
+            Legs = [new JeepneyTripLeg { Mode = AccessMode.Jeepney }]
+        };
+        var routing = new Mock<IRoutingService>();
+        routing.Setup(item => item.PlanTripsAsync(15, 120, 15.1, 120.1, default))
+            .ReturnsAsync([plan]);
+        var persistence = new Mock<IJourneyPlanPersistenceService>(MockBehavior.Strict);
+        var service = new JourneyPlanningFacadeService(routing.Object, persistence.Object);
+
+        var result = await service.PlanAsync(Guid.Empty,
+            new JourneyPlanRequest(15, 120, "Market", 15.1, 120.1));
+
+        var recommendation = Assert.Single(result);
+        Assert.NotEqual(Guid.Empty, recommendation.RecommendationId);
+        Assert.Same(plan, recommendation.Plan);
+        persistence.Verify(
+            item => item.PersistAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<double>(),
+                It.IsAny<double>(),
+                It.IsAny<string>(),
+                It.IsAny<double>(),
+                It.IsAny<double>(),
+                It.IsAny<decimal?>(),
+                It.IsAny<string?>(),
+                It.IsAny<IReadOnlyList<JeepneyTripPlan>>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
 }

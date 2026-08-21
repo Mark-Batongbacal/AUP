@@ -35,6 +35,7 @@ private val TukiGray = Color(0xFF9AA6A9)
 @Composable
 fun RecentScreen(
     commutes: List<RecentCommute> = emptyList(),
+    isGuest: Boolean = false,
     isLoading: Boolean = false,
     errorMessage: String? = null,
     onCommuteClick: (RecentCommute) -> Unit = {},
@@ -87,7 +88,11 @@ fun RecentScreen(
                 commutes.isEmpty() -> {
                     item {
                         Text(
-                            text = "No trips yet. Your completed and active trips will appear here.",
+                            text = if (isGuest) {
+                                "Sign in to view your recent journeys."
+                            } else {
+                                "No completed or cancelled trips yet."
+                            },
                             color = TukiGray,
                             fontSize = 14.sp
                         )
@@ -144,10 +149,27 @@ private fun RecentRow(commute: RecentCommute, onClick: () -> Unit) {
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "${commute.legs} legs · ${commute.minutes} min",
+            text = buildList {
+                commute.status.takeIf { it.isNotBlank() }?.let(::add)
+                add("${commute.legs} legs")
+                add("${commute.minutes} min")
+            }.joinToString(" · "),
             color = TukiTeal,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
         )
+        if (commute.wasRerouted) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = if (commute.rerouteCount > 1) {
+                    "Rerouted ${commute.rerouteCount} times"
+                } else {
+                    "Rerouted"
+                },
+                color = TukiGray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
     }
 }

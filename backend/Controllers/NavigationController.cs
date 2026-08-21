@@ -2,6 +2,7 @@ using System.Security.Claims;
 using backend.Services.Navigation;
 using backend.Services.Routing;
 using backend.Services.Transportation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -24,7 +25,12 @@ public sealed class NavigationController(
     public async Task<IActionResult> Active(CancellationToken cancellationToken) =>
         Result(await navigation.GetActiveAsync(UserId(), cancellationToken));
 
+    [HttpGet("{sessionId:guid}")]
+    public async Task<IActionResult> Get(Guid sessionId, CancellationToken cancellationToken) =>
+        Result(await navigation.GetAsync(UserId(), sessionId, cancellationToken));
+
     [HttpGet("geometry")]
+    [AllowAnonymous]
     public async Task<IActionResult> Geometry(
         [FromQuery] double startLat,
         [FromQuery] double startLon,
@@ -93,9 +99,9 @@ public sealed class NavigationController(
         Result(await navigation.CancelAsync(UserId(), sessionId, cancellationToken));
 
     [HttpPost("{sessionId:guid}/reroute")]
-    public async Task<IActionResult> Reroute(Guid sessionId, RerouteRequest request,
+    public async Task<IActionResult> Reroute(Guid sessionId, NavigationRerouteRequest request,
         CancellationToken cancellationToken) =>
-        Result(await navigation.RerouteAsync(UserId(), sessionId, request.Reason, cancellationToken));
+        Result(await navigation.RerouteAsync(UserId(), sessionId, request, cancellationToken));
 
     private IActionResult Result(NavigationOperation operation, bool created = false)
     {

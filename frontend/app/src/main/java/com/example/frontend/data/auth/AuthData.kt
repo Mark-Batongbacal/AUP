@@ -23,8 +23,32 @@ data class RegisterRequest(
     val password: String,
     val firstName: String,
     val lastName: String,
-    val phoneNumber: String? = null
+    val phoneNumber: String? = null,
+    val verificationCode: String = ""
 )
+
+data class RegistrationOtpRequest(val email: String)
+data class RegistrationOtpVerifyRequest(val email: String, val code: String)
+
+data class ForgotPasswordRequest(val email: String)
+data class PasswordOtpVerifyRequest(val email: String, val code: String)
+
+data class ResetPasswordRequest(
+    val email: String,
+    val code: String,
+    val newPassword: String
+)
+
+data class ChangePasswordOtpRequest(val currentPassword: String)
+data class ChangePasswordOtpVerifyRequest(val currentPassword: String, val code: String)
+
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val code: String,
+    val newPassword: String
+)
+
+data class MessageResponseDto(val message: String?)
 
 data class LoginResponseDto(
     val apiKey: String,
@@ -49,20 +73,52 @@ data class AuthenticatedUser(val session: AuthSession, val profile: UserProfileD
 
 interface AuthApi {
     @POST("api/auth/login") suspend fun login(@Body request: LoginRequest): Response<LoginResponseDto>
-    @POST("api/auth/register") suspend fun register(@Body request: RegisterRequest): Response<RegisterResponseDto>
+    @POST("api/auth/register/complete") suspend fun register(@Body request: RegisterRequest): Response<RegisterResponseDto>
+    @POST("api/auth/register/request-otp") suspend fun requestRegistrationOtp(
+        @Body request: RegistrationOtpRequest
+    ): Response<MessageResponseDto>
+    @POST("api/auth/register/verify-otp") suspend fun verifyRegistrationOtp(
+        @Body request: RegistrationOtpVerifyRequest
+    ): Response<MessageResponseDto>
     @POST("api/auth/google") suspend fun google(@Body request: GoogleLoginRequest): Response<LoginResponseDto>
     @POST("api/auth/facebook") suspend fun facebook(@Body request: FacebookLoginRequest): Response<LoginResponseDto>
     @POST("api/auth/facebook/oidc") suspend fun facebookOidc(@Body request: FacebookOidcLoginRequest): Response<LoginResponseDto>
     @GET("api/auth/me") suspend fun me(): Response<AuthIdentityDto>
+    @POST("api/auth/forgot-password") suspend fun forgotPassword(
+        @Body request: ForgotPasswordRequest
+    ): Response<MessageResponseDto>
+    @POST("api/auth/forgot-password/verify-otp") suspend fun verifyPasswordResetOtp(
+        @Body request: PasswordOtpVerifyRequest
+    ): Response<MessageResponseDto>
+    @POST("api/auth/reset-password") suspend fun resetPassword(
+        @Body request: ResetPasswordRequest
+    ): Response<MessageResponseDto>
+    @POST("api/auth/change-password/request-otp") suspend fun requestChangePasswordOtp(
+        @Body request: ChangePasswordOtpRequest
+    ): Response<MessageResponseDto>
+    @POST("api/auth/change-password/verify-otp") suspend fun verifyChangePasswordOtp(
+        @Body request: ChangePasswordOtpVerifyRequest
+    ): Response<MessageResponseDto>
+    @POST("api/auth/change-password") suspend fun changePassword(
+        @Body request: ChangePasswordRequest
+    ): Response<MessageResponseDto>
 }
 
 interface AuthRepository {
     suspend fun login(userName: String, password: String): ApiResult<AuthenticatedUser>
     suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser>
+    suspend fun requestRegistrationOtp(email: String): ApiResult<Unit>
+    suspend fun verifyRegistrationOtp(email: String, code: String): ApiResult<Unit>
     suspend fun loginWithGoogle(idToken: String): ApiResult<AuthenticatedUser>
     suspend fun loginWithFacebook(accessToken: String): ApiResult<AuthenticatedUser>
     suspend fun loginWithFacebookOidc(idToken: String, nonce: String): ApiResult<AuthenticatedUser>
     suspend fun getCurrentAuthIdentity(): ApiResult<AuthIdentityDto>
+    suspend fun requestPasswordReset(email: String): ApiResult<Unit>
+    suspend fun verifyPasswordResetOtp(email: String, code: String): ApiResult<Unit>
+    suspend fun resetPassword(email: String, code: String, newPassword: String): ApiResult<Unit>
+    suspend fun requestChangePasswordOtp(currentPassword: String): ApiResult<Unit>
+    suspend fun verifyChangePasswordOtp(currentPassword: String, code: String): ApiResult<Unit>
+    suspend fun changePassword(currentPassword: String, code: String, newPassword: String): ApiResult<Unit>
     fun logoutLocalSession()
 }
 
@@ -82,6 +138,16 @@ class AuthRepositoryImpl(
         }
     }
 
+    override suspend fun requestRegistrationOtp(email: String): ApiResult<Unit> =
+        toUnit(apiCall(errors) {
+            authApi.requestRegistrationOtp(RegistrationOtpRequest(email.trim()))
+        })
+
+    override suspend fun verifyRegistrationOtp(email: String, code: String): ApiResult<Unit> =
+        toUnit(apiCall(errors) {
+            authApi.verifyRegistrationOtp(RegistrationOtpVerifyRequest(email.trim(), code.trim()))
+        })
+
     override suspend fun loginWithGoogle(idToken: String) =
         authenticate { authApi.google(GoogleLoginRequest(idToken)) }
 
@@ -94,7 +160,56 @@ class AuthRepositoryImpl(
     override suspend fun getCurrentAuthIdentity() =
         authenticatedApiCall(sessionStore, errors) { authApi.me() }
 
+    override suspend fun requestPasswordReset(email: String): ApiResult<Unit> =
+        toUnit(apiCall(errors) {
+            authApi.forgotPassword(ForgotPasswordRequest(email.trim()))
+        })
+
+    override suspend fun verifyPasswordResetOtp(email: String, code: String): ApiResult<Unit> =
+        toUnit(apiCall(errors) {
+            authApi.verifyPasswordResetOtp(PasswordOtpVerifyRequest(email.trim(), code.trim()))
+        })
+
+    override suspend fun resetPassword(
+        email: String,
+        code: String,
+        newPassword: String
+    ): ApiResult<Unit> = toUnit(apiCall(errors) {
+        authApi.resetPassword(
+            ResetPasswordRequest(
+                email = email.trim(),
+                code = code.trim(),
+                newPassword = newPassword
+            )
+        )
+    })
+
+    override suspend fun requestChangePasswordOtp(currentPassword: String): ApiResult<Unit> =
+        toUnit(authenticatedApiCall(sessionStore, errors) {
+            authApi.requestChangePasswordOtp(ChangePasswordOtpRequest(currentPassword))
+        })
+
+    override suspend fun verifyChangePasswordOtp(
+        currentPassword: String,
+        code: String
+    ): ApiResult<Unit> = toUnit(authenticatedApiCall(sessionStore, errors) {
+        authApi.verifyChangePasswordOtp(ChangePasswordOtpVerifyRequest(currentPassword, code.trim()))
+    })
+
+    override suspend fun changePassword(
+        currentPassword: String,
+        code: String,
+        newPassword: String
+    ): ApiResult<Unit> = toUnit(authenticatedApiCall(sessionStore, errors) {
+        authApi.changePassword(ChangePasswordRequest(currentPassword, code.trim(), newPassword))
+    })
+
     override fun logoutLocalSession() = sessionStore.clear()
+
+    private fun toUnit(result: ApiResult<MessageResponseDto>): ApiResult<Unit> = when (result) {
+        is ApiResult.Success -> ApiResult.Success(Unit)
+        is ApiResult.Failure -> result
+    }
 
     private suspend fun authenticate(call: suspend () -> Response<LoginResponseDto>): ApiResult<AuthenticatedUser> =
         when (val response = apiCall(errors, request = call)) {
@@ -116,4 +231,3 @@ class AuthRepositoryImpl(
     private fun LoginResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
     private fun RegisterResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
 }
-

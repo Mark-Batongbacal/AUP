@@ -1,5 +1,6 @@
 using backend.Models.Database;
 using backend.Services.Transportation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace backend.Controllers;
@@ -10,6 +11,7 @@ public sealed class TricyclePointsController(
     ITricyclePointService tricyclePointService) : ControllerBase
 {
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<IReadOnlyList<TricyclePointResponseDto>>> GetActive(
         CancellationToken cancellationToken)
     {
@@ -18,6 +20,7 @@ public sealed class TricyclePointsController(
     }
 
     [HttpGet("{tricyclePointId:long}")]
+    [AllowAnonymous]
     public async Task<ActionResult<TricyclePointResponseDto>> GetById(
         [FromRoute] long tricyclePointId,
         CancellationToken cancellationToken)

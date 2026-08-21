@@ -18,6 +18,7 @@ public interface IFavoriteTripService
 public enum FavoriteTripAddStatus
 {
     Created,
+    PersistenceNotAllowed,
     RecommendationNotFound,
     AlreadyFavorited
 }

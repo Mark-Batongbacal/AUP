@@ -18,10 +18,10 @@ public sealed class AzureEmailSender(IOptions<EmailOptions> options) : IEmailSen
         if (!_options.IsValid())
         {
             throw new InvalidOperationException(
-                "Email sending is not configured. Set Email__ConnectionString and Email__SenderAddress.");
+                "Email sending is not configured. Set COMMUNICATION_SERVICES_CONNECTION_STRING (or Email__ConnectionString) and Email__SenderAddress.");
         }
 
-        var client = new EmailClient(_options.ConnectionString);
+        var client = new EmailClient(_options.ResolveConnectionString());
         var content = new EmailContent(subject)
         {
             Html = htmlBody,
