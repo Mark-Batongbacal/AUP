@@ -2,7 +2,7 @@ package com.example.frontend.model
 
 data class FavoriteRoute(
     val id: String,
-    val recommendationId: String,
+    val recommendationId: String = "",
     val origin: String,
     val destination: String,
     val recommendationType: String = "",
