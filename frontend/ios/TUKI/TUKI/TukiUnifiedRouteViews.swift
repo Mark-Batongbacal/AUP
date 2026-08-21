@@ -10,73 +10,102 @@ struct TukiUnifiedDestinationSearchView: View {
     let onBack: () -> Void
     let onFind: (String, CLLocationCoordinate2D, TukiPlace) -> Void
 
+    @State private var originText = ""
+    @State private var originCoordinate: CLLocationCoordinate2D?
+    @State private var originResults: [TukiPlace] = []
+    @State private var searchingOrigin = false
     @State private var destinationText = ""
     @State private var results: [TukiPlace] = []
     @State private var selected: TukiPlace?
     @State private var unsupported = false
     @State private var searching = false
+    @State private var mapMode: TukiMapPickMode?
 
     var body: some View {
         VStack(spacing: 0) {
             routeHeader("Where are you going?", onBack: onBack)
-            VStack(spacing: 14) {
-                HStack(spacing: 10) {
-                    Circle().fill(TukiPalette.teal).frame(width: 9, height: 9)
-                    Text("\(initialOriginName) (current location)")
-                        .font(.system(size: 14, weight: .bold)).foregroundStyle(TukiPalette.dark)
-                    Spacer()
-                }
-                .padding(14).background(TukiPalette.creamCard).clipShape(RoundedRectangle(cornerRadius: 14))
+            ScrollView {
+                VStack(spacing: 14) {
+                    inputCard(
+                        title: "Origin",
+                        text: $originText,
+                        placeholder: "Current location or search origin",
+                        accent: TukiPalette.teal,
+                        mapAction: { mapMode = .origin }
+                    )
 
-                TextField("Type or search a place", text: $destinationText)
-                    .padding(14).background(.white).clipShape(RoundedRectangle(cornerRadius: 14))
-
-                if searching { ProgressView().tint(TukiPalette.teal) }
-
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(results) { place in
-                            Button {
-                                selected = place
-                                destinationText = place.name
-                                unsupported = !TukiServiceArea.contains(latitude: place.latitude, longitude: place.longitude)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Text("📍")
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(place.name).font(.system(size: 15, weight: .bold)).foregroundStyle(TukiPalette.dark)
-                                        if let address = place.address, !address.isEmpty {
-                                            Text(address).font(.system(size: 12)).foregroundStyle(TukiPalette.gray)
-                                        }
-                                    }
-                                    Spacer()
-                                }
-                                .padding(13).background(TukiPalette.creamCard).clipShape(RoundedRectangle(cornerRadius: 12))
-                            }
-                            .buttonStyle(.plain)
+                    if searchingOrigin { ProgressView().tint(TukiPalette.teal) }
+                    if !originResults.isEmpty {
+                        resultList(originResults) { place in
+                            originText = place.name
+                            originCoordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+                            originResults = []
+                            unsupported = !TukiServiceArea.contains(latitude: place.latitude, longitude: place.longitude)
                         }
                     }
-                }
 
-                TukiPrimaryButton(title: "Find Routes", isEnabled: selected != nil) {
-                    guard let selected else { return }
-                    Task {
-                        let origin: CLLocationCoordinate2D?
-                        if let initialOrigin {
-                            origin = initialOrigin
-                        } else {
-                            origin = await location.requestCurrentLocation()?.coordinate
+                    Button("Use current location") {
+                        Task { await useCurrentLocation() }
+                    }
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(TukiPalette.teal)
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    inputCard(
+                        title: "Destination",
+                        text: $destinationText,
+                        placeholder: "Type or search a place",
+                        accent: TukiPalette.orange,
+                        mapAction: { mapMode = .destination }
+                    )
+
+                    if searching { ProgressView().tint(TukiPalette.teal) }
+                    resultList(results) { place in
+                        selected = place
+                        destinationText = place.name
+                        results = []
+                        unsupported = !TukiServiceArea.contains(latitude: place.latitude, longitude: place.longitude)
+                    }
+
+                    TukiPrimaryButton(
+                        title: "Find Routes",
+                        isEnabled: selected != nil && originCoordinate != nil
+                    ) {
+                        guard let selected, let originCoordinate else { return }
+                        guard TukiServiceArea.contains(latitude: originCoordinate.latitude, longitude: originCoordinate.longitude),
+                              TukiServiceArea.contains(latitude: selected.latitude, longitude: selected.longitude) else {
+                            unsupported = true
+                            return
                         }
-                        guard let origin else { return }
-                        onFind(initialOriginName, origin, selected)
+                        onFind(originText.isEmpty ? initialOriginName : originText, originCoordinate, selected)
                     }
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 20)
         }
         .background(TukiPalette.cream.ignoresSafeArea())
-        .task(id: destinationText) { await search() }
+        .task {
+            originText = initialOriginName
+            originCoordinate = initialOrigin
+            if originCoordinate == nil { await useCurrentLocation() }
+        }
+        .task(id: originText) { await searchOrigin() }
+        .task(id: destinationText) { await searchDestination() }
+        .sheet(item: $mapMode) { mode in
+            TukiUnifiedMapPicker(
+                mode: mode,
+                initialCoordinate: mode == .origin
+                    ? originCoordinate
+                    : selected.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) },
+                onCancel: { mapMode = nil },
+                onUse: { coordinate in
+                    mapMode = nil
+                    Task { await applyMapCoordinate(coordinate, mode: mode) }
+                }
+            )
+        }
         .alert(TukiServiceArea.title, isPresented: $unsupported) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -84,20 +113,138 @@ struct TukiUnifiedDestinationSearchView: View {
         }
     }
 
-    private func search() async {
+    private func inputCard(
+        title: String,
+        text: Binding<String>,
+        placeholder: String,
+        accent: Color,
+        mapAction: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title.uppercased()).font(.system(size: 11, weight: .bold)).foregroundStyle(TukiPalette.gray)
+            HStack(spacing: 10) {
+                Circle().fill(accent).frame(width: 9, height: 9)
+                TextField(placeholder, text: text)
+                    .textInputAutocapitalization(.words)
+                Button("🗺️", action: mapAction).buttonStyle(.plain)
+            }
+            .padding(14).background(.white).clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
+    private func resultList(
+        _ values: [TukiPlace],
+        onSelect: @escaping (TukiPlace) -> Void
+    ) -> some View {
+        VStack(spacing: 8) {
+            ForEach(values) { place in
+                Button { onSelect(place) } label: {
+                    HStack(spacing: 10) {
+                        Text("📍")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(place.name).font(.system(size: 15, weight: .bold)).foregroundStyle(TukiPalette.dark)
+                            if let address = place.address, !address.isEmpty {
+                                Text(address).font(.system(size: 12)).foregroundStyle(TukiPalette.gray)
+                            }
+                        }
+                        Spacer()
+                    }
+                    .padding(13).background(TukiPalette.creamCard).clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func useCurrentLocation() async {
+        guard let current = await location.requestCurrentLocation() else { return }
+        originCoordinate = current.coordinate
+        if let api, case .success(let place) = await api.reverseGeocode(
+            lat: current.coordinate.latitude,
+            lon: current.coordinate.longitude
+        ) {
+            originText = place.name
+        } else {
+            originText = "Current location"
+        }
+        unsupported = !TukiServiceArea.contains(
+            latitude: current.coordinate.latitude,
+            longitude: current.coordinate.longitude
+        )
+    }
+
+    private func searchOrigin() async {
+        let query = originText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 2,
+              query != initialOriginName,
+              query != "Current location",
+              let api else {
+            originResults = []
+            return
+        }
+        searchingOrigin = true
+        try? await Task.sleep(for: .milliseconds(350))
+        guard !Task.isCancelled else { searchingOrigin = false; return }
+        let focus = originCoordinate ?? location.currentLocation?.coordinate
+        if case .success(let values) = await api.searchPlaces(
+            query,
+            focusLat: focus?.latitude,
+            focusLon: focus?.longitude
+        ) {
+            originResults = Array(values.prefix(5))
+        }
+        searchingOrigin = false
+    }
+
+    private func searchDestination() async {
         let query = destinationText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.count >= 2, selected?.name != query, let api else {
             results = []
             return
         }
         searching = true
-        try? await Task.sleep(for: .milliseconds(300))
+        try? await Task.sleep(for: .milliseconds(350))
         guard !Task.isCancelled else { searching = false; return }
-        let focus = initialOrigin ?? location.currentLocation?.coordinate
-        if case .success(let values) = await api.searchPlaces(query, focusLat: focus?.latitude, focusLon: focus?.longitude) {
-            results = Array(values.prefix(6))
+        let focus = originCoordinate ?? location.currentLocation?.coordinate
+        if case .success(let values) = await api.searchPlaces(
+            query,
+            focusLat: focus?.latitude,
+            focusLon: focus?.longitude
+        ) {
+            results = Array(values.prefix(5))
         }
         searching = false
+    }
+
+    private func applyMapCoordinate(_ coordinate: CLLocationCoordinate2D, mode: TukiMapPickMode) async {
+        guard TukiServiceArea.contains(latitude: coordinate.latitude, longitude: coordinate.longitude) else {
+            unsupported = true
+            return
+        }
+        let resolved: TukiPlace?
+        if let api, case .success(let place) = await api.reverseGeocode(lat: coordinate.latitude, lon: coordinate.longitude) {
+            resolved = place
+        } else {
+            resolved = nil
+        }
+
+        if mode == .origin {
+            originCoordinate = coordinate
+            originText = resolved?.name ?? "Pinned origin"
+            originResults = []
+        } else {
+            selected = resolved ?? TukiPlace(
+                id: "map-pin-\(coordinate.latitude)-\(coordinate.longitude)",
+                name: "Pinned destination",
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude,
+                category: "map",
+                source: "map",
+                address: nil
+            )
+            destinationText = selected?.name ?? "Pinned destination"
+            results = []
+        }
     }
 }
 
