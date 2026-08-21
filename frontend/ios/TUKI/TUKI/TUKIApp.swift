@@ -32,7 +32,7 @@ private struct TukiAppContent: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            TukiParityRootView()
+            TukiUnifiedParityRootView()
                 .id(mainFlowId)
 
             TukiFareTrackingOverlay()
