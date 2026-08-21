@@ -1,6 +1,5 @@
 package com.example.frontend.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,8 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 
-private val TukiTeal = Color(0xFF15919B)
-private val TukiGray = Color(0xFF9AA6A9)
+private val TukiTeal = Color(0xFF2C8E95)
+private val TukiGray = Color(0xFF8B989C)
+private val TukiNavSurface = Color(0xFFFFFBF0)
 
 enum class TukiTab { HOME, RECENT, FAVORITES, PROFILE }
 
@@ -34,40 +36,20 @@ fun BottomBar(
     onFavoritesClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .padding(horizontal = 24.dp, vertical = 14.dp)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        color = TukiNavSurface,
+        shadowElevation = 8.dp
     ) {
-        BottomBarItem(
-            iconRes = R.drawable.home,
-            label = "Home",
-            selected = selectedTab == TukiTab.HOME,
-            onClick = onHomeClick,
-            modifier = Modifier.weight(1f)
-        )
-        BottomBarItem(
-            iconRes = R.drawable.recent,
-            label = "Recent",
-            selected = selectedTab == TukiTab.RECENT,
-            onClick = onRecentClick,
-            modifier = Modifier.weight(1f)
-        )
-        BottomBarItem(
-            iconRes = R.drawable.favorite,
-            label = "Favorites",
-            selected = selectedTab == TukiTab.FAVORITES,
-            onClick = onFavoritesClick,
-            modifier = Modifier.weight(1f)
-        )
-        BottomBarItem(
-            iconRes = R.drawable.profile,
-            label = "Profile",
-            selected = selectedTab == TukiTab.PROFILE,
-            onClick = onProfileClick,
-            modifier = Modifier.weight(1f)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 13.dp)
+        ) {
+            BottomBarItem(R.drawable.home, "Home", selectedTab == TukiTab.HOME, onHomeClick, Modifier.weight(1f))
+            BottomBarItem(R.drawable.recent, "Recent", selectedTab == TukiTab.RECENT, onRecentClick, Modifier.weight(1f))
+            BottomBarItem(R.drawable.favorite, "Favorites", selectedTab == TukiTab.FAVORITES, onFavoritesClick, Modifier.weight(1f))
+            BottomBarItem(R.drawable.profile, "Profile", selectedTab == TukiTab.PROFILE, onProfileClick, Modifier.weight(1f))
+        }
     }
 }
 
@@ -82,15 +64,15 @@ private fun BottomBarItem(
     val tint = if (selected) TukiTeal else TukiGray
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier.clickable(onClick = onClick)
+        modifier = modifier.clickable(onClick = onClick).padding(vertical = 2.dp)
     ) {
         Icon(
             painter = painterResource(iconRes),
             contentDescription = label,
             tint = tint,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(23.dp)
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(text = label, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = tint, fontSize = 11.sp, fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold)
     }
 }
