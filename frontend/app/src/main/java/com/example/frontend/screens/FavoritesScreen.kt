@@ -1,5 +1,6 @@
 package com.example.frontend.screens
 
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -43,7 +44,7 @@ private val FavoriteDanger = Color(0xFFDF5D58)
 fun FavoritesScreen(
     favorites: List<FavoriteRoute> = emptyList(),
     isGuest: Boolean = false,
-    onBack: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
     onRouteClick: (FavoriteRoute) -> Unit = {},
     onRemoveFavorite: (FavoriteRoute) -> Unit = {},
     onHomeClick: () -> Unit = {},
@@ -51,6 +52,7 @@ fun FavoritesScreen(
     onProfileClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     val scope = rememberCoroutineScope()
     val repository = remember(context) { TukiDataProvider(context.applicationContext).favoritesRepository }
     var liveFavorites by remember { mutableStateOf(favorites) }
@@ -114,7 +116,10 @@ fun FavoritesScreen(
         ) {
             item {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(38.dp).clickable(onClick = onBack), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.size(38.dp).clickable { onBack?.invoke() ?: backDispatcher?.onBackPressed() },
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text("←", color = FavoriteDark, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                     }
                     Text(
