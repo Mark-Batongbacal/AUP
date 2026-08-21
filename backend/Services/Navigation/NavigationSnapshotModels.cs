@@ -30,7 +30,8 @@ public sealed record NavigationInstructionSnapshot(
     string? RouteName,
     string? TransportMode,
     double? DistanceMeters,
-    bool RequiresConfirmation);
+    bool RequiresConfirmation,
+    string? Text = null);
 
 public sealed record NavigationLandmarkSnapshot(
     string Name,
@@ -50,6 +51,13 @@ public sealed record NavigationStopInfo(
 public sealed record NavigationTriggeredEvent(
     string Type,
     string? LandmarkName = null);
+
+public sealed record NavigationTripSummarySnapshot(
+    string DestinationName,
+    int? DurationMinutes,
+    decimal ApproxFareSpent,
+    int TransitLegs,
+    int Transfers);
 
 public sealed record NavigationSnapshot(
     Guid SessionId,
@@ -71,7 +79,9 @@ public sealed record NavigationSnapshot(
     double? CurrentLatitude,
     double? CurrentLongitude,
     decimal ApproxFareSpent,
-    decimal EstimatedRemainingFare);
+    decimal EstimatedRemainingFare,
+    NavigationInstructionSnapshot? FollowingInstruction = null,
+    NavigationTripSummarySnapshot? TripSummary = null);
 
 public sealed record NavigationOperation(NavigationSnapshot? Snapshot, string? Error = null)
 {
