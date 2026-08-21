@@ -157,25 +157,29 @@ fun LiveTripMapScreen(
     Box(modifier.fillMaxSize()) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
 
-        if (currentPosition != null) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 16.dp)
-                    .size(50.dp)
-                    .clickable {
-                        followLocation = true
-                        mapLibreMap?.let { map -> animateLiveTripCamera(map, currentPosition, routePoints) }
-                    },
-                shape = CircleShape,
-                color = Color(0xFFFFFBF0),
-                border = BorderStroke(1.dp, Color(0xFFE2DDD2)),
-                shadowElevation = 9.dp,
-                tonalElevation = 2.dp
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("◎", color = Color(0xFF153E4B), fontSize = 27.sp)
-                }
+        val recenterPoint = currentPosition ?: routePoints.firstOrNull()
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = recenterBottomPadding + 12.dp)
+                .size(52.dp)
+                .clickable(enabled = recenterPoint != null && mapLibreMap != null) {
+                    val point = recenterPoint ?: return@clickable
+                    followLocation = currentPosition != null
+                    mapLibreMap?.let { map -> animateLiveTripCamera(map, point, routePoints) }
+                },
+            shape = CircleShape,
+            color = if (recenterPoint != null) Color(0xFFFFFBF0) else Color(0xFFF1EEE6),
+            border = BorderStroke(1.dp, Color(0xFFE2DDD2)),
+            shadowElevation = 10.dp,
+            tonalElevation = 2.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    "◎",
+                    color = if (recenterPoint != null) Color(0xFF153E4B) else Color(0xFF9AA2A4),
+                    fontSize = 28.sp
+                )
             }
         }
     }
