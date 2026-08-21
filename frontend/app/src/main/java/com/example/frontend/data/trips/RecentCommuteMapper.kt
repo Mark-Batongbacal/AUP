@@ -9,6 +9,7 @@ import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
+import kotlin.math.roundToInt
 
 fun PassengerTripHistoryItemDto.toRecentCommute(
     originName: String = this.originName,
@@ -19,6 +20,7 @@ fun PassengerTripHistoryItemDto.toRecentCommute(
     return RecentCommute(
         id = passengerTripId,
         recommendationId = recommendation?.recommendationId,
+        recommendationType = recommendation?.recommendationType.orEmpty(),
         origin = originName,
         destination = destinationName,
         originLatitude = originLatitude,
@@ -27,8 +29,10 @@ fun PassengerTripHistoryItemDto.toRecentCommute(
         destinationLongitude = destinationLongitude,
         legs = orderedLegs.size,
         minutes = recommendation?.totalMinutes?.toInt() ?: 0,
+        totalFare = recommendation?.totalFare?.toDouble() ?: orderedLegs.sumOf { it.estimatedFare.toDouble() },
+        walkingMeters = recommendation?.walkingDistanceMeters?.toDouble()?.roundToInt() ?: 0,
         status = status.toDisplayTripStatus(),
-        endedAt = completedAt,
+        endedAt = completedAt ?: startedAt ?: createdAt,
         wasRerouted = rerouted,
         rerouteCount = rerouteCount,
         dateGroup = recentDateGroup(completedAt ?: startedAt ?: createdAt),
@@ -44,7 +48,9 @@ fun PassengerTripHistoryItemDto.toRecentCommute(
                     ?: leg.toStop?.name
                     ?: destinationName,
                 minutes = leg.estimatedMinutes.toInt(),
-                fare = leg.estimatedFare.toDouble()
+                fare = leg.estimatedFare.toDouble(),
+                distanceMeters = leg.distanceMeters?.toDouble(),
+                instructions = leg.instructions
             )
         },
         historyLegs = orderedLegs.map { leg ->
