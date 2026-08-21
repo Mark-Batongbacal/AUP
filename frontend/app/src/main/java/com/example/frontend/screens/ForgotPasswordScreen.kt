@@ -20,7 +20,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -41,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import com.example.frontend.components.OtpCodeField
+import com.example.frontend.components.OtpResendButton
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import kotlinx.coroutines.delay
@@ -73,6 +73,7 @@ fun ForgotPasswordScreen(
     var code by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var otpSendGeneration by remember { mutableStateOf(0) }
     var isWorking by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -93,6 +94,7 @@ fun ForgotPasswordScreen(
                 is ApiResult.Success -> {
                     stage = ForgotPasswordStage.OTP
                     code = ""
+                    otpSendGeneration += 1
                     info = "We sent an 8-digit code to $normalizedEmail."
                 }
                 is ApiResult.Failure -> error = result.message
@@ -236,9 +238,11 @@ fun ForgotPasswordScreen(
                     enabled = !isWorking
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                TextButton(onClick = { requestCode() }, enabled = !isWorking) {
-                    Text("Resend OTP", color = TukiTeal, fontWeight = FontWeight.Bold)
-                }
+                OtpResendButton(
+                    sendGeneration = otpSendGeneration,
+                    enabled = !isWorking,
+                    onResend = { requestCode() }
+                )
             }
 
             ForgotPasswordStage.PASSWORD -> {
