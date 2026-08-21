@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -52,21 +53,19 @@ sealed interface ChangePasswordResult {
     data class Error(val message: String) : ChangePasswordResult
 }
 
-/**
- * Reached from Privacy & security -> "Change password". Requires the user's
- * current password to match their account's password before a new password
- * is accepted; the caller (via [onChangePassword]) is expected to surface a
- * clear error (e.g. "Current password is incorrect.") when that check fails.
- */
 @Composable
 fun ChangePasswordScreen(
     onBack: () -> Unit = {},
-    onChangePassword: suspend (currentPassword: String, newPassword: String) -> ChangePasswordResult = { _, _ ->
-        ChangePasswordResult.Error("Changing your password isn't wired up yet.")
+    onRequestOtp: suspend (currentPassword: String) -> ChangePasswordResult = {
+        ChangePasswordResult.Error("Password change isn't wired up yet.")
+    },
+    onChangePassword: suspend (currentPassword: String, code: String, newPassword: String) -> ChangePasswordResult = { _, _, _ ->
+        ChangePasswordResult.Error("Password change isn't wired up yet.")
     },
     onPasswordChanged: () -> Unit = {}
 ) {
     var currentPassword by remember { mutableStateOf("") }
+    var otpCode by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
 
@@ -74,55 +73,66 @@ fun ChangePasswordScreen(
     var newPasswordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
 
-    var isSaving by remember { mutableStateOf(false) }
+    var otpSent by remember { mutableStateOf(false) }
+    var isWorking by remember { mutableStateOf(false) }
     var isSuccess by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var infoMessage by remember { mutableStateOf<String?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
 
-    fun clearError() {
-        errorMessage = null
-    }
-
-    fun submit() {
-        if (isSaving || isSuccess) return
-
-        when {
-            currentPassword.isBlank() -> {
-                errorMessage = "Enter your current password."
-                return
-            }
-            newPassword.length < 8 -> {
-                errorMessage = "New password must be at least 8 characters."
-                return
-            }
-            newPassword == currentPassword -> {
-                errorMessage = "New password must be different from your current password."
-                return
-            }
-            newPassword != confirmPassword -> {
-                errorMessage = "New password and confirmation do not match."
-                return
-            }
+    fun requestOtp() {
+        if (isWorking || isSuccess) return
+        if (currentPassword.isBlank()) {
+            errorMessage = "Enter your current password."
+            return
         }
 
         coroutineScope.launch {
+            isWorking = true
             errorMessage = null
-            isSaving = true
-            when (val result = onChangePassword(currentPassword, newPassword)) {
-                is ChangePasswordResult.Success -> {
-                    isSuccess = true
-                    currentPassword = ""
-                    newPassword = ""
-                    confirmPassword = ""
-                    delay(1200)
-                    onPasswordChanged()
+            infoMessage = null
+            when (val result = onRequestOtp(currentPassword)) {
+                ChangePasswordResult.Success -> {
+                    otpSent = true
+                    infoMessage = "OTP sent to your account email."
                 }
-                is ChangePasswordResult.Error -> {
-                    errorMessage = result.message
+                is ChangePasswordResult.Error -> errorMessage = result.message
+            }
+            isWorking = false
+        }
+    }
+
+    fun submitChange() {
+        if (isWorking || isSuccess) return
+
+        when {
+            currentPassword.isBlank() -> errorMessage = "Enter your current password."
+            otpCode.isBlank() -> errorMessage = "Enter the OTP from your email."
+            newPassword.length < 8 -> errorMessage = "New password must be at least 8 characters."
+            newPassword == currentPassword -> errorMessage = "New password must be different from your current password."
+            newPassword != confirmPassword -> errorMessage = "New password and confirmation do not match."
+            else -> {
+                coroutineScope.launch {
+                    isWorking = true
+                    errorMessage = null
+                    infoMessage = null
+                    when (val result = onChangePassword(currentPassword, otpCode.trim(), newPassword)) {
+                        ChangePasswordResult.Success -> {
+                            isSuccess = true
+                            infoMessage = "Password changed successfully."
+                            currentPassword = ""
+                            otpCode = ""
+                            newPassword = ""
+                            confirmPassword = ""
+                            delay(1000)
+                            onPasswordChanged()
+                        }
+                        is ChangePasswordResult.Error -> errorMessage = result.message
+                    }
+                    isWorking = false
                 }
             }
-            isSaving = false
         }
     }
 
@@ -135,13 +145,12 @@ fun ChangePasswordScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
-        // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(38.dp)
                     .background(TukiCream2, RoundedCornerShape(12.dp))
-                    .clickable(enabled = !isSaving, onClick = onBack),
+                    .clickable(enabled = !isWorking, onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -153,7 +162,11 @@ fun ChangePasswordScreen(
         Spacer(modifier = Modifier.height(10.dp))
 
         Text(
-            text = "Enter your current password, then choose a new one.",
+            text = if (otpSent) {
+                "Enter the OTP sent to your email, then choose your new password."
+            } else {
+                "Confirm your current password first. We'll email you an OTP before changing it."
+            },
             color = TukiGray,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
@@ -165,63 +178,89 @@ fun ChangePasswordScreen(
             label = "Current password",
             value = currentPassword,
             visible = currentPasswordVisible,
-            enabled = !isSaving && !isSuccess,
+            enabled = !isWorking && !isSuccess && !otpSent,
             onValueChange = {
                 currentPassword = it
-                clearError()
+                errorMessage = null
             },
             onVisibilityToggle = { currentPasswordVisible = !currentPasswordVisible }
         )
 
-        Spacer(modifier = Modifier.height(18.dp))
+        if (otpSent) {
+            Spacer(modifier = Modifier.height(18.dp))
 
-        PasswordField(
-            label = "New password",
-            value = newPassword,
-            visible = newPasswordVisible,
-            enabled = !isSaving && !isSuccess,
-            onValueChange = {
-                newPassword = it
-                clearError()
-            },
-            onVisibilityToggle = { newPasswordVisible = !newPasswordVisible }
-        )
+            Column {
+                Text(text = "OTP code", color = TukiDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(8.dp))
+                TextField(
+                    value = otpCode,
+                    onValueChange = {
+                        otpCode = it.filter(Char::isDigit).take(10)
+                        errorMessage = null
+                    },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    enabled = !isWorking && !isSuccess,
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = TukiCream2,
+                        unfocusedContainerColor = TukiCream2,
+                        disabledContainerColor = TukiCream2.copy(alpha = 0.6f),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                        focusedTextColor = TukiDark,
+                        unfocusedTextColor = TukiDark,
+                        disabledTextColor = TukiGray
+                    )
+                )
+            }
 
-        Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-        Text(
-            text = "Must be at least 8 characters.",
-            color = TukiGray,
-            fontSize = 11.sp
-        )
+            PasswordField(
+                label = "New password",
+                value = newPassword,
+                visible = newPasswordVisible,
+                enabled = !isWorking && !isSuccess,
+                onValueChange = {
+                    newPassword = it
+                    errorMessage = null
+                },
+                onVisibilityToggle = { newPasswordVisible = !newPasswordVisible }
+            )
 
-        Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-        PasswordField(
-            label = "Confirm new password",
-            value = confirmPassword,
-            visible = confirmPasswordVisible,
-            enabled = !isSaving && !isSuccess,
-            onValueChange = {
-                confirmPassword = it
-                clearError()
-            },
-            onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
-        )
+            Text(
+                text = "Must be at least 8 characters.",
+                color = TukiGray,
+                fontSize = 11.sp
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            PasswordField(
+                label = "Confirm new password",
+                value = confirmPassword,
+                visible = confirmPasswordVisible,
+                enabled = !isWorking && !isSuccess,
+                onValueChange = {
+                    confirmPassword = it
+                    errorMessage = null
+                },
+                onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
+            )
+        }
 
         errorMessage?.let { message ->
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = message, color = TukiError, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
 
-        if (isSuccess) {
+        infoMessage?.let { message ->
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Password changed successfully.",
-                color = TukiTeal,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text(text = message, color = TukiTeal, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -230,15 +269,17 @@ fun ChangePasswordScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    color = if (isSaving || isSuccess) TukiOrange.copy(alpha = 0.4f) else TukiOrange,
+                    color = if (isWorking || isSuccess) TukiOrange.copy(alpha = 0.4f) else TukiOrange,
                     shape = RoundedCornerShape(16.dp)
                 )
-                .clickable(enabled = !isSaving && !isSuccess) { submit() }
+                .clickable(enabled = !isWorking && !isSuccess) {
+                    if (otpSent) submitChange() else requestOtp()
+                }
                 .padding(vertical = 16.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isSaving) {
+            if (isWorking) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(18.dp),
                     strokeWidth = 2.dp,
@@ -246,11 +287,25 @@ fun ChangePasswordScreen(
                 )
             } else {
                 Text(
-                    text = if (isSuccess) "Saved" else "Change password",
+                    text = when {
+                        isSuccess -> "Saved"
+                        otpSent -> "Change password"
+                        else -> "Send OTP"
+                    },
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
+            }
+        }
+
+        if (otpSent && !isSuccess) {
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(
+                onClick = { requestOtp() },
+                enabled = !isWorking
+            ) {
+                Text("Resend OTP", color = TukiTeal, fontWeight = FontWeight.Bold)
             }
         }
     }
