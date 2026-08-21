@@ -25,6 +25,10 @@ public sealed class NavigationController(
     public async Task<IActionResult> Active(CancellationToken cancellationToken) =>
         Result(await navigation.GetActiveAsync(UserId(), cancellationToken));
 
+    [HttpGet("{sessionId:guid}")]
+    public async Task<IActionResult> Get(Guid sessionId, CancellationToken cancellationToken) =>
+        Result(await navigation.GetAsync(UserId(), sessionId, cancellationToken));
+
     [HttpGet("geometry")]
     [AllowAnonymous]
     public async Task<IActionResult> Geometry(
