@@ -98,6 +98,7 @@ public sealed class NavigationFacadeService(
         var alightLandmark = legLandmarks.FirstOrDefault(item => item.Role == LandmarkRole.AlightReference);
         var progressLandmark = triggered.LastOrDefault(item => item.Type == NavigationInstructionType.LandmarkNotice);
         var selected = SelectInstruction(session, leg, allInstructions, triggered);
+        var following = SelectFollowingInstruction(session, selected, allInstructions);
         var speechType = EventInstructionType(session, status, selected, progressLandmark);
         var instructionType = speechType is "OffRoute" or "MissedAlight" or "Cancelled" or "Arrived" ? speechType : selected?.Type.ToString() ?? "Continue";
         var activeLandmark = progressLandmark is not null
@@ -107,8 +108,14 @@ public sealed class NavigationFacadeService(
         var remaining = NavigationTripRules.RemainingMeters(session, leg);
         var routeName = leg?.Route?.RouteName ?? leg?.Instructions;
         var mode = leg?.TransportMode?.Code ?? "UNKNOWN";
-        var structuredInstruction = new NavigationInstructionSnapshot(instructionType, routeName, mode, remaining,
-            selected?.RequiresConfirmation ?? instructionType is "BoardJeepney" or "BoardTricycle" or "AlightJeepney" or "AlightTricycle");
+        var structuredInstruction = new NavigationInstructionSnapshot(
+            instructionType,
+            routeName,
+            mode,
+            remaining,
+            selected?.RequiresConfirmation ?? instructionType is "BoardJeepney" or "BoardTricycle" or "AlightJeepney" or "AlightTricycle",
+            selected?.Text);
+        var followingSnapshot = MapInstruction(following, legs);
         var eventKey = string.Join(':', session.RecommendationId, session.CurrentLegIndex, speechType, activeLandmark?.Name ?? "none");
         var sameEvent = session.LastSpeechEventKey == eventKey;
         var noNewMeaningfulEvent = speechType == "Continue" && status != "BOARDING_CONFIRMED" &&
@@ -128,7 +135,8 @@ public sealed class NavigationFacadeService(
             NavigationTripRules.CanConfirmAlighting(session, leg, _options),
             session.CurrentNavigationState == TripNavigationState.OffRoute,
             status, TriggeredEvents(triggered, speechType, status), session.LastLatitude, session.LastLongitude,
-            session.ApproxFareSpent, NavigationTripRules.EstimatedRemainingFare(session, legs));
+            session.ApproxFareSpent, NavigationTripRules.EstimatedRemainingFare(session, legs),
+            followingSnapshot, BuildTripSummary(session, legs));
         return new(snapshot);
     }
 
@@ -164,6 +172,62 @@ public sealed class NavigationFacadeService(
             legInstructions.FirstOrDefault(item => item.DistanceFromLegStartMeters is null || item.DistanceFromLegStartMeters >= session.CurrentProgressMeters);
         if (instruction is not null) return instruction;
         return session.CurrentNavigationState == TripNavigationState.Arrived ? all.FirstOrDefault(item => item.Type == NavigationInstructionType.Arrived) : null;
+    }
+
+    private static NavigationInstruction? SelectFollowingInstruction(
+        TripSession session,
+        NavigationInstruction? selected,
+        IReadOnlyList<NavigationInstruction> all)
+    {
+        if (session.CurrentNavigationState is TripNavigationState.Arrived or TripNavigationState.Cancelled)
+            return null;
+
+        var passenger = all
+            .Where(item => item.Audience == NavigationInstructionAudience.Passenger && item.Type != NavigationInstructionType.LandmarkNotice)
+            .OrderBy(item => item.Sequence)
+            .ToList();
+
+        if (selected is not null)
+            return passenger.FirstOrDefault(item => item.Sequence > selected.Sequence);
+
+        return passenger.FirstOrDefault(item => item.LegIndex > session.CurrentLegIndex) ??
+               passenger.FirstOrDefault(item => item.LegIndex == session.CurrentLegIndex);
+    }
+
+    private static NavigationInstructionSnapshot? MapInstruction(
+        NavigationInstruction? instruction,
+        IReadOnlyList<RecommendationLeg> legs)
+    {
+        if (instruction is null) return null;
+        var instructionLeg = legs.FirstOrDefault(item => item.LegOrder == instruction.LegIndex);
+        var routeName = instructionLeg?.Route?.RouteName ?? instructionLeg?.Instructions;
+        var mode = instructionLeg?.TransportMode?.Code ?? "UNKNOWN";
+        return new NavigationInstructionSnapshot(
+            instruction.Type.ToString(), routeName, mode, null, instruction.RequiresConfirmation, instruction.Text);
+    }
+
+    private static NavigationTripSummarySnapshot? BuildTripSummary(
+        TripSession session,
+        IReadOnlyList<RecommendationLeg> legs)
+    {
+        if (session.CurrentNavigationState != TripNavigationState.Arrived) return null;
+
+        int? durationMinutes = null;
+        if (session.StartedAt is { } started && session.CompletedAt is { } completed && completed >= started)
+            durationMinutes = Math.Max(0, (int)Math.Round((completed - started).TotalMinutes));
+
+        var transitLegs = legs.Count(item =>
+        {
+            var mode = item.TransportMode?.Code?.ToUpperInvariant();
+            return mode is "JEEPNEY" or "TRICYCLE" or "TRIKE";
+        });
+
+        return new NavigationTripSummarySnapshot(
+            string.IsNullOrWhiteSpace(session.DestinationName) ? "Destination" : session.DestinationName,
+            durationMinutes,
+            session.ApproxFareSpent,
+            transitLegs,
+            Math.Max(0, transitLegs - 1));
     }
 
     private static string EventInstructionType(TripSession session, string status, NavigationInstruction? selected, NavigationInstruction? progress) => status switch
