@@ -26,8 +26,19 @@ data class RegisterRequest(
     val phoneNumber: String? = null
 )
 
+data class ForgotPasswordRequest(val email: String)
+
+data class ResetPasswordRequest(
+    val email: String,
+    val code: String,
+    val newPassword: String
+)
+
+data class ChangePasswordOtpRequest(val currentPassword: String)
+
 data class ChangePasswordRequest(
     val currentPassword: String,
+    val code: String,
     val newPassword: String
 )
 
@@ -59,6 +70,11 @@ interface AuthApi {
     @POST("api/auth/facebook") suspend fun facebook(@Body request: FacebookLoginRequest): Response<LoginResponseDto>
     @POST("api/auth/facebook/oidc") suspend fun facebookOidc(@Body request: FacebookOidcLoginRequest): Response<LoginResponseDto>
     @GET("api/auth/me") suspend fun me(): Response<AuthIdentityDto>
+    @POST("api/auth/forgot-password") suspend fun forgotPassword(@Body request: ForgotPasswordRequest): Response<Unit>
+    @POST("api/auth/reset-password") suspend fun resetPassword(@Body request: ResetPasswordRequest): Response<Unit>
+    @POST("api/auth/change-password/request-otp") suspend fun requestChangePasswordOtp(
+        @Body request: ChangePasswordOtpRequest
+    ): Response<Unit>
     @POST("api/auth/change-password") suspend fun changePassword(@Body request: ChangePasswordRequest): Response<Unit>
 }
 
@@ -69,7 +85,10 @@ interface AuthRepository {
     suspend fun loginWithFacebook(accessToken: String): ApiResult<AuthenticatedUser>
     suspend fun loginWithFacebookOidc(idToken: String, nonce: String): ApiResult<AuthenticatedUser>
     suspend fun getCurrentAuthIdentity(): ApiResult<AuthIdentityDto>
-    suspend fun changePassword(currentPassword: String, newPassword: String): ApiResult<Unit>
+    suspend fun requestPasswordReset(email: String): ApiResult<Unit>
+    suspend fun resetPassword(email: String, code: String, newPassword: String): ApiResult<Unit>
+    suspend fun requestChangePasswordOtp(currentPassword: String): ApiResult<Unit>
+    suspend fun changePassword(currentPassword: String, code: String, newPassword: String): ApiResult<Unit>
     fun logoutLocalSession()
 }
 
@@ -101,10 +120,37 @@ class AuthRepositoryImpl(
     override suspend fun getCurrentAuthIdentity() =
         authenticatedApiCall(sessionStore, errors) { authApi.me() }
 
-    override suspend fun changePassword(currentPassword: String, newPassword: String): ApiResult<Unit> =
-        authenticatedApiCall(sessionStore, errors, noContentValue = Unit) {
-            authApi.changePassword(ChangePasswordRequest(currentPassword, newPassword))
+    override suspend fun requestPasswordReset(email: String): ApiResult<Unit> =
+        apiCall(errors, noContentValue = Unit) {
+            authApi.forgotPassword(ForgotPasswordRequest(email.trim()))
         }
+
+    override suspend fun resetPassword(
+        email: String,
+        code: String,
+        newPassword: String
+    ): ApiResult<Unit> = apiCall(errors, noContentValue = Unit) {
+        authApi.resetPassword(
+            ResetPasswordRequest(
+                email = email.trim(),
+                code = code.trim(),
+                newPassword = newPassword
+            )
+        )
+    }
+
+    override suspend fun requestChangePasswordOtp(currentPassword: String): ApiResult<Unit> =
+        authenticatedApiCall(sessionStore, errors, noContentValue = Unit) {
+            authApi.requestChangePasswordOtp(ChangePasswordOtpRequest(currentPassword))
+        }
+
+    override suspend fun changePassword(
+        currentPassword: String,
+        code: String,
+        newPassword: String
+    ): ApiResult<Unit> = authenticatedApiCall(sessionStore, errors, noContentValue = Unit) {
+        authApi.changePassword(ChangePasswordRequest(currentPassword, code.trim(), newPassword))
+    }
 
     override fun logoutLocalSession() = sessionStore.clear()
 
@@ -128,4 +174,3 @@ class AuthRepositoryImpl(
     private fun LoginResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
     private fun RegisterResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
 }
-
