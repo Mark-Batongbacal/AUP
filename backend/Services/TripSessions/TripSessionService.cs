@@ -120,7 +120,7 @@ public sealed class TripSessionService(
         var nextIndex = current.CurrentLegIndex + 1;
         var nextLeg = legs.FirstOrDefault(leg => leg.LegOrder == nextIndex);
         var nextState = nextLeg is null
-            ? TripNavigationState.WalkingToDestination
+            ? TripNavigationState.Arrived
             : IsWalking(nextLeg)
                 ? (nextIndex == legs.Max(leg => leg.LegOrder)
                     ? TripNavigationState.WalkingToDestination
@@ -139,12 +139,16 @@ public sealed class TripSessionService(
                 session.CurrentProgressMeters = 0;
                 session.CurrentRouteProgressMeters = null;
                 session.ConsecutiveStateConfirmationSamples = 0;
+                if (nextState == TripNavigationState.Arrived)
+                    session.CompletedAt = DateTime.UtcNow;
             });
         if (result.Succeeded)
         {
             _telemetry.Event("AlightingConfirmed", sessionId);
             if (fareToAdd > 0)
                 _telemetry.Event("ApproxFareRecorded", sessionId, fareToAdd.ToString("0.00"));
+            if (nextState == TripNavigationState.Arrived)
+                _telemetry.Event("TripArrived", sessionId);
         }
         return result;
     }
