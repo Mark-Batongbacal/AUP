@@ -12,6 +12,11 @@
     "AppId": "",
     "AppSecret": ""
   },
+  "Email": {
+    "ConnectionString": "",
+    "SenderAddress": "DoNotReply@tuki.pawfect.bar",
+    "AppDisplayName": "TUKI"
+  },
   "ConnectionStrings": {
     "TukiDbConnection": ""
   },
