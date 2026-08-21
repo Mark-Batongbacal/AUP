@@ -27,6 +27,7 @@ public sealed class OtpAuthController(
     private const string ResetPurpose = "Reset";
     private const string ChangePurpose = "Change";
     private static readonly TimeSpan RegistrationCodeLifetime = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan OtpSendCooldown = TimeSpan.FromMinutes(3);
     private readonly EmailOptions _emailOptions = emailOptions.Value;
 
     [HttpPost("register/request-otp")]
@@ -41,8 +42,16 @@ public sealed class OtpAuthController(
             return Conflict(new { message = "An account with this email already exists." });
         }
 
+        if (!RegistrationOtpStore.CanSend(email, OtpSendCooldown))
+        {
+            return Ok(new { message = "A verification code was already sent recently. Please wait before requesting another." });
+        }
+
         var code = VerificationCode.Generate();
-        RegistrationOtpStore.Set(email, VerificationCode.Hash(code), DateTime.UtcNow.Add(RegistrationCodeLifetime));
+        RegistrationOtpStore.Set(
+            email,
+            VerificationCode.Hash(code),
+            DateTime.UtcNow.Add(RegistrationCodeLifetime));
 
         var html = BuildOtpEmail(
             "Verify your email",
@@ -292,13 +301,30 @@ public sealed record ChangePasswordRequest(
 
 internal static class RegistrationOtpStore
 {
-    private sealed record Entry(string Hash, DateTime ExpiresAt);
+    private sealed record Entry(string Hash, DateTime ExpiresAt, DateTime SentAt);
 
     private static readonly ConcurrentDictionary<string, Entry> Pending =
         new(StringComparer.OrdinalIgnoreCase);
 
+    public static bool CanSend(string email, TimeSpan cooldown)
+    {
+        if (!Pending.TryGetValue(email, out var entry))
+        {
+            return true;
+        }
+
+        var now = DateTime.UtcNow;
+        if (entry.ExpiresAt <= now)
+        {
+            Pending.TryRemove(email, out _);
+            return true;
+        }
+
+        return now - entry.SentAt >= cooldown;
+    }
+
     public static void Set(string email, string hash, DateTime expiresAt) =>
-        Pending[email] = new Entry(hash, expiresAt);
+        Pending[email] = new Entry(hash, expiresAt, DateTime.UtcNow);
 
     public static bool IsValid(string email, string hash)
     {
