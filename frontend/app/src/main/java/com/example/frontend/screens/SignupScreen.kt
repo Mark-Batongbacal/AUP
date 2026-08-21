@@ -21,7 +21,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -42,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import com.example.frontend.components.OtpCodeField
+import com.example.frontend.components.OtpResendButton
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
 import com.example.frontend.data.auth.RegisterRequest
@@ -74,6 +74,7 @@ fun SignupScreen(
     var email by remember { mutableStateOf("") }
     var otpCode by remember { mutableStateOf("") }
     var otpSent by remember { mutableStateOf(false) }
+    var otpSendGeneration by remember { mutableStateOf(0) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -108,6 +109,7 @@ fun SignupScreen(
                 is ApiResult.Success -> {
                     otpSent = true
                     otpCode = ""
+                    otpSendGeneration += 1
                     infoMessage = "We've sent an 8-digit OTP to ${details.second}."
                 }
                 is ApiResult.Failure -> signUpError = result.message
@@ -268,9 +270,11 @@ fun SignupScreen(
                             },
                             enabled = !isWorking
                         )
-                        TextButton(onClick = { requestOtp() }, enabled = !isWorking) {
-                            Text("Resend OTP", color = TukiTeal, fontWeight = FontWeight.Bold)
-                        }
+                        OtpResendButton(
+                            sendGeneration = otpSendGeneration,
+                            enabled = !isWorking,
+                            onResend = { requestOtp() }
+                        )
                     }
                 }
             } else {
