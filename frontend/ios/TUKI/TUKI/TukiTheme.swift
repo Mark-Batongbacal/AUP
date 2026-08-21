@@ -161,6 +161,10 @@ struct RecentCommute: Identifiable, Hashable {
     var wasRerouted = false
     var rerouteCount = 0
     var dateGroup = ""
+    var originLatitude: Double? = nil
+    var originLongitude: Double? = nil
+    var destinationLatitude: Double? = nil
+    var destinationLongitude: Double? = nil
     var steps: [CommuteStep] = []
 }
 
