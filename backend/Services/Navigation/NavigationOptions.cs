@@ -10,6 +10,7 @@ public sealed class NavigationOptions
     public double MaxForwardProgressMetersPerUpdate { get; init; } = 2_000;
     public int StateConfirmationSamples { get; init; } = 2;
     public double PrepareToAlightDistanceMeters { get; init; } = 400;
+    public double ConfirmAlightDistanceMeters { get; init; } = 75;
     public double ArrivalDistanceMeters { get; init; } = 35;
     public double MaximumLandmarkProjectionMeters { get; init; } = 100;
     public double MinimumLandmarkSeparationMeters { get; init; } = 250;
@@ -28,7 +29,8 @@ public sealed class NavigationOptions
     public bool IsValid() => MaxGpsAccuracyMeters > 0 && MaxLocationAgeSeconds > 0 &&
         MaxPlausibleSpeedMetersPerSecond > 0 && MaxBackwardProgressMeters >= 0 &&
         MaxForwardProgressMetersPerUpdate > 0 && StateConfirmationSamples >= 2 &&
-        PrepareToAlightDistanceMeters > 0 && ArrivalDistanceMeters > 0 &&
+        PrepareToAlightDistanceMeters > 0 && ConfirmAlightDistanceMeters > 0 &&
+        ConfirmAlightDistanceMeters <= PrepareToAlightDistanceMeters && ArrivalDistanceMeters > 0 &&
         MaximumLandmarkProjectionMeters > 0 && MinimumLandmarkSeparationMeters >= 0 &&
         MaximumLandmarksPerLeg >= 2 && LandmarkLookbackFromAlightMeters > 0 &&
         BoardReferenceMaximumDistanceMeters > 0 && MinimumAlightReferenceLeadMeters >= 0 &&

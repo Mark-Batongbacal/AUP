@@ -1003,6 +1003,9 @@ fun AppNavigation(
                                 isNavigationActionInProgress = false
                             }
                         }
+                    },
+                    onArrivalAcknowledged = {
+                        returnHomeAfterTripEnded()
                     }
                 )
             }

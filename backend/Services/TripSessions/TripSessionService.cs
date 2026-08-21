@@ -2,6 +2,7 @@ using backend.Models.Database;
 using backend.Repositories;
 using backend.Services.Navigation;
 using backend.Services.Telemetry;
+using Microsoft.Extensions.Options;
 
 namespace backend.Services.TripSessions;
 
@@ -12,9 +13,12 @@ public sealed class TripSessionService(
     ITripSessionStateMachine stateMachine,
     INavigationInstructionService navigationInstructions,
     ILandmarkCorridorPrefetchService landmarkPrefetch,
+    IOptions<NavigationOptions> options,
     ITukiTelemetry? telemetry = null) : ITripSessionService
 {
     private readonly ITukiTelemetry _telemetry = telemetry ?? NullTukiTelemetry.Instance;
+    private readonly NavigationOptions _options = options.Value;
+
     public async Task<TripSessionOperation> CreateAsync(
         Guid userId, CreateTripSessionRequest request, CancellationToken cancellationToken = default)
     {
@@ -40,6 +44,7 @@ public sealed class TripSessionService(
             DestinationName = search.DestinationName,
             OriginalBudget = search.Budget,
             OriginalPreference = search.Preference,
+            ApproxFareSpent = 0,
             CurrentNavigationState = TripNavigationState.Planned,
             CreatedAt = now,
             UpdatedAt = now
@@ -105,26 +110,46 @@ public sealed class TripSessionService(
     {
         var current = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken);
         if (current is null) return Fail("TRIP_SESSION_NOT_FOUND");
+
         var legs = await recommendations.GetOrderedLegsAsync(current.RecommendationId, cancellationToken);
+        var currentLeg = legs.FirstOrDefault(leg => leg.LegOrder == current.CurrentLegIndex);
+        if (currentLeg is null) return Fail("CURRENT_LEG_NOT_FOUND");
+        if (!NavigationTripRules.CanConfirmAlighting(current, currentLeg, _options))
+            return Fail("ALIGHT_TOO_EARLY");
+
         var nextIndex = current.CurrentLegIndex + 1;
         var nextLeg = legs.FirstOrDefault(leg => leg.LegOrder == nextIndex);
         var nextState = nextLeg is null
-            ? TripNavigationState.WalkingToDestination
+            ? TripNavigationState.Arrived
             : IsWalking(nextLeg)
                 ? (nextIndex == legs.Max(leg => leg.LegOrder)
                     ? TripNavigationState.WalkingToDestination
                     : TripNavigationState.Transferring)
                 : TripNavigationState.WaitingToBoard;
-        var result = await TransitionAsync(userId, sessionId, nextState, cancellationToken,
-            session => {
-                session.CurrentLegIndex = Math.Min(nextIndex, legs.Count);
 
-                // New leg = new progress coordinate system.
+        var fareToAdd = NavigationTripRules.IsPaidTransport(currentLeg)
+            ? currentLeg.EstimatedFare
+            : 0m;
+
+        var result = await TransitionAsync(userId, sessionId, nextState, cancellationToken,
+            session =>
+            {
+                session.ApproxFareSpent += fareToAdd;
+                session.CurrentLegIndex = Math.Min(nextIndex, legs.Count);
                 session.CurrentProgressMeters = 0;
                 session.CurrentRouteProgressMeters = null;
                 session.ConsecutiveStateConfirmationSamples = 0;
+                if (nextState == TripNavigationState.Arrived)
+                    session.CompletedAt = DateTime.UtcNow;
             });
-        if (result.Succeeded) _telemetry.Event("AlightingConfirmed", sessionId);
+        if (result.Succeeded)
+        {
+            _telemetry.Event("AlightingConfirmed", sessionId);
+            if (fareToAdd > 0)
+                _telemetry.Event("ApproxFareRecorded", sessionId, fareToAdd.ToString("0.00"));
+            if (nextState == TripNavigationState.Arrived)
+                _telemetry.Event("TripArrived", sessionId);
+        }
         return result;
     }
 

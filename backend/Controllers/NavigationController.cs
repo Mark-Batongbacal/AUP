@@ -25,6 +25,10 @@ public sealed class NavigationController(
     public async Task<IActionResult> Active(CancellationToken cancellationToken) =>
         Result(await navigation.GetActiveAsync(UserId(), cancellationToken));
 
+    [HttpGet("{sessionId:guid}")]
+    public async Task<IActionResult> Get(Guid sessionId, CancellationToken cancellationToken) =>
+        Result(await navigation.GetAsync(UserId(), sessionId, cancellationToken));
+
     [HttpGet("geometry")]
     [AllowAnonymous]
     public async Task<IActionResult> Geometry(
@@ -95,9 +99,9 @@ public sealed class NavigationController(
         Result(await navigation.CancelAsync(UserId(), sessionId, cancellationToken));
 
     [HttpPost("{sessionId:guid}/reroute")]
-    public async Task<IActionResult> Reroute(Guid sessionId, RerouteRequest request,
+    public async Task<IActionResult> Reroute(Guid sessionId, NavigationRerouteRequest request,
         CancellationToken cancellationToken) =>
-        Result(await navigation.RerouteAsync(UserId(), sessionId, request.Reason, cancellationToken));
+        Result(await navigation.RerouteAsync(UserId(), sessionId, request, cancellationToken));
 
     private IActionResult Result(NavigationOperation operation, bool created = false)
     {

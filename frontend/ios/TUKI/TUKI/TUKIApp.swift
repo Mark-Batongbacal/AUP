@@ -9,16 +9,52 @@ import SwiftUI
 import FacebookCore
 import GoogleSignIn
 
+extension Notification.Name {
+    static let tukiTripEnded = Notification.Name("tuki.trip.ended")
+}
+
 @main
 struct TUKIApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup {
-            TukiParityRootView()
+            TukiAppContent()
                 .onOpenURL { url in
                     AuthCallbackURLHandler.handle(url)
                 }
+        }
+    }
+}
+
+private struct TukiAppContent: View {
+    @State private var mainFlowId = UUID()
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            TukiParityRootView()
+                .id(mainFlowId)
+
+            TukiFareTrackingOverlay()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .allowsHitTesting(false)
+
+            TukiNavigationEnhancementsOverlay()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(.leading, 18)
+                .padding(.bottom, 210)
+
+            TukiNavigationCameraOverlay()
+                .padding(.top, 108)
+                .padding(.trailing, 18)
+
+            // Keep interactive trip controls at their intrinsic size. A
+            // full-window transparent overlay would block Google/Facebook
+            // sign-in buttons on the login screen.
+            TukiTripOptionsOverlay()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .tukiTripEnded)) { _ in
+            mainFlowId = UUID()
         }
     }
 }

@@ -35,6 +35,7 @@ BEGIN TRY
             CancelledAt datetime2(7) NULL,
             OriginalBudget decimal(10,2) NULL,
             OriginalPreference nvarchar(30) NULL,
+            ApproxFareSpent decimal(10,2) NOT NULL CONSTRAINT DF_TripSessions_ApproxFareSpent DEFAULT (0),
             LastRerouteAt datetime2(7) NULL,
             RerouteCount int NOT NULL CONSTRAINT DF_TripSessions_RerouteCount DEFAULT (0),
             CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_TripSessions_CreatedAt DEFAULT (sysutcdatetime()),
@@ -110,6 +111,9 @@ BEGIN TRY
         ALTER TABLE dbo.TripSessions ADD LastSpeechEventKey nvarchar(250) NULL;
     IF COL_LENGTH(N'dbo.TripSessions', N'LastSpokenInstruction') IS NULL
         ALTER TABLE dbo.TripSessions ADD LastSpokenInstruction nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.TripSessions', N'ApproxFareSpent') IS NULL
+        ALTER TABLE dbo.TripSessions ADD ApproxFareSpent decimal(10,2) NOT NULL
+            CONSTRAINT DF_TripSessions_ApproxFareSpent_Upgrade DEFAULT (0);
     IF COL_LENGTH(N'dbo.TripLandmarkCandidates', N'Role') IS NULL
         ALTER TABLE dbo.TripLandmarkCandidates ADD [Role] nvarchar(30) NOT NULL
             CONSTRAINT DF_TripLandmarkCandidates_Role_Upgrade DEFAULT ('ProgressReference');

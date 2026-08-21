@@ -96,6 +96,23 @@ struct TukiNavigationInstruction: Codable, Equatable {
     let transportMode: String?
     let distanceMeters: Double?
     let requiresConfirmation: Bool
+    let text: String?
+
+    init(
+        type: String,
+        routeName: String?,
+        transportMode: String?,
+        distanceMeters: Double?,
+        requiresConfirmation: Bool,
+        text: String? = nil
+    ) {
+        self.type = type
+        self.routeName = routeName
+        self.transportMode = transportMode
+        self.distanceMeters = distanceMeters
+        self.requiresConfirmation = requiresConfirmation
+        self.text = text
+    }
 }
 
 struct TukiNavigationLandmark: Codable, Equatable {
@@ -120,6 +137,14 @@ struct TukiNavigationEvent: Codable, Equatable {
     let landmarkName: String?
 }
 
+struct TukiNavigationTripSummary: Codable, Equatable {
+    let destinationName: String
+    let durationMinutes: Int?
+    let approxFareSpent: Double
+    let transitLegs: Int
+    let transfers: Int
+}
+
 struct TukiNavigationSnapshot: Codable, Equatable {
     let sessionId: String
     let state: String
@@ -137,17 +162,39 @@ struct TukiNavigationSnapshot: Codable, Equatable {
     let rerouteRequired: Bool
     let status: String
     let triggeredEvents: [TukiNavigationEvent]
+    let currentLatitude: Double?
+    let currentLongitude: Double?
+    let approxFareSpent: Double
+    let estimatedRemainingFare: Double
+    let followingInstruction: TukiNavigationInstruction?
+    let tripSummary: TukiNavigationTripSummary?
 
     var displayInstruction: String {
         if let spokenInstruction, !spokenInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return spokenInstruction
         }
         guard let nextInstruction else { return "Waiting for navigation guidance…" }
+        if let text = nextInstruction.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            return text
+        }
         let mode = nextInstruction.transportMode?.lowercased().capitalized
         return [nextInstruction.type, mode, nextInstruction.routeName]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
+    }
+
+    var followingDisplayInstruction: String? {
+        guard let followingInstruction else { return nil }
+        if let text = followingInstruction.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            return text
+        }
+        let mode = followingInstruction.transportMode?.lowercased().capitalized
+        let value = [followingInstruction.type, mode, followingInstruction.routeName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+        return value.isEmpty ? nil : value
     }
 }
 

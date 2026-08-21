@@ -11,7 +11,13 @@ public sealed class TripSessionStateMachineTests
     [InlineData(TripNavigationState.Planned, TripNavigationState.Starting)]
     [InlineData(TripNavigationState.Planned, TripNavigationState.Cancelled)]
     [InlineData(TripNavigationState.WaitingToBoard, TripNavigationState.OnJeepney)]
+    [InlineData(TripNavigationState.ApproachingAlightPoint, TripNavigationState.Arrived)]
     [InlineData(TripNavigationState.WalkingToDestination, TripNavigationState.Arrived)]
+    [InlineData(TripNavigationState.WalkingToPickup, TripNavigationState.Rerouting)]
+    [InlineData(TripNavigationState.WaitingToBoard, TripNavigationState.Rerouting)]
+    [InlineData(TripNavigationState.OnJeepney, TripNavigationState.Rerouting)]
+    [InlineData(TripNavigationState.OnTricycle, TripNavigationState.Rerouting)]
+    [InlineData(TripNavigationState.WalkingToDestination, TripNavigationState.Rerouting)]
     public void ValidTransitions_AreAllowed(TripNavigationState from, TripNavigationState to) =>
         Assert.True(_machine.CanTransition(from, to));
 
@@ -20,6 +26,7 @@ public sealed class TripSessionStateMachineTests
     [InlineData(TripNavigationState.OnJeepney, TripNavigationState.Planned)]
     [InlineData(TripNavigationState.Cancelled, TripNavigationState.OnJeepney)]
     [InlineData(TripNavigationState.Arrived, TripNavigationState.Rerouting)]
+    [InlineData(TripNavigationState.Cancelled, TripNavigationState.Rerouting)]
     public void InvalidAndTerminalTransitions_AreRejected(TripNavigationState from, TripNavigationState to) =>
         Assert.False(_machine.CanTransition(from, to));
 }

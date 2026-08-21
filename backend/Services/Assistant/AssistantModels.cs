@@ -36,7 +36,8 @@ public sealed record AssistantJourney(
     double FarePesos,
     double DurationSeconds,
     double WalkingMeters,
-    IReadOnlyList<AssistantJourneyLeg> Legs);
+    IReadOnlyList<AssistantJourneyLeg> Legs,
+    JeepneyTripPlan Plan);
 
 public sealed record AssistantJourneyLeg(string Mode, string? RouteName);
 
@@ -45,4 +46,5 @@ public sealed record AssistantResponse(
     string Message,
     IReadOnlyList<AssistantJourney>? Journeys = null,
     IReadOnlyList<backend.Models.Destinations.DestinationSearchResult>? Destinations = null,
-    object? Navigation = null);
+    object? Navigation = null,
+    backend.Models.Destinations.DestinationSearchResult? Destination = null);
