@@ -31,13 +31,18 @@ private struct TukiAppContent: View {
     @State private var mainFlowId = UUID()
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topTrailing) {
             TukiParityRootView()
                 .id(mainFlowId)
+
             TukiFareTrackingOverlay()
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .allowsHitTesting(false)
+
+            // Keep this overlay at its intrinsic size. Stretching it to the
+            // full window creates a transparent hit-testing layer above the
+            // login screen and can block Google/Facebook sign-in buttons.
             TukiTripOptionsOverlay()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         .onReceive(NotificationCenter.default.publisher(for: .tukiTripEnded)) { _ in
             mainFlowId = UUID()
