@@ -8,6 +8,7 @@ namespace backend.Services.Navigation;
 public interface INavigationFacadeService
 {
     Task<NavigationOperation> StartAsync(Guid userId, Guid recommendationId, CancellationToken cancellationToken = default);
+    Task<NavigationOperation> GetAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<NavigationOperation> GetActiveAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<NavigationOperation> UpdateLocationAsync(Guid userId, Guid sessionId, LocationUpdate update, CancellationToken cancellationToken = default);
     Task<NavigationOperation> ConfirmBoardingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
@@ -38,6 +39,14 @@ public sealed class NavigationFacadeService(
         return started.Succeeded
             ? await BuildAsync(userId, started.Session!, "NAVIGATION_STARTED", [], cancellationToken)
             : Fail(started.Error!);
+    }
+
+    public async Task<NavigationOperation> GetAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default)
+    {
+        var result = await tripSessions.GetAsync(userId, sessionId, cancellationToken);
+        return result.Succeeded
+            ? await BuildAsync(userId, result.Session!, result.Session!.LastNavigationStatus ?? result.Session.CurrentNavigationState.ToString(), [], cancellationToken)
+            : Fail(result.Error!);
     }
 
     public async Task<NavigationOperation> GetActiveAsync(Guid userId, CancellationToken cancellationToken = default)
