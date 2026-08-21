@@ -11,6 +11,7 @@ import com.example.frontend.data.navigation.NavigationRerouteRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.routing.JourneyPlanRequest
+import com.example.frontend.data.routing.PlannedJourney
 import java.math.BigDecimal
 import java.time.Instant
 import kotlin.math.roundToInt
@@ -54,8 +55,9 @@ class TripOptionsCoordinator(context: Context) {
         )
 
     /**
-     * Loads live route summaries for the three preference cards using the same journey
-     * planner as the route-results screen. Values are real planner results, not UI placeholders.
+     * Uses the same journey planner and recommendation payload as RouteResultsScreen.
+     * Missing live coordinates are resolved from the device, while missing destination
+     * coordinates are resolved through Places before requesting the route cards.
      */
     suspend fun loadPreferencePreviews(
         originLatitude: Double?,
@@ -64,63 +66,68 @@ class TripOptionsCoordinator(context: Context) {
         destinationLatitude: Double?,
         destinationLongitude: Double?
     ): ApiResult<List<TripPreferencePreview>> {
-        val originLat = originLatitude ?: return ApiResult.Failure(null, "Current location is unavailable.")
-        val originLon = originLongitude ?: return ApiResult.Failure(null, "Current location is unavailable.")
-        val destinationLat = destinationLatitude ?: return ApiResult.Failure(null, "Destination location is unavailable.")
-        val destinationLon = destinationLongitude ?: return ApiResult.Failure(null, "Destination location is unavailable.")
+        val deviceLocation = if (originLatitude == null || originLongitude == null) {
+            appContext.currentDeviceLocation()
+        } else null
+        val originLat = originLatitude ?: deviceLocation?.latitude
+            ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
+        val originLon = originLongitude ?: deviceLocation?.longitude
+            ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
 
-        val definitions = listOf(
-            "efficient" to "Best Overall",
-            "cheapest" to "Cheapest",
-            "fastest" to "Fastest"
-        )
-        val previews = mutableListOf<TripPreferencePreview>()
-        var lastFailure: ApiResult.Failure? = null
-
-        for ((preference, title) in definitions) {
-            when (
-                val result = routing.planJourneys(
-                    JourneyPlanRequest(
-                        originLatitude = originLat,
-                        originLongitude = originLon,
-                        destinationName = destinationName,
-                        destinationLatitude = destinationLat,
-                        destinationLongitude = destinationLon,
-                        preference = preference
-                    )
-                )
-            ) {
+        var resolvedDestinationName = destinationName
+        var destinationLat = destinationLatitude
+        var destinationLon = destinationLongitude
+        if (destinationLat == null || destinationLon == null) {
+            when (val placeResult = places.searchPlaces(destinationName, originLat, originLon)) {
                 is ApiResult.Success -> {
-                    val selected = result.data.firstOrNull { planned ->
-                        planned.journey.source.recommendationType
-                            .split(',')
-                            .any { it.trim().equals(preference, ignoreCase = true) }
-                    } ?: result.data.firstOrNull()
-
-                    if (selected != null) {
-                        val source = selected.journey.source
-                        val walkMeters = (
-                            source.originAccess.walkDistanceMeters +
-                                source.destinationAccess.walkDistanceMeters +
-                                source.transferWalkDistancesMeters.sum()
-                            ).roundToInt()
-                        previews += TripPreferencePreview(
-                            preference = preference,
-                            title = title,
-                            totalMinutes = (source.totalTimeSeconds / 60.0).roundToInt().coerceAtLeast(1),
-                            totalFarePesos = source.totalFarePesos,
-                            walkMeters = walkMeters.coerceAtLeast(0)
-                        )
-                    }
+                    val place = placeResult.data.firstOrNull()
+                        ?: return ApiResult.Failure(null, "Destination location is unavailable.")
+                    resolvedDestinationName = place.name
+                    destinationLat = place.latitude
+                    destinationLon = place.longitude
                 }
-                is ApiResult.Failure -> lastFailure = result
+                is ApiResult.Failure -> return placeResult
             }
         }
 
-        return if (previews.isNotEmpty()) {
-            ApiResult.Success(previews)
-        } else {
-            lastFailure ?: ApiResult.Failure(null, "Route preference summaries are unavailable right now.")
+        val finalDestinationLat = destinationLat
+            ?: return ApiResult.Failure(null, "Destination location is unavailable.")
+        val finalDestinationLon = destinationLon
+            ?: return ApiResult.Failure(null, "Destination location is unavailable.")
+
+        return when (
+            val result = routing.planJourneys(
+                JourneyPlanRequest(
+                    originLatitude = originLat,
+                    originLongitude = originLon,
+                    destinationName = resolvedDestinationName,
+                    destinationLatitude = finalDestinationLat,
+                    destinationLongitude = finalDestinationLon
+                )
+            )
+        ) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> {
+                val plans = result.data
+                if (plans.isEmpty()) {
+                    ApiResult.Failure(null, "No route preferences are available right now.")
+                } else {
+                    val efficient = findTagged(plans, "efficient")
+                        ?: plans.minByOrNull { it.journey.source.generalizedCostPesos }
+                    val cheapest = findTagged(plans, "cheapest")
+                        ?: plans.minByOrNull { it.journey.source.totalFarePesos }
+                    val fastest = findTagged(plans, "fastest")
+                        ?: plans.minByOrNull { it.journey.source.totalTimeSeconds }
+
+                    val previews = listOfNotNull(
+                        efficient?.toPreferencePreview("efficient", "Best Overall"),
+                        cheapest?.toPreferencePreview("cheapest", "Cheapest"),
+                        fastest?.toPreferencePreview("fastest", "Fastest")
+                    ).distinctBy { it.preference }
+
+                    ApiResult.Success(previews)
+                }
+            }
         }
     }
 
@@ -159,5 +166,28 @@ class TripOptionsCoordinator(context: Context) {
             is ApiResult.Success -> Unit
         }
         return navigation.reroute(sessionId, request)
+    }
+
+    private fun findTagged(plans: List<PlannedJourney>, tag: String): PlannedJourney? =
+        plans.firstOrNull { planned ->
+            planned.journey.source.recommendationType
+                .split(',')
+                .any { it.trim().equals(tag, ignoreCase = true) }
+        }
+
+    private fun PlannedJourney.toPreferencePreview(preference: String, title: String): TripPreferencePreview {
+        val source = journey.source
+        val walkMeters = (
+            source.originAccess.walkDistanceMeters +
+                source.destinationAccess.walkDistanceMeters +
+                source.transferWalkDistancesMeters.sum()
+            ).roundToInt()
+        return TripPreferencePreview(
+            preference = preference,
+            title = title,
+            totalMinutes = (source.totalTimeSeconds / 60.0).roundToInt().coerceAtLeast(1),
+            totalFarePesos = source.totalFarePesos,
+            walkMeters = walkMeters.coerceAtLeast(0)
+        )
     }
 }

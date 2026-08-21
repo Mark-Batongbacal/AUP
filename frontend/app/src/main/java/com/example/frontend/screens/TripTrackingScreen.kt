@@ -2,8 +2,10 @@ package com.example.frontend.screens
 
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -83,6 +86,7 @@ fun TripTrackingScreen(
     var activeDestinationName by remember(destination) { mutableStateOf(destination) }
     var activeFinalDestination by remember(finalDestination) { mutableStateOf(finalDestination) }
     var ttsReady by remember { mutableStateOf(false) }
+    var instructionCollapsed by remember { mutableStateOf(false) }
 
     val tts = remember(context) {
         TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
@@ -189,6 +193,7 @@ fun TripTrackingScreen(
         ?: "₱0"
     val totalLegs = max(1, (snapshot?.currentLegIndex ?: 0) + 1 + futureRouteSegments.size)
     val currentLegIndex = (snapshot?.currentLegIndex ?: 0).coerceAtLeast(0)
+    val recenterClearance = if (instructionCollapsed) 136.dp else 292.dp
 
     fun requestBack() { if (activeTrip) showBackDialog = true else onBack() }
     BackHandler(enabled = activeTrip) { showBackDialog = true }
@@ -202,11 +207,10 @@ fun TripTrackingScreen(
             } else legDestination,
             finalDestination = activeFinalDestination,
             futureRouteSegments = if (hasRerouted) emptyList() else futureRouteSegments,
+            recenterBottomPadding = recenterClearance,
             modifier = Modifier.fillMaxSize()
         )
 
-        // Only the header itself owns an opaque cream background. The current-leg card
-        // floats over the map so the map remains visible around and behind it.
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -255,6 +259,8 @@ fun TripTrackingScreen(
             working = working,
             status = snapshot?.status,
             optionError = optionError,
+            collapsed = instructionCollapsed,
+            onCollapsedChange = { instructionCollapsed = it },
             onSpeak = {
                 if (ttsReady) tts.speak(instruction, TextToSpeech.QUEUE_FLUSH, null, "tuki-navigation")
             },
@@ -472,16 +478,56 @@ private fun InstructionPanel(
     working: Boolean,
     status: String?,
     optionError: String?,
+    collapsed: Boolean,
+    onCollapsedChange: (Boolean) -> Unit,
     onSpeak: () -> Unit,
     onParaPo: () -> Unit,
     onBoard: () -> Unit,
     onAlight: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(28.dp), color = TripSurface, shadowElevation = 8.dp) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+    var dragDistance by remember { mutableStateOf(0f) }
+
+    Surface(
+        modifier.fillMaxWidth().animateContentSize(),
+        shape = RoundedCornerShape(28.dp),
+        color = TripSurface,
+        shadowElevation = 8.dp
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(22.dp)
+                    .pointerInput(collapsed) {
+                        detectVerticalDragGestures(
+                            onDragStart = { dragDistance = 0f },
+                            onVerticalDrag = { change, amount ->
+                                change.consume()
+                                dragDistance += amount
+                            },
+                            onDragEnd = {
+                                when {
+                                    dragDistance > 28f -> onCollapsedChange(true)
+                                    dragDistance < -28f -> onCollapsedChange(false)
+                                }
+                                dragDistance = 0f
+                            }
+                        )
+                    }
+                    .clickable { onCollapsedChange(!collapsed) },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.width(42.dp).height(4.dp).background(
+                        TripGray.copy(alpha = 0.45f),
+                        RoundedCornerShape(4.dp)
+                    )
+                )
+            }
+
             TripProgressDots(totalLegs, currentLeg)
-            Spacer(Modifier.height(11.dp))
+            Spacer(Modifier.height(if (collapsed) 7.dp else 10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = TripSoftTeal) {
                     Box(contentAlignment = Alignment.Center) { Text(icon, fontSize = 21.sp) }
@@ -489,7 +535,14 @@ private fun InstructionPanel(
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Next Instruction", color = TripGray, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
-                    Text(instruction, color = TripDark, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        instruction,
+                        color = TripDark,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = if (collapsed) 2 else 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 Spacer(Modifier.width(10.dp))
                 Surface(
@@ -499,73 +552,77 @@ private fun InstructionPanel(
                 ) { Box(contentAlignment = Alignment.Center) { Text("🔊", fontSize = 20.sp) } }
             }
 
-            following?.let {
-                Spacer(Modifier.height(7.dp))
-                Text("Then: $it", color = TripGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (preparingToAlight) {
-                Spacer(Modifier.height(7.dp))
-                Surface(shape = RoundedCornerShape(10.dp), color = TripOrange.copy(alpha = 0.10f)) {
-                    Text(
-                        "Prepare to alight — your stop is getting close.",
-                        Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                        color = TripOrange,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+            if (!collapsed) {
+                following?.let {
+                    Spacer(Modifier.height(7.dp))
+                    Text("Then: $it", color = TripGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-            }
+                if (preparingToAlight) {
+                    Spacer(Modifier.height(7.dp))
+                    Surface(shape = RoundedCornerShape(10.dp), color = TripOrange.copy(alpha = 0.10f)) {
+                        Text(
+                            "Prepare to alight — your stop is getting close.",
+                            Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            color = TripOrange,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
 
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TripMetric("Distance", distance, Modifier.weight(1f))
-                TripMetric("ETA", eta, Modifier.weight(1f))
-                TripMetric("Fare", fare, Modifier.weight(1f))
-            }
-
-            if (canParaPo || requiresBoarding || requiresAlighting) {
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (canParaPo) {
-                        Surface(
-                            Modifier.weight(1f).height(42.dp).clickable(enabled = !working, onClick = onParaPo),
-                            shape = RoundedCornerShape(14.dp),
-                            color = TripOrange.copy(alpha = 0.12f)
-                        ) { Box(contentAlignment = Alignment.Center) { Text("🔔  Para Po", color = TripOrange, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) } }
-                    }
-                    if (requiresBoarding || requiresAlighting) {
-                        Button(
-                            onClick = if (requiresBoarding) onBoard else onAlight,
-                            enabled = !working,
-                            modifier = Modifier.weight(if (canParaPo) 1.35f else 1f).height(42.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = if (requiresBoarding) TripTeal else TripOrange)
-                        ) {
-                            if (working) {
-                                CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = Color.White)
-                                Spacer(Modifier.width(6.dp))
+                    TripMetric("Distance", distance, Modifier.weight(1f))
+                    TripMetric("ETA", eta, Modifier.weight(1f))
+                    TripMetric("Fare", fare, Modifier.weight(1f))
+                }
+
+                if (canParaPo || requiresBoarding || requiresAlighting) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (canParaPo) {
+                            Surface(
+                                Modifier.weight(1f).height(42.dp).clickable(enabled = !working, onClick = onParaPo),
+                                shape = RoundedCornerShape(14.dp),
+                                color = TripOrange.copy(alpha = 0.12f)
+                            ) { Box(contentAlignment = Alignment.Center) { Text("🔔  Para Po", color = TripOrange, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) } }
+                        }
+                        if (requiresBoarding || requiresAlighting) {
+                            Button(
+                                onClick = if (requiresBoarding) onBoard else onAlight,
+                                enabled = !working,
+                                modifier = Modifier.weight(if (canParaPo) 1.35f else 1f).height(42.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (requiresBoarding) TripTeal else TripOrange)
+                            ) {
+                                if (working) {
+                                    CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = Color.White)
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(if (requiresBoarding) "Confirm Board" else "Confirm Alight", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
-                            Text(if (requiresBoarding) "Confirm Board" else "Confirm Alight", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
-            }
 
-            if (!optionError.isNullOrBlank()) {
-                Spacer(Modifier.height(6.dp))
-                Text(optionError, color = MaterialTheme.colorScheme.error, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            } else if (!status.isNullOrBlank()) {
-                Spacer(Modifier.height(6.dp))
-                Text(status.replace('_', ' '), color = TripGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                if (!optionError.isNullOrBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(optionError, color = MaterialTheme.colorScheme.error, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                } else if (!status.isNullOrBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(status.replace('_', ' '), color = TripGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(7.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                    color = TripTeal,
+                    trackColor = TripTeal.copy(alpha = 0.10f),
+                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            } else {
+                Spacer(Modifier.height(5.dp))
             }
-            Spacer(Modifier.height(7.dp))
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(4.dp),
-                color = TripTeal,
-                trackColor = TripTeal.copy(alpha = 0.10f),
-                strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
-            )
         }
     }
 }

@@ -82,25 +82,16 @@ fun TripOptionsSheet(
             dragHandle = { TukiSheetHandle() }
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 30.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 30.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text("Trip options", color = TripSheetDark, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
                 Text("Update your active trip without starting over.", color = TripSheetMuted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(6.dp))
-
-                TripOptionRow("↻", "Reroute now", "Find a new route from your current location.", isWorking) {
-                    onDismiss(); onRerouteNow()
-                }
-                TripOptionRow("☷", "Change route preference", "Choose fastest, cheapest, or balanced.", isWorking) {
-                    editor = TripOptionEditor.Preference
-                }
-                TripOptionRow("₱", "Change budget", "Set or remove your maximum fare budget.", isWorking) {
-                    editor = TripOptionEditor.Budget
-                }
-                TripOptionRow("⌖", "Change destination", "Search for a new destination and reroute.", isWorking) {
-                    editor = TripOptionEditor.Destination
-                }
+                TripOptionRow("↻", "Reroute now", "Find a new route from your current location.", isWorking) { onDismiss(); onRerouteNow() }
+                TripOptionRow("☷", "Change route preference", "Choose fastest, cheapest, or balanced.", isWorking) { editor = TripOptionEditor.Preference }
+                TripOptionRow("₱", "Change budget", "Set or remove your maximum fare budget.", isWorking) { editor = TripOptionEditor.Budget }
+                TripOptionRow("⌖", "Change destination", "Search for a new destination and reroute.", isWorking) { editor = TripOptionEditor.Destination }
                 Spacer(Modifier.height(10.dp))
             }
         }
@@ -110,28 +101,16 @@ fun TripOptionsSheet(
         TripOptionEditor.Preference -> PreferenceSheet(
             onDismiss = { editor = null },
             onLoad = onLoadPreferencePreviews,
-            onConfirm = { preference ->
-                editor = null
-                onDismiss()
-                onPreferenceChange(preference)
-            }
+            onConfirm = { preference -> editor = null; onDismiss(); onPreferenceChange(preference) }
         )
         TripOptionEditor.Budget -> BudgetSheet(
             onDismiss = { editor = null },
-            onConfirm = { budget, clear ->
-                editor = null
-                onDismiss()
-                onBudgetChange(budget, clear)
-            }
+            onConfirm = { budget, clear -> editor = null; onDismiss(); onBudgetChange(budget, clear) }
         )
         TripOptionEditor.Destination -> DestinationSheet(
             onDismiss = { editor = null },
             onSearch = onDestinationSearch,
-            onConfirm = { destination ->
-                editor = null
-                onDismiss()
-                onDestinationChange(destination)
-            }
+            onConfirm = { destination -> editor = null; onDismiss(); onDestinationChange(destination) }
         )
         null -> Unit
     }
@@ -148,9 +127,7 @@ private fun TripOptionRow(icon: String, title: String, subtitle: String, disable
     ) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(Modifier.size(42.dp), shape = CircleShape, color = TripSheetCream.copy(alpha = 0.55f)) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(icon, color = TripSheetTeal, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                }
+                Box(contentAlignment = Alignment.Center) { Text(icon, color = TripSheetTeal, fontSize = 22.sp, fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.width(13.dp))
             Column(Modifier.weight(1f)) {
@@ -158,8 +135,7 @@ private fun TripOptionRow(icon: String, title: String, subtitle: String, disable
                 Spacer(Modifier.height(2.dp))
                 Text(subtitle, color = TripSheetMuted, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.width(8.dp))
-            Text("›", color = TripSheetDarkText, fontSize = 26.sp, fontWeight = FontWeight.Medium)
+            Text("›", color = TripSheetDarkText, fontSize = 26.sp)
         }
     }
 }
@@ -195,10 +171,14 @@ private fun PreferenceSheet(
             Spacer(Modifier.height(14.dp))
 
             if (loading) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 26.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     CircularProgressIndicator(Modifier.size(22.dp), color = TripSheetTeal, strokeWidth = 2.5.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("Loading route values…", color = TripSheetMuted, fontSize = 12.sp)
+                    Text("Loading live route values…", color = TripSheetMuted, fontSize = 12.sp)
                 }
             }
 
@@ -207,20 +187,21 @@ private fun PreferenceSheet(
                 Triple("cheapest", "Cheapest", "Lowest fare options"),
                 Triple("fastest", "Fastest", "Quickest arrival")
             )
+
             definitions.forEachIndexed { index, (preference, title, subtitle) ->
                 val preview = previews.firstOrNull { it.preference == preference }
                 PreferenceCard(
-                    icon = when (preference) { "efficient" -> "🛺"; "cheapest" -> "₱"; else -> "⚡" },
+                    icon = when (preference) { "efficient" -> "🚌"; "cheapest" -> "₱"; else -> "⚡" },
                     title = title,
                     subtitle = subtitle,
                     recommended = preference == "efficient",
                     selected = selected == preference,
                     stats = listOf(
-                        "ETA" to (preview?.let { "${it.totalMinutes} min" } ?: "—"),
-                        "Fare" to (preview?.let { formatPreferenceFare(it.totalFarePesos) } ?: "—"),
-                        "Walk" to (preview?.let { formatPreferenceWalk(it.walkMeters) } ?: "—")
+                        "ETA" to (preview?.let { "${it.totalMinutes} min" } ?: if (loading) "…" else "Unavailable"),
+                        "Fare" to (preview?.let { formatPreferenceFare(it.totalFarePesos) } ?: if (loading) "…" else "Unavailable"),
+                        "Walk" to (preview?.let { formatPreferenceWalk(it.walkMeters) } ?: if (loading) "…" else "Unavailable")
                     ),
-                    enabled = preview != null && !loading,
+                    enabled = !loading,
                     onClick = {
                         selected = preference
                         onConfirm(preference)
@@ -253,7 +234,7 @@ private fun PreferenceCard(
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    modifier = Modifier.size(42.dp),
+                    Modifier.size(42.dp),
                     shape = CircleShape,
                     color = when (title) {
                         "Fastest" -> TripSheetOrange.copy(alpha = 0.16f)
@@ -275,7 +256,7 @@ private fun PreferenceCard(
                     Text(subtitle, color = TripSheetMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                 }
                 Surface(
-                    modifier = Modifier.size(28.dp),
+                    Modifier.size(28.dp),
                     shape = CircleShape,
                     color = if (selected) TripSheetTeal else Color.Transparent,
                     border = if (selected) null else BorderStroke(1.5.dp, TripSheetOutline)
@@ -310,7 +291,6 @@ private fun BudgetSheet(onDismiss: () -> Unit, onConfirm: (BigDecimal?, Boolean)
     var text by remember { mutableStateOf("") }
     val parsed = text.trim().toBigDecimalOrNull()
     val valid = parsed != null && parsed > BigDecimal.ZERO
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = TripSheetScreen,

@@ -161,7 +161,7 @@ fun LiveTripMapScreen(
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = recenterBottomPadding + 12.dp)
+                .padding(end = 14.dp, bottom = recenterBottomPadding + 4.dp)
                 .size(52.dp)
                 .clickable(enabled = recenterPoint != null && mapLibreMap != null) {
                     val point = recenterPoint ?: return@clickable
