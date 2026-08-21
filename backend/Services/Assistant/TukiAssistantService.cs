@@ -118,6 +118,9 @@ public sealed class TukiAssistantService(
                 ? $"I found no Tuki journey within ₱{budget:0.##}."
                 : "Tuki found no supported journey.");
 
+        if (routing is IJourneyGeometryEnricher geometryEnricher)
+            await geometryEnricher.EnrichSelectedPlanGeometryAsync(eligiblePlans, cancellationToken);
+
         IReadOnlyList<PersistedJourney> persisted;
         try
         {
