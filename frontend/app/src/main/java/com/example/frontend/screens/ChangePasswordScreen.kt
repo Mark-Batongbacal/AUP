@@ -32,11 +32,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -48,22 +51,14 @@ private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
 private val TukiError = Color(0xFFB00020)
 
-sealed interface ChangePasswordResult {
-    data object Success : ChangePasswordResult
-    data class Error(val message: String) : ChangePasswordResult
-}
-
 @Composable
 fun ChangePasswordScreen(
     onBack: () -> Unit = {},
-    onRequestOtp: suspend (currentPassword: String) -> ChangePasswordResult = {
-        ChangePasswordResult.Error("Password change isn't wired up yet.")
-    },
-    onChangePassword: suspend (currentPassword: String, code: String, newPassword: String) -> ChangePasswordResult = { _, _, _ ->
-        ChangePasswordResult.Error("Password change isn't wired up yet.")
-    },
     onPasswordChanged: () -> Unit = {}
 ) {
+    val context = LocalContext.current.applicationContext
+    val authRepository = remember(context) { TukiDataProvider(context).authRepository }
+
     var currentPassword by remember { mutableStateOf("") }
     var otpCode by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
@@ -92,12 +87,12 @@ fun ChangePasswordScreen(
             isWorking = true
             errorMessage = null
             infoMessage = null
-            when (val result = onRequestOtp(currentPassword)) {
-                ChangePasswordResult.Success -> {
+            when (val result = authRepository.requestChangePasswordOtp(currentPassword)) {
+                is ApiResult.Success -> {
                     otpSent = true
                     infoMessage = "OTP sent to your account email."
                 }
-                is ChangePasswordResult.Error -> errorMessage = result.message
+                is ApiResult.Failure -> errorMessage = result.message
             }
             isWorking = false
         }
@@ -117,8 +112,8 @@ fun ChangePasswordScreen(
                     isWorking = true
                     errorMessage = null
                     infoMessage = null
-                    when (val result = onChangePassword(currentPassword, otpCode.trim(), newPassword)) {
-                        ChangePasswordResult.Success -> {
+                    when (val result = authRepository.changePassword(currentPassword, otpCode.trim(), newPassword)) {
+                        is ApiResult.Success -> {
                             isSuccess = true
                             infoMessage = "Password changed successfully."
                             currentPassword = ""
@@ -128,7 +123,7 @@ fun ChangePasswordScreen(
                             delay(1000)
                             onPasswordChanged()
                         }
-                        is ChangePasswordResult.Error -> errorMessage = result.message
+                        is ApiResult.Failure -> errorMessage = result.message
                     }
                     isWorking = false
                 }
