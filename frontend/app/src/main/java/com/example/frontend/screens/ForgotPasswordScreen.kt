@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
@@ -28,27 +29,88 @@ private val TukiDark = Color(0xFF173B43)
 private val TukiGray = Color(0xFF9AA6A9)
 private val TukiError = Color(0xFFB00020)
 
+sealed interface PasswordResetActionResult {
+    data object Success : PasswordResetActionResult
+    data class Error(val message: String) : PasswordResetActionResult
+}
+
 @Composable
 fun ForgotPasswordScreen(
     onBack: () -> Unit = {},
-    onResetSent: () -> Unit = {}
+    onRequestReset: suspend (email: String) -> PasswordResetActionResult = {
+        PasswordResetActionResult.Error("Password reset isn't wired up yet.")
+    },
+    onResetPassword: suspend (email: String, code: String, newPassword: String) -> PasswordResetActionResult = { _, _, _ ->
+        PasswordResetActionResult.Error("Password reset isn't wired up yet.")
+    },
+    onPasswordReset: () -> Unit = {}
 ) {
     var email by remember { mutableStateOf("") }
-    var isSending by remember { mutableStateOf(false) }
+    var code by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var codeSent by remember { mutableStateOf(false) }
+    var isWorking by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var isSuccess by remember { mutableStateOf(false) }
-    
+    var successMessage by remember { mutableStateOf<String?>(null) }
+
     val coroutineScope = rememberCoroutineScope()
+
+    fun requestCode() {
+        if (isWorking) return
+        if (email.isBlank() || !email.contains("@")) {
+            error = "Enter a valid email address."
+            return
+        }
+
+        coroutineScope.launch {
+            isWorking = true
+            error = null
+            successMessage = null
+            when (val result = onRequestReset(email.trim())) {
+                PasswordResetActionResult.Success -> {
+                    codeSent = true
+                    successMessage = "OTP sent. Check your email."
+                }
+                is PasswordResetActionResult.Error -> error = result.message
+            }
+            isWorking = false
+        }
+    }
+
+    fun resetPassword() {
+        if (isWorking) return
+        when {
+            code.isBlank() -> error = "Enter the OTP from your email."
+            newPassword.length < 8 -> error = "New password must be at least 8 characters."
+            newPassword != confirmPassword -> error = "New password and confirmation do not match."
+            else -> {
+                coroutineScope.launch {
+                    isWorking = true
+                    error = null
+                    successMessage = null
+                    when (val result = onResetPassword(email.trim(), code.trim(), newPassword)) {
+                        PasswordResetActionResult.Success -> {
+                            successMessage = "Password reset successfully."
+                            delay(900)
+                            onPasswordReset()
+                        }
+                        is PasswordResetActionResult.Error -> error = result.message
+                    }
+                    isWorking = false
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .background(Color.White)
-            .padding(start = 34.dp, end = 34.dp, top = 35.dp, bottom = 15.dp),
+            .padding(start = 34.dp, end = 34.dp, top = 35.dp, bottom = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Back Button
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.Start
@@ -57,7 +119,7 @@ fun ForgotPasswordScreen(
                 modifier = Modifier
                     .size(38.dp)
                     .background(TukiCream, RoundedCornerShape(12.dp))
-                    .clickable(onClick = onBack),
+                    .clickable(enabled = !isWorking, onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -80,10 +142,10 @@ fun ForgotPasswordScreen(
             fontWeight = FontWeight.ExtraBold
         )
 
-        Spacer(modifier = Modifier.height(35.dp))
+        Spacer(modifier = Modifier.height(30.dp))
 
         Text(
-            text = "Reset Password",
+            text = if (codeSent) "Enter your OTP" else "Reset Password",
             color = Color.Black,
             fontSize = 26.sp,
             fontWeight = FontWeight.ExtraBold
@@ -92,94 +154,149 @@ fun ForgotPasswordScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Enter your email to receive a reset link",
+            text = if (codeSent) {
+                "We sent a reset code to $email"
+            } else {
+                "Enter your email to receive a password reset code"
+            },
             color = TukiGray,
-            fontSize = 18.sp,
+            fontSize = 16.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 20.dp),
+            modifier = Modifier.padding(horizontal = 10.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(34.dp))
 
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Text(text = "Email", color = Color.Black, fontSize = 18.sp)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            TextField(
+        if (!codeSent) {
+            ResetTextField(
+                label = "Email",
                 value = email,
+                enabled = !isWorking,
                 onValueChange = {
                     email = it
                     error = null
-                },
-                modifier = Modifier.fillMaxWidth().height(60.dp),
-                enabled = !isSending && !isSuccess,
-                singleLine = true,
-                shape = RoundedCornerShape(15.dp),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = TukiCream,
-                    unfocusedContainerColor = TukiCream,
-                    disabledContainerColor = TukiCream,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent
-                )
+                }
+            )
+        } else {
+            ResetTextField(
+                label = "OTP code",
+                value = code,
+                enabled = !isWorking,
+                onValueChange = {
+                    code = it.filter(Char::isDigit).take(10)
+                    error = null
+                }
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            ResetTextField(
+                label = "New password",
+                value = newPassword,
+                enabled = !isWorking,
+                isPassword = true,
+                onValueChange = {
+                    newPassword = it
+                    error = null
+                }
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            ResetTextField(
+                label = "Confirm new password",
+                value = confirmPassword,
+                enabled = !isWorking,
+                isPassword = true,
+                onValueChange = {
+                    confirmPassword = it
+                    error = null
+                }
             )
         }
 
-        if (error != null) {
-            Spacer(modifier = Modifier.height(12.dp))
+        error?.let { message ->
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
-                text = error!!,
+                text = message,
                 color = TukiError,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }
 
-        if (isSuccess) {
-            Spacer(modifier = Modifier.height(12.dp))
+        successMessage?.let { message ->
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
-                text = "Reset link sent! Check your inbox.",
+                text = message,
                 color = TukiTeal,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }
 
-        Spacer(modifier = Modifier.height(40.dp))
+        Spacer(modifier = Modifier.height(30.dp))
 
         Button(
-            onClick = {
-                if (email.isBlank() || !email.contains("@")) {
-                    error = "Enter a valid email address."
-                    return@Button
-                }
-                coroutineScope.launch {
-                    isSending = true
-                    error = null
-                    // Mock API call
-                    delay(1500)
-                    isSending = false
-                    isSuccess = true
-                    delay(2000)
-                    onResetSent()
-                }
-            },
+            onClick = { if (codeSent) resetPassword() else requestCode() },
             modifier = Modifier.fillMaxWidth().height(60.dp),
-            enabled = !isSending && !isSuccess,
+            enabled = !isWorking,
             shape = RoundedCornerShape(22.dp),
             colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
         ) {
-            if (isSending) {
+            if (isWorking) {
                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
             } else {
                 Text(
-                    text = if (isSuccess) "Sent!" else "Send Reset Link",
+                    text = if (codeSent) "Reset Password" else "Send OTP",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         }
+
+        if (codeSent) {
+            Spacer(modifier = Modifier.height(14.dp))
+            TextButton(
+                onClick = { requestCode() },
+                enabled = !isWorking
+            ) {
+                Text("Resend OTP", color = TukiTeal, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResetTextField(
+    label: String,
+    value: String,
+    enabled: Boolean,
+    isPassword: Boolean = false,
+    onValueChange: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(text = label, color = Color.Black, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(8.dp))
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            enabled = enabled,
+            singleLine = true,
+            shape = RoundedCornerShape(15.dp),
+            visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = TukiCream,
+                unfocusedContainerColor = TukiCream,
+                disabledContainerColor = TukiCream,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+                focusedTextColor = TukiDark,
+                unfocusedTextColor = TukiDark
+            )
+        )
     }
 }
