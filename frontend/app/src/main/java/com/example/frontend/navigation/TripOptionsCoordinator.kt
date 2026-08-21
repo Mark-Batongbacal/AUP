@@ -10,14 +10,26 @@ import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRerouteRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.places.DestinationSearchResultDto
+import com.example.frontend.data.routing.JourneyPlanRequest
+import com.example.frontend.data.routing.PlannedJourney
 import java.math.BigDecimal
 import java.time.Instant
+import kotlin.math.roundToInt
+
+data class TripPreferencePreview(
+    val preference: String,
+    val title: String,
+    val totalMinutes: Int,
+    val totalFarePesos: Double,
+    val walkMeters: Int
+)
 
 class TripOptionsCoordinator(context: Context) {
     private val appContext = context.applicationContext
     private val provider = TukiDataProvider(appContext)
     private val navigation = provider.navigationRepository
     private val places = provider.placesRepository
+    private val routing = provider.routingRepository
 
     suspend fun rerouteNow(sessionId: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "MANUAL"))
@@ -41,6 +53,83 @@ class TripOptionsCoordinator(context: Context) {
                 destinationLongitude = destination.longitude
             )
         )
+
+    /**
+     * Uses the same journey planner and recommendation payload as RouteResultsScreen.
+     * Missing live coordinates are resolved from the device, while missing destination
+     * coordinates are resolved through Places before requesting the route cards.
+     */
+    suspend fun loadPreferencePreviews(
+        originLatitude: Double?,
+        originLongitude: Double?,
+        destinationName: String,
+        destinationLatitude: Double?,
+        destinationLongitude: Double?
+    ): ApiResult<List<TripPreferencePreview>> {
+        val deviceLocation = if (originLatitude == null || originLongitude == null) {
+            appContext.currentDeviceLocation()
+        } else null
+        val originLat = originLatitude ?: deviceLocation?.latitude
+            ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
+        val originLon = originLongitude ?: deviceLocation?.longitude
+            ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
+
+        var resolvedDestinationName = destinationName
+        var destinationLat = destinationLatitude
+        var destinationLon = destinationLongitude
+        if (destinationLat == null || destinationLon == null) {
+            when (val placeResult = places.searchPlaces(destinationName, originLat, originLon)) {
+                is ApiResult.Success -> {
+                    val place = placeResult.data.firstOrNull()
+                        ?: return ApiResult.Failure(null, "Destination location is unavailable.")
+                    resolvedDestinationName = place.name
+                    destinationLat = place.latitude
+                    destinationLon = place.longitude
+                }
+                is ApiResult.Failure -> return placeResult
+            }
+        }
+
+        val finalDestinationLat = destinationLat
+            ?: return ApiResult.Failure(null, "Destination location is unavailable.")
+        val finalDestinationLon = destinationLon
+            ?: return ApiResult.Failure(null, "Destination location is unavailable.")
+
+        return when (
+            val result = routing.planJourneys(
+                JourneyPlanRequest(
+                    originLatitude = originLat,
+                    originLongitude = originLon,
+                    destinationName = resolvedDestinationName,
+                    destinationLatitude = finalDestinationLat,
+                    destinationLongitude = finalDestinationLon
+                )
+            )
+        ) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> {
+                val plans = result.data
+                if (plans.isEmpty()) {
+                    ApiResult.Failure(null, "No route preferences are available right now.")
+                } else {
+                    val efficient = findTagged(plans, "efficient")
+                        ?: plans.minByOrNull { it.journey.source.generalizedCostPesos }
+                    val cheapest = findTagged(plans, "cheapest")
+                        ?: plans.minByOrNull { it.journey.source.totalFarePesos }
+                    val fastest = findTagged(plans, "fastest")
+                        ?: plans.minByOrNull { it.journey.source.totalTimeSeconds }
+
+                    val previews = listOfNotNull(
+                        efficient?.toPreferencePreview("efficient", "Best Overall"),
+                        cheapest?.toPreferencePreview("cheapest", "Cheapest"),
+                        fastest?.toPreferencePreview("fastest", "Fastest")
+                    ).distinctBy { it.preference }
+
+                    ApiResult.Success(previews)
+                }
+            }
+        }
+    }
 
     suspend fun currentLegGeometry(snapshot: NavigationSnapshotDto): ApiResult<NavigationGeometryResponseDto> {
         val leg = snapshot.currentLeg ?: return ApiResult.Failure(null, "Current route leg is unavailable.")
@@ -77,5 +166,28 @@ class TripOptionsCoordinator(context: Context) {
             is ApiResult.Success -> Unit
         }
         return navigation.reroute(sessionId, request)
+    }
+
+    private fun findTagged(plans: List<PlannedJourney>, tag: String): PlannedJourney? =
+        plans.firstOrNull { planned ->
+            planned.journey.source.recommendationType
+                .split(',')
+                .any { it.trim().equals(tag, ignoreCase = true) }
+        }
+
+    private fun PlannedJourney.toPreferencePreview(preference: String, title: String): TripPreferencePreview {
+        val source = journey.source
+        val walkMeters = (
+            source.originAccess.walkDistanceMeters +
+                source.destinationAccess.walkDistanceMeters +
+                source.transferWalkDistancesMeters.sum()
+            ).roundToInt()
+        return TripPreferencePreview(
+            preference = preference,
+            title = title,
+            totalMinutes = (source.totalTimeSeconds / 60.0).roundToInt().coerceAtLeast(1),
+            totalFarePesos = source.totalFarePesos,
+            walkMeters = walkMeters.coerceAtLeast(0)
+        )
     }
 }

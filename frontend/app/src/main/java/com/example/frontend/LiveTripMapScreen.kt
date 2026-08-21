@@ -1,30 +1,20 @@
 package com.example.frontend
 
 import android.view.MotionEvent
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -69,7 +59,7 @@ fun LiveTripMapScreen(
     legDestination: LatLng?,
     finalDestination: LatLng?,
     futureRouteSegments: List<List<LatLng>> = emptyList(),
-    recenterBottomPadding: Dp = 300.dp,
+    recenterRequestKey: Int = 0,
     modifier: Modifier = Modifier
 ) {
     if (LocalInspectionMode.current) {
@@ -82,6 +72,9 @@ fun LiveTripMapScreen(
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var loadedStyle by remember { mutableStateOf<Style?>(null) }
     var followLocation by rememberSaveable { mutableStateOf(true) }
+    val latestMap by rememberUpdatedState(mapLibreMap)
+    val latestCurrentPosition by rememberUpdatedState(currentPosition)
+    val latestRoutePoints by rememberUpdatedState(routePoints)
 
     val mapView = remember(context) {
         MapLibre.getInstance(context)
@@ -110,6 +103,7 @@ fun LiveTripMapScreen(
     LaunchedEffect(mapView) {
         mapView.getMapAsync { map ->
             mapLibreMap = map
+            map.uiSettings.isCompassEnabled = false
             map.setStyle(LiveTripMapStyleUrl) { style ->
                 loadedStyle = style
                 updateLiveTripFutureLayers(style, futureRouteSegments)
@@ -153,29 +147,16 @@ fun LiveTripMapScreen(
         animateLiveTripCamera(map, point, routePoints)
     }
 
+    LaunchedEffect(recenterRequestKey) {
+        if (recenterRequestKey == 0) return@LaunchedEffect
+        val map = latestMap ?: return@LaunchedEffect
+        val point = latestCurrentPosition ?: latestRoutePoints.firstOrNull() ?: return@LaunchedEffect
+        followLocation = latestCurrentPosition != null
+        animateLiveTripCamera(map, point, latestRoutePoints)
+    }
+
     Box(modifier.fillMaxSize()) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
-
-        if (currentPosition != null) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 18.dp, bottom = recenterBottomPadding)
-                    .size(52.dp)
-                    .clickable {
-                        followLocation = true
-                        mapLibreMap?.let { map -> animateLiveTripCamera(map, currentPosition, routePoints) }
-                    },
-                shape = CircleShape,
-                color = Color(0xFFFFFBF0),
-                shadowElevation = 8.dp,
-                tonalElevation = 2.dp
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("⌖", color = Color(0xFF153E4B), fontSize = 26.sp)
-                }
-            }
-        }
     }
 }
 
@@ -262,14 +243,7 @@ private fun updateLiveTripFinalDestination(style: Style, point: LatLng?) {
     updateLiveTripPoint(style, point, LiveTripFinalSource, LiveTripFinalLayer, "#F59A3A", 7f)
 }
 
-private fun updateLiveTripPoint(
-    style: Style,
-    point: LatLng?,
-    sourceId: String,
-    layerId: String,
-    color: String,
-    radius: Float
-) {
+private fun updateLiveTripPoint(style: Style, point: LatLng?, sourceId: String, layerId: String, color: String, radius: Float) {
     if (point == null) {
         style.removeLayer(layerId)
         style.removeSource(sourceId)
@@ -316,18 +290,18 @@ private fun updateLiveTripFutureLayers(style: Style, segments: List<List<LatLng>
 }
 
 private fun navigationLookAheadTarget(current: LatLng?, route: List<LatLng>): LatLng? {
-    current ?: return null
-    if (route.size < 2) return current
-    val nearest = route.indices.minByOrNull { index -> distanceMeters(current, route[index]) } ?: return current
+    val safeCurrent = current ?: return null
+    if (route.size < 2) return safeCurrent
+    val nearest = route.indices.minByOrNull { index -> distanceMeters(safeCurrent, route[index]) } ?: return safeCurrent
     var accumulated = 0.0
-    var previous = current
+    var previous = safeCurrent
     for (index in nearest until route.size) {
         val candidate = route[index]
         accumulated += distanceMeters(previous, candidate)
         if (accumulated >= 105.0) return candidate
         previous = candidate
     }
-    return route.lastOrNull() ?: current
+    return route.lastOrNull() ?: safeCurrent
 }
 
 private fun navigationBearing(current: LatLng, route: List<LatLng>): Double? {
