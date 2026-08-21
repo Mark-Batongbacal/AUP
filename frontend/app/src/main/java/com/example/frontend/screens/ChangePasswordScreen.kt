@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -31,11 +33,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.components.OtpCodeField
+import com.example.frontend.components.OtpResendButton
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -47,82 +54,105 @@ private val TukiTeal = Color(0xFF15919B)
 private val TukiOrange = Color(0xFFFF9318)
 private val TukiError = Color(0xFFB00020)
 
-sealed interface ChangePasswordResult {
-    data object Success : ChangePasswordResult
-    data class Error(val message: String) : ChangePasswordResult
+private enum class ChangePasswordStage {
+    CURRENT_PASSWORD,
+    OTP,
+    NEW_PASSWORD
 }
 
-/**
- * Reached from Privacy & security -> "Change password". Requires the user's
- * current password to match their account's password before a new password
- * is accepted; the caller (via [onChangePassword]) is expected to surface a
- * clear error (e.g. "Current password is incorrect.") when that check fails.
- */
 @Composable
 fun ChangePasswordScreen(
     onBack: () -> Unit = {},
-    onChangePassword: suspend (currentPassword: String, newPassword: String) -> ChangePasswordResult = { _, _ ->
-        ChangePasswordResult.Error("Changing your password isn't wired up yet.")
-    },
     onPasswordChanged: () -> Unit = {}
 ) {
+    val context = LocalContext.current.applicationContext
+    val authRepository = remember(context) { TukiDataProvider(context).authRepository }
+    val coroutineScope = rememberCoroutineScope()
+
+    var stage by remember { mutableStateOf(ChangePasswordStage.CURRENT_PASSWORD) }
     var currentPassword by remember { mutableStateOf("") }
+    var otpCode by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var otpSendGeneration by remember { mutableStateOf(0) }
 
     var currentPasswordVisible by remember { mutableStateOf(false) }
     var newPasswordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
 
-    var isSaving by remember { mutableStateOf(false) }
+    var isWorking by remember { mutableStateOf(false) }
     var isSuccess by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var infoMessage by remember { mutableStateOf<String?>(null) }
 
-    val coroutineScope = rememberCoroutineScope()
-
-    fun clearError() {
-        errorMessage = null
-    }
-
-    fun submit() {
-        if (isSaving || isSuccess) return
-
-        when {
-            currentPassword.isBlank() -> {
-                errorMessage = "Enter your current password."
-                return
-            }
-            newPassword.length < 8 -> {
-                errorMessage = "New password must be at least 8 characters."
-                return
-            }
-            newPassword == currentPassword -> {
-                errorMessage = "New password must be different from your current password."
-                return
-            }
-            newPassword != confirmPassword -> {
-                errorMessage = "New password and confirmation do not match."
-                return
-            }
+    fun requestOtp() {
+        if (isWorking || isSuccess) return
+        if (currentPassword.isBlank()) {
+            errorMessage = "Enter your current password."
+            return
         }
 
         coroutineScope.launch {
+            isWorking = true
             errorMessage = null
-            isSaving = true
-            when (val result = onChangePassword(currentPassword, newPassword)) {
-                is ChangePasswordResult.Success -> {
-                    isSuccess = true
-                    currentPassword = ""
-                    newPassword = ""
-                    confirmPassword = ""
-                    delay(1200)
-                    onPasswordChanged()
+            infoMessage = null
+            when (val result = authRepository.requestChangePasswordOtp(currentPassword)) {
+                is ApiResult.Success -> {
+                    stage = ChangePasswordStage.OTP
+                    otpCode = ""
+                    otpSendGeneration += 1
+                    infoMessage = "We've sent an 8-digit OTP to your account email."
                 }
-                is ChangePasswordResult.Error -> {
-                    errorMessage = result.message
-                }
+                is ApiResult.Failure -> errorMessage = result.message
             }
-            isSaving = false
+            isWorking = false
+        }
+    }
+
+    fun verifyOtp() {
+        if (isWorking || isSuccess) return
+        if (otpCode.length != 8) {
+            errorMessage = "Enter the complete 8-digit code."
+            return
+        }
+
+        coroutineScope.launch {
+            isWorking = true
+            errorMessage = null
+            infoMessage = null
+            when (val result = authRepository.verifyChangePasswordOtp(currentPassword, otpCode)) {
+                is ApiResult.Success -> stage = ChangePasswordStage.NEW_PASSWORD
+                is ApiResult.Failure -> errorMessage = result.message
+            }
+            isWorking = false
+        }
+    }
+
+    fun submitChange() {
+        if (isWorking || isSuccess) return
+        when {
+            newPassword.length < 8 -> errorMessage = "New password must be at least 8 characters."
+            newPassword == currentPassword -> errorMessage = "New password must be different from your current password."
+            newPassword != confirmPassword -> errorMessage = "New password and confirmation do not match."
+            else -> coroutineScope.launch {
+                isWorking = true
+                errorMessage = null
+                infoMessage = null
+                when (val result = authRepository.changePassword(currentPassword, otpCode, newPassword)) {
+                    is ApiResult.Success -> {
+                        isSuccess = true
+                        infoMessage = "Password changed successfully."
+                        currentPassword = ""
+                        otpCode = ""
+                        newPassword = ""
+                        confirmPassword = ""
+                        delay(800)
+                        onPasswordChanged()
+                    }
+                    is ApiResult.Failure -> errorMessage = result.message
+                }
+                isWorking = false
+            }
         }
     }
 
@@ -135,25 +165,50 @@ fun ChangePasswordScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
-        // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(38.dp)
                     .background(TukiCream2, RoundedCornerShape(12.dp))
-                    .clickable(enabled = !isSaving, onClick = onBack),
+                    .clickable(enabled = !isWorking) {
+                        when (stage) {
+                            ChangePasswordStage.CURRENT_PASSWORD -> onBack()
+                            ChangePasswordStage.OTP -> {
+                                stage = ChangePasswordStage.CURRENT_PASSWORD
+                                errorMessage = null
+                                infoMessage = null
+                            }
+                            ChangePasswordStage.NEW_PASSWORD -> {
+                                stage = ChangePasswordStage.OTP
+                                errorMessage = null
+                                infoMessage = null
+                            }
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(text = "‹", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(modifier = Modifier.width(14.dp))
-            Text(text = "Change password", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                text = when (stage) {
+                    ChangePasswordStage.CURRENT_PASSWORD -> "Change password"
+                    ChangePasswordStage.OTP -> "Check your email"
+                    ChangePasswordStage.NEW_PASSWORD -> "New password"
+                },
+                color = TukiDark,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "Enter your current password, then choose a new one.",
+            text = when (stage) {
+                ChangePasswordStage.CURRENT_PASSWORD -> "Confirm your current password first. We'll send an OTP to your account email."
+                ChangePasswordStage.OTP -> "We've sent an 8-digit OTP to the email on your TUKI account."
+                ChangePasswordStage.NEW_PASSWORD -> "OTP verified. You can now choose your new password."
+            },
             color = TukiGray,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold
@@ -161,92 +216,95 @@ fun ChangePasswordScreen(
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        PasswordField(
-            label = "Current password",
-            value = currentPassword,
-            visible = currentPasswordVisible,
-            enabled = !isSaving && !isSuccess,
-            onValueChange = {
-                currentPassword = it
-                clearError()
-            },
-            onVisibilityToggle = { currentPasswordVisible = !currentPasswordVisible }
-        )
+        when (stage) {
+            ChangePasswordStage.CURRENT_PASSWORD -> PasswordField(
+                label = "Current password",
+                value = currentPassword,
+                visible = currentPasswordVisible,
+                enabled = !isWorking && !isSuccess,
+                onValueChange = {
+                    currentPassword = it
+                    errorMessage = null
+                },
+                onVisibilityToggle = { currentPasswordVisible = !currentPasswordVisible }
+            )
 
-        Spacer(modifier = Modifier.height(18.dp))
+            ChangePasswordStage.OTP -> {
+                OtpCodeField(
+                    code = otpCode,
+                    onCodeChange = {
+                        otpCode = it
+                        errorMessage = null
+                    },
+                    enabled = !isWorking && !isSuccess
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OtpResendButton(
+                    sendGeneration = otpSendGeneration,
+                    enabled = !isWorking && !isSuccess,
+                    onResend = { requestOtp() }
+                )
+            }
 
-        PasswordField(
-            label = "New password",
-            value = newPassword,
-            visible = newPasswordVisible,
-            enabled = !isSaving && !isSuccess,
-            onValueChange = {
-                newPassword = it
-                clearError()
-            },
-            onVisibilityToggle = { newPasswordVisible = !newPasswordVisible }
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "Must be at least 8 characters.",
-            color = TukiGray,
-            fontSize = 11.sp
-        )
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        PasswordField(
-            label = "Confirm new password",
-            value = confirmPassword,
-            visible = confirmPasswordVisible,
-            enabled = !isSaving && !isSuccess,
-            onValueChange = {
-                confirmPassword = it
-                clearError()
-            },
-            onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
-        )
+            ChangePasswordStage.NEW_PASSWORD -> {
+                PasswordField(
+                    label = "New password",
+                    value = newPassword,
+                    visible = newPasswordVisible,
+                    enabled = !isWorking && !isSuccess,
+                    onValueChange = {
+                        newPassword = it
+                        errorMessage = null
+                    },
+                    onVisibilityToggle = { newPasswordVisible = !newPasswordVisible }
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                PasswordField(
+                    label = "Confirm new password",
+                    value = confirmPassword,
+                    visible = confirmPasswordVisible,
+                    enabled = !isWorking && !isSuccess,
+                    onValueChange = {
+                        confirmPassword = it
+                        errorMessage = null
+                    },
+                    onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
+                )
+            }
+        }
 
         errorMessage?.let { message ->
             Spacer(modifier = Modifier.height(16.dp))
-            Text(text = message, color = TukiError, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(message, color = TukiError, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
-
-        if (isSuccess) {
+        infoMessage?.let { message ->
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Password changed successfully.",
-                color = TukiTeal,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text(message, color = TukiTeal, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
 
         Spacer(modifier = Modifier.height(28.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    color = if (isSaving || isSuccess) TukiOrange.copy(alpha = 0.4f) else TukiOrange,
-                    shape = RoundedCornerShape(16.dp)
-                )
-                .clickable(enabled = !isSaving && !isSuccess) { submit() }
-                .padding(vertical = 16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
+        Button(
+            onClick = {
+                when (stage) {
+                    ChangePasswordStage.CURRENT_PASSWORD -> requestOtp()
+                    ChangePasswordStage.OTP -> verifyOtp()
+                    ChangePasswordStage.NEW_PASSWORD -> submitChange()
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            enabled = !isWorking && !isSuccess,
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
         ) {
-            if (isSaving) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = Color.White
-                )
+            if (isWorking) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
             } else {
                 Text(
-                    text = if (isSuccess) "Saved" else "Change password",
+                    text = when (stage) {
+                        ChangePasswordStage.CURRENT_PASSWORD -> "Send OTP"
+                        ChangePasswordStage.OTP -> "Verify OTP"
+                        ChangePasswordStage.NEW_PASSWORD -> "Change password"
+                    },
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold

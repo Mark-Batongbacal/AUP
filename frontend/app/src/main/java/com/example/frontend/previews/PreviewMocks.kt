@@ -22,11 +22,18 @@ object PreviewMocks {
     val authRepository = object : AuthRepository {
         override suspend fun login(userName: String, password: String): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
+        override suspend fun requestRegistrationOtp(email: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun verifyRegistrationOtp(email: String, code: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
         override suspend fun loginWithGoogle(idToken: String): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun loginWithFacebook(accessToken: String): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun loginWithFacebookOidc(idToken: String, nonce: String): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun getCurrentAuthIdentity(): ApiResult<AuthIdentityDto> = ApiResult.Failure(null, "Mock")
-        override suspend fun changePassword(currentPassword: String, newPassword: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun requestPasswordReset(email: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun verifyPasswordResetOtp(email: String, code: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun resetPassword(email: String, code: String, newPassword: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun requestChangePasswordOtp(currentPassword: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun verifyChangePasswordOtp(currentPassword: String, code: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun changePassword(currentPassword: String, code: String, newPassword: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
         override fun logoutLocalSession() {}
     }
 
