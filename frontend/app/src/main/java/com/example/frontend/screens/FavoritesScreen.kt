@@ -7,12 +7,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -20,7 +22,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.model.FavoriteRoute
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val FavoriteBg = Color(0xFFF8F5EC)
@@ -32,6 +37,7 @@ private val FavoriteOrange = Color(0xFFF4BF52)
 private val FavoriteTip = Color(0xFFFFF0C7)
 private val FavoriteBlue = Color(0xFFE8F2F2)
 private val FavoriteGreen = Color(0xFFE7F1D8)
+private val FavoriteDanger = Color(0xFFDF5D58)
 
 @Composable
 fun FavoritesScreen(
@@ -44,6 +50,62 @@ fun FavoritesScreen(
     onRecentClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val repository = remember(context) { TukiDataProvider(context.applicationContext).favoritesRepository }
+    var liveFavorites by remember { mutableStateOf(favorites) }
+    var loading by remember { mutableStateOf(!isGuest) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var removingId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(favorites) {
+        if (liveFavorites.isEmpty() && favorites.isNotEmpty()) liveFavorites = favorites
+    }
+
+    LaunchedEffect(isGuest) {
+        if (isGuest) {
+            liveFavorites = emptyList()
+            loading = false
+            return@LaunchedEffect
+        }
+        loading = true
+        error = null
+        when (val result = repository.getFavorites()) {
+            is ApiResult.Success -> liveFavorites = result.data.map { dto ->
+                FavoriteRoute(
+                    id = dto.favoriteTripId,
+                    recommendationId = dto.recommendationId,
+                    origin = dto.origin ?: "Unknown origin",
+                    destination = dto.destination ?: "Unknown destination",
+                    recommendationType = dto.recommendationType,
+                    minutes = dto.totalMinutes.roundToInt(),
+                    totalFare = dto.totalFare,
+                    walkingMeters = dto.walkingDistanceMeters.roundToInt(),
+                    timesUsed = dto.timesUsed,
+                    note = dto.note.orEmpty()
+                )
+            }
+            is ApiResult.Failure -> error = result.message
+        }
+        loading = false
+    }
+
+    fun removeFavorite(route: FavoriteRoute) {
+        if (removingId != null) return
+        scope.launch {
+            removingId = route.id
+            error = null
+            when (val result = repository.removeFavorite(route.id)) {
+                is ApiResult.Success -> {
+                    liveFavorites = liveFavorites.filterNot { it.id == route.id }
+                    onRemoveFavorite(route)
+                }
+                is ApiResult.Failure -> error = result.message
+            }
+            removingId = null
+        }
+    }
+
     Column(Modifier.fillMaxSize().background(FavoriteBg)) {
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -80,13 +142,25 @@ fun FavoritesScreen(
                 Spacer(Modifier.height(10.dp))
             }
 
-            if (isGuest) {
-                item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
-            } else if (favorites.isEmpty()) {
-                item { EmptyFavoriteCard("No favorite routes yet.\nTap the star on a route to save it here.") }
-            } else {
-                items(favorites, key = { it.id }) { route ->
-                    FavoriteRouteCard(route, onClick = { onRouteClick(route) }, onRemove = { onRemoveFavorite(route) })
+            if (!error.isNullOrBlank()) {
+                item { Text(error!!, color = FavoriteDanger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+            }
+
+            when {
+                isGuest -> item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
+                loading -> item {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = FavoriteTeal)
+                    }
+                }
+                liveFavorites.isEmpty() -> item { EmptyFavoriteCard("No favorite routes yet.\nTap the star on a route to save it here.") }
+                else -> items(liveFavorites, key = { it.id }) { route ->
+                    FavoriteRouteCard(
+                        route = route,
+                        removing = removingId == route.id,
+                        onClick = { onRouteClick(route) },
+                        onRemove = { removeFavorite(route) }
+                    )
                 }
             }
 
@@ -119,7 +193,7 @@ fun FavoritesScreen(
 }
 
 @Composable
-private fun FavoriteRouteCard(route: FavoriteRoute, onClick: () -> Unit, onRemove: () -> Unit) {
+private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: () -> Unit, onRemove: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
@@ -148,8 +222,9 @@ private fun FavoriteRouteCard(route: FavoriteRoute, onClick: () -> Unit, onRemov
                 }
             }
             Spacer(Modifier.width(6.dp))
-            Box(Modifier.size(40.dp).clickable(onClick = onRemove), contentAlignment = Alignment.Center) {
-                Text("★", color = FavoriteOrange, fontSize = 26.sp)
+            Box(Modifier.size(40.dp).clickable(enabled = !removing, onClick = onRemove), contentAlignment = Alignment.Center) {
+                if (removing) CircularProgressIndicator(Modifier.size(18.dp), color = FavoriteTeal, strokeWidth = 2.dp)
+                else Text("★", color = FavoriteOrange, fontSize = 26.sp)
             }
         }
     }
