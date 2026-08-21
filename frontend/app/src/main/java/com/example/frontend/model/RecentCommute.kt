@@ -3,6 +3,7 @@ package com.example.frontend.model
 data class RecentCommute(
     val id: String,
     val recommendationId: String? = null,
+    val recommendationType: String = "",
     val origin: String,
     val destination: String,
     val originLatitude: Double? = null,
@@ -11,6 +12,8 @@ data class RecentCommute(
     val destinationLongitude: Double? = null,
     val legs: Int,
     val minutes: Int,
+    val totalFare: Double = 0.0,
+    val walkingMeters: Int = 0,
     val status: String = "",
     val endedAt: String? = null,
     val wasRerouted: Boolean = false,
@@ -37,5 +40,7 @@ data class CommuteStep(
     val from: String,
     val to: String,
     val minutes: Int,
-    val fare: Double? = null
+    val fare: Double? = null,
+    val distanceMeters: Double? = null,
+    val instructions: String? = null
 )
