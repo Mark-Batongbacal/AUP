@@ -26,7 +26,10 @@ object PreviewMocks {
         override suspend fun loginWithFacebook(accessToken: String): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun loginWithFacebookOidc(idToken: String, nonce: String): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun getCurrentAuthIdentity(): ApiResult<AuthIdentityDto> = ApiResult.Failure(null, "Mock")
-        override suspend fun changePassword(currentPassword: String, newPassword: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun requestPasswordReset(email: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun resetPassword(email: String, code: String, newPassword: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun requestChangePasswordOtp(currentPassword: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
+        override suspend fun changePassword(currentPassword: String, code: String, newPassword: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
         override fun logoutLocalSession() {}
     }
 
