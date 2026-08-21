@@ -135,7 +135,7 @@ public sealed class TukiAssistantService(
             return null;
 
         return new ChatClient(
-            configuration["Qwen:Model"] ?? "qwen/qwen3-next-80b-a3b-instruct",
+            configuration["Qwen:Model"] ?? "nvidia/llama-3.3-nemotron-super-49b-v1.5",
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
