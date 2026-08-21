@@ -184,7 +184,25 @@ private struct TukiUnifiedMainView: View {
                 )
 
             case .commute(let commute):
-                TukiUnifiedCommuteDetailView(commute: commute) { screen = .tabs }
+                ZStack(alignment: .bottom) {
+                    TukiUnifiedCommuteDetailView(commute: commute) { screen = .tabs }
+                    Button {
+                        repeatTrip(commute)
+                    } label: {
+                        Text("Repeat Trip")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(TukiPalette.orange)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canRepeat(commute))
+                    .opacity(canRepeat(commute) ? 1 : 0.5)
+                    .padding(.horizontal, 30)
+                    .padding(.bottom, 24)
+                }
 
             case .editProfile:
                 TukiUnifiedEditProfileView(auth: auth) { screen = .tabs; tab = .profile }
@@ -268,6 +286,35 @@ private struct TukiUnifiedMainView: View {
     private func returnHome() {
         screen = .tabs
         tab = .home
+    }
+
+    private func canRepeat(_ commute: RecentCommute) -> Bool {
+        commute.originLatitude != nil &&
+            commute.originLongitude != nil &&
+            commute.destinationLatitude != nil &&
+            commute.destinationLongitude != nil
+    }
+
+    private func repeatTrip(_ commute: RecentCommute) {
+        guard let originLatitude = commute.originLatitude,
+              let originLongitude = commute.originLongitude,
+              let destinationLatitude = commute.destinationLatitude,
+              let destinationLongitude = commute.destinationLongitude else { return }
+
+        let origin = CLLocationCoordinate2D(
+            latitude: originLatitude,
+            longitude: originLongitude
+        )
+        let destination = TukiPlace(
+            id: "history-\(commute.id)",
+            name: commute.destination,
+            latitude: destinationLatitude,
+            longitude: destinationLongitude,
+            category: "history",
+            source: "history",
+            address: nil
+        )
+        screen = .routes(commute.origin, origin, destination, nil)
     }
 
     private func refreshLocation() async {
