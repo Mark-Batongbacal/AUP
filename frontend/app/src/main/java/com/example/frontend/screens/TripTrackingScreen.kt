@@ -3,6 +3,7 @@ package com.example.frontend.screens
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -87,6 +88,7 @@ fun TripTrackingScreen(
     var activeFinalDestination by remember(finalDestination) { mutableStateOf(finalDestination) }
     var ttsReady by remember { mutableStateOf(false) }
     var instructionCollapsed by remember { mutableStateOf(false) }
+    var recenterRequestKey by remember { mutableStateOf(0) }
 
     val tts = remember(context) {
         TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
@@ -193,7 +195,6 @@ fun TripTrackingScreen(
         ?: "₱0"
     val totalLegs = max(1, (snapshot?.currentLegIndex ?: 0) + 1 + futureRouteSegments.size)
     val currentLegIndex = (snapshot?.currentLegIndex ?: 0).coerceAtLeast(0)
-    val recenterClearance = if (instructionCollapsed) 136.dp else 292.dp
 
     fun requestBack() { if (activeTrip) showBackDialog = true else onBack() }
     BackHandler(enabled = activeTrip) { showBackDialog = true }
@@ -207,7 +208,7 @@ fun TripTrackingScreen(
             } else legDestination,
             finalDestination = activeFinalDestination,
             futureRouteSegments = if (hasRerouted) emptyList() else futureRouteSegments,
-            recenterBottomPadding = recenterClearance,
+            recenterRequestKey = recenterRequestKey,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -241,37 +242,46 @@ fun TripTrackingScreen(
             )
         }
 
-        InstructionPanel(
-            instruction = instruction,
-            following = following,
-            icon = modeIcon,
-            distance = distance,
-            eta = eta,
-            fare = fare,
-            progress = progress,
-            totalLegs = totalLegs,
-            currentLeg = currentLegIndex,
-            canSpeak = ttsReady,
-            canParaPo = canParaPo,
-            requiresBoarding = requiresBoarding,
-            requiresAlighting = requiresAlighting,
-            preparingToAlight = preparingToAlight,
-            working = working,
-            status = snapshot?.status,
-            optionError = optionError,
-            collapsed = instructionCollapsed,
-            onCollapsedChange = { instructionCollapsed = it },
-            onSpeak = {
-                if (ttsReady) tts.speak(instruction, TextToSpeech.QUEUE_FLUSH, null, "tuki-navigation")
-            },
-            onParaPo = { showParaPo = true },
-            onBoard = onConfirmBoarding,
-            onAlight = onConfirmAlighting,
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding()
-                .padding(horizontal = 10.dp, vertical = 8.dp)
-        )
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.End
+        ) {
+            RecenterButton(
+                enabled = currentPosition != null || visibleRoute.isNotEmpty(),
+                onClick = { recenterRequestKey += 1 },
+                modifier = Modifier.padding(end = 14.dp, bottom = 8.dp)
+            )
+            InstructionPanel(
+                instruction = instruction,
+                following = following,
+                icon = modeIcon,
+                distance = distance,
+                eta = eta,
+                fare = fare,
+                progress = progress,
+                totalLegs = totalLegs,
+                currentLeg = currentLegIndex,
+                canSpeak = ttsReady,
+                canParaPo = canParaPo,
+                requiresBoarding = requiresBoarding,
+                requiresAlighting = requiresAlighting,
+                preparingToAlight = preparingToAlight,
+                working = working,
+                status = snapshot?.status,
+                optionError = optionError,
+                collapsed = instructionCollapsed,
+                onCollapsedChange = { instructionCollapsed = it },
+                onSpeak = {
+                    if (ttsReady) tts.speak(instruction, TextToSpeech.QUEUE_FLUSH, null, "tuki-navigation")
+                },
+                onParaPo = { showParaPo = true },
+                onBoard = onConfirmBoarding,
+                onAlight = onConfirmAlighting
+            )
+        }
 
         if (optionWorking) {
             Surface(
@@ -455,6 +465,32 @@ private fun CurrentLegCard(icon: String, title: String, eta: String, fare: Strin
                     Text(it, color = TripOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RecenterButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .size(52.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = CircleShape,
+        color = if (enabled) TripSurface else TripTile,
+        border = BorderStroke(1.dp, Color(0xFFE2DDD2)),
+        shadowElevation = 10.dp,
+        tonalElevation = 2.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                "◎",
+                color = if (enabled) TripDark else TripGray.copy(alpha = 0.65f),
+                fontSize = 28.sp
+            )
         }
     }
 }
