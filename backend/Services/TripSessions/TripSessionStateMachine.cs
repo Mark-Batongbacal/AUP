@@ -19,7 +19,7 @@ public sealed class TripSessionStateMachine : ITripSessionStateMachine
             [TripNavigationState.WaitingToBoard] = [TripNavigationState.OnJeepney, TripNavigationState.OnTricycle, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
             [TripNavigationState.OnJeepney] = [TripNavigationState.ApproachingAlightPoint, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
             [TripNavigationState.OnTricycle] = [TripNavigationState.ApproachingAlightPoint, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
-            [TripNavigationState.ApproachingAlightPoint] = [TripNavigationState.Transferring, TripNavigationState.WalkingToDestination, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
+            [TripNavigationState.ApproachingAlightPoint] = [TripNavigationState.Transferring, TripNavigationState.WalkingToDestination, TripNavigationState.Arrived, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
             [TripNavigationState.Transferring] = [TripNavigationState.WalkingToPickup, TripNavigationState.ApproachingBoardPoint, TripNavigationState.WaitingToBoard, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
             [TripNavigationState.WalkingToDestination] = [TripNavigationState.Arrived, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
             [TripNavigationState.OffRoute] = [TripNavigationState.Rerouting, TripNavigationState.Cancelled],
