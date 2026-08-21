@@ -50,6 +50,17 @@ struct TukiUnifiedProfileView: View {
                     parityStat("\(profile?.favoritesCount ?? 0)", "FAVORITES")
                 }
 
+                Button(action: onLogout) {
+                    Text("Log Out")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+
                 VStack(spacing: 0) {
                     accountRow("Edit Profile", subtitle: "Update your personal information", action: onEdit)
                     divider
@@ -63,17 +74,6 @@ struct TukiUnifiedProfileView: View {
                 }
                 .background(TukiPalette.creamCard)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
-
-                Button(action: onLogout) {
-                    Text("Log Out")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .background(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 30)
             .padding(.vertical, 26)
