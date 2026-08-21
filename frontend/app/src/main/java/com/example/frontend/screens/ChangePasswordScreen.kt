@@ -22,7 +22,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -41,6 +40,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.components.OtpCodeField
+import com.example.frontend.components.OtpResendButton
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import kotlinx.coroutines.delay
@@ -74,6 +74,7 @@ fun ChangePasswordScreen(
     var otpCode by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var otpSendGeneration by remember { mutableStateOf(0) }
 
     var currentPasswordVisible by remember { mutableStateOf(false) }
     var newPasswordVisible by remember { mutableStateOf(false) }
@@ -99,6 +100,7 @@ fun ChangePasswordScreen(
                 is ApiResult.Success -> {
                     stage = ChangePasswordStage.OTP
                     otpCode = ""
+                    otpSendGeneration += 1
                     infoMessage = "We've sent an 8-digit OTP to your account email."
                 }
                 is ApiResult.Failure -> errorMessage = result.message
@@ -237,9 +239,11 @@ fun ChangePasswordScreen(
                     enabled = !isWorking && !isSuccess
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                TextButton(onClick = { requestOtp() }, enabled = !isWorking && !isSuccess) {
-                    Text("Resend OTP", color = TukiTeal, fontWeight = FontWeight.Bold)
-                }
+                OtpResendButton(
+                    sendGeneration = otpSendGeneration,
+                    enabled = !isWorking && !isSuccess,
+                    onResend = { requestOtp() }
+                )
             }
 
             ChangePasswordStage.NEW_PASSWORD -> {
