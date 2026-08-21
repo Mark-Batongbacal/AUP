@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -23,7 +25,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.Text
 
 @Composable
 fun OtpCodeField(
@@ -33,7 +34,7 @@ fun OtpCodeField(
     length: Int = 8,
     enabled: Boolean = true
 ) {
-    val focusRequester = FocusRequester()
+    val focusRequester = remember { FocusRequester() }
     val normalized = code.filter(Char::isDigit).take(length)
 
     BasicTextField(
@@ -60,17 +61,17 @@ fun OtpCodeField(
                         val isCurrent = index == normalized.length && normalized.length < length
                         Box(
                             modifier = Modifier
-                                .size(width = 38.dp, height = 52.dp)
+                                .size(width = 34.dp, height = 50.dp)
                                 .background(
                                     color = if (isCurrent) Color(0xFFFFE9C4) else Color(0xFFFFF3D8),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(11.dp)
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = digit,
                                 color = Color(0xFF173B43),
-                                fontSize = 21.sp,
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
                         }
