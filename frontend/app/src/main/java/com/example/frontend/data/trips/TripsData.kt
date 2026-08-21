@@ -135,7 +135,17 @@ class TripRepositoryImpl(
     private val sessions: AuthSessionStore,
     private val errors: ApiErrorParser
 ) : TripRepository {
-    override suspend fun getHistory() = authenticatedApiCall(sessions, errors) { api.history() }
+    override suspend fun getHistory(): ApiResult<List<PassengerTripHistoryItemDto>> {
+        val history = authenticatedApiCall(sessions, errors) { api.history() }
+        if (history is ApiResult.Success && history.data.isNotEmpty()) {
+            return history
+        }
+        if (history is ApiResult.Failure && history.isUnauthorized) {
+            return history
+        }
+        return authenticatedApiCall(sessions, errors) { api.recent() }
+    }
+
     override suspend fun getRecentJourneys() = authenticatedApiCall(sessions, errors) { api.recent() }
     override suspend fun startTrip(request: StartTripRequest) = authenticatedApiCall(sessions, errors) { api.start(request) }
     override suspend fun getTrip(tripId: String) = authenticatedApiCall(sessions, errors) { api.get(tripId) }
