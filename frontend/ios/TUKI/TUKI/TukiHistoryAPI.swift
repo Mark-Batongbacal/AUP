@@ -89,6 +89,10 @@ private struct HistoryDTO: Decodable {
             wasRerouted: rerouted ?? false,
             rerouteCount: rerouteCount ?? 0,
             dateGroup: Self.dateGroup(completedAt ?? startedAt ?? createdAt),
+            originLatitude: originLatitude,
+            originLongitude: originLongitude,
+            destinationLatitude: destinationLatitude,
+            destinationLongitude: destinationLongitude,
             steps: ordered.map {
                 CommuteStep(
                     mode: $0.transportMode?.name ?? $0.route?.routeName ?? "Transit",
