@@ -64,6 +64,19 @@ data class NavigationInstructionSnapshotDto(
     val text: String? = null
 )
 
+data class NavigationInstructionDetailDto(
+    val sequence: Int,
+    val type: String,
+    val legIndex: Int,
+    val text: String,
+    val streetName: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val distanceFromLegStartMeters: Double? = null,
+    val triggerDistanceMeters: Double = 30.0,
+    val requiresConfirmation: Boolean = false
+)
+
 data class NavigationLandmarkDto(
     val name: String,
     val category: String,
@@ -71,7 +84,10 @@ data class NavigationLandmarkDto(
     val relation: String,
     val latitude: Double,
     val longitude: Double,
-    val distanceFromTargetMeters: Double
+    val distanceFromTargetMeters: Double,
+    val distanceFromRouteStartMeters: Double? = null,
+    val triggerBeforeMeters: Double = 0.0,
+    val triggerAfterMeters: Double = 0.0
 )
 
 data class NavigationStopInfoDto(val routeName: String?, val latitude: Double?, val longitude: Double?, val landmark: NavigationLandmarkDto?)
@@ -106,7 +122,10 @@ data class NavigationSnapshotDto(
     val approxFareSpent: BigDecimal = BigDecimal.ZERO,
     val estimatedRemainingFare: BigDecimal = BigDecimal.ZERO,
     val followingInstruction: NavigationInstructionSnapshotDto? = null,
-    val tripSummary: NavigationTripSummaryDto? = null
+    val tripSummary: NavigationTripSummaryDto? = null,
+    val spokenInstructionTemplate: String? = null,
+    val currentLegInstructions: List<NavigationInstructionDetailDto> = emptyList(),
+    val currentLegLandmarks: List<NavigationLandmarkDto> = emptyList()
 ) {
     fun displayInstruction(): String? = spokenInstruction?.takeIf { it.isNotBlank() }
 
