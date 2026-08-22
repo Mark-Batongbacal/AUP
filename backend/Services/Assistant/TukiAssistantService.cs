@@ -32,12 +32,22 @@ public sealed class TukiAssistantService(
     {
         using var measurement = _telemetry.Measure("AI");
         if (string.IsNullOrWhiteSpace(request.Message)) return new("INVALID_REQUEST", "Message cannot be empty.");
-        AssistantIntent intent;
+
         var normalizedMessage = request.Message.Trim();
+        if (IsGreeting(normalizedMessage))
+        {
+            _telemetry.Event("AIIntentParsed", outcome: "Greeting");
+            return new("GREETING", "Uy! Saan tayo pupunta?");
+        }
+
+        AssistantIntent intent;
         var deterministicIntent = NavigationIntent(normalizedMessage, request.TripSessionId);
         try
         {
-            intent = deterministicIntent ?? await intentExtractor.ExtractAsync(normalizedMessage, cancellationToken);
+            using (_telemetry.Measure("AI.Intent"))
+            {
+                intent = deterministicIntent ?? await intentExtractor.ExtractAsync(normalizedMessage, cancellationToken);
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -54,7 +64,7 @@ public sealed class TukiAssistantService(
             AssistantIntentType.Lost or AssistantIntentType.NavigationQuestion => await NavigationStatusAsync(userId, intent, cancellationToken),
             AssistantIntentType.CancelTrip => new AssistantResponse("ACTION_REQUIRED", "Use the trip cancellation command after confirming you want to cancel."),
             AssistantIntentType.StartNavigation => new AssistantResponse("ACTION_REQUIRED", "Select a stored journey before starting navigation."),
-            _ => new AssistantResponse("CLARIFICATION_REQUIRED", "Tell me the destination or ask about your active trip.")
+            _ => new AssistantResponse("CLARIFICATION_REQUIRED", "Saan tayo pupunta? Pwede ka ring magtanong tungkol sa active trip natin.")
         };
 
         return await ApplyTukiVoiceAsync(normalizedMessage, response, cancellationToken);
@@ -65,7 +75,9 @@ public sealed class TukiAssistantService(
         AssistantResponse response,
         CancellationToken cancellationToken)
     {
-        if (_voiceClient is null || response.Status is "AI_UNAVAILABLE" or "INVALID_REQUEST")
+        if (_voiceClient is null ||
+            response.Status is "AI_UNAVAILABLE" or "INVALID_REQUEST" ||
+            UsesCanonicalTukiVoice(response.Status))
             return response;
 
         try
@@ -76,6 +88,8 @@ public sealed class TukiAssistantService(
                 response.Status,
                 canonicalResponse = response.Message
             });
+
+            using var measurement = _telemetry.Measure("AI.Voice");
             var completion = await _voiceClient.CompleteChatAsync(
             [
                 new SystemChatMessage("""
@@ -87,6 +101,7 @@ public sealed class TukiAssistantService(
                     - Warm, concise, energetic, and natural.
                     - Never sound formal, translated, robotic, or like customer support.
                     - Prefer everyday phrasing using "tayo", "natin", "mo", and "ka".
+                    - Never use "kami" when referring to the user's trip, route, or navigation state. Use "tayo/natin" for shared guidance or "ka/mo" for the user's own state.
                     - Common English words like route, destination, ETA, cheapest, fastest, jeep, tricycle, and TODA are okay when natural.
                     - Keep navigation instructions extremely clear and short.
                     - Maximum 2 short sentences.
@@ -111,8 +126,6 @@ public sealed class TukiAssistantService(
                     - "Mga 8:42 tayo makakarating."
                     - "Aabot pa tayo."
 
-                    EXAMPLES:
-
                     DESTINATION CLARIFICATION:
                     - When multiple places match the user's search, speak naturally.
                     - Never say phrases like:
@@ -120,18 +133,19 @@ public sealed class TukiAssistantService(
                     "alin tayo puntahan?"
                     "multiple matching destinations"
                     "maraming destination ang nag-match"
-
                     - Prefer:
                     "May ilang results para sa [place]. Alin dito yung gusto mong puntahan?"
                     "May ilang places na lumabas para sa [place]. Alin dito yung destination mo?"
 
-                    Example:
-
                     BAD:
                     "Maraming 'AUF' yung matching. Alin tayo puntahan?"
-
                     GOOD:
                     "May ilang results para sa AUF. Alin dito yung gusto mong puntahan?"
+
+                    BAD:
+                    "Hindi ka naliligaw. Wala pa kaming active trip."
+                    GOOD:
+                    "Wala tayong active trip ngayon."
 
                     Canonical:
                     "Continue walking for 50 meters."
@@ -212,6 +226,22 @@ public sealed class TukiAssistantService(
             });
     }
 
+    private static bool UsesCanonicalTukiVoice(string status) => status is
+        "GREETING" or
+        "CLARIFICATION_REQUIRED" or
+        "DESTINATION_AMBIGUOUS" or
+        "JOURNEYS_AVAILABLE" or
+        "NO_ACTIVE_TRIP";
+
+    private static bool IsGreeting(string message)
+    {
+        var normalized = message.Trim().TrimEnd('!', '?', '.', ',').ToLowerInvariant();
+        return normalized is
+            "hello" or "hi" or "hey" or "yo" or "yoo" or "uy" or
+            "hello tuki" or "hi tuki" or "hey tuki" or "yo tuki" or
+            "kumusta" or "kamusta" or "kumusta tuki" or "kamusta tuki";
+    }
+
     private static AssistantIntent? NavigationIntent(string message, Guid? tripSessionId)
     {
         var normalized = message.ToLowerInvariant();
@@ -222,7 +252,13 @@ public sealed class TukiAssistantService(
             normalized.Contains("i'm lost", StringComparison.Ordinal) ||
             normalized.Contains("i am lost", StringComparison.Ordinal) ||
             normalized.Contains("missed my stop", StringComparison.Ordinal) ||
-            normalized.Contains("missed the stop", StringComparison.Ordinal);
+            normalized.Contains("missed the stop", StringComparison.Ordinal) ||
+            normalized.Contains("nasaan ako", StringComparison.Ordinal) ||
+            normalized.Contains("naliligaw", StringComparison.Ordinal) ||
+            normalized.Contains("tama ba daan", StringComparison.Ordinal) ||
+            normalized.Contains("tama ba yung daan", StringComparison.Ordinal) ||
+            normalized.Contains("tama ba route", StringComparison.Ordinal) ||
+            normalized.Contains("lumagpas", StringComparison.Ordinal);
         return navigationQuestion
             ? new AssistantIntent { Intent = AssistantIntentType.NavigationQuestion, TripSessionId = tripSessionId }
             : null;
@@ -231,7 +267,7 @@ public sealed class TukiAssistantService(
     private async Task<AssistantResponse> PlanAsync(Guid userId, AssistantIntent intent, AssistantRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(intent.DestinationQuery))
-            return new("CLARIFICATION_REQUIRED", "Which destination do you mean?");
+            return new("CLARIFICATION_REQUIRED", "Saan tayo pupunta?");
 
         var resolved = await destinationSearch.SearchAsync(
             intent.DestinationQuery,
@@ -247,7 +283,10 @@ public sealed class TukiAssistantService(
         {
             if (!string.IsNullOrWhiteSpace(request.DestinationId))
                 return new("DESTINATION_SELECTION_INVALID", "The selected destination is not one of the current search results.", Destinations: resolved.Results);
-            return new("DESTINATION_AMBIGUOUS", "I found multiple matching destinations. Please choose one.", Destinations: resolved.Results);
+            return new(
+                "DESTINATION_AMBIGUOUS",
+                $"May ilang results para sa {intent.DestinationQuery}. Alin dito yung gusto mong puntahan?",
+                Destinations: resolved.Results);
         }
 
         if (request.OriginLatitude is not { } originLat || request.OriginLongitude is not { } originLon)
@@ -299,7 +338,7 @@ public sealed class TukiAssistantService(
         var journeys = persisted.Select(item => Map(item.Recommendation.RecommendationId, item.Plan)).ToList();
         return new(
             "JOURNEYS_AVAILABLE",
-            $"Tuki found {journeys.Count} supported journey option(s) to {destination.Name}.",
+            $"Ayun! May {journeys.Count} route options tayo papuntang {destination.Name}.",
             Journeys: journeys,
             Destination: destination);
     }
@@ -322,7 +361,7 @@ public sealed class TukiAssistantService(
         var session = intent.TripSessionId is { } id
             ? await sessions.GetOwnedAsync(id, userId, cancellationToken)
             : await sessions.GetActiveOwnedAsync(userId, cancellationToken);
-        if (session is null) return new("NO_ACTIVE_TRIP", "You do not have an active trip.");
+        if (session is null) return new("NO_ACTIVE_TRIP", "Wala tayong active trip ngayon.");
 
         var next = (await instructions.GetForOwnedSessionAsync(session.TripSessionId, userId, cancellationToken))
             .FirstOrDefault(item => item.LegIndex >= session.CurrentLegIndex);
