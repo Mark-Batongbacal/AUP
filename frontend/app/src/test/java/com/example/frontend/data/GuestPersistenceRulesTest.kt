@@ -29,6 +29,7 @@ import com.example.frontend.data.trips.StartTripRequest
 import com.example.frontend.data.trips.TripAlertDto
 import com.example.frontend.data.trips.TripRepositoryImpl
 import com.example.frontend.data.trips.TripsApi
+import com.example.frontend.data.tripsessions.TripSessionDto
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -200,7 +201,7 @@ class GuestPersistenceRulesTest {
         ): Response<NavigationSnapshotDto> = error("not used")
         override suspend fun boarding(sessionId: String): Response<NavigationSnapshotDto> = error("not used")
         override suspend fun alighting(sessionId: String): Response<NavigationSnapshotDto> = error("not used")
-        override suspend fun cancel(sessionId: String): Response<NavigationSnapshotDto> {
+        override suspend fun cancel(sessionId: String): Response<TripSessionDto> {
             cancelCalled = true
             return error("not used")
         }

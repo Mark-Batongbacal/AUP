@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.delay
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -52,6 +53,10 @@ private const val LiveTripFinalSource = "live-trip-final-source"
 private const val LiveTripFinalLayer = "live-trip-final-layer"
 private const val LiveTripFuturePrefix = "live-trip-future"
 
+/**
+ * Presentation-only live map. GPS matching, route progress, corridor detection and trimming are
+ * owned by the local navigation engine and passed into this composable as already-resolved state.
+ */
 @Composable
 fun LiveTripMapScreen(
     routePoints: List<LatLng>,

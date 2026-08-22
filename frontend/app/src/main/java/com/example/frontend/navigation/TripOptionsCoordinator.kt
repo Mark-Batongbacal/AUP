@@ -2,6 +2,7 @@ package com.example.frontend.navigation
 
 import android.content.Context
 import com.example.frontend.core.location.LocationDetectionFailureMessage
+import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
@@ -133,9 +134,12 @@ class TripOptionsCoordinator(context: Context) {
 
     suspend fun currentLegGeometry(snapshot: NavigationSnapshotDto): ApiResult<NavigationGeometryResponseDto> {
         val leg = snapshot.currentLeg ?: return ApiResult.Failure(null, "Current route leg is unavailable.")
-        val startLat = snapshot.currentLatitude ?: leg.startLatitude
+        // Keep the complete planned leg geometry stable. Live GPS is matched onto this geometry
+        // locally; using the current location as the start would silently discard already-planned
+        // points and make turn/landmark progress anchors drift.
+        val startLat = leg.startLatitude ?: snapshot.currentLatitude
             ?: return ApiResult.Failure(null, "Current route location is unavailable.")
-        val startLon = snapshot.currentLongitude ?: leg.startLongitude
+        val startLon = leg.startLongitude ?: snapshot.currentLongitude
             ?: return ApiResult.Failure(null, "Current route location is unavailable.")
         val endLat = leg.endLatitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
         val endLon = leg.endLongitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
@@ -161,6 +165,9 @@ class TripOptionsCoordinator(context: Context) {
             speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null,
             bearingDegrees = if (location.hasBearing()) location.bearing.toDouble() else null
         )
+        // Manual replans are meaningful server events. Force exactly this fresh fix through the
+        // normally-local repository before asking the backend to calculate the replacement plan.
+        NavigationSyncSignal.requestImmediateSync(samples = 1)
         when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
             is ApiResult.Failure -> return update
             is ApiResult.Success -> Unit

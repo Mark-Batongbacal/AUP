@@ -107,6 +107,7 @@ dependencies {
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.google.identity.googleid)
+    implementation("com.google.android.gms:play-services-location:21.4.0")
     implementation("org.maplibre.gl:android-sdk-opengl:13.0.2")
     implementation(libs.facebook.login)
     implementation(libs.retrofit)

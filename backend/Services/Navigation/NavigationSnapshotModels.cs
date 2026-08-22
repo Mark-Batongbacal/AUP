@@ -33,6 +33,18 @@ public sealed record NavigationInstructionSnapshot(
     bool RequiresConfirmation,
     string? Text = null);
 
+public sealed record NavigationInstructionDetailSnapshot(
+    int Sequence,
+    string Type,
+    int LegIndex,
+    string Text,
+    string? StreetName,
+    double? Latitude,
+    double? Longitude,
+    double? DistanceFromLegStartMeters,
+    double TriggerDistanceMeters,
+    bool RequiresConfirmation);
+
 public sealed record NavigationLandmarkSnapshot(
     string Name,
     string Category,
@@ -40,7 +52,10 @@ public sealed record NavigationLandmarkSnapshot(
     string Relation,
     double Latitude,
     double Longitude,
-    double DistanceFromTargetMeters);
+    double DistanceFromTargetMeters,
+    double? DistanceFromRouteStartMeters = null,
+    double TriggerBeforeMeters = 0,
+    double TriggerAfterMeters = 0);
 
 public sealed record NavigationStopInfo(
     string? RouteName,
@@ -81,7 +96,10 @@ public sealed record NavigationSnapshot(
     decimal ApproxFareSpent,
     decimal EstimatedRemainingFare,
     NavigationInstructionSnapshot? FollowingInstruction = null,
-    NavigationTripSummarySnapshot? TripSummary = null);
+    NavigationTripSummarySnapshot? TripSummary = null,
+    string? SpokenInstructionTemplate = null,
+    IReadOnlyList<NavigationInstructionDetailSnapshot>? CurrentLegInstructions = null,
+    IReadOnlyList<NavigationLandmarkSnapshot>? CurrentLegLandmarks = null);
 
 public sealed record NavigationOperation(NavigationSnapshot? Snapshot, string? Error = null)
 {
