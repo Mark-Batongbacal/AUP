@@ -91,6 +91,7 @@ public static class DeterministicNavigationSpeech
             ? null
             : context.RouteName.Trim();
         var mode = context.TransportMode?.Trim().ToUpperInvariant();
+        var isWalking = mode is "WALK" or "WALKING" or "PEDESTRIAN";
 
         return context.InstructionType switch
         {
@@ -128,8 +129,11 @@ public static class DeterministicNavigationSpeech
             "TurnLeft" => "Kaliwa tayo dito.",
             "TurnRight" => "Kanan tayo dito.",
 
-            _ when context.UseDynamicDistance && mode == "WALK" =>
+            _ when context.UseDynamicDistance && isWalking && context.DistanceMeters is <= 500 =>
                 $"Sige, lakad pa tayo nang {NavigationSpeechTemplate.DistanceToken}. Konti na lang!",
+
+            _ when context.UseDynamicDistance && isWalking =>
+                $"Sige, lakad pa tayo nang {NavigationSpeechTemplate.DistanceToken}.",
 
             _ when context.UseDynamicDistance =>
                 $"Diretso lang muna tayo, mga {NavigationSpeechTemplate.DistanceToken} pa.",
