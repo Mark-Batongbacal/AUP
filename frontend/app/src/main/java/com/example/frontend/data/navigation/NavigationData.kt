@@ -14,6 +14,7 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.math.BigDecimal
+import java.util.Locale
 
 data class StartNavigationRequest(val recommendationId: String)
 data class NavigationRerouteRequest(
@@ -87,7 +88,12 @@ data class NavigationLandmarkDto(
     val triggerAfterMeters: Double = 0.0
 )
 
-data class NavigationStopInfoDto(val routeName: String?, val latitude: Double?, val longitude: Double?, val landmark: NavigationLandmarkDto?)
+data class NavigationStopInfoDto(
+    val routeName: String?,
+    val latitude: Double?,
+    val longitude: Double?,
+    val landmark: NavigationLandmarkDto?
+)
 data class NavigationTriggeredEventDto(val type: String, val landmarkName: String?)
 data class NavigationTripSummaryDto(
     val destinationName: String,
@@ -130,12 +136,21 @@ data class NavigationSnapshotDto(
         currentLatitude = update.latitude,
         currentLongitude = update.longitude
     )
+
+    fun isActiveNavigation(): Boolean =
+        !state.equals("Arrived", ignoreCase = true) &&
+            !state.equals("Cancelled", ignoreCase = true)
 }
 
 interface NavigationApi {
-    @POST("api/navigation/start") suspend fun start(@Body request: StartNavigationRequest): Response<NavigationSnapshotDto>
-    @GET("api/navigation/active") suspend fun active(): Response<NavigationSnapshotDto>
-    @GET("api/navigation/geometry") suspend fun geometry(
+    @POST("api/navigation/start")
+    suspend fun start(@Body request: StartNavigationRequest): Response<NavigationSnapshotDto>
+
+    @GET("api/navigation/active")
+    suspend fun active(): Response<NavigationSnapshotDto>
+
+    @GET("api/navigation/geometry")
+    suspend fun geometry(
         @Query("startLat") startLatitude: Double,
         @Query("startLon") startLongitude: Double,
         @Query("endLat") endLatitude: Double,
@@ -143,58 +158,141 @@ interface NavigationApi {
         @Query("mode") mode: String,
         @Query("routeId") routeId: Long? = null
     ): Response<NavigationGeometryResponseDto>
-    @POST("api/navigation/{sessionId}/location") suspend fun location(@Path("sessionId") sessionId: String, @Body update: NavigationLocationUpdate): Response<NavigationSnapshotDto>
-    @POST("api/navigation/{sessionId}/boarding") suspend fun boarding(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
-    @POST("api/navigation/{sessionId}/alighting") suspend fun alighting(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
-    @POST("api/tripsessions/{sessionId}/cancel") suspend fun cancel(@Path("sessionId") sessionId: String): Response<TripSessionDto>
-    @POST("api/navigation/{sessionId}/reroute") suspend fun reroute(@Path("sessionId") sessionId: String, @Body request: NavigationRerouteRequest): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/location")
+    suspend fun location(
+        @Path("sessionId") sessionId: String,
+        @Body update: NavigationLocationUpdate
+    ): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/boarding")
+    suspend fun boarding(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/alighting")
+    suspend fun alighting(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+
+    @POST("api/tripsessions/{sessionId}/cancel")
+    suspend fun cancel(@Path("sessionId") sessionId: String): Response<TripSessionDto>
+
+    @POST("api/navigation/{sessionId}/reroute")
+    suspend fun reroute(
+        @Path("sessionId") sessionId: String,
+        @Body request: NavigationRerouteRequest
+    ): Response<NavigationSnapshotDto>
 }
 
 interface NavigationRepository {
     suspend fun startNavigation(recommendationId: String): ApiResult<NavigationSnapshotDto>
     suspend fun getActiveNavigation(): ApiResult<NavigationSnapshotDto>
-    suspend fun getGeometry(startLatitude: Double, startLongitude: Double, endLatitude: Double, endLongitude: Double, mode: String, routeId: Long? = null): ApiResult<NavigationGeometryResponseDto>
+    fun restoreActiveNavigation(): NavigationSnapshotDto?
+    suspend fun getGeometry(
+        startLatitude: Double,
+        startLongitude: Double,
+        endLatitude: Double,
+        endLongitude: Double,
+        mode: String,
+        routeId: Long? = null
+    ): ApiResult<NavigationGeometryResponseDto>
     suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto>
     suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto>
     suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto>
     suspend fun cancel(sessionId: String): ApiResult<TripSessionDto>
-    suspend fun reroute(sessionId: String, request: NavigationRerouteRequest = NavigationRerouteRequest()): ApiResult<NavigationSnapshotDto>
+    suspend fun reroute(
+        sessionId: String,
+        request: NavigationRerouteRequest = NavigationRerouteRequest()
+    ): ApiResult<NavigationSnapshotDto>
+    fun clearLocalNavigation()
 }
 
 class NavigationRepositoryImpl(
     private val api: NavigationApi,
     private val sessions: AuthSessionStore,
-    private val errors: ApiErrorParser
+    private val errors: ApiErrorParser,
+    private val localStore: NavigationLocalStore = NoOpNavigationLocalStore
 ) : NavigationRepository {
     private val cacheLock = Any()
     private val snapshotsBySession = mutableMapOf<String, NavigationSnapshotDto>()
 
+    init {
+        localStore.readActiveSnapshot()
+            ?.takeIf { it.isActiveNavigation() }
+            ?.let { snapshotsBySession[it.sessionId] = it }
+    }
+
     override suspend fun startNavigation(recommendationId: String): ApiResult<NavigationSnapshotDto> =
         cacheSnapshot(call { api.start(StartNavigationRequest(recommendationId)) }, resetSyncSignal = true)
 
-    override suspend fun getActiveNavigation(): ApiResult<NavigationSnapshotDto> =
-        cacheSnapshot(call { api.active() })
+    override suspend fun getActiveNavigation(): ApiResult<NavigationSnapshotDto> {
+        val remote = call { api.active() }
+        if (remote is ApiResult.Success) return cacheSnapshot(remote)
 
-    override suspend fun getGeometry(startLatitude: Double, startLongitude: Double, endLatitude: Double, endLongitude: Double, mode: String, routeId: Long?) =
-        apiCall(errors) { api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId) }
+        val failure = remote as ApiResult.Failure
+        val restored = if (failure.isTransientForLocalRecovery()) restoreActiveNavigation() else null
+        return restored?.let(ApiResult::Success) ?: failure
+    }
 
-    override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto> {
-        val forceSync = NavigationSyncSignal.consumeImmediateSync()
-        if (!forceSync) {
-            val local = synchronized(cacheLock) {
-                snapshotsBySession[sessionId]?.withLocalLocation(update)?.also {
-                    snapshotsBySession[sessionId] = it
+    override fun restoreActiveNavigation(): NavigationSnapshotDto? = synchronized(cacheLock) {
+        snapshotsBySession.values.firstOrNull { it.isActiveNavigation() }
+            ?: localStore.readActiveSnapshot()
+                ?.takeIf { it.isActiveNavigation() }
+                ?.also { snapshotsBySession[it.sessionId] = it }
+    }
+
+    override suspend fun getGeometry(
+        startLatitude: Double,
+        startLongitude: Double,
+        endLatitude: Double,
+        endLongitude: Double,
+        mode: String,
+        routeId: Long?
+    ): ApiResult<NavigationGeometryResponseDto> {
+        val cacheKey = geometryCacheKey(
+            startLatitude,
+            startLongitude,
+            endLatitude,
+            endLongitude,
+            mode,
+            routeId
+        )
+        return when (
+            val remote = apiCall(errors) {
+                api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId)
+            }
+        ) {
+            is ApiResult.Success -> remote.also { localStore.saveGeometry(cacheKey, it.data) }
+            is ApiResult.Failure -> {
+                if (remote.isTransientForLocalRecovery()) {
+                    localStore.readGeometry(cacheKey)?.let { ApiResult.Success(it) } ?: remote
+                } else {
+                    remote
                 }
             }
-            if (local != null) return ApiResult.Success(local)
+        }
+    }
+
+    override suspend fun updateLocation(
+        sessionId: String,
+        update: NavigationLocationUpdate
+    ): ApiResult<NavigationSnapshotDto> {
+        val forceSync = NavigationSyncSignal.consumeImmediateSync()
+        if (!forceSync) {
+            val local = cachedSnapshot(sessionId)?.withLocalLocation(update)
+            if (local != null) {
+                saveLocalSnapshot(local)
+                return ApiResult.Success(local)
+            }
         }
 
-        // No cached state (recovery) or an explicit local navigation event needs server
-        // confirmation. Routine on-route movement never reaches this network call.
+        // Recovery without a cache, or a meaningful local navigation event, is allowed to
+        // contact the backend. Routine on-route fixes are persisted locally instead.
         val result = call { api.location(sessionId, update) }
         if (result is ApiResult.Success) {
-            synchronized(cacheLock) { snapshotsBySession[sessionId] = result.data }
+            return cacheSnapshot(result)
         }
+
+        // Do not lose an off-route/leg-end confirmation merely because connectivity dropped
+        // for one attempt. The next tracking tick will retry while local guidance keeps running.
+        if (forceSync) NavigationSyncSignal.requestImmediateSync(samples = 1)
         return result
     }
 
@@ -213,15 +311,45 @@ class NavigationRepositoryImpl(
         return result
     }
 
-    override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest): ApiResult<NavigationSnapshotDto> =
+    override suspend fun reroute(
+        sessionId: String,
+        request: NavigationRerouteRequest
+    ): ApiResult<NavigationSnapshotDto> =
         cacheSnapshot(call { api.reroute(sessionId, request) }, resetSyncSignal = true)
+
+    override fun clearLocalNavigation() {
+        synchronized(cacheLock) { snapshotsBySession.clear() }
+        localStore.clearAll()
+        NavigationSyncSignal.reset()
+    }
+
+    private fun cachedSnapshot(sessionId: String): NavigationSnapshotDto? = synchronized(cacheLock) {
+        snapshotsBySession[sessionId]
+            ?: localStore.readActiveSnapshot()
+                ?.takeIf { it.sessionId == sessionId && it.isActiveNavigation() }
+                ?.also { snapshotsBySession[sessionId] = it }
+    }
+
+    private fun saveLocalSnapshot(snapshot: NavigationSnapshotDto) {
+        synchronized(cacheLock) { snapshotsBySession[snapshot.sessionId] = snapshot }
+        localStore.saveActiveSnapshot(snapshot)
+    }
 
     private fun cacheSnapshot(
         result: ApiResult<NavigationSnapshotDto>,
         resetSyncSignal: Boolean = false
     ): ApiResult<NavigationSnapshotDto> {
         if (result is ApiResult.Success) {
-            synchronized(cacheLock) { snapshotsBySession[result.data.sessionId] = result.data }
+            val snapshot = result.data
+            if (snapshot.isActiveNavigation()) {
+                synchronized(cacheLock) {
+                    snapshotsBySession.clear()
+                    snapshotsBySession[snapshot.sessionId] = snapshot
+                }
+                localStore.saveActiveSnapshot(snapshot)
+            } else {
+                clearSessionCache(snapshot.sessionId)
+            }
             if (resetSyncSignal) NavigationSyncSignal.reset()
         }
         return result
@@ -229,7 +357,31 @@ class NavigationRepositoryImpl(
 
     private fun clearSessionCache(sessionId: String) {
         synchronized(cacheLock) { snapshotsBySession.remove(sessionId) }
+        localStore.clearActiveSnapshot(sessionId)
     }
 
-    private suspend fun <T : Any> call(block: suspend () -> Response<T>) = authenticatedApiCall(sessions, errors, request = block)
+    private fun geometryCacheKey(
+        startLatitude: Double,
+        startLongitude: Double,
+        endLatitude: Double,
+        endLongitude: Double,
+        mode: String,
+        routeId: Long?
+    ): String = listOf(
+        normalizedCoordinate(startLatitude),
+        normalizedCoordinate(startLongitude),
+        normalizedCoordinate(endLatitude),
+        normalizedCoordinate(endLongitude),
+        mode.trim().uppercase(Locale.ROOT),
+        routeId?.toString().orEmpty()
+    ).joinToString("|")
+
+    private fun normalizedCoordinate(value: Double): String =
+        String.format(Locale.US, "%.6f", value)
+
+    private fun ApiResult.Failure.isTransientForLocalRecovery(): Boolean =
+        statusCode == null || statusCode >= 500
+
+    private suspend fun <T : Any> call(block: suspend () -> Response<T>) =
+        authenticatedApiCall(sessions, errors, request = block)
 }
