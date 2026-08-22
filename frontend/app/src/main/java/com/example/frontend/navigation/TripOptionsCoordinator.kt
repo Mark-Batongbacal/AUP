@@ -2,6 +2,7 @@ package com.example.frontend.navigation
 
 import android.content.Context
 import com.example.frontend.core.location.LocationDetectionFailureMessage
+import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
@@ -164,6 +165,9 @@ class TripOptionsCoordinator(context: Context) {
             speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null,
             bearingDegrees = if (location.hasBearing()) location.bearing.toDouble() else null
         )
+        // Manual replans are meaningful server events. Force exactly this fresh fix through the
+        // normally-local repository before asking the backend to calculate the replacement plan.
+        NavigationSyncSignal.requestImmediateSync(samples = 1)
         when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
             is ApiResult.Failure -> return update
             is ApiResult.Success -> Unit

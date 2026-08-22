@@ -24,7 +24,7 @@ import retrofit2.Response
 
 class NavigationRepositoryTest {
     @Test
-    fun snapshotJson_parsesStructuredLandmarkRoleRelationAndSpeech() {
+    fun snapshotJson_parsesStructuredGuidancePackageAndSpeechTemplate() {
         val snapshot = Gson().fromJson(
             snapshotJson("\"Pagkalagpas ng Jollibee, para ka na.\""),
             NavigationSnapshotDto::class.java
@@ -35,6 +35,10 @@ class NavigationRepositoryTest {
         assertEquals("ALIGHT_REFERENCE", snapshot.landmark?.role)
         assertEquals("BEFORE_ALIGHT", snapshot.landmark?.relation)
         assertEquals("Pagkalagpas ng Jollibee, para ka na.", snapshot.displayInstruction())
+        assertEquals("Baba tayo after {distance}.", snapshot.spokenInstructionTemplate)
+        assertEquals("TurnRight", snapshot.currentLegInstructions.single().type)
+        assertEquals("Mabini Street", snapshot.currentLegInstructions.single().streetName)
+        assertEquals("Jollibee", snapshot.currentLegLandmarks.single().name)
     }
 
     @Test
@@ -65,6 +69,7 @@ class NavigationRepositoryTest {
         val update = NavigationLocationUpdate(15.01, 120.01, 5.0, "2026-08-19T00:00:00Z")
 
         assertTrue(repository.getActiveNavigation() is ApiResult.Success)
+        NavigationSyncSignal.requestImmediateSync(samples = 1)
         assertTrue(repository.updateLocation("session-1", update) is ApiResult.Success)
         assertTrue(repository.confirmBoarding("session-1") is ApiResult.Success)
         assertTrue(repository.confirmAlighting("session-1") is ApiResult.Success)
@@ -77,99 +82,67 @@ class NavigationRepositoryTest {
     }
 
     @Test
-    fun repository_coalescesRoutineLocationUpdatesButKeepsLocalPositionFresh() = runBlocking {
+    fun repository_routineLocationUpdatesStayLocalWithoutBackendCalls() = runBlocking {
         NavigationSyncSignal.reset()
-        var now = 1_000L
         val api = FakeNavigationApi(snapshot())
-        val repository = NavigationRepositoryImpl(
-            api = api,
-            sessions = SessionStore(),
-            errors = ApiErrorParser(),
-            locationSyncIntervalMillis = 30_000L,
-            nowMillis = { now }
-        )
+        val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
 
         repository.getActiveNavigation()
-        repository.updateLocation(
+        val first = repository.updateLocation(
             "session-1",
             NavigationLocationUpdate(15.01, 120.01, 5.0, "2026-08-19T00:00:00Z")
         )
-        now += 5_000L
-        val local = repository.updateLocation(
+        val second = repository.updateLocation(
             "session-1",
             NavigationLocationUpdate(15.011, 120.011, 5.0, "2026-08-19T00:00:05Z")
         )
 
-        assertEquals(1, api.locationCalls)
-        val localSnapshot = (local as ApiResult.Success).data
-        assertEquals(15.011, localSnapshot.currentLatitude!!, 0.0)
-        assertEquals(120.011, localSnapshot.currentLongitude!!, 0.0)
-
-        now += 30_000L
-        repository.updateLocation(
-            "session-1",
-            NavigationLocationUpdate(15.012, 120.012, 5.0, "2026-08-19T00:00:35Z")
-        )
-        assertEquals(2, api.locationCalls)
+        assertEquals(0, api.locationCalls)
+        val firstSnapshot = (first as ApiResult.Success).data
+        val secondSnapshot = (second as ApiResult.Success).data
+        assertEquals(15.01, firstSnapshot.currentLatitude!!, 0.0)
+        assertEquals(15.011, secondSnapshot.currentLatitude!!, 0.0)
+        assertEquals(120.011, secondSnapshot.currentLongitude!!, 0.0)
     }
 
     @Test
-    fun repository_immediateSyncSignalBypassesHeartbeatThrottle() = runBlocking {
+    fun repository_immediateSyncSignalCallsBackend() = runBlocking {
         NavigationSyncSignal.reset()
-        var now = 1_000L
         val api = FakeNavigationApi(snapshot())
-        val repository = NavigationRepositoryImpl(
-            api = api,
-            sessions = SessionStore(),
-            errors = ApiErrorParser(),
-            locationSyncIntervalMillis = 30_000L,
-            nowMillis = { now }
-        )
+        val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
 
         repository.getActiveNavigation()
-        repository.updateLocation(
-            "session-1",
-            NavigationLocationUpdate(15.01, 120.01, 5.0, "2026-08-19T00:00:00Z")
-        )
-        now += 5_000L
         NavigationSyncSignal.requestImmediateSync(samples = 1)
         repository.updateLocation(
             "session-1",
             NavigationLocationUpdate(15.02, 120.02, 5.0, "2026-08-19T00:00:05Z")
         )
 
-        assertEquals(2, api.locationCalls)
+        assertEquals(1, api.locationCalls)
         NavigationSyncSignal.reset()
     }
 
     @Test
-    fun repository_nearLegEndUsesShortConfirmationBurstThenReturnsToHeartbeat() = runBlocking {
+    fun repository_defaultConfirmationBurstSendsFiveSamplesThenReturnsLocal() = runBlocking {
         NavigationSyncSignal.reset()
-        var now = 1_000L
         val api = FakeNavigationApi(snapshot())
-        val repository = NavigationRepositoryImpl(
-            api = api,
-            sessions = SessionStore(),
-            errors = ApiErrorParser(),
-            locationSyncIntervalMillis = 30_000L,
-            nowMillis = { now }
-        )
+        val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
 
         repository.getActiveNavigation()
-        repeat(4) { sample ->
+        NavigationSyncSignal.requestImmediateSync()
+        repeat(6) { sample ->
             repository.updateLocation(
                 "session-1",
                 NavigationLocationUpdate(
-                    15.0999,
-                    120.0999,
+                    15.0 + sample * 0.00001,
+                    120.0 + sample * 0.00001,
                     5.0,
-                    "2026-08-19T00:00:0${sample}Z"
+                    "2026-08-19T00:00:${sample.toString().padStart(2, '0')}Z"
                 )
             )
-            now += 5_000L
         }
 
-        assertEquals(3, api.locationCalls)
+        assertEquals(5, api.locationCalls)
         NavigationSyncSignal.reset()
     }
 
@@ -231,9 +204,11 @@ class NavigationRepositoryTest {
           "sessionId":"session-1","state":"ApproachingAlightPoint","currentLegIndex":0,
           "currentLeg":{"legIndex":0,"transportMode":"JEEPNEY","routeName":"Marisol","fromName":"Gate","toName":"Market","startLatitude":15.0,"startLongitude":120.0,"endLatitude":15.1,"endLongitude":120.1,"distanceMeters":1000.0,"fare":13.0},
           "nextInstruction":{"type":"PrepareToAlight","routeName":"Marisol","transportMode":"JEEPNEY","distanceMeters":120.0,"requiresConfirmation":false},
-          "spokenInstruction":$spoken,"remainingDistanceMeters":120.0,"progressMeters":880.0,
+          "spokenInstruction":$spoken,"spokenInstructionTemplate":"Baba tayo after {distance}.","remainingDistanceMeters":120.0,"progressMeters":880.0,
           "boardInfo":null,"alightInfo":null,
           "landmark":{"name":"Jollibee","category":"fast_food","role":"ALIGHT_REFERENCE","relation":"BEFORE_ALIGHT","latitude":15.09,"longitude":120.09,"distanceFromTargetMeters":120.0},
+          "currentLegInstructions":[{"sequence":1,"type":"TurnRight","legIndex":0,"text":"Turn right.","streetName":"Mabini Street","latitude":15.02,"longitude":120.02,"distanceFromLegStartMeters":300.0,"triggerDistanceMeters":30.0,"requiresConfirmation":false}],
+          "currentLegLandmarks":[{"name":"Jollibee","category":"fast_food","role":"PROGRESS_REFERENCE","relation":"ALONG_ROUTE","latitude":15.05,"longitude":120.05,"distanceFromTargetMeters":0.0,"triggerBeforeMeters":20.0,"triggerAfterMeters":20.0}],
           "requiresBoardingConfirmation":false,"requiresAlightingConfirmation":true,"rerouteRequired":false,
           "status":"ApproachingAlightPoint","triggeredEvents":[]
         }"""

@@ -1,8 +1,6 @@
 package com.example.frontend.data.navigation
 
 import com.example.frontend.core.location.NavigationSyncSignal
-import com.example.frontend.core.location.RouteCoordinate
-import com.example.frontend.core.location.RouteMatcher
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.core.network.apiCall
@@ -16,7 +14,6 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.math.BigDecimal
-import kotlin.math.max
 
 data class StartNavigationRequest(val recommendationId: String)
 data class NavigationRerouteRequest(
@@ -167,59 +164,45 @@ interface NavigationRepository {
 class NavigationRepositoryImpl(
     private val api: NavigationApi,
     private val sessions: AuthSessionStore,
-    private val errors: ApiErrorParser,
-    private val locationSyncIntervalMillis: Long = 30_000L,
-    private val nowMillis: () -> Long = System::currentTimeMillis
+    private val errors: ApiErrorParser
 ) : NavigationRepository {
     private val cacheLock = Any()
     private val snapshotsBySession = mutableMapOf<String, NavigationSnapshotDto>()
-    private val lastLocationSyncAtBySession = mutableMapOf<String, Long>()
-    private val transitionSyncKeys = mutableSetOf<String>()
 
     override suspend fun startNavigation(recommendationId: String): ApiResult<NavigationSnapshotDto> =
-        cacheSnapshot(call { api.start(StartNavigationRequest(recommendationId)) }, resetLocationSync = true)
+        cacheSnapshot(call { api.start(StartNavigationRequest(recommendationId)) }, resetSyncSignal = true)
 
     override suspend fun getActiveNavigation(): ApiResult<NavigationSnapshotDto> =
-        cacheSnapshot(call { api.active() }, resetLocationSync = true)
+        cacheSnapshot(call { api.active() })
 
     override suspend fun getGeometry(startLatitude: Double, startLongitude: Double, endLatitude: Double, endLongitude: Double, mode: String, routeId: Long?) =
         apiCall(errors) { api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId) }
 
     override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto> {
-        requestTransitionSyncIfNeeded(sessionId, update)
-
-        val now = nowMillis()
         val forceSync = NavigationSyncSignal.consumeImmediateSync()
-        val cached = if (forceSync) {
-            null
-        } else {
-            synchronized(cacheLock) {
-                val lastSyncAt = lastLocationSyncAtBySession[sessionId]
-                val snapshot = snapshotsBySession[sessionId]
-                if (lastSyncAt != null && snapshot != null && now - lastSyncAt < locationSyncIntervalMillis) {
-                    snapshot.withLocalLocation(update).also { snapshotsBySession[sessionId] = it }
-                } else {
-                    null
+        if (!forceSync) {
+            val local = synchronized(cacheLock) {
+                snapshotsBySession[sessionId]?.withLocalLocation(update)?.also {
+                    snapshotsBySession[sessionId] = it
                 }
             }
+            if (local != null) return ApiResult.Success(local)
         }
-        if (cached != null) return ApiResult.Success(cached)
 
+        // No cached state (recovery) or an explicit local navigation event needs server
+        // confirmation. Routine on-route movement never reaches this network call.
         val result = call { api.location(sessionId, update) }
         if (result is ApiResult.Success) {
-            synchronized(cacheLock) {
-                snapshotsBySession[sessionId] = result.data
-                lastLocationSyncAtBySession[sessionId] = now
-            }
+            synchronized(cacheLock) { snapshotsBySession[sessionId] = result.data }
         }
         return result
     }
 
     override suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto> =
-        cacheSnapshot(call { api.boarding(sessionId) }, resetLocationSync = true)
+        cacheSnapshot(call { api.boarding(sessionId) }, resetSyncSignal = true)
 
     override suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto> =
-        cacheSnapshot(call { api.alighting(sessionId) }, resetLocationSync = true)
+        cacheSnapshot(call { api.alighting(sessionId) }, resetSyncSignal = true)
 
     override suspend fun cancel(sessionId: String): ApiResult<TripSessionDto> {
         val result = call { api.cancel(sessionId) }
@@ -231,49 +214,21 @@ class NavigationRepositoryImpl(
     }
 
     override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest): ApiResult<NavigationSnapshotDto> =
-        cacheSnapshot(call { api.reroute(sessionId, request) }, resetLocationSync = true)
-
-    private fun requestTransitionSyncIfNeeded(sessionId: String, update: NavigationLocationUpdate) {
-        val snapshot = synchronized(cacheLock) { snapshotsBySession[sessionId] } ?: return
-        val leg = snapshot.currentLeg ?: return
-        val endLatitude = leg.endLatitude ?: return
-        val endLongitude = leg.endLongitude ?: return
-        val distanceToEnd = RouteMatcher.distanceMeters(
-            RouteCoordinate(update.latitude, update.longitude),
-            RouteCoordinate(endLatitude, endLongitude)
-        )
-        val transitionRadius = max(120.0, update.accuracyMeters.coerceAtLeast(0.0) * 2.0).coerceAtMost(180.0)
-        if (distanceToEnd > transitionRadius) return
-
-        val key = listOf(
-            sessionId,
-            leg.legIndex.toString(),
-            "%.5f".format(endLatitude),
-            "%.5f".format(endLongitude)
-        ).joinToString(":")
-        val firstEntry = synchronized(cacheLock) { transitionSyncKeys.add(key) }
-        if (firstEntry) NavigationSyncSignal.requestImmediateSync()
-    }
+        cacheSnapshot(call { api.reroute(sessionId, request) }, resetSyncSignal = true)
 
     private fun cacheSnapshot(
         result: ApiResult<NavigationSnapshotDto>,
-        resetLocationSync: Boolean
+        resetSyncSignal: Boolean = false
     ): ApiResult<NavigationSnapshotDto> {
         if (result is ApiResult.Success) {
-            synchronized(cacheLock) {
-                snapshotsBySession[result.data.sessionId] = result.data
-                if (resetLocationSync) lastLocationSyncAtBySession.remove(result.data.sessionId)
-            }
+            synchronized(cacheLock) { snapshotsBySession[result.data.sessionId] = result.data }
+            if (resetSyncSignal) NavigationSyncSignal.reset()
         }
         return result
     }
 
     private fun clearSessionCache(sessionId: String) {
-        synchronized(cacheLock) {
-            snapshotsBySession.remove(sessionId)
-            lastLocationSyncAtBySession.remove(sessionId)
-            transitionSyncKeys.removeAll { it.startsWith("$sessionId:") }
-        }
+        synchronized(cacheLock) { snapshotsBySession.remove(sessionId) }
     }
 
     private suspend fun <T : Any> call(block: suspend () -> Response<T>) = authenticatedApiCall(sessions, errors, request = block)

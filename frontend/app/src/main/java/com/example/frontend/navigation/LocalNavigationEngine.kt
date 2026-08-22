@@ -20,6 +20,11 @@ enum class LocalGuidanceStage {
     NOW
 }
 
+enum class LocalServerSyncReason {
+    OFF_ROUTE,
+    LEG_END
+}
+
 data class LocalNavigationGuidance(
     val sequence: Int,
     val type: String,
@@ -48,8 +53,10 @@ data class LocalNavigationProgress(
     val followingGuidance: LocalNavigationGuidance?,
     val landmarkEvent: LocalNavigationLandmarkEvent?,
     val legProximity: LocalLegProximity,
-    val shouldForceServerSync: Boolean
-)
+    val serverSyncReason: LocalServerSyncReason?
+) {
+    val shouldForceServerSync: Boolean get() = serverSyncReason != null
+}
 
 /**
  * Executes high-frequency navigation progress locally against the already planned leg geometry.
@@ -130,6 +137,11 @@ class LocalNavigationEngine(
             previousProgressMeters = previousProgress,
             currentProgressMeters = lastProgressMeters
         )
+        val syncReason = when {
+            corridorDecision.shouldForceSync -> LocalServerSyncReason.OFF_ROUTE
+            proximity == LocalLegProximity.REACHED -> LocalServerSyncReason.LEG_END
+            else -> null
+        }
 
         return LocalNavigationProgress(
             rawLocation = raw,
@@ -142,7 +154,7 @@ class LocalNavigationEngine(
             followingGuidance = following,
             landmarkEvent = landmark,
             legProximity = proximity,
-            shouldForceServerSync = corridorDecision.shouldForceSync || proximity == LocalLegProximity.REACHED
+            serverSyncReason = syncReason
         )
     }
 
