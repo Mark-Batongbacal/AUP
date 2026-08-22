@@ -20,7 +20,9 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.RouteCoordinate
+import com.example.frontend.core.location.RouteCorridorDetector
 import com.example.frontend.core.location.RouteMatcher
 import com.example.frontend.core.location.hasDeviceLocationPermission
 import com.example.frontend.core.location.navigationLocationUpdates
@@ -100,11 +102,13 @@ fun LiveTripMapScreen(
     var trackedRouteDestination by remember { mutableStateOf<RouteCoordinate?>(null) }
     var lastMatchedProgressMeters by remember { mutableStateOf(0.0) }
     val routeDestination = routeCoordinates.lastOrNull()
+    val corridorDetector = remember(routeDestination) { RouteCorridorDetector() }
 
     LaunchedEffect(routeDestination) {
         if (trackedRouteDestination != routeDestination) {
             trackedRouteDestination = routeDestination
             lastMatchedProgressMeters = 0.0
+            corridorDetector.reset()
         }
     }
 
@@ -128,6 +132,23 @@ fun LiveTripMapScreen(
             if (match.progressMeters > lastMatchedProgressMeters) {
                 lastMatchedProgressMeters = match.progressMeters
             }
+        }
+    }
+
+    val corridorDistanceMeters = when {
+        rawCurrentPosition == null || routeCoordinates.size < 2 -> null
+        routeMatch != null -> routeMatch.distanceToRouteMeters
+        else -> Double.POSITIVE_INFINITY
+    }
+    LaunchedEffect(corridorDistanceMeters, liveDeviceLocation?.accuracy, routeDestination) {
+        val distance = corridorDistanceMeters
+        if (distance == null) {
+            corridorDetector.reset()
+            return@LaunchedEffect
+        }
+        val decision = corridorDetector.update(distance, liveDeviceLocation?.accuracy?.toDouble())
+        if (decision.shouldForceSync) {
+            NavigationSyncSignal.requestImmediateSync()
         }
     }
 

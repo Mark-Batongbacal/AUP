@@ -1,5 +1,6 @@
 package com.example.frontend.data
 
+import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.core.storage.AuthSession
@@ -58,6 +59,7 @@ class NavigationRepositoryTest {
 
     @Test
     fun repository_locationActiveAndConfirmationsReturnSnapshots() = runBlocking {
+        NavigationSyncSignal.reset()
         val api = FakeNavigationApi(snapshot())
         val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
         val update = NavigationLocationUpdate(15.0, 120.0, 5.0, "2026-08-19T00:00:00Z")
@@ -76,6 +78,7 @@ class NavigationRepositoryTest {
 
     @Test
     fun repository_coalescesRoutineLocationUpdatesButKeepsLocalPositionFresh() = runBlocking {
+        NavigationSyncSignal.reset()
         var now = 1_000L
         val api = FakeNavigationApi(snapshot())
         val repository = NavigationRepositoryImpl(
@@ -108,6 +111,35 @@ class NavigationRepositoryTest {
             NavigationLocationUpdate(15.12, 120.12, 5.0, "2026-08-19T00:00:35Z")
         )
         assertEquals(2, api.locationCalls)
+    }
+
+    @Test
+    fun repository_immediateSyncSignalBypassesHeartbeatThrottle() = runBlocking {
+        NavigationSyncSignal.reset()
+        var now = 1_000L
+        val api = FakeNavigationApi(snapshot())
+        val repository = NavigationRepositoryImpl(
+            api = api,
+            sessions = SessionStore(),
+            errors = ApiErrorParser(),
+            locationSyncIntervalMillis = 30_000L,
+            nowMillis = { now }
+        )
+
+        repository.getActiveNavigation()
+        repository.updateLocation(
+            "session-1",
+            NavigationLocationUpdate(15.10, 120.10, 5.0, "2026-08-19T00:00:00Z")
+        )
+        now += 5_000L
+        NavigationSyncSignal.requestImmediateSync()
+        repository.updateLocation(
+            "session-1",
+            NavigationLocationUpdate(15.20, 120.20, 5.0, "2026-08-19T00:00:05Z")
+        )
+
+        assertEquals(2, api.locationCalls)
+        NavigationSyncSignal.reset()
     }
 
     private class FakeNavigationApi(private val response: NavigationSnapshotDto) : NavigationApi {

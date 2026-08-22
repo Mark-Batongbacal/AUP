@@ -1,5 +1,6 @@
 package com.example.frontend.data.navigation
 
+import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.core.network.apiCall
@@ -163,13 +164,18 @@ class NavigationRepositoryImpl(
 
     override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto> {
         val now = nowMillis()
-        val cached = synchronized(cacheLock) {
-            val lastSyncAt = lastLocationSyncAtBySession[sessionId]
-            val snapshot = snapshotsBySession[sessionId]
-            if (lastSyncAt != null && snapshot != null && now - lastSyncAt < locationSyncIntervalMillis) {
-                snapshot.withLocalLocation(update).also { snapshotsBySession[sessionId] = it }
-            } else {
-                null
+        val forceSync = NavigationSyncSignal.consumeImmediateSync()
+        val cached = if (forceSync) {
+            null
+        } else {
+            synchronized(cacheLock) {
+                val lastSyncAt = lastLocationSyncAtBySession[sessionId]
+                val snapshot = snapshotsBySession[sessionId]
+                if (lastSyncAt != null && snapshot != null && now - lastSyncAt < locationSyncIntervalMillis) {
+                    snapshot.withLocalLocation(update).also { snapshotsBySession[sessionId] = it }
+                } else {
+                    null
+                }
             }
         }
         if (cached != null) return ApiResult.Success(cached)
@@ -192,7 +198,10 @@ class NavigationRepositoryImpl(
 
     override suspend fun cancel(sessionId: String): ApiResult<TripSessionDto> {
         val result = call { api.cancel(sessionId) }
-        if (result is ApiResult.Success) clearSessionCache(sessionId)
+        if (result is ApiResult.Success) {
+            clearSessionCache(sessionId)
+            NavigationSyncSignal.reset()
+        }
         return result
     }
 
