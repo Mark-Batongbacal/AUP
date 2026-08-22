@@ -89,8 +89,8 @@ fun TripTrackingScreen(
     var showArrival by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
     var optionSnapshot by remember { mutableStateOf<NavigationSnapshotDto?>(null) }
-    var optionRoute by remember { mutableStateOf<List<LatLng>>(emptyList()) }
-    var optionRouteLegIndex by remember { mutableStateOf<Int?>(null) }
+    var stableLegRoute by remember { mutableStateOf<List<LatLng>>(emptyList()) }
+    var stableLegRouteKey by remember { mutableStateOf<String?>(null) }
     var optionError by remember { mutableStateOf<String?>(null) }
     var optionWorking by remember { mutableStateOf(false) }
     var hasRerouted by remember { mutableStateOf(false) }
@@ -109,6 +109,9 @@ fun TripTrackingScreen(
     val snapshot = optionSnapshot ?: navigationSnapshot
     val working = isNavigationActionInProgress || optionWorking
     val currentLegIndex = (snapshot?.currentLegIndex ?: 0).coerceAtLeast(0)
+    val geometryKey = snapshot?.let(::navigationGeometryKey)
+    val serverRerouted = snapshot?.status.equals("REROUTE_SUCCEEDED", true)
+    val effectiveRerouted = hasRerouted || serverRerouted
 
     LaunchedEffect(navigationSnapshot?.state) {
         if (navigationSnapshot?.state.equals("Arrived", true)) {
@@ -117,37 +120,25 @@ fun TripTrackingScreen(
         }
     }
 
-    LaunchedEffect(currentLegIndex) {
-        if (optionRouteLegIndex != null && optionRouteLegIndex != currentLegIndex) {
-            optionRoute = emptyList()
-            optionRouteLegIndex = null
-        }
-    }
-
     LaunchedEffect(
         snapshot?.sessionId,
-        snapshot?.currentLegIndex,
-        snapshot?.currentLeg?.routeId,
-        snapshot?.currentLeg?.transportMode,
-        snapshot?.currentLeg?.startLatitude,
-        snapshot?.currentLeg?.startLongitude,
-        snapshot?.currentLeg?.endLatitude,
-        snapshot?.currentLeg?.endLongitude,
-        routePoints.size,
-        hasRerouted,
-        optionRoute.size
+        geometryKey,
+        snapshot?.state
     ) {
         val current = snapshot ?: return@LaunchedEffect
+        val key = geometryKey ?: return@LaunchedEffect
         if (current.sessionId.startsWith("guest-") || current.state.equals("Arrived", true) || current.state.equals("Cancelled", true)) return@LaunchedEffect
-        if (optionRouteLegIndex == current.currentLegIndex && optionRoute.size >= 2) return@LaunchedEffect
-        if (!hasRerouted && routePoints.size >= 2) return@LaunchedEffect
+        if (stableLegRouteKey == key && stableLegRoute.size >= 2) return@LaunchedEffect
 
+        // Fetch the complete planned leg once. We intentionally do not use the moving GPS position
+        // as the start, because local maneuver/landmark anchors need a stable coordinate system.
         when (val geometry = options.currentLegGeometry(current)) {
             is ApiResult.Success -> {
-                optionRoute = geometry.data.points.map { LatLng(it.latitude, it.longitude) }
-                optionRouteLegIndex = current.currentLegIndex
+                stableLegRoute = geometry.data.points.map { LatLng(it.latitude, it.longitude) }
+                stableLegRouteKey = key
+                if (serverRerouted) hasRerouted = true
             }
-            is ApiResult.Failure -> if (optionRoute.isEmpty()) optionError = geometry.message
+            is ApiResult.Failure -> if (stableLegRoute.isEmpty()) optionError = geometry.message
         }
     }
 
@@ -169,8 +160,8 @@ fun TripTrackingScreen(
                     }
                     when (val geometry = options.currentLegGeometry(result.data)) {
                         is ApiResult.Success -> {
-                            optionRoute = geometry.data.points.map { LatLng(it.latitude, it.longitude) }
-                            optionRouteLegIndex = result.data.currentLegIndex
+                            stableLegRoute = geometry.data.points.map { LatLng(it.latitude, it.longitude) }
+                            stableLegRouteKey = navigationGeometryKey(result.data)
                         }
                         is ApiResult.Failure -> optionError = geometry.message
                     }
@@ -193,11 +184,13 @@ fun TripTrackingScreen(
             }
     }
 
-    val baseRoute = optionRoute.takeIf { optionRouteLegIndex == currentLegIndex && it.size >= 2 } ?: routePoints
+    val baseRoute = stableLegRoute
+        .takeIf { stableLegRouteKey == geometryKey && it.size >= 2 }
+        ?: routePoints
     val routeCoordinates = remember(baseRoute) {
         baseRoute.map { RouteCoordinate(it.latitude, it.longitude) }
     }
-    val localEngine = remember(snapshot?.sessionId, currentLegIndex) { LocalNavigationEngine() }
+    val localEngine = remember(snapshot?.sessionId, currentLegIndex, geometryKey) { LocalNavigationEngine() }
     val localProgress by produceState<com.example.frontend.navigation.LocalNavigationProgress?>(
         initialValue = null,
         liveDeviceLocation,
@@ -219,10 +212,10 @@ fun TripTrackingScreen(
         )
     }
 
-    LaunchedEffect(localProgress?.shouldForceServerSync, currentLegIndex, snapshot?.sessionId) {
-        val current = localProgress ?: return@LaunchedEffect
+    LaunchedEffect(localProgress?.serverSyncReason, currentLegIndex, snapshot?.sessionId) {
+        val reason = localProgress?.serverSyncReason ?: return@LaunchedEffect
         if (snapshot?.sessionId?.startsWith("guest-") == true) return@LaunchedEffect
-        if (current.shouldForceServerSync) NavigationSyncSignal.requestImmediateSync()
+        NavigationSyncSignal.requestImmediateSync()
     }
 
     LaunchedEffect(localProgress?.landmarkEvent) {
@@ -234,12 +227,12 @@ fun TripTrackingScreen(
 
     val leg = snapshot?.currentLeg
     val localGuidance = localProgress?.currentGuidance
-        ?.takeIf { guidance ->
+        ?.takeIf {
             leg?.transportMode.equals("WALK", true) || leg?.transportMode.equals("WALKING", true)
         }
-        ?.takeIf { guidance -> !guidance.type.equals("Continue", true) }
+        ?.takeIf { !it.type.equals("Continue", true) }
     val localFollowingGuidance = localProgress?.followingGuidance
-        ?.takeIf { guidance -> !guidance.type.equals("Continue", true) }
+        ?.takeIf { !it.type.equals("Continue", true) }
 
     val remainingDistance = localProgress?.remainingMeters ?: snapshot?.remainingDistanceMeters
     val renderedTemplate = LocalNavigationSpeech.renderTemplate(
@@ -281,10 +274,11 @@ fun TripTrackingScreen(
         ?: snapshot?.let {
             if (it.currentLatitude != null && it.currentLongitude != null) LatLng(it.currentLatitude, it.currentLongitude) else null
         }
-    val visibleRoute = localProgress?.remainingRoute
-        ?.map { LatLng(it.latitude, it.longitude) }
-        ?.takeIf { it.size >= 2 }
-        ?: baseRoute
+    val visibleRoute = if (localProgress != null) {
+        localProgress!!.remainingRoute.map { LatLng(it.latitude, it.longitude) }
+    } else {
+        baseRoute
+    }
 
     val requiresBoarding = snapshot?.requiresBoardingConfirmation == true
     val requiresAlighting = snapshot?.requiresAlightingConfirmation == true
@@ -317,11 +311,11 @@ fun TripTrackingScreen(
         LiveTripMapScreen(
             routePoints = visibleRoute,
             currentPosition = currentPosition,
-            legDestination = if (hasRerouted) leg?.let { current ->
+            legDestination = if (effectiveRerouted) leg?.let { current ->
                 if (current.endLatitude != null && current.endLongitude != null) LatLng(current.endLatitude, current.endLongitude) else null
             } else legDestination,
             finalDestination = activeFinalDestination,
-            futureRouteSegments = if (hasRerouted) emptyList() else futureRouteSegments,
+            futureRouteSegments = if (effectiveRerouted) emptyList() else futureRouteSegments,
             recenterRequestKey = recenterRequestKey,
             modifier = Modifier.fillMaxSize()
         )
@@ -844,6 +838,19 @@ private fun SummaryRow(label: String, value: String) {
             fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
         )
     }
+}
+
+private fun navigationGeometryKey(snapshot: NavigationSnapshotDto): String? {
+    val leg = snapshot.currentLeg ?: return null
+    return listOf(
+        leg.legIndex.toString(),
+        leg.routeId?.toString().orEmpty(),
+        leg.transportMode.uppercase(),
+        leg.startLatitude?.toString().orEmpty(),
+        leg.startLongitude?.toString().orEmpty(),
+        leg.endLatitude?.toString().orEmpty(),
+        leg.endLongitude?.toString().orEmpty()
+    ).joinToString(":")
 }
 
 private fun nextStopName(snapshot: NavigationSnapshotDto?, fallback: String): String {

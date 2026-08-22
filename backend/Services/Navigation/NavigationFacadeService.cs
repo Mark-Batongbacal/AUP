@@ -108,15 +108,21 @@ public sealed class NavigationFacadeService(
         var legs = await recommendations.GetOrderedLegsAsync(session.RecommendationId, cancellationToken);
         var leg = legs.FirstOrDefault(item => item.LegOrder == session.CurrentLegIndex);
         var allInstructions = await instructions.GetForOwnedSessionAsync(session.TripSessionId, userId, cancellationToken);
-        var legLandmarks = leg is null ? [] : await landmarks.GetForLegAsync(session.TripSessionId, leg.LegOrder, cancellationToken);
+        var legLandmarks = leg is null
+            ? new List<TripLandmarkCandidate>()
+            : await landmarks.GetForLegAsync(session.TripSessionId, leg.LegOrder, cancellationToken);
         var legInstructions = leg is null
-            ? []
+            ? new List<NavigationInstructionDetailSnapshot>()
             : allInstructions
                 .Where(item => item.Audience == NavigationInstructionAudience.Passenger && item.LegIndex == leg.LegOrder)
                 .OrderBy(item => item.Sequence)
                 .Select(MapInstructionDetail)
                 .ToList();
-        var legLandmarkPackage = legLandmarks.Select(MapLandmark).Where(item => item is not null).Cast<NavigationLandmarkSnapshot>().ToList();
+        var legLandmarkPackage = legLandmarks
+            .Select(MapLandmark)
+            .Where(item => item is not null)
+            .Cast<NavigationLandmarkSnapshot>()
+            .ToList();
         var boardLandmark = legLandmarks.FirstOrDefault(item => item.Role == LandmarkRole.BoardReference);
         var alightLandmark = legLandmarks.FirstOrDefault(item => item.Role == LandmarkRole.AlightReference);
         var progressLandmark = triggered.LastOrDefault(item => item.Type == NavigationInstructionType.LandmarkNotice);
@@ -143,7 +149,8 @@ public sealed class NavigationFacadeService(
         var sameEvent = session.LastSpeechEventKey == eventKey;
         var noNewMeaningfulEvent = speechType == "Continue" && status != "BOARDING_CONFIRMED" &&
             session.LastSpeechEventKey?.StartsWith($"{session.RecommendationId}:{session.CurrentLegIndex}:", StringComparison.Ordinal) == true;
-        var useDynamicDistance = remaining.GetValueOrDefault() > 0 && speechType is "Continue" or "PrepareToAlight";
+        var useDynamicDistance = remaining.GetValueOrDefault() > 0 &&
+            (speechType is "Continue" or "PrepareToAlight");
         var speechContext = new NavigationSpeechContext(
             speechType,
             session.CurrentNavigationState.ToString(),
