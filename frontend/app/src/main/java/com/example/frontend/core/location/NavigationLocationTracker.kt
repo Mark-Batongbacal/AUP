@@ -75,9 +75,11 @@ fun Context.navigationLocationUpdates(
                 )
             }
         } catch (error: SecurityException) {
+            runCatching { locationManager.removeUpdates(listener) }
             fallbackListener = null
             close(error)
         } catch (error: IllegalArgumentException) {
+            runCatching { locationManager.removeUpdates(listener) }
             fallbackListener = null
             close(error)
         }
