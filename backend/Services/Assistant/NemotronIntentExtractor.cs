@@ -9,20 +9,24 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
     private readonly ChatClient _client;
 
     public NemotronIntentExtractor(IConfiguration configuration)
-    {
-        var apiKey = Environment.GetEnvironmentVariable(
-            configuration["Nvidia:ApiKeyEnvironmentVariable"] ?? "NVIDIA_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("The configured NVIDIA API key is unavailable.");
-        _client = new ChatClient(
-            configuration["Nvidia:Model"] ?? "nvidia/nemotron-3-ultra-550b-a55b",
-            new System.ClientModel.ApiKeyCredential(apiKey),
-            new OpenAIClientOptions
-            {
-                Endpoint = new Uri(configuration["Nvidia:BaseUrl"] ??
-                    "https://integrate.api.nvidia.com/v1")
-            });
-    }
+{
+    var apiKey = Environment.GetEnvironmentVariable(
+        configuration["Qwen:ApiKeyEnvironmentVariable"] ?? "OPENROUTER_API_KEY");
+
+    if (string.IsNullOrWhiteSpace(apiKey))
+        throw new InvalidOperationException(
+            "The configured Qwen API key is unavailable.");
+
+    _client = new ChatClient(
+        configuration["Qwen:Model"] ?? "qwen/qwen3-14b:free",
+        new System.ClientModel.ApiKeyCredential(apiKey),
+        new OpenAIClientOptions
+        {
+            Endpoint = new Uri(
+                configuration["Qwen:BaseUrl"] ??
+                "https://openrouter.ai/api/v1")
+        });
+}
 
     public async Task<AssistantIntent> ExtractAsync(
         string message, CancellationToken cancellationToken = default)
