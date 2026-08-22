@@ -1,5 +1,6 @@
 package com.example.frontend
 
+import android.location.Location
 import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,6 +9,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -18,6 +20,9 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.frontend.core.location.hasDeviceLocationPermission
+import com.example.frontend.core.location.navigationLocationUpdates
+import kotlinx.coroutines.flow.catch
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -51,6 +56,7 @@ private const val LiveTripDestinationLayer = "live-trip-destination-layer"
 private const val LiveTripFinalSource = "live-trip-final-source"
 private const val LiveTripFinalLayer = "live-trip-final-layer"
 private const val LiveTripFuturePrefix = "live-trip-future"
+private const val LiveTripFreshFixMaxAgeMillis = 30_000L
 
 @Composable
 fun LiveTripMapScreen(
@@ -69,11 +75,24 @@ fun LiveTripMapScreen(
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val liveDeviceLocation by produceState<Location?>(initialValue = null, context) {
+        if (!context.hasDeviceLocationPermission()) return@produceState
+        context.navigationLocationUpdates()
+            .catch { /* Keep the last server position as the fallback. */ }
+            .collect { location ->
+                val ageMillis = if (location.time > 0L) System.currentTimeMillis() - location.time else 0L
+                if (ageMillis <= LiveTripFreshFixMaxAgeMillis) value = location
+            }
+    }
+    val effectiveCurrentPosition = liveDeviceLocation
+        ?.let { LatLng(it.latitude, it.longitude) }
+        ?: currentPosition
+
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var loadedStyle by remember { mutableStateOf<Style?>(null) }
     var followLocation by rememberSaveable { mutableStateOf(true) }
     val latestMap by rememberUpdatedState(mapLibreMap)
-    val latestCurrentPosition by rememberUpdatedState(currentPosition)
+    val latestCurrentPosition by rememberUpdatedState(effectiveCurrentPosition)
     val latestRoutePoints by rememberUpdatedState(routePoints)
 
     val mapView = remember(context) {
@@ -108,19 +127,19 @@ fun LiveTripMapScreen(
                 loadedStyle = style
                 updateLiveTripFutureLayers(style, futureRouteSegments)
                 updateLiveTripRoute(style, routePoints)
-                updateLiveTripCurrentPoint(style, currentPosition)
+                updateLiveTripCurrentPoint(style, effectiveCurrentPosition)
                 updateLiveTripDestination(style, legDestination)
                 updateLiveTripFinalDestination(style, finalDestination)
 
-                val target = navigationLookAheadTarget(currentPosition, routePoints)
-                    ?: currentPosition
+                val target = navigationLookAheadTarget(effectiveCurrentPosition, routePoints)
+                    ?: effectiveCurrentPosition
                     ?: routePoints.firstOrNull()
                     ?: legDestination
                     ?: finalDestination
                     ?: LiveTripDefaultCenter
                 map.cameraPosition = CameraPosition.Builder()
                     .target(target)
-                    .zoom(if (currentPosition != null) LiveTripNavigationZoom else 14.5)
+                    .zoom(if (effectiveCurrentPosition != null) LiveTripNavigationZoom else 14.5)
                     .build()
             }
         }
@@ -135,15 +154,15 @@ fun LiveTripMapScreen(
     }
 
     LaunchedEffect(loadedStyle, routePoints) { loadedStyle?.let { updateLiveTripRoute(it, routePoints) } }
-    LaunchedEffect(loadedStyle, currentPosition) { loadedStyle?.let { updateLiveTripCurrentPoint(it, currentPosition) } }
+    LaunchedEffect(loadedStyle, effectiveCurrentPosition) { loadedStyle?.let { updateLiveTripCurrentPoint(it, effectiveCurrentPosition) } }
     LaunchedEffect(loadedStyle, legDestination) { loadedStyle?.let { updateLiveTripDestination(it, legDestination) } }
     LaunchedEffect(loadedStyle, finalDestination) { loadedStyle?.let { updateLiveTripFinalDestination(it, finalDestination) } }
     LaunchedEffect(loadedStyle, futureRouteSegments) { loadedStyle?.let { updateLiveTripFutureLayers(it, futureRouteSegments) } }
 
-    LaunchedEffect(mapLibreMap, currentPosition, routePoints, followLocation) {
+    LaunchedEffect(mapLibreMap, effectiveCurrentPosition, routePoints, followLocation) {
         if (!followLocation) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
-        val point = currentPosition ?: return@LaunchedEffect
+        val point = effectiveCurrentPosition ?: return@LaunchedEffect
         animateLiveTripCamera(map, point, routePoints)
     }
 
