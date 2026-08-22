@@ -1,6 +1,8 @@
 package com.example.frontend.data.navigation
 
 import com.example.frontend.core.location.NavigationSyncSignal
+import com.example.frontend.core.location.RouteCoordinate
+import com.example.frontend.core.location.RouteMatcher
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.core.network.apiCall
@@ -14,6 +16,7 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.math.BigDecimal
+import kotlin.math.max
 
 data class StartNavigationRequest(val recommendationId: String)
 data class NavigationRerouteRequest(
@@ -152,6 +155,7 @@ class NavigationRepositoryImpl(
     private val cacheLock = Any()
     private val snapshotsBySession = mutableMapOf<String, NavigationSnapshotDto>()
     private val lastLocationSyncAtBySession = mutableMapOf<String, Long>()
+    private val transitionSyncKeys = mutableSetOf<String>()
 
     override suspend fun startNavigation(recommendationId: String): ApiResult<NavigationSnapshotDto> =
         cacheSnapshot(call { api.start(StartNavigationRequest(recommendationId)) }, resetLocationSync = true)
@@ -163,6 +167,8 @@ class NavigationRepositoryImpl(
         apiCall(errors) { api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId) }
 
     override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto> {
+        requestTransitionSyncIfNeeded(sessionId, update)
+
         val now = nowMillis()
         val forceSync = NavigationSyncSignal.consumeImmediateSync()
         val cached = if (forceSync) {
@@ -208,6 +214,28 @@ class NavigationRepositoryImpl(
     override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest): ApiResult<NavigationSnapshotDto> =
         cacheSnapshot(call { api.reroute(sessionId, request) }, resetLocationSync = true)
 
+    private fun requestTransitionSyncIfNeeded(sessionId: String, update: NavigationLocationUpdate) {
+        val snapshot = synchronized(cacheLock) { snapshotsBySession[sessionId] } ?: return
+        val leg = snapshot.currentLeg ?: return
+        val endLatitude = leg.endLatitude ?: return
+        val endLongitude = leg.endLongitude ?: return
+        val distanceToEnd = RouteMatcher.distanceMeters(
+            RouteCoordinate(update.latitude, update.longitude),
+            RouteCoordinate(endLatitude, endLongitude)
+        )
+        val transitionRadius = max(120.0, update.accuracyMeters.coerceAtLeast(0.0) * 2.0).coerceAtMost(180.0)
+        if (distanceToEnd > transitionRadius) return
+
+        val key = listOf(
+            sessionId,
+            leg.legIndex.toString(),
+            "%.5f".format(endLatitude),
+            "%.5f".format(endLongitude)
+        ).joinToString(":")
+        val firstEntry = synchronized(cacheLock) { transitionSyncKeys.add(key) }
+        if (firstEntry) NavigationSyncSignal.requestImmediateSync()
+    }
+
     private fun cacheSnapshot(
         result: ApiResult<NavigationSnapshotDto>,
         resetLocationSync: Boolean
@@ -225,6 +253,7 @@ class NavigationRepositoryImpl(
         synchronized(cacheLock) {
             snapshotsBySession.remove(sessionId)
             lastLocationSyncAtBySession.remove(sessionId)
+            transitionSyncKeys.removeAll { it.startsWith("$sessionId:") }
         }
     }
 

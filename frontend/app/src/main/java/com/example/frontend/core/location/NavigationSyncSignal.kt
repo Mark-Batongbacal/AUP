@@ -1,22 +1,33 @@
 package com.example.frontend.core.location
 
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Bridges local route-corridor detection with the repository heartbeat without coupling the map
- * to Retrofit. Only one passenger navigation session is active at a time, so a single pending
- * immediate-sync flag is sufficient.
+ * Requests a short burst of backend location syncs when local navigation detects a condition that
+ * needs server confirmation. Routine GPS updates remain local/heartbeat-driven.
  */
 object NavigationSyncSignal {
-    private val immediateSyncRequested = AtomicBoolean(false)
+    private const val DefaultConfirmationSamples = 3
+    private val pendingSyncs = AtomicInteger(0)
 
-    fun requestImmediateSync() {
-        immediateSyncRequested.set(true)
+    fun requestImmediateSync(samples: Int = DefaultConfirmationSamples) {
+        val requested = samples.coerceAtLeast(1)
+        while (true) {
+            val current = pendingSyncs.get()
+            if (current >= requested) return
+            if (pendingSyncs.compareAndSet(current, requested)) return
+        }
     }
 
-    fun consumeImmediateSync(): Boolean = immediateSyncRequested.getAndSet(false)
+    fun consumeImmediateSync(): Boolean {
+        while (true) {
+            val current = pendingSyncs.get()
+            if (current <= 0) return false
+            if (pendingSyncs.compareAndSet(current, current - 1)) return true
+        }
+    }
 
     fun reset() {
-        immediateSyncRequested.set(false)
+        pendingSyncs.set(0)
     }
 }

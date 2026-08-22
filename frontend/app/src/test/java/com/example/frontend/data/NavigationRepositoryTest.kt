@@ -62,7 +62,7 @@ class NavigationRepositoryTest {
         NavigationSyncSignal.reset()
         val api = FakeNavigationApi(snapshot())
         val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
-        val update = NavigationLocationUpdate(15.0, 120.0, 5.0, "2026-08-19T00:00:00Z")
+        val update = NavigationLocationUpdate(15.01, 120.01, 5.0, "2026-08-19T00:00:00Z")
 
         assertTrue(repository.getActiveNavigation() is ApiResult.Success)
         assertTrue(repository.updateLocation("session-1", update) is ApiResult.Success)
@@ -92,23 +92,23 @@ class NavigationRepositoryTest {
         repository.getActiveNavigation()
         repository.updateLocation(
             "session-1",
-            NavigationLocationUpdate(15.10, 120.10, 5.0, "2026-08-19T00:00:00Z")
+            NavigationLocationUpdate(15.01, 120.01, 5.0, "2026-08-19T00:00:00Z")
         )
         now += 5_000L
         val local = repository.updateLocation(
             "session-1",
-            NavigationLocationUpdate(15.11, 120.11, 5.0, "2026-08-19T00:00:05Z")
+            NavigationLocationUpdate(15.011, 120.011, 5.0, "2026-08-19T00:00:05Z")
         )
 
         assertEquals(1, api.locationCalls)
         val localSnapshot = (local as ApiResult.Success).data
-        assertEquals(15.11, localSnapshot.currentLatitude!!, 0.0)
-        assertEquals(120.11, localSnapshot.currentLongitude!!, 0.0)
+        assertEquals(15.011, localSnapshot.currentLatitude!!, 0.0)
+        assertEquals(120.011, localSnapshot.currentLongitude!!, 0.0)
 
         now += 30_000L
         repository.updateLocation(
             "session-1",
-            NavigationLocationUpdate(15.12, 120.12, 5.0, "2026-08-19T00:00:35Z")
+            NavigationLocationUpdate(15.012, 120.012, 5.0, "2026-08-19T00:00:35Z")
         )
         assertEquals(2, api.locationCalls)
     }
@@ -129,16 +129,47 @@ class NavigationRepositoryTest {
         repository.getActiveNavigation()
         repository.updateLocation(
             "session-1",
-            NavigationLocationUpdate(15.10, 120.10, 5.0, "2026-08-19T00:00:00Z")
+            NavigationLocationUpdate(15.01, 120.01, 5.0, "2026-08-19T00:00:00Z")
         )
         now += 5_000L
-        NavigationSyncSignal.requestImmediateSync()
+        NavigationSyncSignal.requestImmediateSync(samples = 1)
         repository.updateLocation(
             "session-1",
-            NavigationLocationUpdate(15.20, 120.20, 5.0, "2026-08-19T00:00:05Z")
+            NavigationLocationUpdate(15.02, 120.02, 5.0, "2026-08-19T00:00:05Z")
         )
 
         assertEquals(2, api.locationCalls)
+        NavigationSyncSignal.reset()
+    }
+
+    @Test
+    fun repository_nearLegEndUsesShortConfirmationBurstThenReturnsToHeartbeat() = runBlocking {
+        NavigationSyncSignal.reset()
+        var now = 1_000L
+        val api = FakeNavigationApi(snapshot())
+        val repository = NavigationRepositoryImpl(
+            api = api,
+            sessions = SessionStore(),
+            errors = ApiErrorParser(),
+            locationSyncIntervalMillis = 30_000L,
+            nowMillis = { now }
+        )
+
+        repository.getActiveNavigation()
+        repeat(4) { sample ->
+            repository.updateLocation(
+                "session-1",
+                NavigationLocationUpdate(
+                    15.0999,
+                    120.0999,
+                    5.0,
+                    "2026-08-19T00:00:0${sample}Z"
+                )
+            )
+            now += 5_000L
+        }
+
+        assertEquals(3, api.locationCalls)
         NavigationSyncSignal.reset()
     }
 
