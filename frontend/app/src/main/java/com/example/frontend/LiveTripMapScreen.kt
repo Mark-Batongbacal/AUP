@@ -20,6 +20,8 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.frontend.core.location.RouteCoordinate
+import com.example.frontend.core.location.RouteMatcher
 import com.example.frontend.core.location.hasDeviceLocationPermission
 import com.example.frontend.core.location.navigationLocationUpdates
 import kotlinx.coroutines.flow.catch
@@ -39,6 +41,7 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -57,6 +60,9 @@ private const val LiveTripFinalSource = "live-trip-final-source"
 private const val LiveTripFinalLayer = "live-trip-final-layer"
 private const val LiveTripFuturePrefix = "live-trip-future"
 private const val LiveTripFreshFixMaxAgeMillis = 30_000L
+private const val LiveTripBaseMatchToleranceMeters = 30.0
+private const val LiveTripMaxMatchToleranceMeters = 55.0
+private const val LiveTripBacktrackAllowanceMeters = 30.0
 
 @Composable
 fun LiveTripMapScreen(
@@ -84,16 +90,61 @@ fun LiveTripMapScreen(
                 if (ageMillis <= LiveTripFreshFixMaxAgeMillis) value = location
             }
     }
-    val effectiveCurrentPosition = liveDeviceLocation
+    val rawCurrentPosition = liveDeviceLocation
         ?.let { LatLng(it.latitude, it.longitude) }
         ?: currentPosition
+
+    val routeCoordinates = remember(routePoints) {
+        routePoints.map { RouteCoordinate(it.latitude, it.longitude) }
+    }
+    var trackedRouteDestination by remember { mutableStateOf<RouteCoordinate?>(null) }
+    var lastMatchedProgressMeters by remember { mutableStateOf(0.0) }
+    val routeDestination = routeCoordinates.lastOrNull()
+
+    LaunchedEffect(routeDestination) {
+        if (trackedRouteDestination != routeDestination) {
+            trackedRouteDestination = routeDestination
+            lastMatchedProgressMeters = 0.0
+        }
+    }
+
+    val routeMatch = remember(rawCurrentPosition, routeCoordinates, lastMatchedProgressMeters) {
+        rawCurrentPosition?.let { raw ->
+            RouteMatcher.match(
+                raw = RouteCoordinate(raw.latitude, raw.longitude),
+                route = routeCoordinates,
+                minimumProgressMeters = (lastMatchedProgressMeters - LiveTripBacktrackAllowanceMeters).coerceAtLeast(0.0)
+            )
+        }
+    }
+    val matchToleranceMeters = max(
+        LiveTripBaseMatchToleranceMeters,
+        (liveDeviceLocation?.accuracy?.toDouble() ?: 0.0) * 1.25
+    ).coerceAtMost(LiveTripMaxMatchToleranceMeters)
+    val acceptedRouteMatch = routeMatch?.takeIf { it.distanceToRouteMeters <= matchToleranceMeters }
+
+    LaunchedEffect(acceptedRouteMatch?.progressMeters) {
+        acceptedRouteMatch?.let { match ->
+            if (match.progressMeters > lastMatchedProgressMeters) {
+                lastMatchedProgressMeters = match.progressMeters
+            }
+        }
+    }
+
+    val effectiveCurrentPosition = acceptedRouteMatch?.coordinate
+        ?.let { LatLng(it.latitude, it.longitude) }
+        ?: rawCurrentPosition
+    val displayRoutePoints = remember(routeCoordinates, acceptedRouteMatch) {
+        RouteMatcher.remainingRoute(routeCoordinates, acceptedRouteMatch)
+            .map { LatLng(it.latitude, it.longitude) }
+    }
 
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var loadedStyle by remember { mutableStateOf<Style?>(null) }
     var followLocation by rememberSaveable { mutableStateOf(true) }
     val latestMap by rememberUpdatedState(mapLibreMap)
     val latestCurrentPosition by rememberUpdatedState(effectiveCurrentPosition)
-    val latestRoutePoints by rememberUpdatedState(routePoints)
+    val latestRoutePoints by rememberUpdatedState(displayRoutePoints)
 
     val mapView = remember(context) {
         MapLibre.getInstance(context)
@@ -126,14 +177,14 @@ fun LiveTripMapScreen(
             map.setStyle(LiveTripMapStyleUrl) { style ->
                 loadedStyle = style
                 updateLiveTripFutureLayers(style, futureRouteSegments)
-                updateLiveTripRoute(style, routePoints)
+                updateLiveTripRoute(style, displayRoutePoints)
                 updateLiveTripCurrentPoint(style, effectiveCurrentPosition)
                 updateLiveTripDestination(style, legDestination)
                 updateLiveTripFinalDestination(style, finalDestination)
 
-                val target = navigationLookAheadTarget(effectiveCurrentPosition, routePoints)
+                val target = navigationLookAheadTarget(effectiveCurrentPosition, displayRoutePoints)
                     ?: effectiveCurrentPosition
-                    ?: routePoints.firstOrNull()
+                    ?: displayRoutePoints.firstOrNull()
                     ?: legDestination
                     ?: finalDestination
                     ?: LiveTripDefaultCenter
@@ -153,17 +204,17 @@ fun LiveTripMapScreen(
         onDispose { mapView.setOnTouchListener(null) }
     }
 
-    LaunchedEffect(loadedStyle, routePoints) { loadedStyle?.let { updateLiveTripRoute(it, routePoints) } }
+    LaunchedEffect(loadedStyle, displayRoutePoints) { loadedStyle?.let { updateLiveTripRoute(it, displayRoutePoints) } }
     LaunchedEffect(loadedStyle, effectiveCurrentPosition) { loadedStyle?.let { updateLiveTripCurrentPoint(it, effectiveCurrentPosition) } }
     LaunchedEffect(loadedStyle, legDestination) { loadedStyle?.let { updateLiveTripDestination(it, legDestination) } }
     LaunchedEffect(loadedStyle, finalDestination) { loadedStyle?.let { updateLiveTripFinalDestination(it, finalDestination) } }
     LaunchedEffect(loadedStyle, futureRouteSegments) { loadedStyle?.let { updateLiveTripFutureLayers(it, futureRouteSegments) } }
 
-    LaunchedEffect(mapLibreMap, effectiveCurrentPosition, routePoints, followLocation) {
+    LaunchedEffect(mapLibreMap, effectiveCurrentPosition, displayRoutePoints, followLocation) {
         if (!followLocation) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         val point = effectiveCurrentPosition ?: return@LaunchedEffect
-        animateLiveTripCamera(map, point, routePoints)
+        animateLiveTripCamera(map, point, displayRoutePoints)
     }
 
     LaunchedEffect(recenterRequestKey) {
