@@ -1,5 +1,4 @@
 using System.Text.Json;
-using backend.Models.Database;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -14,7 +13,8 @@ public sealed record NavigationSpeechContext(
     string? LandmarkRole = null,
     string? LandmarkRelation = null,
     double? DistanceMeters = null,
-    string? Status = null);
+    string? Status = null,
+    bool UseDynamicDistance = false);
 
 public interface INavigationSpeechService
 {
@@ -65,14 +65,16 @@ public sealed class NemotronNavigationSpeechService(IConfiguration configuration
                 SAFETY / GROUNDING:
                 - Use ONLY facts present in the supplied JSON.
                 - Never invent a route, landmark, direction, stop, fare, distance, transport mode, or event.
-                - Preserve every supplied route name, landmark name, direction, and distance exactly in meaning.
+                - Preserve every supplied route name, landmark name, direction, and transport fact exactly in meaning.
                 - Do not expose technical state names.
                 - If the JSON does not support a detail, do not mention it.
+                - If UseDynamicDistance is true, include the literal token {distance} exactly once where the changing remaining distance belongs. Do NOT print the numeric DistanceMeters value yourself.
+                - If UseDynamicDistance is false, do not use the {distance} token and do not infer a distance.
                 - Return plain text only, with no quotes, JSON, markdown, or explanation.
 
                 Examples of tone only (never copy facts from them):
-                "Tara! Lakad ka muna mga 2 minutes papunta sa sakayan."
-                "Ayun, malapit na! Baba ka sa next planned stop."
+                "Tara! Lakad pa tayo nang {distance}, konti na lang!"
+                "Ayun, malapit na! Baba tayo after {distance}."
                 "Sige, diretso lang muna — sasabihan kita pag malapit na."
                 "YESS, nandito na tayo! Ingat sa pagbaba."
                 """),
@@ -82,6 +84,56 @@ public sealed class NemotronNavigationSpeechService(IConfiguration configuration
         if (string.IsNullOrWhiteSpace(text))
             throw new InvalidOperationException("Navigation speech provider returned no text.");
         return text;
+    }
+}
+
+public static class NavigationSpeechTemplate
+{
+    public const string DistanceToken = "{distance}";
+
+    public static string Normalize(string? template, NavigationSpeechContext context)
+    {
+        var value = template?.Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return DeterministicNavigationSpeech.Phrase(context);
+
+        if (context.UseDynamicDistance)
+        {
+            var tokenCount = value.Split(DistanceToken, StringSplitOptions.None).Length - 1;
+            if (tokenCount != 1)
+                return DeterministicNavigationSpeech.Phrase(context);
+        }
+        else if (value.Contains(DistanceToken, StringComparison.Ordinal))
+        {
+            return DeterministicNavigationSpeech.Phrase(context);
+        }
+
+        return value;
+    }
+
+    public static string Render(string? template, double? distanceMeters)
+    {
+        if (string.IsNullOrWhiteSpace(template)) return string.Empty;
+        if (!template.Contains(DistanceToken, StringComparison.Ordinal)) return template;
+        var distance = FormatDistance(distanceMeters);
+        return template.Replace(DistanceToken, distance, StringComparison.Ordinal);
+    }
+
+    public static string FormatDistance(double? distanceMeters)
+    {
+        var safe = Math.Max(0, distanceMeters ?? 0);
+        if (safe >= 1_000)
+            return $"{safe / 1_000d:0.#} km";
+
+        var bucket = safe switch
+        {
+            >= 500 => 100d,
+            >= 200 => 50d,
+            >= 100 => 25d,
+            _ => 10d
+        };
+        var rounded = Math.Max(bucket, Math.Round(safe / bucket) * bucket);
+        return $"{rounded:0}m";
     }
 }
 
@@ -99,6 +151,8 @@ public static class DeterministicNavigationSpeech
             "BoardTricycle" => context.LandmarkName is { Length: > 0 } landmark
                 ? $"Board the tricycle near {landmark}."
                 : "Board the tricycle here.",
+            "PrepareToAlight" when context.UseDynamicDistance =>
+                $"Get ready to alight in about {NavigationSpeechTemplate.DistanceToken}.",
             "PrepareToAlight" => context.LandmarkName is { Length: > 0 } landmark
                 ? $"Prepare to get off after you pass {landmark}."
                 : "Prepare to get off soon.",
@@ -113,8 +167,8 @@ public static class DeterministicNavigationSpeech
             "Rerouted" => "Your route is updated; follow the next instruction.",
             "TurnLeft" => "Turn left here.",
             "TurnRight" => "Turn right here.",
-            _ when context.DistanceMeters is { } distance && distance > 0 =>
-                $"Continue for about {Math.Round(distance):0} meters.",
+            _ when context.UseDynamicDistance =>
+                $"Continue for about {NavigationSpeechTemplate.DistanceToken}.",
             _ => "Continue along the planned route."
         };
     }
