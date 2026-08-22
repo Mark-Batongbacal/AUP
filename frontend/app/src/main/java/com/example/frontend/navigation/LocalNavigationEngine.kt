@@ -74,6 +74,7 @@ class LocalNavigationEngine(
     private var lastProgressMeters = 0.0
     private var lastAcceptedMatch: RouteMatch? = null
     private var consecutiveEndFixes = 0
+    private var hasEstablishedProgress = false
     private val consumedInstructionSequences = mutableSetOf<Int>()
     private val consumedLandmarks = mutableSetOf<String>()
     private var corridorDetector = RouteCorridorDetector()
@@ -101,6 +102,7 @@ class LocalNavigationEngine(
             (accuracyMeters ?: 0.0).coerceAtLeast(0.0) * 1.25
         ).coerceAtMost(maximumMatchToleranceMeters)
         val accepted = routeMatch?.takeIf { it.distanceToRouteMeters <= toleranceMeters }
+        val establishingProgress = !hasEstablishedProgress && accepted != null
         if (accepted != null) {
             if (accepted.progressMeters > lastProgressMeters) lastProgressMeters = accepted.progressMeters
             lastAcceptedMatch = accepted
@@ -131,12 +133,19 @@ class LocalNavigationEngine(
                 consumePassed = false
             )
         }
+
+        // After process recreation the first good GPS fix reconstructs route progress directly.
+        // Treat that fix as a baseline instead of replaying every landmark crossed before the app
+        // was restored. Passed maneuver sequences are still consumed by selectGuidance above.
+        val landmarkBaseline = if (establishingProgress) lastProgressMeters else previousProgress
         val landmark = detectLandmark(
             route = route,
             landmarks = landmarks,
-            previousProgressMeters = previousProgress,
+            previousProgressMeters = landmarkBaseline,
             currentProgressMeters = lastProgressMeters
         )
+        if (accepted != null) hasEstablishedProgress = true
+
         val syncReason = when {
             corridorDecision.shouldForceSync -> LocalServerSyncReason.OFF_ROUTE
             proximity == LocalLegProximity.REACHED -> LocalServerSyncReason.LEG_END
@@ -164,6 +173,7 @@ class LocalNavigationEngine(
         lastProgressMeters = 0.0
         lastAcceptedMatch = null
         consecutiveEndFixes = 0
+        hasEstablishedProgress = false
         consumedInstructionSequences.clear()
         consumedLandmarks.clear()
         corridorDetector.reset()
@@ -180,6 +190,7 @@ class LocalNavigationEngine(
         lastProgressMeters = 0.0
         lastAcceptedMatch = null
         consecutiveEndFixes = 0
+        hasEstablishedProgress = false
         consumedInstructionSequences.clear()
         consumedLandmarks.clear()
         corridorDetector = RouteCorridorDetector()
