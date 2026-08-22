@@ -105,6 +105,11 @@ data class NavigationSnapshotDto(
     val tripSummary: NavigationTripSummaryDto? = null
 ) {
     fun displayInstruction(): String? = spokenInstruction?.takeIf { it.isNotBlank() }
+
+    fun withLocalLocation(update: NavigationLocationUpdate): NavigationSnapshotDto = copy(
+        currentLatitude = update.latitude,
+        currentLongitude = update.longitude
+    )
 }
 
 interface NavigationApi {
@@ -139,16 +144,80 @@ interface NavigationRepository {
 class NavigationRepositoryImpl(
     private val api: NavigationApi,
     private val sessions: AuthSessionStore,
-    private val errors: ApiErrorParser
+    private val errors: ApiErrorParser,
+    private val locationSyncIntervalMillis: Long = 30_000L,
+    private val nowMillis: () -> Long = System::currentTimeMillis
 ) : NavigationRepository {
-    override suspend fun startNavigation(recommendationId: String) = call { api.start(StartNavigationRequest(recommendationId)) }
-    override suspend fun getActiveNavigation() = call { api.active() }
+    private val cacheLock = Any()
+    private val snapshotsBySession = mutableMapOf<String, NavigationSnapshotDto>()
+    private val lastLocationSyncAtBySession = mutableMapOf<String, Long>()
+
+    override suspend fun startNavigation(recommendationId: String): ApiResult<NavigationSnapshotDto> =
+        cacheSnapshot(call { api.start(StartNavigationRequest(recommendationId)) }, resetLocationSync = true)
+
+    override suspend fun getActiveNavigation(): ApiResult<NavigationSnapshotDto> =
+        cacheSnapshot(call { api.active() }, resetLocationSync = true)
+
     override suspend fun getGeometry(startLatitude: Double, startLongitude: Double, endLatitude: Double, endLongitude: Double, mode: String, routeId: Long?) =
         apiCall(errors) { api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId) }
-    override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate) = call { api.location(sessionId, update) }
-    override suspend fun confirmBoarding(sessionId: String) = call { api.boarding(sessionId) }
-    override suspend fun confirmAlighting(sessionId: String) = call { api.alighting(sessionId) }
-    override suspend fun cancel(sessionId: String) = call { api.cancel(sessionId) }
-    override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest) = call { api.reroute(sessionId, request) }
+
+    override suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto> {
+        val now = nowMillis()
+        val cached = synchronized(cacheLock) {
+            val lastSyncAt = lastLocationSyncAtBySession[sessionId]
+            val snapshot = snapshotsBySession[sessionId]
+            if (lastSyncAt != null && snapshot != null && now - lastSyncAt < locationSyncIntervalMillis) {
+                snapshot.withLocalLocation(update).also { snapshotsBySession[sessionId] = it }
+            } else {
+                null
+            }
+        }
+        if (cached != null) return ApiResult.Success(cached)
+
+        val result = call { api.location(sessionId, update) }
+        if (result is ApiResult.Success) {
+            synchronized(cacheLock) {
+                snapshotsBySession[sessionId] = result.data
+                lastLocationSyncAtBySession[sessionId] = now
+            }
+        }
+        return result
+    }
+
+    override suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto> =
+        cacheSnapshot(call { api.boarding(sessionId) }, resetLocationSync = true)
+
+    override suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto> =
+        cacheSnapshot(call { api.alighting(sessionId) }, resetLocationSync = true)
+
+    override suspend fun cancel(sessionId: String): ApiResult<TripSessionDto> {
+        val result = call { api.cancel(sessionId) }
+        if (result is ApiResult.Success) clearSessionCache(sessionId)
+        return result
+    }
+
+    override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest): ApiResult<NavigationSnapshotDto> =
+        cacheSnapshot(call { api.reroute(sessionId, request) }, resetLocationSync = true)
+
+    private fun cacheSnapshot(
+        result: ApiResult<NavigationSnapshotDto>,
+        resetLocationSync: Boolean
+    ): ApiResult<NavigationSnapshotDto> {
+        if (result is ApiResult.Success) {
+            synchronized(cacheLock) {
+                snapshotsBySession[result.data.sessionId] = result.data
+                if (resetLocationSync) lastLocationSyncAtBySession.remove(result.data.sessionId)
+            }
+        }
+        return result
+    }
+
+    private fun clearSessionCache(sessionId: String) {
+        synchronized(cacheLock) {
+            snapshotsBySession.remove(sessionId)
+            lastLocationSyncAtBySession.remove(sessionId)
+        }
+    }
+
     private suspend fun <T : Any> call(block: suspend () -> Response<T>) = authenticatedApiCall(sessions, errors, request = block)
 }

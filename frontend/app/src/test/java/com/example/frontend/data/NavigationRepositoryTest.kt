@@ -11,6 +11,7 @@ import com.example.frontend.data.navigation.NavigationRepositoryImpl
 import com.example.frontend.data.navigation.NavigationRerouteRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.navigation.StartNavigationRequest
+import com.example.frontend.data.tripsessions.TripSessionDto
 import com.google.gson.Gson
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -68,21 +69,62 @@ class NavigationRepositoryTest {
         assertEquals("session-1", api.locationSession)
         assertEquals(update, api.locationUpdate)
         assertEquals(1, api.activeCalls)
+        assertEquals(1, api.locationCalls)
         assertEquals(1, api.boardingCalls)
         assertEquals(1, api.alightingCalls)
+    }
+
+    @Test
+    fun repository_coalescesRoutineLocationUpdatesButKeepsLocalPositionFresh() = runBlocking {
+        var now = 1_000L
+        val api = FakeNavigationApi(snapshot())
+        val repository = NavigationRepositoryImpl(
+            api = api,
+            sessions = SessionStore(),
+            errors = ApiErrorParser(),
+            locationSyncIntervalMillis = 30_000L,
+            nowMillis = { now }
+        )
+
+        repository.getActiveNavigation()
+        repository.updateLocation(
+            "session-1",
+            NavigationLocationUpdate(15.10, 120.10, 5.0, "2026-08-19T00:00:00Z")
+        )
+        now += 5_000L
+        val local = repository.updateLocation(
+            "session-1",
+            NavigationLocationUpdate(15.11, 120.11, 5.0, "2026-08-19T00:00:05Z")
+        )
+
+        assertEquals(1, api.locationCalls)
+        val localSnapshot = (local as ApiResult.Success).data
+        assertEquals(15.11, localSnapshot.currentLatitude!!, 0.0)
+        assertEquals(120.11, localSnapshot.currentLongitude!!, 0.0)
+
+        now += 30_000L
+        repository.updateLocation(
+            "session-1",
+            NavigationLocationUpdate(15.12, 120.12, 5.0, "2026-08-19T00:00:35Z")
+        )
+        assertEquals(2, api.locationCalls)
     }
 
     private class FakeNavigationApi(private val response: NavigationSnapshotDto) : NavigationApi {
         var locationSession: String? = null
         var locationUpdate: NavigationLocationUpdate? = null
         var activeCalls = 0
+        var locationCalls = 0
         var boardingCalls = 0
         var alightingCalls = 0
+
         override suspend fun start(request: StartNavigationRequest) = Response.success(response)
+
         override suspend fun active(): Response<NavigationSnapshotDto> {
             activeCalls++
             return Response.success(response)
         }
+
         override suspend fun geometry(
             startLatitude: Double,
             startLongitude: Double,
@@ -92,20 +134,25 @@ class NavigationRepositoryTest {
             routeId: Long?
         ): Response<NavigationGeometryResponseDto> =
             Response.success(NavigationGeometryResponseDto(emptyList()))
+
         override suspend fun location(sessionId: String, update: NavigationLocationUpdate): Response<NavigationSnapshotDto> {
+            locationCalls++
             locationSession = sessionId
             locationUpdate = update
             return Response.success(response)
         }
+
         override suspend fun boarding(sessionId: String): Response<NavigationSnapshotDto> {
             boardingCalls++
             return Response.success(response)
         }
+
         override suspend fun alighting(sessionId: String): Response<NavigationSnapshotDto> {
             alightingCalls++
             return Response.success(response)
         }
-        override suspend fun cancel(sessionId: String) = Response.success(response)
+
+        override suspend fun cancel(sessionId: String): Response<TripSessionDto> = Response.success(null)
         override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest) = Response.success(response)
     }
 
@@ -129,6 +176,7 @@ class NavigationRepositoryTest {
         }"""
 
         fun snapshot(): NavigationSnapshotDto = Gson().fromJson(
-            snapshotJson("\"Tuki says keep going.\""), NavigationSnapshotDto::class.java)
+            snapshotJson("\"Tuki says keep going.\""), NavigationSnapshotDto::class.java
+        )
     }
 }
