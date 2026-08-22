@@ -12,6 +12,7 @@ class RouteCorridorDetectorTest {
         assertFalse(detector.update(70.0, 5.0).shouldForceSync)
         assertFalse(detector.update(72.0, 5.0).shouldForceSync)
         assertTrue(detector.update(75.0, 5.0).shouldForceSync)
+        assertFalse(detector.update(76.0, 5.0).shouldForceSync)
     }
 
     @Test

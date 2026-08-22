@@ -30,7 +30,7 @@ object RouteMatcher {
 
         var best: RouteMatch? = null
         var progressBeforeSegment = 0.0
-        val totalDistance = route.zipWithNext(::distanceMeters).sum()
+        val totalDistance = route.zipWithNext { start, end -> distanceMeters(start, end) }.sum()
 
         for (index in 0 until route.lastIndex) {
             val start = route[index]
