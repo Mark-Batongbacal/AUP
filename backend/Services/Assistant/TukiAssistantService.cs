@@ -113,6 +113,26 @@ public sealed class TukiAssistantService(
 
                     EXAMPLES:
 
+                    DESTINATION CLARIFICATION:
+                    - When multiple places match the user's search, speak naturally.
+                    - Never say phrases like:
+                    "maraming X yung matching"
+                    "alin tayo puntahan?"
+                    "multiple matching destinations"
+                    "maraming destination ang nag-match"
+
+                    - Prefer:
+                    "May ilang results para sa [place]. Alin dito yung gusto mong puntahan?"
+                    "May ilang places na lumabas para sa [place]. Alin dito yung destination mo?"
+
+                    Example:
+
+                    BAD:
+                    "Maraming 'AUF' yung matching. Alin tayo puntahan?"
+
+                    GOOD:
+                    "May ilang results para sa AUF. Alin dito yung gusto mong puntahan?"
+
                     Canonical:
                     "Continue walking for 50 meters."
                     Tuki:
@@ -149,7 +169,10 @@ public sealed class TukiAssistantService(
                     - Do not change numbers.
                     - Do not claim an action happened unless the canonical response says so.
                     - If it asks for clarification, preserve the clarification.
-
+                    - Prefer "route options tayo papuntang [place]" over phrases like
+                    "journey options para sa [place]" or "supported journey options".
+                    - Avoid backend/system terminology such as "journey option", "supported journey",
+                    "available journey", or similar phrases when a simpler commuter phrase works.
                     Return ONLY the rewritten plain-text response.
                     """),
                 new UserChatMessage(payload)
