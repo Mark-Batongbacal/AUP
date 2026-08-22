@@ -133,9 +133,12 @@ class TripOptionsCoordinator(context: Context) {
 
     suspend fun currentLegGeometry(snapshot: NavigationSnapshotDto): ApiResult<NavigationGeometryResponseDto> {
         val leg = snapshot.currentLeg ?: return ApiResult.Failure(null, "Current route leg is unavailable.")
-        val startLat = snapshot.currentLatitude ?: leg.startLatitude
+        // Keep the complete planned leg geometry stable. Live GPS is matched onto this geometry
+        // locally; using the current location as the start would silently discard already-planned
+        // points and make turn/landmark progress anchors drift.
+        val startLat = leg.startLatitude ?: snapshot.currentLatitude
             ?: return ApiResult.Failure(null, "Current route location is unavailable.")
-        val startLon = snapshot.currentLongitude ?: leg.startLongitude
+        val startLon = leg.startLongitude ?: snapshot.currentLongitude
             ?: return ApiResult.Failure(null, "Current route location is unavailable.")
         val endLat = leg.endLatitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
         val endLon = leg.endLongitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
