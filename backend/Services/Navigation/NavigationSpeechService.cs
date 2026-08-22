@@ -1,7 +1,3 @@
-using System.Text.Json;
-using OpenAI;
-using OpenAI.Chat;
-
 namespace backend.Services.Navigation;
 
 public sealed record NavigationSpeechContext(
@@ -24,66 +20,16 @@ public interface INavigationSpeechService
 }
 
 // Kept under the existing class name so current DI wiring and tests remain compatible.
-// The conversational/navigation voice is now handled by Qwen; Nemotron remains the intent parser.
-public sealed class NemotronNavigationSpeechService(IConfiguration configuration)
-    : INavigationSpeechService
+// Navigation speech is intentionally local and deterministic: the hot path must never
+// wait on an external LLM/provider just to say the next navigation instruction.
+public sealed class NemotronNavigationSpeechService : INavigationSpeechService
 {
-    public async Task<string> PhraseAsync(
+    public Task<string> PhraseAsync(
         NavigationSpeechContext context,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = Environment.GetEnvironmentVariable(
-            configuration["Qwen:ApiKeyEnvironmentVariable"] ??
-            configuration["Nvidia:ApiKeyEnvironmentVariable"] ??
-            "NVIDIA_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("The configured Qwen API key is unavailable.");
-
-        var client = new ChatClient(
-            configuration["Qwen:Model"] ?? "qwen/qwen3-next-80b-a3b-instruct",
-            new System.ClientModel.ApiKeyCredential(apiKey),
-            new OpenAIClientOptions
-            {
-                Endpoint = new Uri(configuration["Qwen:BaseUrl"] ??
-                    configuration["Nvidia:BaseUrl"] ??
-                    "https://integrate.api.nvidia.com/v1")
-            });
-        var response = await client.CompleteChatAsync(
-        [
-            new SystemChatMessage("""
-                You are Tuki, a cheerful Filipino commute buddy and friendly toucan.
-                Write exactly one short navigation sentence that sounds natural when spoken aloud.
-
-                VOICE:
-                - Warm, energetic, encouraging, and conversational.
-                - Use natural Taglish when it fits the supplied context.
-                - Friendly expressions such as "Tara!", "Ayun!", "Sige!", and "Konti na lang!" are welcome when appropriate.
-                - Sound like a helpful local friend riding with the user, never a customer-service agent or GPS robot.
-                - Keep Filipino commute words natural: sakay, baba, lakad, tawid, kanto, terminal, jeep, TODA.
-                - Do not force slang or hype into every instruction. Safety and clarity come first.
-
-                SAFETY / GROUNDING:
-                - Use ONLY facts present in the supplied JSON.
-                - Never invent a route, landmark, direction, stop, fare, distance, transport mode, or event.
-                - Preserve every supplied route name, landmark name, direction, and transport fact exactly in meaning.
-                - Do not expose technical state names.
-                - If the JSON does not support a detail, do not mention it.
-                - If UseDynamicDistance is true, include the literal token {distance} exactly once where the changing remaining distance belongs. Do NOT print the numeric DistanceMeters value yourself.
-                - If UseDynamicDistance is false, do not use the {distance} token and do not infer a distance.
-                - Return plain text only, with no quotes, JSON, markdown, or explanation.
-
-                Examples of tone only (never copy facts from them):
-                "Tara! Lakad pa tayo nang {distance}, konti na lang!"
-                "Ayun, malapit na! Baba tayo after {distance}."
-                "Sige, diretso lang muna — sasabihan kita pag malapit na."
-                "YESS, nandito na tayo! Ingat sa pagbaba."
-                """),
-            new UserChatMessage(JsonSerializer.Serialize(context))
-        ], cancellationToken: cancellationToken);
-        var text = response.Value.Content.FirstOrDefault()?.Text?.Trim();
-        if (string.IsNullOrWhiteSpace(text))
-            throw new InvalidOperationException("Navigation speech provider returned no text.");
-        return text;
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(DeterministicNavigationSpeech.Phrase(context));
     }
 }
 
@@ -142,34 +88,53 @@ public static class DeterministicNavigationSpeech
     public static string Phrase(NavigationSpeechContext context)
     {
         var route = string.IsNullOrWhiteSpace(context.RouteName)
-            ? "the selected ride" : context.RouteName;
+            ? null
+            : context.RouteName.Trim();
+        var mode = context.TransportMode?.Trim().ToUpperInvariant();
+
         return context.InstructionType switch
         {
             "BoardJeepney" => context.LandmarkName is { Length: > 0 } landmark
-                ? $"Board the {route} jeep near {landmark}."
-                : $"Board the {route} jeep here.",
+                ? route is { Length: > 0 }
+                    ? $"Sakay tayo ng {route} jeep malapit sa {landmark}."
+                    : $"Sakay tayo ng jeep malapit sa {landmark}."
+                : route is { Length: > 0 }
+                    ? $"Sakay tayo ng {route} jeep dito."
+                    : "Sakay tayo ng jeep dito.",
+
             "BoardTricycle" => context.LandmarkName is { Length: > 0 } landmark
-                ? $"Board the tricycle near {landmark}."
-                : "Board the tricycle here.",
+                ? $"Sakay tayo ng tricycle malapit sa {landmark}."
+                : "Sakay tayo ng tricycle dito.",
+
             "PrepareToAlight" when context.UseDynamicDistance =>
-                $"Get ready to alight in about {NavigationSpeechTemplate.DistanceToken}.",
+                $"Konti na lang—mga {NavigationSpeechTemplate.DistanceToken} na lang bago tayo bumaba.",
+
             "PrepareToAlight" => context.LandmarkName is { Length: > 0 } landmark
-                ? $"Prepare to get off after you pass {landmark}."
-                : "Prepare to get off soon.",
-            "AlightJeepney" or "AlightTricycle" => "Get off here.",
+                ? $"Malapit na tayong bumaba. Lampasan muna natin ang {landmark}."
+                : "Malapit na tayong bumaba. Maghanda na tayo.",
+
+            "AlightJeepney" or "AlightTricycle" => "Dito na tayo bababa.",
+
             "LandmarkNotice" => context.LandmarkName is { Length: > 0 } landmark
-                ? $"You just passed {landmark}." : "Continue on the current route.",
-            "Transfer" => "Get off here and continue to your next ride.",
-            "Arrived" => "You have arrived.",
-            "Cancelled" => "Navigation is cancelled.",
-            "MissedAlight" => "It looks like you passed the stop; Tuki is finding a new route.",
-            "OffRoute" => "You are off the planned route; Tuki is finding a new route.",
-            "Rerouted" => "Your route is updated; follow the next instruction.",
-            "TurnLeft" => "Turn left here.",
-            "TurnRight" => "Turn right here.",
+                ? $"Ayun, nalampasan na natin ang {landmark}."
+                : "Diretso lang muna tayo.",
+
+            "Transfer" => "Baba tayo dito, tapos tuloy tayo sa next ride.",
+            "Arrived" => "Ayun, nandito na tayo!",
+            "Cancelled" => "Okay, cancelled na yung navigation.",
+            "MissedAlight" => "Mukhang lumagpas tayo sa babaan. I-check natin yung next route.",
+            "OffRoute" => "Mukhang wala na tayo sa planned route. I-check natin yung next step.",
+            "Rerouted" => "Okay, updated na yung route. Sundan natin yung next instruction.",
+            "TurnLeft" => "Kaliwa tayo dito.",
+            "TurnRight" => "Kanan tayo dito.",
+
+            _ when context.UseDynamicDistance && mode == "WALK" =>
+                $"Sige, lakad pa tayo nang {NavigationSpeechTemplate.DistanceToken}. Konti na lang!",
+
             _ when context.UseDynamicDistance =>
-                $"Continue for about {NavigationSpeechTemplate.DistanceToken}.",
-            _ => "Continue along the planned route."
+                $"Diretso lang muna tayo, mga {NavigationSpeechTemplate.DistanceToken} pa.",
+
+            _ => "Diretso lang muna tayo sa route."
         };
     }
 }
