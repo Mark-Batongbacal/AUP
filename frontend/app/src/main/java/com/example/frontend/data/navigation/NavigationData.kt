@@ -228,7 +228,7 @@ class NavigationRepositoryImpl(
 
         val failure = remote as ApiResult.Failure
         val restored = if (failure.isTransientForLocalRecovery()) restoreActiveNavigation() else null
-        return restored?.let(ApiResult::Success) ?: failure
+        return restored?.let { ApiResult.Success(it) } ?: failure
     }
 
     override fun restoreActiveNavigation(): NavigationSnapshotDto? = synchronized(cacheLock) {
