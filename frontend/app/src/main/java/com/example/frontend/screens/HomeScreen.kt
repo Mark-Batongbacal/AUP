@@ -56,6 +56,7 @@ import com.example.frontend.MapVisualStyle
 import com.example.frontend.R
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.places.DestinationSearchResultDto
@@ -328,14 +329,14 @@ fun HomeScreen(
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    text = "Hello, ${userName.ifBlank { "TUKI rider" }} 👋",
+                    text = "${TukiInterfaceText.hello}, ${userName.ifBlank { "TUKI rider" }} 👋",
                     color = HomeDark,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Where to today?",
+                    text = TukiInterfaceText.whereToToday,
                     color = HomeDark,
                     fontSize = 34.sp,
                     lineHeight = 37.sp,
@@ -344,7 +345,7 @@ fun HomeScreen(
                 )
                 Spacer(Modifier.height(5.dp))
                 Text(
-                    text = "Plan your trip or ask our AI for the best way to go.",
+                    text = TukiInterfaceText.planTripOrAskAi,
                     color = HomeMuted,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -355,7 +356,7 @@ fun HomeScreen(
 
                 CurrentLocationCard(
                     currentLocationLabel = currentLocationLabel,
-                    areaLabel = currentAreaLabel,
+                    areaLabel = if (currentAreaLabel.equals("Current area", true)) TukiInterfaceText.currentArea else currentAreaLabel,
                     isLocating = isLocating,
                     onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
                 )
@@ -405,7 +406,7 @@ fun HomeScreen(
             BackHandler { showMapPicker = false }
             HomeMapPickerOverlay(
                 mode = mapMode,
-                areaLabel = currentAreaLabel,
+                areaLabel = if (currentAreaLabel.equals("Current area", true)) TukiInterfaceText.currentArea else currentAreaLabel,
                 selection = mapSelection,
                 searchText = mapSearchText,
                 searchResults = mapSearchResults,
@@ -536,7 +537,7 @@ private fun ActiveTripCard(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    "TRIP IN PROGRESS",
+                    TukiInterfaceText.tripInProgress,
                     color = HomeOrange,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.ExtraBold
@@ -552,7 +553,7 @@ private fun ActiveTripCard(
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Text("Resume  →", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+            Text("${TukiInterfaceText.resume}  →", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -581,17 +582,17 @@ private fun CurrentLocationCard(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("CURRENT LOCATION", color = HomeTeal, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                Text(TukiInterfaceText.currentLocationUpper, color = HomeTeal, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(3.dp))
                 if (isLocating) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.size(15.dp), color = HomeTeal, strokeWidth = 2.dp)
                         Spacer(Modifier.width(7.dp))
-                        Text("Locating you...", color = HomeDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(TukiInterfaceText.locatingYou, color = HomeDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 } else {
                     Text(
-                        text = currentLocationLabel,
+                        text = if (currentLocationLabel.equals("Current location", true)) TukiInterfaceText.currentLocation else currentLocationLabel,
                         color = HomeDark,
                         fontSize = 21.sp,
                         maxLines = 1,
@@ -599,7 +600,7 @@ private fun CurrentLocationCard(
                         fontWeight = FontWeight.ExtraBold
                     )
                 }
-                Text(areaLabel.ifBlank { "Current area" }, color = HomeMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(areaLabel.ifBlank { TukiInterfaceText.currentArea }, color = HomeMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Box(Modifier.width(1.dp).height(55.dp).background(HomeTeal.copy(alpha = 0.18f)))
             Column(
@@ -611,7 +612,7 @@ private fun CurrentLocationCard(
             ) {
                 Text("✎", color = HomeTeal, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("Tap to\nchange", color = HomeTeal, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.ExtraBold)
+                Text(TukiInterfaceText.tapToChange.replace(" ", "\n", limit = 1), color = HomeTeal, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
     }
@@ -644,10 +645,10 @@ private fun DestinationCard(
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("DESTINATION", color = HomeOrange, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                Text(TukiInterfaceText.destinationUpper, color = HomeOrange, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    selectedDestination?.name ?: "Where are you going?",
+                    selectedDestination?.name ?: TukiInterfaceText.whereAreYouGoing,
                     color = HomeDark,
                     fontSize = 20.sp,
                     maxLines = 1,
@@ -671,7 +672,7 @@ private fun DestinationCard(
                     Text("⌕", color = HomeDark, fontSize = 20.sp)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (selectedDestination == null) "Search or enter a place" else "Tap to change destination",
+                        if (selectedDestination == null) TukiInterfaceText.searchOrEnterPlace else TukiInterfaceText.tapToChangeDestination,
                         color = HomeMuted,
                         fontSize = 13.sp,
                         maxLines = 1,
@@ -688,7 +689,7 @@ private fun DestinationCard(
                             .padding(vertical = 11.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Find Routes", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(TukiInterfaceText.findRoutes, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
@@ -707,9 +708,9 @@ private fun RecentPlacesSection(
     onAddShortcutClick: () -> Unit
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Recent places", Modifier.weight(1f), color = HomeDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+        Text(TukiInterfaceText.recentPlaces, Modifier.weight(1f), color = HomeDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
         Text(
-            "View all",
+            TukiInterfaceText.viewAll,
             color = HomeTeal,
             fontSize = 13.sp,
             fontWeight = FontWeight.ExtraBold,
@@ -724,7 +725,7 @@ private fun RecentPlacesSection(
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(Modifier.size(17.dp), color = HomeTeal, strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("Finding your recent places...", color = HomeMuted, fontSize = 12.sp)
+                    Text(TukiInterfaceText.findingRecentPlaces, color = HomeMuted, fontSize = 12.sp)
                 }
             }
         }
@@ -804,7 +805,7 @@ private fun AddShortcutCard(onClick: () -> Unit) {
                 Box(contentAlignment = Alignment.Center) { Text("+", color = HomeTeal, fontSize = 29.sp, fontWeight = FontWeight.Bold) }
             }
             Spacer(Modifier.height(10.dp))
-            Text("Add\nshortcut", color = HomeDark, fontSize = 13.sp, lineHeight = 15.sp, fontWeight = FontWeight.ExtraBold)
+            Text(TukiInterfaceText.addShortcut, color = HomeDark, fontSize = 13.sp, lineHeight = 15.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -826,9 +827,9 @@ private fun EmptyRecentPlacesCard(onClick: () -> Unit) {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Start your journey with TUKI", color = HomeDark, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                Text(TukiInterfaceText.startJourneyWithTuki, color = HomeDark, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(3.dp))
-                Text("Pick a destination and your recent places will appear here.", color = HomeMuted, fontSize = 11.sp, lineHeight = 15.sp)
+                Text(TukiInterfaceText.pickDestinationRecentAppear, color = HomeMuted, fontSize = 11.sp, lineHeight = 15.sp)
             }
             Text("›", color = HomeTeal, fontSize = 29.sp, fontWeight = FontWeight.Bold)
         }
@@ -853,7 +854,7 @@ private fun AskTukiAiCard(onClick: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Ask TUKI AI", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(TukiInterfaceText.askTukiAi, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
                     Spacer(Modifier.width(8.dp))
                     Box(
                         Modifier
@@ -864,7 +865,7 @@ private fun AskTukiAiCard(onClick: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                Text("Let AI find the best way to go.", color = Color.White.copy(alpha = 0.82f), fontSize = 12.sp)
+                Text(TukiInterfaceText.letAiFindBestWay, color = Color.White.copy(alpha = 0.82f), fontSize = 12.sp)
             }
             Text("›", color = Color.White, fontSize = 31.sp, fontWeight = FontWeight.Bold)
         }
@@ -932,7 +933,7 @@ private fun HomeMapPickerOverlay(
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        areaLabel.ifBlank { "Current area" },
+                        areaLabel.ifBlank { TukiInterfaceText.currentArea },
                         color = Color(0xFF153E4B),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -944,7 +945,7 @@ private fun HomeMapPickerOverlay(
                 TextField(
                     value = searchText,
                     onValueChange = onSearchTextChange,
-                    placeholder = { Text("Enter address to search", color = Color.White.copy(alpha = 0.55f), fontSize = 16.sp) },
+                    placeholder = { Text(if (TukiInterfaceText.whereToToday == "Saan ka patungo?") "Maglagay ng address para maghanap" else "Enter address to search", color = Color.White.copy(alpha = 0.55f), fontSize = 16.sp) },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
@@ -972,7 +973,7 @@ private fun HomeMapPickerOverlay(
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(Modifier.size(16.dp), color = MapYellow, strokeWidth = 2.dp)
                             Spacer(Modifier.width(9.dp))
-                            Text("Searching nearby places...", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
+                            Text(if (TukiInterfaceText.whereToToday == "Saan ka patungo?") "Naghahanap ng mga kalapit na lugar..." else "Searching nearby places...", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
                         }
                     }
                     searchError?.let { Text(it, Modifier.padding(horizontal = 14.dp, vertical = 8.dp), color = com.example.frontend.ui.theme.TukiDanger, fontSize = 12.sp) }
@@ -1004,7 +1005,7 @@ private fun HomeMapPickerOverlay(
                             ) {
                                 CircularProgressIndicator(Modifier.size(16.dp), color = MapYellow, strokeWidth = 2.dp)
                                 Spacer(Modifier.width(9.dp))
-                                Text("Searching more places...", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
+                                Text(if (TukiInterfaceText.whereToToday == "Saan ka patungo?") "Naghahanap pa ng ibang lugar..." else "Searching more places...", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
                             }
                         }
                         canSearchMore -> {
@@ -1016,7 +1017,7 @@ private fun HomeMapPickerOverlay(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    "More places...",
+                                    if (TukiInterfaceText.whereToToday == "Saan ka patungo?") "Iba pang lugar..." else "More places...",
                                     color = MapYellow,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold
@@ -1037,7 +1038,9 @@ private fun HomeMapPickerOverlay(
                 .padding(horizontal = 22.dp, vertical = 22.dp)
         ) {
             Text(
-                if (mode == HomeMapPickMode.Origin) "Pick-up point" else "Destination",
+                if (mode == HomeMapPickMode.Origin) {
+                    if (TukiInterfaceText.whereToToday == "Saan ka patungo?") "Pick-up point" else "Pick-up point"
+                } else TukiInterfaceText.destination,
                 color = Color.White,
                 fontSize = 25.sp,
                 fontWeight = FontWeight.ExtraBold
@@ -1051,14 +1054,14 @@ private fun HomeMapPickerOverlay(
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        selection?.name ?: "Tap the map or search for a place",
+                        selection?.name ?: if (TukiInterfaceText.whereToToday == "Saan ka patungo?") "I-tap ang mapa o maghanap ng lugar" else "Tap the map or search for a place",
                         color = Color.White,
                         fontSize = 18.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        selection?.address ?: "Move around the map, then press Done.",
+                        selection?.address ?: if (TukiInterfaceText.whereToToday == "Saan ka patungo?") "Igalaw ang mapa, pagkatapos pindutin ang Done." else "Move around the map, then press Done.",
                         color = Color.White.copy(alpha = 0.55f),
                         fontSize = 13.sp,
                         maxLines = 1,
