@@ -10,6 +10,10 @@ public partial class RoutingService
         if (MaxTransfers == 0) yield break;
         var routeNames = _routes.ToDictionary(route => route.RouteId, route => route.RouteName);
         var emitted = 0;
+        // Candidate diversity is applied later. Generate a wider transfer pool
+        // first so route iteration order cannot consume the entire confirmation
+        // budget before other transfer regions are even considered.
+        var generationLimit = MaxCandidatesToConfirm * Math.Max(1, MaxTransfers + 1);
         var dominance = new Dictionary<string, double>(StringComparer.Ordinal);
 
         foreach (var startRoute in _routes)
@@ -42,7 +46,13 @@ public partial class RoutingService
                 foreach (var candidate in Expand(state))
                 {
                     yield return candidate;
-                    if (++emitted >= MaxCandidatesToConfirm) yield break;
+                    if (++emitted < generationLimit)
+                        continue;
+
+                    _logger.LogDebug(
+                        "Transfer candidate generation reached diversity pool limit {GenerationLimit}",
+                        generationLimit);
+                    yield break;
                 }
             }
         }

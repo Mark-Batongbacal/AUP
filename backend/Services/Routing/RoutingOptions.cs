@@ -62,6 +62,19 @@ public sealed class RoutingOptions
     /// </summary>
     public double FeederShadowingRequiredFareSavingsPesos { get; init; } = 10;
 
+    /// <summary>
+    /// Full-route progress bucket used when reserving confirmation capacity for
+    /// spatially distinct boarding regions. This prevents one dense cluster of
+    /// nearly-identical anchors from crowding out other useful route variants.
+    /// </summary>
+    public double BoardingDiversityBucketMeters { get; init; } = 500;
+
+    /// <summary>
+    /// Maximum tolerated gap between consecutive physical journey legs and
+    /// between a leg endpoint and its enriched geometry endpoint.
+    /// </summary>
+    public double JourneyLegContinuityToleranceMeters { get; init; } = 25;
+
     public double MaxStaticRouteSegmentJumpMeters { get; init; } = 10_000;
     public double ServiceAreaMinLatitude { get; init; } = 14.8;
     public double ServiceAreaMaxLatitude { get; init; } = 15.35;
@@ -108,9 +121,11 @@ public sealed class RoutingOptions
             FeederShadowingMinProgressMeters < 0 ||
             FeederShadowingRequiredTimeSavingsSeconds < 0 ||
             FeederShadowingRequiredFareSavingsPesos < 0 ||
+            BoardingDiversityBucketMeters <= 0 ||
+            JourneyLegContinuityToleranceMeters <= 0 ||
             string.IsNullOrWhiteSpace(TrikeCostingModel))
         {
-            error = "Routing distances, fares, and time values must be non-negative; speeds and sample interval must be positive.";
+            error = "Routing distances, fares, and time values must be non-negative; speeds, sampling, diversity, and continuity values must be positive.";
             return false;
         }
 

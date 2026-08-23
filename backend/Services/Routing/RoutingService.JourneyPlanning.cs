@@ -125,7 +125,10 @@ public partial class RoutingService
                 .First())
             .ToList();
 
-        var ranked = SelectCandidatesToConfirm(distinctCandidates);
+        // Phase 2 reserves part of the confirmation budget for distinct route
+        // and boarding regions so a dense cluster of similar candidates cannot
+        // crowd out useful alternatives before authoritative validation.
+        var ranked = SelectCandidatesToConfirmWithDiversity(distinctCandidates);
 
         // Preserve the originating candidate while Valhalla confirms access.
         // That lets post-confirmation pruning use both authoritative network
@@ -150,7 +153,20 @@ public partial class RoutingService
             .Select(result => result!)
             .ToList();
 
-        var confirmed = PruneConfirmedFeederShadowing(confirmedWithSource)
+        var originPruned = PruneConfirmedFeederShadowing(confirmedWithSource);
+        LogConfirmedPruningDelta(
+            confirmedWithSource,
+            originPruned,
+            "origin feeder shadowing");
+
+        var transferPruned = PruneConfirmedTransferBoardingShadowing(originPruned);
+        LogConfirmedPruningDelta(
+            originPruned,
+            transferPruned,
+            "transfer feeder shadowing");
+
+        var paretoPruned = PruneDominatedConfirmedCandidates(transferPruned);
+        var confirmed = paretoPruned
             .Select(result => result.Plan)
             .ToList();
 
@@ -164,6 +180,10 @@ public partial class RoutingService
 
         var distinctPlans = confirmed
             .Concat(directPlans)
+            .Where(plan => ValidatePlanContinuity(
+                plan,
+                requireGeometry: false,
+                stage: "post-confirmation"))
             .GroupBy(GetPlanKey, StringComparer.Ordinal)
             .Select(group => group
                 .OrderBy(plan => plan.GeneralizedCostPesos)
@@ -172,6 +192,7 @@ public partial class RoutingService
             .ToList();
 
         var selectedPlans = SelectObjectivePlans(distinctPlans);
+        LogSelectedPlanDiagnostics(selectedPlans);
         _telemetry.Event(selectedPlans.Count == 0 ? "NoRouteFound" : "TripPlanned",
             outcome: selectedPlans.Count.ToString());
         return selectedPlans;
