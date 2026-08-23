@@ -20,10 +20,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -45,16 +49,14 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
-import kotlinx.coroutines.launch
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.CircularProgressIndicator
-import com.example.frontend.ui.theme.TukiTeal
-import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
-import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiTeal
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
@@ -80,12 +82,14 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var isPasswordLoggingIn by remember { mutableStateOf(false) }
-
     var isGoogleLoggingIn by remember { mutableStateOf(false) }
     var isFacebookLoggingIn by remember { mutableStateOf(false) }
+    var isGuestLoggingIn by remember { mutableStateOf(false) }
+    var showGuestAccessNotice by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
 
-    val isLoginInProgress = isPasswordLoggingIn || isGoogleLoggingIn || isFacebookLoggingIn
+    val isLoginInProgress =
+        isPasswordLoggingIn || isGoogleLoggingIn || isFacebookLoggingIn || isGuestLoggingIn
 
     fun handleResult(result: LoginActionResult) {
         when (result) {
@@ -93,6 +97,29 @@ fun LoginScreen(
             LoginActionResult.Canceled -> Unit
             is LoginActionResult.Error -> loginError = result.message
         }
+    }
+
+    if (showGuestAccessNotice) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Guest access is active") },
+            text = {
+                Text(
+                    "You can use TUKI for 24 hours, including navigation, history, and favorites. " +
+                        "Create an account if you want access without the guest time limit."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showGuestAccessNotice = false
+                        onGuestLoginClick()
+                    }
+                ) {
+                    Text("Continue")
+                }
+            }
+        )
     }
 
     Column(
@@ -238,13 +265,10 @@ fun LoginScreen(
             shape = RoundedCornerShape(22.dp),
             colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
         ) {
-            if (isLoginInProgress) {
+            if (isPasswordLoggingIn) {
                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
             } else {
-                Text(
-                    text = "Log in",
-                    style = MaterialTheme.typography.titleLarge
-                )
+                Text(text = "Log in", style = MaterialTheme.typography.titleLarge)
             }
         }
 
@@ -345,7 +369,21 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedButton(
-            onClick = onGuestLoginClick,
+            onClick = {
+                if (isLoginInProgress) return@OutlinedButton
+                coroutineScope.launch {
+                    loginError = null
+                    isGuestLoggingIn = true
+                    try {
+                        when (val result = authRepository.loginAsGuest()) {
+                            is ApiResult.Success -> showGuestAccessNotice = true
+                            is ApiResult.Failure -> loginError = result.message
+                        }
+                    } finally {
+                        isGuestLoggingIn = false
+                    }
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -353,11 +391,15 @@ fun LoginScreen(
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(2.dp, Color(0xFFE8E8E8))
         ) {
-            Text(
-                text = "Continue as Guest",
-                color = TukiInk,
-                style = MaterialTheme.typography.labelLarge
-            )
+            if (isGuestLoggingIn) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TukiTeal)
+            } else {
+                Text(
+                    text = "Continue as Guest",
+                    color = TukiInk,
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
