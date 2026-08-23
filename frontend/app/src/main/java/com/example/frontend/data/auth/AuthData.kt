@@ -126,7 +126,8 @@ class AuthRepositoryImpl(
     private val authApi: AuthApi,
     private val usersApi: UsersApi,
     private val sessionStore: AuthSessionStore,
-    private val errors: ApiErrorParser
+    private val errors: ApiErrorParser,
+    private val onPreferredLanguageChanged: (String) -> Unit = {}
 ) : AuthRepository {
     override suspend fun login(userName: String, password: String) =
         authenticate { authApi.login(LoginRequest(userName, password)) }
@@ -204,7 +205,10 @@ class AuthRepositoryImpl(
         authApi.changePassword(ChangePasswordRequest(currentPassword, code.trim(), newPassword))
     })
 
-    override fun logoutLocalSession() = sessionStore.clear()
+    override fun logoutLocalSession() {
+        sessionStore.clear()
+        onPreferredLanguageChanged("English")
+    }
 
     private fun toUnit(result: ApiResult<MessageResponseDto>): ApiResult<Unit> = when (result) {
         is ApiResult.Success -> ApiResult.Success(Unit)
@@ -223,7 +227,10 @@ class AuthRepositoryImpl(
         }
         sessionStore.save(session)
         return when (val profile = authenticatedApiCall(sessionStore, errors) { usersApi.getCurrentUser() }) {
-            is ApiResult.Success -> ApiResult.Success(AuthenticatedUser(session, profile.data))
+            is ApiResult.Success -> {
+                onPreferredLanguageChanged(profile.data.preferredLanguage)
+                ApiResult.Success(AuthenticatedUser(session, profile.data))
+            }
             is ApiResult.Failure -> profile
         }
     }
