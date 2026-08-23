@@ -9,7 +9,8 @@ public sealed record NavigationRerouteRequest(
     bool ClearBudget = false,
     string? DestinationName = null,
     double? DestinationLatitude = null,
-    double? DestinationLongitude = null);
+    double? DestinationLongitude = null,
+    string? AvoidTransportMode = null);
 
 public sealed record NavigationLegSnapshot(
     int LegIndex,
