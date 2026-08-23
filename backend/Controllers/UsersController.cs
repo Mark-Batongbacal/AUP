@@ -16,6 +16,8 @@ public sealed class UsersController(
     ITripSessionRepository? tripSessionRepository = null,
     IFavoriteTripRepository? favoriteTripRepository = null) : ControllerBase
 {
+    private const string GuestRole = "Guest";
+
     [HttpGet("me")]
     [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
     public async Task<ActionResult<UserProfileResponse>> GetCurrent(
@@ -81,6 +83,24 @@ public sealed class UsersController(
             request.PhoneNumber is not null ||
             request.ProfileImageUrl is not null;
 
+        // Guests may keep a temporary language preference, but account/profile identity fields
+        // remain read-only. Registered passengers continue through the existing mutation path.
+        if (hasEditableProfileFields)
+        {
+            var currentProfile = await userProfileService.GetCurrentUserProfileAsync(userId, cancellationToken);
+            if (currentProfile is null)
+            {
+                return NotFound(Error($"User profile {userId} was not found."));
+            }
+
+            if (string.Equals(currentProfile.Role, GuestRole, StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    Error("Guest profiles cannot be edited. Create an account for permanent profile settings."));
+            }
+        }
+
         UserProfileMutationResult result;
         if (hasEditableProfileFields)
         {
@@ -131,6 +151,19 @@ public sealed class UsersController(
         if (userId == Guid.Empty)
         {
             return Unauthorized();
+        }
+
+        var currentProfile = await userProfileService.GetCurrentUserProfileAsync(userId, cancellationToken);
+        if (currentProfile is null)
+        {
+            return NotFound(Error($"User profile {userId} was not found."));
+        }
+
+        if (string.Equals(currentProfile.Role, GuestRole, StringComparison.OrdinalIgnoreCase))
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                Error("Guest access expires automatically and does not have a permanent account to delete."));
         }
 
         if (userProfileRepository is null)
