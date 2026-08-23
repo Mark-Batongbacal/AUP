@@ -59,45 +59,47 @@ public partial class RoutingService
 
         var candidates = new List<JourneyCandidate>();
 
-        // 0 transfers.
+        // 0 transfers. Keep several boarding variants for each route instead
+        // of collapsing to FirstOrDefault before Valhalla can confirm access.
         foreach (var route in _routes)
         {
             if (!_routeSamples.ContainsKey(route.RouteId))
                 continue;
 
-            var direct = FindBestConnection(
-                route,
-                originLatitude,
-                originLongitude,
-                destinationLatitude,
-                destinationLongitude);
-
-            if (direct is null)
-                continue;
-
-            var legs = new List<JourneyLegCandidate>
+            foreach (var direct in FindBestConnections(
+                         route,
+                         originLatitude,
+                         originLongitude,
+                         destinationLatitude,
+                         destinationLongitude))
             {
-                new(
-                    direct.RouteId,
-                    direct.RouteName,
-                    direct.BoardAccess.Anchor,
-                    direct.AlightAccess.Anchor,
-                    direct.BoardIndex,
-                    direct.AlightIndex,
-                    direct.BoardAccess.FullRouteAnchor,
-                    direct.AlightAccess.FullRouteAnchor)
-            };
+                var legs = new List<JourneyLegCandidate>
+                {
+                    new(
+                        direct.RouteId,
+                        direct.RouteName,
+                        direct.BoardAccess.Anchor,
+                        direct.AlightAccess.Anchor,
+                        direct.BoardIndex,
+                        direct.AlightIndex,
+                        direct.BoardAccess.FullRouteAnchor,
+                        direct.AlightAccess.FullRouteAnchor)
+                };
 
-            candidates.Add(new JourneyCandidate(
-                legs,
-                direct.BoardAccess,
-                direct.AlightAccess,
-                [],
-                direct.BoardAccess.GeneralizedCostPesos +
-                direct.AlightAccess.GeneralizedCostPesos +
-                GeneralizedCostFromTimeAndFare(
-                    EstimateJeepneyTravelTimeSeconds(legs),
-                    JeepneyBaseFarePesos)));
+                if (!HasForwardRouteProgress(legs[0]))
+                    continue;
+
+                candidates.Add(new JourneyCandidate(
+                    legs,
+                    direct.BoardAccess,
+                    direct.AlightAccess,
+                    [],
+                    direct.BoardAccess.GeneralizedCostPesos +
+                    direct.AlightAccess.GeneralizedCostPesos +
+                    GeneralizedCostFromTimeAndFare(
+                        EstimateJeepneyTravelTimeSeconds(legs),
+                        JeepneyBaseFarePesos)));
+            }
         }
 
         candidates.AddRange(FindTransferCandidates(
@@ -111,6 +113,9 @@ public partial class RoutingService
         // (for example trike -> jeepney -> trike) disappear.
         var expandedCandidates = candidates
             .SelectMany(ExpandAccessAlternatives)
+            // Full-route progress is authoritative. This catches wrong-way or
+            // zero-progress legs even when sparse sample indices look valid.
+            .Where(candidate => candidate.Legs.All(HasForwardRouteProgress))
             .ToList();
 
         var distinctCandidates = expandedCandidates
@@ -120,16 +125,50 @@ public partial class RoutingService
                 .First())
             .ToList();
 
-        var ranked = SelectCandidatesToConfirm(distinctCandidates);
+        // Phase 2 reserves part of the confirmation budget for distinct route
+        // and boarding regions so a dense cluster of similar candidates cannot
+        // crowd out useful alternatives before authoritative validation.
+        var ranked = SelectCandidatesToConfirmWithDiversity(distinctCandidates);
 
-        var confirmed =
-            await ConfirmJourneyCandidatesAsync(
-                ranked,
+        // Preserve the originating candidate while Valhalla confirms access.
+        // That lets post-confirmation pruning use both authoritative network
+        // access metrics and exact full-route board/alight progress.
+        var confirmationTasks = ranked.Select(async candidate =>
+        {
+            var plans = await ConfirmJourneyCandidatesAsync(
+                [candidate],
                 originLatitude,
                 originLongitude,
                 destinationLatitude,
                 destinationLongitude,
                 cancellationToken);
+
+            return plans.FirstOrDefault() is { } plan
+                ? new ConfirmedJourneyCandidate(candidate, plan)
+                : null;
+        });
+
+        var confirmedWithSource = (await Task.WhenAll(confirmationTasks))
+            .Where(result => result is not null)
+            .Select(result => result!)
+            .ToList();
+
+        var originPruned = PruneConfirmedFeederShadowing(confirmedWithSource);
+        LogConfirmedPruningDelta(
+            confirmedWithSource,
+            originPruned,
+            "origin feeder shadowing");
+
+        var transferPruned = PruneConfirmedTransferBoardingShadowing(originPruned);
+        LogConfirmedPruningDelta(
+            originPruned,
+            transferPruned,
+            "transfer feeder shadowing");
+
+        var paretoPruned = PruneDominatedConfirmedCandidates(transferPruned);
+        var confirmed = paretoPruned
+            .Select(result => result.Plan)
+            .ToList();
 
         var directPlans =
             await ConfirmDirectTripCandidatesAsync(
@@ -141,6 +180,10 @@ public partial class RoutingService
 
         var distinctPlans = confirmed
             .Concat(directPlans)
+            .Where(plan => ValidatePlanContinuity(
+                plan,
+                requireGeometry: false,
+                stage: "post-confirmation"))
             .GroupBy(GetPlanKey, StringComparer.Ordinal)
             .Select(group => group
                 .OrderBy(plan => plan.GeneralizedCostPesos)
@@ -149,6 +192,7 @@ public partial class RoutingService
             .ToList();
 
         var selectedPlans = SelectObjectivePlans(distinctPlans);
+        LogSelectedPlanDiagnostics(selectedPlans);
         _telemetry.Event(selectedPlans.Count == 0 ? "NoRouteFound" : "TripPlanned",
             outcome: selectedPlans.Count.ToString());
         return selectedPlans;
@@ -177,6 +221,22 @@ public partial class RoutingService
         }
     }
 
+    private bool HasForwardRouteProgress(JourneyLegCandidate leg)
+    {
+        if (!_routeSamples.TryGetValue(leg.RouteId, out var samples))
+            return false;
+
+        var boardIndex = leg.BoardIndex ?? GetNearestSampleIndex(samples, leg.Board);
+        var alightIndex = leg.AlightIndex ?? GetNearestSampleIndex(samples, leg.Alight);
+        var boardAnchor = leg.BoardFullRouteAnchor ??
+            GetRouteAnchor(leg.RouteId, boardIndex, leg.Board);
+        var alightAnchor = leg.AlightFullRouteAnchor ??
+            GetRouteAnchor(leg.RouteId, alightIndex, leg.Alight);
+
+        return alightAnchor.DistanceFromRouteStartMeters >
+               boardAnchor.DistanceFromRouteStartMeters;
+    }
+
     private List<JourneyCandidate> SelectCandidatesToConfirm(
         List<JourneyCandidate> candidates)
     {
@@ -185,12 +245,17 @@ public partial class RoutingService
 
         var selected = new List<JourneyCandidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var perObjective = Math.Max(1, MaxCandidatesToConfirm / 3);
+        var perObjective = Math.Max(1, MaxCandidatesToConfirm / 4);
 
         Add(candidates.OrderBy(candidate => candidate.TotalGeneralizedCostPesos));
         Add(candidates.OrderBy(EstimateCandidateFarePesos)
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos));
         Add(candidates.OrderBy(EstimateCandidateTimeSeconds)
+            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos));
+        // Keep low-burden boarding candidates in the confirmation pool so an
+        // apparently cheap downstream board cannot crowd them out beforehand.
+        Add(candidates.OrderBy(EstimateCandidateOriginAccessDistanceMeters)
+            .ThenBy(candidate => candidate.OriginAccess.TotalTimeSeconds)
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos));
 
         if (selected.Count < MaxCandidatesToConfirm)
@@ -227,12 +292,147 @@ public partial class RoutingService
         candidate.DestinationAccess.FarePesos +
         candidate.Legs.Count * JeepneyBaseFarePesos;
 
+    private static double EstimateCandidateOriginAccessDistanceMeters(
+        JourneyCandidate candidate) =>
+        candidate.OriginAccess.WalkDistanceMeters +
+        (candidate.OriginAccess.TrikeRideDistanceMeters ?? 0);
+
+    /// <summary>
+    /// Removes a confirmed boarding variant only when it looks like the feeder
+    /// is physically chasing the same jeepney downstream and the farther board
+    /// does not provide a meaningful fastest/cheapest advantage. Comparison is
+    /// performed after Valhalla confirmation, so walls, divided roads, and road
+    /// network detours are reflected in the access metrics.
+    /// </summary>
+    private List<ConfirmedJourneyCandidate> PruneConfirmedFeederShadowing(
+        List<ConfirmedJourneyCandidate> candidates)
+    {
+        if (candidates.Count <= 1)
+            return candidates;
+
+        var kept = new List<ConfirmedJourneyCandidate>();
+
+        foreach (var group in candidates.GroupBy(
+                     GetConfirmedBoardingComparisonKey,
+                     StringComparer.Ordinal))
+        {
+            var variants = group.ToList();
+            if (variants.Count <= 1)
+            {
+                kept.AddRange(variants);
+                continue;
+            }
+
+            var reference = variants
+                .OrderBy(ConfirmedOriginAccessDistanceMeters)
+                .ThenBy(candidate => candidate.Plan.OriginAccess.TotalTimeSeconds)
+                .ThenBy(candidate => candidate.Plan.GeneralizedCostPesos)
+                .First();
+
+            var referenceBoardProgress = GetBoardProgressMeters(
+                reference.Candidate.Legs[0]);
+            var referenceAccessDistance = ConfirmedOriginAccessDistanceMeters(reference);
+
+            foreach (var variant in variants)
+            {
+                if (ReferenceEquals(variant, reference))
+                {
+                    kept.Add(variant);
+                    continue;
+                }
+
+                var downstreamProgress =
+                    GetBoardProgressMeters(variant.Candidate.Legs[0]) -
+                    referenceBoardProgress;
+                if (downstreamProgress < FeederShadowingMinProgressMeters)
+                {
+                    kept.Add(variant);
+                    continue;
+                }
+
+                var extraAccessDistance =
+                    ConfirmedOriginAccessDistanceMeters(variant) -
+                    referenceAccessDistance;
+                var followsSameCorridor =
+                    extraAccessDistance > 0 &&
+                    extraAccessDistance >=
+                    downstreamProgress * FeederShadowingAccessDistanceRatio;
+
+                if (!followsSameCorridor ||
+                    HasMeaningfulFastestOrCheapestAdvantage(variant.Plan, reference.Plan))
+                {
+                    kept.Add(variant);
+                }
+            }
+        }
+
+        return kept;
+    }
+
+    private string GetConfirmedBoardingComparisonKey(
+        ConfirmedJourneyCandidate candidate)
+    {
+        var bucketSize = Math.Max(1, DefaultSampleIntervalMeters * 2);
+        var downstreamSignature = string.Join('>', candidate.Candidate.Legs.Select(leg =>
+        {
+            var alightProgress = GetAlightProgressMeters(leg);
+            var bucket = (long)Math.Floor(alightProgress / bucketSize);
+            return $"{leg.RouteId}@{bucket}";
+        }));
+
+        return string.Join('|',
+            downstreamSignature,
+            $"origin:{candidate.Plan.OriginAccess.Mode}:{candidate.Plan.OriginAccess.TrikePointId}",
+            $"destination:{candidate.Plan.DestinationAccess.Mode}:{candidate.Plan.DestinationAccess.TrikePointId}");
+    }
+
+    private double GetBoardProgressMeters(JourneyLegCandidate leg)
+    {
+        if (leg.BoardFullRouteAnchor is { } anchor)
+            return anchor.DistanceFromRouteStartMeters;
+
+        var samples = _routeSamples[leg.RouteId];
+        var index = leg.BoardIndex ?? GetNearestSampleIndex(samples, leg.Board);
+        return GetRouteAnchor(leg.RouteId, index, leg.Board)
+            .DistanceFromRouteStartMeters;
+    }
+
+    private double GetAlightProgressMeters(JourneyLegCandidate leg)
+    {
+        if (leg.AlightFullRouteAnchor is { } anchor)
+            return anchor.DistanceFromRouteStartMeters;
+
+        var samples = _routeSamples[leg.RouteId];
+        var index = leg.AlightIndex ?? GetNearestSampleIndex(samples, leg.Alight);
+        return GetRouteAnchor(leg.RouteId, index, leg.Alight)
+            .DistanceFromRouteStartMeters;
+    }
+
+    private static double ConfirmedOriginAccessDistanceMeters(
+        ConfirmedJourneyCandidate candidate) =>
+        candidate.Plan.OriginAccess.WalkDistanceMeters +
+        (candidate.Plan.OriginAccess.TrikeRideDistanceMeters ?? 0);
+
+    private bool HasMeaningfulFastestOrCheapestAdvantage(
+        JeepneyTripPlan candidate,
+        JeepneyTripPlan reference)
+    {
+        var timeSavings = reference.TotalTimeSeconds - candidate.TotalTimeSeconds;
+        var fareSavings = reference.TotalFarePesos - candidate.TotalFarePesos;
+
+        return timeSavings >= FeederShadowingRequiredTimeSavingsSeconds ||
+               fareSavings >= FeederShadowingRequiredFareSavingsPesos;
+    }
+
     private List<JeepneyTripPlan> SelectObjectivePlans(
         List<JeepneyTripPlan> plans)
     {
         if (plans.Count == 0)
             return [];
 
+        // Fastest and cheapest remain pure objectives. The feeder-shadowing
+        // guard above only removes a farther board when its advantage is too
+        // small to justify chasing the same jeepney downstream.
         var cheapest = plans
             .OrderBy(plan => plan.TotalFarePesos)
             .ThenBy(plan => plan.GeneralizedCostPesos)
@@ -245,19 +445,21 @@ public partial class RoutingService
             .ThenBy(plan => plan.TotalFarePesos)
             .First();
 
-        // "Efficient" is the balanced choice. Normalizing time, fare, and
-        // walking prevents pesos or seconds from dominating merely because
-        // their numeric scales differ.
+        // Efficient balances total time, fare, and access burden. Access burden
+        // intentionally includes tricycle and transfer time instead of looking
+        // only at walking, so a long feeder leg cannot appear "comfortable"
+        // merely because it contains little walking.
         var minTime = plans.Min(plan => plan.TotalTimeSeconds);
         var maxTime = plans.Max(plan => plan.TotalTimeSeconds);
         var minFare = plans.Min(plan => plan.TotalFarePesos);
         var maxFare = plans.Max(plan => plan.TotalFarePesos);
-        var walking = plans.ToDictionary(
+        var accessBurden = plans.ToDictionary(
             plan => plan,
-            plan => plan.Legs.Where(leg => leg.Mode == AccessMode.Walk)
-                .Sum(leg => leg.DistanceMeters));
-        var minWalk = walking.Values.Min();
-        var maxWalk = walking.Values.Max();
+            plan => plan.Legs
+                .Where(leg => leg.Mode != AccessMode.Jeepney)
+                .Sum(leg => leg.DurationSeconds));
+        var minAccessBurden = accessBurden.Values.Min();
+        var maxAccessBurden = accessBurden.Values.Max();
 
         static double Normalize(double value, double min, double max) =>
             max <= min ? 0 : (value - min) / (max - min);
@@ -266,7 +468,7 @@ public partial class RoutingService
             .OrderBy(plan =>
                 Normalize(plan.TotalTimeSeconds, minTime, maxTime) +
                 Normalize(plan.TotalFarePesos, minFare, maxFare) +
-                Normalize(walking[plan], minWalk, maxWalk))
+                Normalize(accessBurden[plan], minAccessBurden, maxAccessBurden))
             .ThenBy(plan => plan.GeneralizedCostPesos)
             .First();
 
@@ -462,7 +664,8 @@ public partial class RoutingService
                 secondSamples,
                 destinationAccess.Anchor);
 
-        // Wrong direction: the destination lies behind the transfer point.
+        // Cheap early rejection; HasForwardRouteProgress performs the final
+        // authoritative full-geometry direction check before confirmation.
         if (alightIndex <= interchange.OtherIndex)
             return null;
 
@@ -583,4 +786,7 @@ public partial class RoutingService
         return distance;
     }
 
+    private sealed record ConfirmedJourneyCandidate(
+        JourneyCandidate Candidate,
+        JeepneyTripPlan Plan);
 }

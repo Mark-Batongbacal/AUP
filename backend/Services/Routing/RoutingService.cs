@@ -27,6 +27,14 @@ public partial class RoutingService : IRoutingService
     private double MaxWalkTrikeTripDistanceMeters => _options.MaxWalkTrikeTripDistanceMeters;
     private double MaxWalkAccessDistanceMeters => _options.MaxWalkAccessDistanceMeters;
     private double MaxTotalWalkingMetersPerJourney => _options.MaxTotalWalkingMetersPerJourney;
+    private double FeederShadowingMinProgressMeters =>
+        _options.FeederShadowingMinProgressMeters;
+    private double FeederShadowingAccessDistanceRatio =>
+        _options.FeederShadowingAccessDistanceRatio;
+    private double FeederShadowingRequiredTimeSavingsSeconds =>
+        _options.FeederShadowingRequiredTimeSavingsSeconds;
+    private double FeederShadowingRequiredFareSavingsPesos =>
+        _options.FeederShadowingRequiredFareSavingsPesos;
     private double MaxStaticRouteSegmentJumpMeters => _options.MaxStaticRouteSegmentJumpMeters;
     private double TrikeBaseFarePesos => _options.TrikeBaseFarePesos;
     private double TrikeBaseDistanceMeters => _options.TrikeBaseDistanceMeters;

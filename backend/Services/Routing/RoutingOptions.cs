@@ -35,6 +35,46 @@ public sealed class RoutingOptions
     public double MaxWalkTrikeTripDistanceMeters { get; init; } = 5_000;
     public double MaxWalkAccessDistanceMeters { get; init; } = 1_500;
     public double MaxTotalWalkingMetersPerJourney { get; init; } = 2_500;
+
+    /// <summary>
+    /// Minimum downstream jeepney-route progress before a farther boarding
+    /// point can be classified as feeder shadowing. Smaller differences are
+    /// treated as normal stop/intersection choice noise.
+    /// </summary>
+    public double FeederShadowingMinProgressMeters { get; init; } = 300;
+
+    /// <summary>
+    /// Fraction of downstream jeepney progress that must also appear as extra
+    /// confirmed feeder distance before the feeder is considered to be chasing
+    /// the same jeepney corridor.
+    /// </summary>
+    public double FeederShadowingAccessDistanceRatio { get; init; } = 0.60;
+
+    /// <summary>
+    /// A farther boarding point is preserved for the fastest objective when it
+    /// saves at least this much confirmed end-to-end time.
+    /// </summary>
+    public double FeederShadowingRequiredTimeSavingsSeconds { get; init; } = 120;
+
+    /// <summary>
+    /// A farther boarding point is preserved for the cheapest objective when
+    /// it saves at least this much confirmed fare.
+    /// </summary>
+    public double FeederShadowingRequiredFareSavingsPesos { get; init; } = 10;
+
+    /// <summary>
+    /// Full-route progress bucket used when reserving confirmation capacity for
+    /// spatially distinct boarding regions. This prevents one dense cluster of
+    /// nearly-identical anchors from crowding out other useful route variants.
+    /// </summary>
+    public double BoardingDiversityBucketMeters { get; init; } = 500;
+
+    /// <summary>
+    /// Maximum tolerated gap between consecutive physical journey legs and
+    /// between a leg endpoint and its enriched geometry endpoint.
+    /// </summary>
+    public double JourneyLegContinuityToleranceMeters { get; init; } = 25;
+
     public double MaxStaticRouteSegmentJumpMeters { get; init; } = 10_000;
     public double ServiceAreaMinLatitude { get; init; } = 14.8;
     public double ServiceAreaMaxLatitude { get; init; } = 15.35;
@@ -77,10 +117,21 @@ public sealed class RoutingOptions
             MaxSupportedTripStraightLineMeters <= 0 ||
             TrikeBaseDistanceMeters < 0 || TrikePerAdditionalKmPesos < 0 ||
             ValueOfTimePesosPerMinute < 0 || WalkingFatiguePesosPerKilometer < 0 ||
-            JeepneyBoardingWaitTimeSeconds < 0 ||
-            JeepneyBaseFarePesos < 0 || string.IsNullOrWhiteSpace(TrikeCostingModel))
+            JeepneyBoardingWaitTimeSeconds < 0 || JeepneyBaseFarePesos < 0 ||
+            FeederShadowingMinProgressMeters < 0 ||
+            FeederShadowingRequiredTimeSavingsSeconds < 0 ||
+            FeederShadowingRequiredFareSavingsPesos < 0 ||
+            BoardingDiversityBucketMeters <= 0 ||
+            JourneyLegContinuityToleranceMeters <= 0 ||
+            string.IsNullOrWhiteSpace(TrikeCostingModel))
         {
-            error = "Routing distances, fares, and time values must be non-negative; speeds and sample interval must be positive.";
+            error = "Routing distances, fares, and time values must be non-negative; speeds, sampling, diversity, and continuity values must be positive.";
+            return false;
+        }
+
+        if (FeederShadowingAccessDistanceRatio is <= 0 or > 1)
+        {
+            error = "Feeder shadowing access-distance ratio must be greater than zero and at most one.";
             return false;
         }
 
