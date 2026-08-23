@@ -11,6 +11,9 @@ public interface IUserProfileService
         string? phoneNumber,
         CancellationToken cancellationToken = default);
 
+    Task<UserProfileAuthenticationResult> CreateGuestProfileAsync(
+        CancellationToken cancellationToken = default);
+
     Task<UserProfileAuthenticationResult?> CreateOrUpdateExternalProfileAsync(
         string provider,
         string providerSubject,
