@@ -51,6 +51,7 @@ import com.example.frontend.data.places.PlacesRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
+import kotlin.math.abs
 
 private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
 private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
@@ -95,6 +96,8 @@ fun DestinationSearchScreen(
     var selectedDestination by remember { mutableStateOf<DestinationSearchResultDto?>(null) }
     var searchResults by remember { mutableStateOf<List<DestinationSearchResultDto>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+    var isSearchingMore by remember { mutableStateOf(false) }
+    var hasExpandedSearch by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var showUnsupportedLocationDialog by remember { mutableStateOf(false) }
 
@@ -190,11 +193,15 @@ fun DestinationSearchScreen(
         if (query.length < 2 || selectedDestination?.name == query) {
             searchResults = emptyList()
             searchError = null
+            isSearchingMore = false
+            hasExpandedSearch = false
             return@LaunchedEffect
         }
 
         delay(350)
         isSearching = true
+        isSearchingMore = false
+        hasExpandedSearch = false
         searchError = null
 
         when (
@@ -499,6 +506,49 @@ fun DestinationSearchScreen(
                                     }
                                 )
                             }
+                            if (isSearchingMore) {
+                                InlineSearchStatus("Searching more places...")
+                            } else if (!isSearching && !hasExpandedSearch && searchResults.isNotEmpty()) {
+                                Text(
+                                    text = "More places...",
+                                    color = TukiTeal,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    modifier = Modifier
+                                        .padding(top = 10.dp)
+                                        .clickable {
+                                            val query = destinationText.trim()
+                                            if (query.length < 2) return@clickable
+                                            coroutineScope.launch {
+                                                isSearchingMore = true
+                                                searchError = null
+                                                when (
+                                                    val result = placesRepository.searchMorePlaces(
+                                                        query = query,
+                                                        focusLatitude = currentLatitude,
+                                                        focusLongitude = currentLongitude
+                                                    )
+                                                ) {
+                                                    is ApiResult.Success -> {
+                                                        if (destinationText.trim() == query) {
+                                                            searchResults = mergePlaceResults(
+                                                                searchResults,
+                                                                result.data
+                                                            ).take(12)
+                                                            hasExpandedSearch = true
+                                                        }
+                                                    }
+                                                    is ApiResult.Failure -> {
+                                                        if (destinationText.trim() == query) {
+                                                            searchError = result.message
+                                                        }
+                                                    }
+                                                }
+                                                isSearchingMore = false
+                                            }
+                                        }
+                                )
+                            }
                             searchError?.let { InlineError(it) }
 
                             selectedDestination?.address?.takeIf { it.isNotBlank() }?.let { address ->
@@ -576,6 +626,38 @@ fun DestinationSearchScreen(
         }
     }
 }
+
+private fun mergePlaceResults(
+    existing: List<DestinationSearchResultDto>,
+    expanded: List<DestinationSearchResultDto>
+): List<DestinationSearchResultDto> {
+    val merged = mutableListOf<DestinationSearchResultDto>()
+    (existing + expanded).forEach { candidate ->
+        if (merged.none { current -> likelySamePlace(current, candidate) }) {
+            merged += candidate
+        }
+    }
+    return merged
+}
+
+private fun likelySamePlace(
+    first: DestinationSearchResultDto,
+    second: DestinationSearchResultDto
+): Boolean {
+    val firstName = normalizePlaceText(first.name)
+    val secondName = normalizePlaceText(second.name)
+    if (firstName.isEmpty() || firstName != secondName) return false
+
+    val closeCoordinates = abs(first.latitude - second.latitude) <= 0.002 &&
+        abs(first.longitude - second.longitude) <= 0.002
+    val firstAddress = normalizePlaceText(first.address.orEmpty())
+    val secondAddress = normalizePlaceText(second.address.orEmpty())
+    val sameAddress = firstAddress.isNotEmpty() && firstAddress == secondAddress
+    return closeCoordinates || sameAddress
+}
+
+private fun normalizePlaceText(value: String): String =
+    value.lowercase().filter { it.isLetterOrDigit() }
 
 @Composable
 private fun RouteDot(color: Color) {
