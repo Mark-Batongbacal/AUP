@@ -2,7 +2,13 @@ package com.example.frontend
 
 import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -12,9 +18,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -56,6 +64,7 @@ private const val LiveTripFuturePrefix = "live-trip-future"
 private const val LiveTripTransitPrefix = "live-trip-transit-route"
 private const val LiveTripTodaSource = "live-trip-toda-source"
 private const val LiveTripTodaLayer = "live-trip-toda-layer"
+private const val LiveTripRouteTapDistanceMeters = 90.0
 
 private val LiveTripTransitColors = listOf(
     "#0D8B97",
@@ -98,10 +107,8 @@ fun LiveTripMapScreen(
     val effectiveTodaPoints = if (todaPoints.isNotEmpty()) todaPoints else sharedTodaPoints
     val selectedJourneyRouteIds = TukiMapOverlayState.selectedJourneyJeepneyRouteIds
     val activeJeepneyRouteId = remember(legIdentity) { currentJeepneyRouteId(legIdentity) }
-    val visibleJeepneyRoutes = remember(nearbyJeepneyRoutes, selectedJourneyRouteIds, activeJeepneyRouteId) {
-        val allowedRouteIds = selectedJourneyRouteIds + listOfNotNull(activeJeepneyRouteId)
-        if (allowedRouteIds.isEmpty()) emptyList()
-        else nearbyJeepneyRoutes.filter { it.routeId in allowedRouteIds }
+    val visibleJeepneyRoutes = remember(nearbyJeepneyRoutes) {
+        nearbyJeepneyRoutes.filter { it.points.size >= 2 }
     }
 
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -110,6 +117,7 @@ fun LiveTripMapScreen(
     var showLegOverview by rememberSaveable { mutableStateOf(false) }
     var previousLegIdentity by rememberSaveable { mutableStateOf<String?>(null) }
     var renderedTransitRouteIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var selectedJeepneyRoute by remember { mutableStateOf<TransitRouteOverlay?>(null) }
     val latestMap by rememberUpdatedState(mapLibreMap)
     val latestGpsPosition by rememberUpdatedState(gpsPosition)
     val latestRoutePoints by rememberUpdatedState(routePoints)
@@ -148,7 +156,13 @@ fun LiveTripMapScreen(
             map.setStyle(LiveTripMapStyleUrl) { style ->
                 loadedStyle = style
                 renderedTransitRouteIds = emptySet()
-                updateLiveTripTransitRoutes(style, visibleJeepneyRoutes, emptySet(), activeJeepneyRouteId)
+                updateLiveTripTransitRoutes(
+                    style = style,
+                    routes = visibleJeepneyRoutes,
+                    previouslyRenderedRouteIds = emptySet(),
+                    activeRouteId = activeJeepneyRouteId,
+                    selectedJourneyRouteIds = selectedJourneyRouteIds
+                )
                 renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
                 updateLiveTripFutureLayers(style, futureRouteSegments)
                 updateLiveTripRoute(style, routePoints)
@@ -177,6 +191,31 @@ fun LiveTripMapScreen(
             false
         }
         onDispose { mapView.setOnTouchListener(null) }
+    }
+
+    DisposableEffect(mapLibreMap, visibleJeepneyRoutes) {
+        val map = mapLibreMap
+        if (map == null || visibleJeepneyRoutes.isEmpty()) {
+            onDispose { }
+        } else {
+            val listener = MapLibreMap.OnMapClickListener { point ->
+                selectedJeepneyRoute = visibleJeepneyRoutes
+                    .map { route -> route to nearestLiveTripRouteDistanceMeters(point, route.points) }
+                    .minByOrNull { it.second }
+                    ?.takeIf { (_, distance) -> distance <= LiveTripRouteTapDistanceMeters }
+                    ?.first
+                true
+            }
+            map.addOnMapClickListener(listener)
+            onDispose { map.removeOnMapClickListener(listener) }
+        }
+    }
+
+    LaunchedEffect(visibleJeepneyRoutes) {
+        val selectedId = selectedJeepneyRoute?.routeId ?: return@LaunchedEffect
+        if (visibleJeepneyRoutes.none { it.routeId == selectedId }) {
+            selectedJeepneyRoute = null
+        }
     }
 
     fun redrawTopMarkers(style: Style) {
@@ -212,9 +251,15 @@ fun LiveTripMapScreen(
             redrawTopMarkers(it)
         }
     }
-    LaunchedEffect(loadedStyle, visibleJeepneyRoutes, activeJeepneyRouteId) {
+    LaunchedEffect(loadedStyle, visibleJeepneyRoutes, activeJeepneyRouteId, selectedJourneyRouteIds) {
         loadedStyle?.let { style ->
-            updateLiveTripTransitRoutes(style, visibleJeepneyRoutes, renderedTransitRouteIds, activeJeepneyRouteId)
+            updateLiveTripTransitRoutes(
+                style = style,
+                routes = visibleJeepneyRoutes,
+                previouslyRenderedRouteIds = renderedTransitRouteIds,
+                activeRouteId = activeJeepneyRouteId,
+                selectedJourneyRouteIds = selectedJourneyRouteIds
+            )
             renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
             redrawTopMarkers(style)
         }
@@ -270,6 +315,29 @@ fun LiveTripMapScreen(
 
     Box(modifier.fillMaxSize()) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+
+        selectedJeepneyRoute?.let { route ->
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(16.dp)
+                    .widthIn(max = 240.dp),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp,
+                shadowElevation = 8.dp
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(route.routeName, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Jeepney route · ${route.routeCode}",
+                        modifier = Modifier.padding(top = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -302,7 +370,13 @@ private fun fitLiveTripLeg(map: MapLibreMap, mapView: MapView, route: List<LatLn
     )
 }
 
-private fun updateLiveTripTransitRoutes(style: Style, routes: List<TransitRouteOverlay>, previouslyRenderedRouteIds: Set<Long>, activeRouteId: Long?) {
+private fun updateLiveTripTransitRoutes(
+    style: Style,
+    routes: List<TransitRouteOverlay>,
+    previouslyRenderedRouteIds: Set<Long>,
+    activeRouteId: Long?,
+    selectedJourneyRouteIds: Set<Long>
+) {
     val currentIds = routes.map { it.routeId }.toSet()
     (previouslyRenderedRouteIds - currentIds).forEach { routeId ->
         style.removeLayer("$LiveTripTransitPrefix-layer-$routeId")
@@ -323,12 +397,24 @@ private fun updateLiveTripTransitRoutes(style: Style, routes: List<TransitRouteO
         if (source != null) source.setGeoJson(geometry) else style.addSource(GeoJsonSource(sourceId, geometry))
 
         val isCurrentRoute = route.routeId == activeRouteId
+        val isJourneyRoute = route.routeId in selectedJourneyRouteIds
+        val width = when {
+            isCurrentRoute -> 5.2f
+            isJourneyRoute -> 3.2f
+            else -> 2.0f
+        }
+        val opacity = when {
+            isCurrentRoute -> 0.90f
+            isJourneyRoute -> 0.34f
+            else -> 0.16f
+        }
+
         style.removeLayer(layerId)
         style.addLayer(
             LineLayer(layerId, sourceId).withProperties(
                 PropertyFactory.lineColor(LiveTripTransitColors[index % LiveTripTransitColors.size]),
-                PropertyFactory.lineWidth(if (isCurrentRoute) 4.5f else 3f),
-                PropertyFactory.lineOpacity(if (isCurrentRoute) 0.80f else 0.30f),
+                PropertyFactory.lineWidth(width),
+                PropertyFactory.lineOpacity(opacity),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
             )
@@ -493,6 +579,9 @@ private fun navigationBearing(current: LatLng, route: List<LatLng>): Double? {
     val x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
     return (Math.toDegrees(atan2(y, x)) + 360.0) % 360.0
 }
+
+private fun nearestLiveTripRouteDistanceMeters(point: LatLng, route: List<LatLng>): Double =
+    route.minOfOrNull { routePoint -> distanceMeters(point, routePoint) } ?: Double.POSITIVE_INFINITY
 
 private fun distanceMeters(a: LatLng, b: LatLng): Double {
     val earthRadius = 6_371_000.0
