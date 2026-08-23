@@ -1,6 +1,7 @@
 using backend.Models.Database;
 using backend.Models.Users;
 using backend.Repositories;
+using backend.Services.Localization;
 
 namespace backend.Services;
 
@@ -48,6 +49,7 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
             LastName = validation.LastName,
             PhoneNumber = validation.PhoneNumber,
             Role = DefaultRole,
+            PreferredLanguage = TukiLanguage.English,
             IsActive = true,
             CreatedAt = now,
             UpdatedAt = now,
@@ -103,6 +105,7 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
             PhoneNumber = existingProfile?.PhoneNumber,
             Role = existingProfile?.Role ?? DefaultRole,
             ProfileImageUrl = existingProfile?.ProfileImageUrl,
+            PreferredLanguage = TukiLanguage.Normalize(existingProfile?.PreferredLanguage),
             IsActive = true,
             CreatedAt = existingProfile?.CreatedAt ?? now,
             UpdatedAt = now,
@@ -195,6 +198,37 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
         return profile is null
             ? UserProfileMutationResult.NotFound(userId)
             : UserProfileMutationResult.Success(Map(profile));
+    }
+
+    public async Task<UserProfileMutationResult> UpdatePreferredLanguageAsync(
+        Guid userId,
+        string? preferredLanguage,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+        {
+            return UserProfileMutationResult.NotFound(userId);
+        }
+
+        var requestedLanguage = preferredLanguage?.Trim();
+        if (!string.Equals(requestedLanguage, TukiLanguage.English, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(requestedLanguage, TukiLanguage.Filipino, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(requestedLanguage, "Tagalog", StringComparison.OrdinalIgnoreCase))
+        {
+            return UserProfileMutationResult.ValidationFailed(
+                ["Preferred language must be English or Filipino."]);
+        }
+
+        var profile = await _userProfileRepository.GetActiveByUserIdAsync(userId, cancellationToken);
+        if (profile is null)
+        {
+            return UserProfileMutationResult.NotFound(userId);
+        }
+
+        profile.PreferredLanguage = TukiLanguage.Normalize(requestedLanguage);
+        profile.UpdatedAt = DateTime.UtcNow;
+        var saved = await _userProfileRepository.AddOrUpdateAsync(profile, cancellationToken);
+        return UserProfileMutationResult.Success(Map(saved));
     }
 
     private static LocalRegistrationValidationResult ValidateLocalRegistration(
@@ -291,7 +325,10 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
             profile.Role,
             profile.ProfileImageUrl,
             profile.CreatedAt,
-            profile.UpdatedAt);
+            profile.UpdatedAt)
+        {
+            PreferredLanguage = TukiLanguage.Normalize(profile.PreferredLanguage)
+        };
 
     private static string CreateExternalCredentialOwner(string provider, string providerSubject) =>
         $"{provider}:{providerSubject}";
