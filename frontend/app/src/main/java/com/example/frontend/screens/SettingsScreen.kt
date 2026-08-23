@@ -26,6 +26,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +38,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.data.users.UserProfileDto
 import com.example.frontend.ui.theme.AppearancePreferences
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiDanger
@@ -58,8 +62,28 @@ fun SettingsScreen(
     onLogoutClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val dataProvider = remember { TukiDataProvider(context.applicationContext) }
+    var loadedProfile by remember { mutableStateOf<UserProfileDto?>(null) }
     var showChangePassword by remember { mutableStateOf(false) }
     val isDarkMode = TukiThemeRuntime.darkMode
+
+    LaunchedEffect(dataProvider) {
+        when (val result = dataProvider.userRepository.getCurrentUser()) {
+            is ApiResult.Success -> loadedProfile = result.data
+            is ApiResult.Failure -> Unit
+        }
+    }
+
+    val displayName = loadedProfile?.let { profile ->
+        listOfNotNull(
+            profile.firstName?.trim()?.takeIf { it.isNotEmpty() },
+            profile.lastName?.trim()?.takeIf { it.isNotEmpty() }
+        ).joinToString(" ")
+    }?.takeIf { it.isNotBlank() } ?: userName
+    val displayEmail = loadedProfile?.email?.takeIf { it.isNotBlank() } ?: userEmail
+    val displayTrips = loadedProfile?.tripsTaken ?: tripsTaken
+    val displayFavorites = loadedProfile?.favoritesCount ?: favoritesCount
+    val displayLanguage = loadedProfile?.preferredLanguage?.takeIf { it.isNotBlank() } ?: "English"
 
     if (showChangePassword) {
         ChangePasswordScreen(
@@ -117,7 +141,7 @@ fun SettingsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = initialsFor(userName),
+                            text = initialsFor(displayName),
                             color = Color.White,
                             style = MaterialTheme.typography.titleLarge
                         )
@@ -125,15 +149,15 @@ fun SettingsScreen(
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            userName,
+                            displayName,
                             color = TukiInk,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        if (userEmail.isNotBlank()) {
+                        if (displayEmail.isNotBlank()) {
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                userEmail,
+                                displayEmail,
                                 color = TukiMuted,
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 1
@@ -150,8 +174,8 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                SettingsStatCard(tripsTaken.toString(), "TRIPS TAKEN", Modifier.weight(1f))
-                SettingsStatCard(favoritesCount.toString(), "FAVORITES", Modifier.weight(1f))
+                SettingsStatCard(displayTrips.toString(), "TRIPS TAKEN", Modifier.weight(1f))
+                SettingsStatCard(displayFavorites.toString(), "FAVORITES", Modifier.weight(1f))
             }
         }
 
@@ -224,7 +248,7 @@ fun SettingsScreen(
                         onClick = { showChangePassword = true }
                     )
                     SettingsDivider()
-                    SettingsActionRow("Language", "English", "◎")
+                    SettingsActionRow("Language", displayLanguage, "◎")
                 }
             }
         }
