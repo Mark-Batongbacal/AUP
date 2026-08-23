@@ -52,4 +52,16 @@ class LocalNavigationSpeechTest {
         assertTrue(text.contains("Mabini Street"))
         assertTrue(text.contains("50m"))
     }
+
+    @Test
+    fun landmarkSpeech_followsSelectedLanguage() {
+        assertEquals(
+            "We just passed Jollibee.",
+            LocalNavigationSpeech.landmarkPassedText("Jollibee", "English")
+        )
+        assertEquals(
+            "Ayun, nalagpasan natin ang Jollibee.",
+            LocalNavigationSpeech.landmarkPassedText("Jollibee", "Filipino")
+        )
+    }
 }
