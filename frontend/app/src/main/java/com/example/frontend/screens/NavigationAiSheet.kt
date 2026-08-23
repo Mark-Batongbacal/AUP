@@ -57,7 +57,7 @@ private data class NavigationAiMessage(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NavigationAiSheet(
-    language: String,
+    language: String = com.example.frontend.core.localization.AppLanguagePreference.current(),
     onDismiss: () -> Unit,
     ask: suspend (String) -> ApiResult<AssistantResponseDto>
 ) {
