@@ -12,6 +12,7 @@ import com.example.frontend.data.TukiDataProvider
  *
  * TODA points are transportation infrastructure, not route-specific guidance, so every map can
  * display the same active set without manually threading the list through every screen.
+ * Jeepney route IDs are stored only for the route the user actually selected.
  */
 val LocalTukiDataProvider = staticCompositionLocalOf<TukiDataProvider?> { null }
 
@@ -19,8 +20,19 @@ object TukiMapOverlayState {
     var todaPoints by mutableStateOf<List<TodaPointOverlay>>(emptyList())
         private set
 
+    var selectedJourneyJeepneyRouteIds by mutableStateOf<Set<Long>>(emptySet())
+        private set
+
     private var todaLoadInProgress = false
     private var todaLoaded = false
+
+    fun selectJourneyJeepneyRoutes(routeIds: List<Long?>) {
+        selectedJourneyJeepneyRouteIds = routeIds.filterNotNull().toSet()
+    }
+
+    fun clearJourneyJeepneyRoutes() {
+        selectedJourneyJeepneyRouteIds = emptySet()
+    }
 
     suspend fun ensureTodaPoints(dataProvider: TukiDataProvider?) {
         if (dataProvider == null || todaLoaded || todaLoadInProgress) return
