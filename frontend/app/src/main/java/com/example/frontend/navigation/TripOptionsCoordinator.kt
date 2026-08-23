@@ -43,6 +43,9 @@ class TripOptionsCoordinator(context: Context) {
     suspend fun rerouteNow(sessionId: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "MANUAL"))
 
+    suspend fun recoverMissedLegTarget(sessionId: String): ApiResult<NavigationSnapshotDto> =
+        reroute(sessionId, NavigationRerouteRequest(reason = "MISSED_LEG_TARGET"))
+
     suspend fun changePreference(sessionId: String, preference: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "PREFERENCE_CHANGED", preference = preference))
 
@@ -173,14 +176,22 @@ class TripOptionsCoordinator(context: Context) {
             speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null,
             bearingDegrees = if (location.hasBearing()) location.bearing.toDouble() else null
         )
-        // Manual replans are meaningful server events. Force exactly this fresh fix through the
-        // normally-local repository before asking the backend to calculate the replacement plan.
+        // Replans are meaningful server events. Force exactly this fresh fix through the normally
+        // local repository before asking the backend to calculate the replacement plan.
         NavigationSyncSignal.requestImmediateSync(samples = 1)
         when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
             is ApiResult.Failure -> return update
             is ApiResult.Success -> Unit
         }
-        return navigation.reroute(sessionId, request)
+
+        val rerouted = navigation.reroute(sessionId, request)
+        if (rerouted is ApiResult.Success) {
+            // TripTracking owns a short-lived coordinator repository while AppNavigation owns the
+            // long-lived tracking repository. Force the next tracking fix to refresh that parent
+            // cache from the backend so a successful reroute cannot fall back to stale geometry.
+            NavigationSyncSignal.requestImmediateSync(samples = 1)
+        }
+        return rerouted
     }
 
     private fun findTagged(plans: List<PlannedJourney>, tag: String): PlannedJourney? =
