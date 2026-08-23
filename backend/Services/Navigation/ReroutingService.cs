@@ -40,7 +40,7 @@ public sealed class ReroutingService(
         var normalizedReason = string.IsNullOrWhiteSpace(request.Reason)
             ? "MANUAL"
             : request.Reason.Trim().ToUpperInvariant();
-        var automaticRecovery = normalizedReason is "OFF_ROUTE" or "MISSED_ALIGHT";
+        var automaticRecovery = normalizedReason is "OFF_ROUTE" or "MISSED_ALIGHT" or "MISSED_LEG_TARGET";
         if (automaticRecovery && session.LastRerouteAt is { } last &&
             last.AddSeconds(_options.RerouteCooldownSeconds) > DateTime.UtcNow)
             return new(false, "REROUTE_COOLDOWN");

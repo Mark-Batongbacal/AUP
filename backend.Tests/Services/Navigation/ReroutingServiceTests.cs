@@ -10,8 +10,11 @@ namespace backend.Tests.Services.Navigation;
 
 public sealed class ReroutingServiceTests
 {
-    [Fact]
-    public async Task Cooldown_PreventsAutomaticReroutingLoop()
+    [Theory]
+    [InlineData("OFF_ROUTE")]
+    [InlineData("MISSED_ALIGHT")]
+    [InlineData("MISSED_LEG_TARGET")]
+    public async Task Cooldown_PreventsAutomaticReroutingLoop(string reason)
     {
         var sessions = new Mock<ITripSessionRepository>();
         var session = OffRouteSession();
@@ -19,7 +22,7 @@ public sealed class ReroutingServiceTests
         sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default)).ReturnsAsync(session);
         var (service, routing) = Create(sessions);
         var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
-            new NavigationRerouteRequest("OFF_ROUTE"));
+            new NavigationRerouteRequest(reason));
         Assert.Equal("REROUTE_COOLDOWN", result.Status);
         routing.Verify(item => item.PlanTripsAsync(It.IsAny<double>(), It.IsAny<double>(),
             It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
