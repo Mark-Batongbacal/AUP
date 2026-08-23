@@ -14,7 +14,8 @@ data class UpdateUserProfileRequest(
     val firstName: String? = null,
     val lastName: String? = null,
     val phoneNumber: String? = null,
-    val profileImageUrl: String? = null
+    val profileImageUrl: String? = null,
+    val preferredLanguage: String? = null
 )
 
 data class UserProfileDto(
@@ -28,7 +29,8 @@ data class UserProfileDto(
     val updatedAt: String?,
     val email: String? = null,
     val tripsTaken: Int = 0,
-    val favoritesCount: Int = 0
+    val favoritesCount: Int = 0,
+    val preferredLanguage: String = "English"
 )
 
 interface UsersApi {

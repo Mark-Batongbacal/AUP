@@ -76,13 +76,43 @@ public sealed class UsersController(
             return BadRequest(Error("Request body is required."));
         }
 
-        var result = await userProfileService.UpdateCurrentUserProfileAsync(
-            userId,
-            request.FirstName,
-            request.LastName,
-            request.PhoneNumber,
-            request.ProfileImageUrl,
-            cancellationToken);
+        var hasEditableProfileFields = request.FirstName is not null ||
+            request.LastName is not null ||
+            request.PhoneNumber is not null ||
+            request.ProfileImageUrl is not null;
+
+        UserProfileMutationResult result;
+        if (hasEditableProfileFields)
+        {
+            result = await userProfileService.UpdateCurrentUserProfileAsync(
+                userId,
+                request.FirstName,
+                request.LastName,
+                request.PhoneNumber,
+                request.ProfileImageUrl,
+                cancellationToken);
+
+            if (result.Status == UserProfileMutationStatus.Success &&
+                request.PreferredLanguage is not null)
+            {
+                result = await userProfileService.UpdatePreferredLanguageAsync(
+                    userId,
+                    request.PreferredLanguage,
+                    cancellationToken);
+            }
+        }
+        else if (request.PreferredLanguage is not null)
+        {
+            result = await userProfileService.UpdatePreferredLanguageAsync(
+                userId,
+                request.PreferredLanguage,
+                cancellationToken);
+        }
+        else
+        {
+            result = UserProfileMutationResult.ValidationFailed(
+                ["At least one editable profile field is required."]);
+        }
 
         var error = new UserProfileErrorResponse(result.Errors);
         return result.Status switch

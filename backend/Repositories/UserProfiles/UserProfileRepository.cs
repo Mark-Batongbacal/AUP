@@ -73,6 +73,7 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
         existing.PhoneNumber = profile.PhoneNumber;
         existing.Role = profile.Role;
         existing.ProfileImageUrl = profile.ProfileImageUrl;
+        existing.PreferredLanguage = profile.PreferredLanguage;
         existing.IsActive = profile.IsActive;
         existing.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
