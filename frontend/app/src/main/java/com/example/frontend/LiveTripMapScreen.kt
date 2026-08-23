@@ -96,11 +96,15 @@ fun LiveTripMapScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val sharedTodaPoints = TukiMapOverlayState.todaPoints
     val effectiveTodaPoints = if (todaPoints.isNotEmpty()) todaPoints else sharedTodaPoints
+    val selectedJourneyRouteIds = TukiMapOverlayState.selectedJourneyJeepneyRouteIds
     val activeJeepneyRouteId = remember(legIdentity) { currentJeepneyRouteId(legIdentity) }
-    val visibleJeepneyRoutes = remember(nearbyJeepneyRoutes, activeJeepneyRouteId) {
-        activeJeepneyRouteId?.let { routeId ->
-            nearbyJeepneyRoutes.filter { it.routeId == routeId }
-        }.orEmpty()
+    val visibleJeepneyRoutes = remember(nearbyJeepneyRoutes, selectedJourneyRouteIds, activeJeepneyRouteId) {
+        val allowedRouteIds = selectedJourneyRouteIds + listOfNotNull(activeJeepneyRouteId)
+        if (allowedRouteIds.isEmpty()) {
+            emptyList()
+        } else {
+            nearbyJeepneyRoutes.filter { it.routeId in allowedRouteIds }
+        }
     }
 
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -147,7 +151,12 @@ fun LiveTripMapScreen(
             map.setStyle(LiveTripMapStyleUrl) { style ->
                 loadedStyle = style
                 renderedTransitRouteIds = emptySet()
-                updateLiveTripTransitRoutes(style, visibleJeepneyRoutes, emptySet())
+                updateLiveTripTransitRoutes(
+                    style = style,
+                    routes = visibleJeepneyRoutes,
+                    previouslyRenderedRouteIds = emptySet(),
+                    activeRouteId = activeJeepneyRouteId
+                )
                 renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
                 updateLiveTripFutureLayers(style, futureRouteSegments)
                 updateLiveTripRoute(style, routePoints)
@@ -213,9 +222,14 @@ fun LiveTripMapScreen(
             updateLiveTripTodaPoints(it, effectiveTodaPoints)
         }
     }
-    LaunchedEffect(loadedStyle, visibleJeepneyRoutes) {
+    LaunchedEffect(loadedStyle, visibleJeepneyRoutes, activeJeepneyRouteId) {
         loadedStyle?.let { style ->
-            updateLiveTripTransitRoutes(style, visibleJeepneyRoutes, renderedTransitRouteIds)
+            updateLiveTripTransitRoutes(
+                style = style,
+                routes = visibleJeepneyRoutes,
+                previouslyRenderedRouteIds = renderedTransitRouteIds,
+                activeRouteId = activeJeepneyRouteId
+            )
             renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
             updateLiveTripTodaPoints(style, effectiveTodaPoints)
         }
@@ -344,7 +358,8 @@ private fun fitLiveTripLeg(
 private fun updateLiveTripTransitRoutes(
     style: Style,
     routes: List<TransitRouteOverlay>,
-    previouslyRenderedRouteIds: Set<Long>
+    previouslyRenderedRouteIds: Set<Long>,
+    activeRouteId: Long?
 ) {
     val currentIds = routes.map { it.routeId }.toSet()
     (previouslyRenderedRouteIds - currentIds).forEach { routeId ->
@@ -371,12 +386,13 @@ private fun updateLiveTripTransitRoutes(
             style.addSource(GeoJsonSource(sourceId, geometry))
         }
 
+        val isCurrentRoute = route.routeId == activeRouteId
         style.removeLayer(layerId)
         style.addLayer(
             LineLayer(layerId, sourceId).withProperties(
                 PropertyFactory.lineColor(LiveTripTransitColors[index % LiveTripTransitColors.size]),
-                PropertyFactory.lineWidth(3.5f),
-                PropertyFactory.lineOpacity(0.42f),
+                PropertyFactory.lineWidth(if (isCurrentRoute) 4.5f else 3f),
+                PropertyFactory.lineOpacity(if (isCurrentRoute) 0.80f else 0.30f),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
             )
