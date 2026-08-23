@@ -18,7 +18,6 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import kotlinx.coroutines.delay
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
@@ -65,6 +64,11 @@ fun LiveTripMapScreen(
     finalDestination: LatLng?,
     futureRouteSegments: List<List<LatLng>> = emptyList(),
     recenterRequestKey: Int = 0,
+    gpsPosition: LatLng? = currentPosition,
+    fullLegRoutePoints: List<LatLng> = routePoints,
+    legOverviewRequestKey: Int = 0,
+    legIdentity: String? = null,
+    overviewBottomPaddingDp: Float = 250f,
     modifier: Modifier = Modifier
 ) {
     if (LocalInspectionMode.current) {
@@ -77,9 +81,14 @@ fun LiveTripMapScreen(
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var loadedStyle by remember { mutableStateOf<Style?>(null) }
     var followLocation by rememberSaveable { mutableStateOf(true) }
+    var showLegOverview by rememberSaveable { mutableStateOf(false) }
+    var previousLegIdentity by rememberSaveable { mutableStateOf<String?>(null) }
     val latestMap by rememberUpdatedState(mapLibreMap)
-    val latestCurrentPosition by rememberUpdatedState(currentPosition)
+    val latestGpsPosition by rememberUpdatedState(gpsPosition)
     val latestRoutePoints by rememberUpdatedState(routePoints)
+    val latestFullLegRoutePoints by rememberUpdatedState(fullLegRoutePoints)
+    val latestLegDestination by rememberUpdatedState(legDestination)
+    val latestOverviewBottomPaddingDp by rememberUpdatedState(overviewBottomPaddingDp)
 
     val mapView = remember(context) {
         MapLibre.getInstance(context)
@@ -117,7 +126,7 @@ fun LiveTripMapScreen(
                 updateLiveTripDestination(style, legDestination)
                 updateLiveTripFinalDestination(style, finalDestination)
 
-                val target = navigationLookAheadTarget(currentPosition, routePoints)
+                val target = gpsPosition
                     ?: currentPosition
                     ?: routePoints.firstOrNull()
                     ?: legDestination
@@ -125,7 +134,7 @@ fun LiveTripMapScreen(
                     ?: LiveTripDefaultCenter
                 map.cameraPosition = CameraPosition.Builder()
                     .target(target)
-                    .zoom(if (currentPosition != null) LiveTripNavigationZoom else 14.5)
+                    .zoom(if (gpsPosition != null) LiveTripNavigationZoom else 14.5)
                     .build()
             }
         }
@@ -139,24 +148,91 @@ fun LiveTripMapScreen(
         onDispose { mapView.setOnTouchListener(null) }
     }
 
-    LaunchedEffect(loadedStyle, routePoints) { loadedStyle?.let { updateLiveTripRoute(it, routePoints) } }
+    LaunchedEffect(loadedStyle, routePoints, fullLegRoutePoints, showLegOverview) {
+        loadedStyle?.let { style ->
+            val displayedRoute = if (showLegOverview && fullLegRoutePoints.size >= 2) {
+                fullLegRoutePoints
+            } else {
+                routePoints
+            }
+            updateLiveTripRoute(style, displayedRoute)
+        }
+    }
     LaunchedEffect(loadedStyle, currentPosition) { loadedStyle?.let { updateLiveTripCurrentPoint(it, currentPosition) } }
     LaunchedEffect(loadedStyle, legDestination) { loadedStyle?.let { updateLiveTripDestination(it, legDestination) } }
     LaunchedEffect(loadedStyle, finalDestination) { loadedStyle?.let { updateLiveTripFinalDestination(it, finalDestination) } }
     LaunchedEffect(loadedStyle, futureRouteSegments) { loadedStyle?.let { updateLiveTripFutureLayers(it, futureRouteSegments) } }
 
-    LaunchedEffect(mapLibreMap, currentPosition, routePoints, followLocation) {
+    LaunchedEffect(mapLibreMap, gpsPosition, routePoints, followLocation) {
         if (!followLocation) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
-        val point = currentPosition ?: return@LaunchedEffect
+        val point = gpsPosition ?: return@LaunchedEffect
+        showLegOverview = false
         animateLiveTripCamera(map, point, routePoints)
+    }
+
+    LaunchedEffect(loadedStyle, gpsPosition, fullLegRoutePoints) {
+        val map = mapLibreMap ?: return@LaunchedEffect
+        if (loadedStyle == null || gpsPosition != null || fullLegRoutePoints.size < 2) {
+            return@LaunchedEffect
+        }
+        showLegOverview = true
+        fitLiveTripLeg(
+            map,
+            mapView,
+            fullLegRoutePoints,
+            currentPosition,
+            legDestination,
+            context.resources.displayMetrics.density,
+            overviewBottomPaddingDp
+        )
+    }
+
+    LaunchedEffect(loadedStyle, legIdentity, fullLegRoutePoints) {
+        if (loadedStyle == null || legIdentity == null) return@LaunchedEffect
+        val previous = previousLegIdentity
+        previousLegIdentity = legIdentity
+        if (previous == null || previous == legIdentity || fullLegRoutePoints.size < 2) {
+            return@LaunchedEffect
+        }
+        val map = mapLibreMap ?: return@LaunchedEffect
+        followLocation = false
+        showLegOverview = true
+        fitLiveTripLeg(
+            map,
+            mapView,
+            fullLegRoutePoints,
+            gpsPosition,
+            legDestination,
+            context.resources.displayMetrics.density,
+            overviewBottomPaddingDp
+        )
+    }
+
+    LaunchedEffect(legOverviewRequestKey) {
+        if (legOverviewRequestKey == 0) return@LaunchedEffect
+        val map = latestMap ?: return@LaunchedEffect
+        val overviewRoute = latestFullLegRoutePoints
+        if (overviewRoute.isEmpty()) return@LaunchedEffect
+        followLocation = false
+        showLegOverview = true
+        fitLiveTripLeg(
+            map,
+            mapView,
+            overviewRoute,
+            latestGpsPosition,
+            latestLegDestination,
+            context.resources.displayMetrics.density,
+            latestOverviewBottomPaddingDp
+        )
     }
 
     LaunchedEffect(recenterRequestKey) {
         if (recenterRequestKey == 0) return@LaunchedEffect
         val map = latestMap ?: return@LaunchedEffect
-        val point = latestCurrentPosition ?: latestRoutePoints.firstOrNull() ?: return@LaunchedEffect
-        followLocation = latestCurrentPosition != null
+        val point = latestGpsPosition ?: return@LaunchedEffect
+        showLegOverview = false
+        followLocation = true
         animateLiveTripCamera(map, point, latestRoutePoints)
     }
 
@@ -166,13 +242,35 @@ fun LiveTripMapScreen(
 }
 
 private fun animateLiveTripCamera(map: MapLibreMap, current: LatLng, route: List<LatLng>) {
-    val target = navigationLookAheadTarget(current, route) ?: current
     val bearing = navigationBearing(current, route)
     val builder = CameraPosition.Builder()
-        .target(target)
+        .target(current)
         .zoom(map.cameraPosition.zoom.coerceAtLeast(LiveTripNavigationZoom))
     if (bearing != null) builder.bearing(bearing)
     map.animateCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 650)
+}
+
+private fun fitLiveTripLeg(
+    map: MapLibreMap,
+    mapView: MapView,
+    route: List<LatLng>,
+    currentPosition: LatLng?,
+    destination: LatLng?,
+    density: Float,
+    bottomPaddingDp: Float
+) {
+    fitMapCameraToRoute(
+        map = map,
+        mapView = mapView,
+        routePoints = route,
+        anchors = listOfNotNull(currentPosition, destination),
+        insets = MapCameraInsets(
+            left = (28f * density).toInt(),
+            top = (174f * density).toInt(),
+            right = (28f * density).toInt(),
+            bottom = (bottomPaddingDp * density).toInt()
+        )
+    )
 }
 
 private fun updateLiveTripRoute(style: Style, points: List<LatLng>) {
@@ -292,21 +390,6 @@ private fun updateLiveTripFutureLayers(style: Style, segments: List<List<LatLng>
             )
         )
     }
-}
-
-private fun navigationLookAheadTarget(current: LatLng?, route: List<LatLng>): LatLng? {
-    val safeCurrent = current ?: return null
-    if (route.size < 2) return safeCurrent
-    val nearest = route.indices.minByOrNull { index -> distanceMeters(safeCurrent, route[index]) } ?: return safeCurrent
-    var accumulated = 0.0
-    var previous = safeCurrent
-    for (index in nearest until route.size) {
-        val candidate = route[index]
-        accumulated += distanceMeters(previous, candidate)
-        if (accumulated >= 105.0) return candidate
-        previous = candidate
-    }
-    return route.lastOrNull() ?: safeCurrent
 }
 
 private fun navigationBearing(current: LatLng, route: List<LatLng>): Double? {

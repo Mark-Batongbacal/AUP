@@ -26,6 +26,7 @@ import com.example.frontend.data.favorites.withoutDuplicateFavorites
 import com.example.frontend.data.navigation.NavigationInstructionSnapshotDto
 import com.example.frontend.data.navigation.NavigationLegDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
+import com.example.frontend.data.navigation.NavigationRepository
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.trips.toRecentCommute
@@ -808,6 +809,33 @@ fun AppNavigation(
                     }
                 }
 
+                LaunchedEffect(
+                    selectedRouteOption?.id,
+                    selectedRoutingOriginLatitude,
+                    selectedRoutingOriginLongitude
+                ) {
+                    val option = selectedRouteOption ?: return@LaunchedEffect
+                    val originPoint = if (
+                        selectedRoutingOriginLatitude != null &&
+                        selectedRoutingOriginLongitude != null
+                    ) {
+                        LatLng(selectedRoutingOriginLatitude!!, selectedRoutingOriginLongitude!!)
+                    } else {
+                        context.currentDeviceLocation()?.let { location ->
+                            LatLng(location.latitude, location.longitude)
+                        }
+                    }
+                    val geometries = resolveNavigationLegGeometries(
+                        option = option,
+                        navigationRepository = navigationRepository,
+                        origin = originPoint,
+                        existing = resolvedLegGeometries
+                    )
+                    if (selectedRouteOption?.id == option.id) {
+                        resolvedLegGeometries = geometries
+                    }
+                }
+
                 NavigationScreen(
                     origin = origin,
                     destination = destination,
@@ -815,6 +843,18 @@ fun AppNavigation(
                     totalMinutes = selectedRouteOption?.totalMinutes,
                     totalFare = selectedRouteOption?.totalFare,
                     legCount = selectedRouteOption?.steps?.size,
+                    legRoutePoints = resolvedLegGeometries,
+                    routeStartPoint = if (
+                        selectedRoutingOriginLatitude != null &&
+                        selectedRoutingOriginLongitude != null
+                    ) {
+                        LatLng(selectedRoutingOriginLatitude!!, selectedRoutingOriginLongitude!!)
+                    } else {
+                        null
+                    },
+                    routeFinalDestination = selectedRouteOption?.legEndPoints?.lastOrNull()?.let { point ->
+                        LatLng(point.latitude, point.longitude)
+                    },
                     isStartingNavigation = isStartingNavigation,
                     navigationStartError = navigationStartError,
                     hasActiveTrip = hasExistingActiveTrip ||
@@ -1133,41 +1173,20 @@ fun AppNavigation(
 
                 LaunchedEffect(selectedRouteOption?.id) {
                     val option = selectedRouteOption ?: return@LaunchedEffect
-                    val working = option.legRoutePoints.map { segment ->
-                        segment.map { point -> LatLng(point.latitude, point.longitude) }
-                    }.toMutableList()
-
-                    option.steps.forEachIndexed { index, step ->
-                        if (working.getOrNull(index)?.size ?: 0 >= 2) return@forEachIndexed
-                        if (!step.mode.equals("Walk", true) && !step.mode.equals("Tricycle", true)) {
-                            return@forEachIndexed
-                        }
-                        val end = option.legEndPoints.getOrNull(index) ?: return@forEachIndexed
-                        val start = if (index == 0) {
-                            val lat = selectedRoutingOriginLatitude
-                            val lon = selectedRoutingOriginLongitude
-                            if (lat != null && lon != null) LatLng(lat, lon) else null
-                        } else {
-                            option.legEndPoints.getOrNull(index - 1)?.let { LatLng(it.latitude, it.longitude) }
-                        } ?: return@forEachIndexed
-
-                        when (val result = navigationRepository.getGeometry(
-                            start.latitude,
-                            start.longitude,
-                            end.latitude,
-                            end.longitude,
-                            if (step.mode.equals("Tricycle", true)) "TRICYCLE" else "WALK"
-                        )) {
-                            is ApiResult.Success -> {
-                                while (working.size <= index) working.add(emptyList())
-                                working[index] = result.data.points.map { point ->
-                                    LatLng(point.latitude, point.longitude)
-                                }
-                            }
-                            is ApiResult.Failure -> Unit
-                        }
+                    val originPoint = if (
+                        selectedRoutingOriginLatitude != null &&
+                        selectedRoutingOriginLongitude != null
+                    ) {
+                        LatLng(selectedRoutingOriginLatitude!!, selectedRoutingOriginLongitude!!)
+                    } else {
+                        null
                     }
-                    resolvedLegGeometries = working
+                    resolvedLegGeometries = resolveNavigationLegGeometries(
+                        option = option,
+                        navigationRepository = navigationRepository,
+                        origin = originPoint,
+                        existing = resolvedLegGeometries
+                    )
                 }
 
                 LaunchedEffect(
@@ -1329,6 +1348,55 @@ fun AppNavigation(
             )
         }
     }
+}
+
+private suspend fun resolveNavigationLegGeometries(
+    option: RouteOption,
+    navigationRepository: NavigationRepository,
+    origin: LatLng?,
+    existing: List<List<LatLng>>
+): List<List<LatLng>> {
+    val legCount = maxOf(option.steps.size, option.legRoutePoints.size)
+    val working = MutableList(legCount) { index ->
+        existing.getOrNull(index)?.takeIf { it.size >= 2 }
+            ?: option.legRoutePoints.getOrNull(index).orEmpty().map { point ->
+                LatLng(point.latitude, point.longitude)
+            }
+    }
+
+    option.steps.forEachIndexed { index, step ->
+        if (working.getOrNull(index)?.size ?: 0 >= 2) return@forEachIndexed
+        if (!step.mode.equals("Walk", true) && !step.mode.equals("Tricycle", true)) {
+            return@forEachIndexed
+        }
+        val end = option.legEndPoints.getOrNull(index) ?: return@forEachIndexed
+        val start = if (index == 0) {
+            origin
+        } else {
+            option.legEndPoints.getOrNull(index - 1)?.let { point ->
+                LatLng(point.latitude, point.longitude)
+            }
+        } ?: return@forEachIndexed
+
+        when (
+            val result = navigationRepository.getGeometry(
+                start.latitude,
+                start.longitude,
+                end.latitude,
+                end.longitude,
+                if (step.mode.equals("Tricycle", true)) "TRICYCLE" else "WALK"
+            )
+        ) {
+            is ApiResult.Success -> {
+                working[index] = result.data.points.map { point ->
+                    LatLng(point.latitude, point.longitude)
+                }
+            }
+            is ApiResult.Failure -> Unit
+        }
+    }
+
+    return working
 }
 
 private fun String.isGenericLocationLabel(): Boolean {

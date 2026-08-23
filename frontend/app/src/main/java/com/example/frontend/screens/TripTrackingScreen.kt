@@ -102,6 +102,7 @@ fun TripTrackingScreen(
     var ttsReady by remember { mutableStateOf(false) }
     var instructionCollapsed by remember { mutableStateOf(false) }
     var recenterRequestKey by remember { mutableStateOf(0) }
+    var legOverviewRequestKey by remember { mutableStateOf(0) }
     var localLandmarkNotice by remember { mutableStateOf<String?>(null) }
     var navigationLanguage by remember { mutableStateOf(AppLanguagePreference.current()) }
 
@@ -286,8 +287,8 @@ fun TripTrackingScreen(
         } else 0f
     }
 
-    val currentPosition = localProgress?.matchedLocation?.let { LatLng(it.latitude, it.longitude) }
-        ?: liveDeviceLocation?.let { LatLng(it.latitude, it.longitude) }
+    val gpsPosition = liveDeviceLocation?.let { LatLng(it.latitude, it.longitude) }
+    val currentPosition = gpsPosition
         ?: snapshot?.let {
             if (it.currentLatitude != null && it.currentLongitude != null) LatLng(it.currentLatitude, it.currentLongitude) else null
         }
@@ -334,6 +335,11 @@ fun TripTrackingScreen(
             finalDestination = activeFinalDestination,
             futureRouteSegments = if (effectiveRerouted) emptyList() else futureRouteSegments,
             recenterRequestKey = recenterRequestKey,
+            gpsPosition = gpsPosition,
+            fullLegRoutePoints = baseRoute,
+            legOverviewRequestKey = legOverviewRequestKey,
+            legIdentity = geometryKey ?: "${snapshot?.sessionId}:$currentLegIndex",
+            overviewBottomPaddingDp = if (instructionCollapsed) 166f else 276f,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -382,11 +388,20 @@ fun TripTrackingScreen(
                     modifier = Modifier.padding(end = 16.dp, bottom = 8.dp)
                 )
             }
-            RecenterButton(
-                enabled = currentPosition != null || visibleRoute.isNotEmpty(),
-                onClick = { recenterRequestKey += 1 },
-                modifier = Modifier.padding(end = 14.dp, bottom = 8.dp)
-            )
+            Row(
+                modifier = Modifier.padding(end = 14.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LegOverviewButton(
+                    enabled = baseRoute.size >= 2,
+                    onClick = { legOverviewRequestKey += 1 }
+                )
+                RecenterButton(
+                    enabled = gpsPosition != null,
+                    onClick = { recenterRequestKey += 1 }
+                )
+            }
             InstructionPanel(
                 instruction = instruction,
                 following = following,
@@ -639,6 +654,37 @@ private fun CurrentLegCard(icon: String, title: String, eta: String, fare: Strin
                     Text(it, color = TripOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LegOverviewButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(43.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        color = if (enabled) TripSurface else TripTile,
+        border = BorderStroke(1.dp, com.example.frontend.ui.theme.TukiOutline),
+        shadowElevation = 7.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("⌖", color = if (enabled) TripTeal else TripGray, fontSize = 17.sp)
+            Text(
+                "View leg",
+                color = if (enabled) TripDark else TripGray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

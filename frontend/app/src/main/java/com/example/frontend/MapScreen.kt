@@ -129,6 +129,8 @@ fun MapScreen(
     navigationTrackingPoint: LatLng? = null,
     visualStyle: MapVisualStyle = MapVisualStyle.General,
     showDeviceLocation: Boolean = true,
+    fitRouteBounds: Boolean = false,
+    routeBoundsPoints: List<LatLng> = routePoints,
 ) {
     if (LocalInspectionMode.current) {
         MapPreviewPlaceholder(modifier)
@@ -164,8 +166,8 @@ fun MapScreen(
         )
     }
 
-    LaunchedEffect(Unit) {
-        if (!hasLocationPermission && !hasRequestedLocationPermission) {
+    LaunchedEffect(showDeviceLocation) {
+        if (showDeviceLocation && !hasLocationPermission && !hasRequestedLocationPermission) {
             requestLocationPermission()
         }
     }
@@ -305,6 +307,34 @@ fun MapScreen(
                     .build()
             ),
             650
+        )
+    }
+
+    LaunchedEffect(
+        loadedStyle,
+        fitRouteBounds,
+        routeBoundsPoints,
+        startPoint,
+        selectedDestination,
+        navigationTrackingEnabled
+    ) {
+        if (!fitRouteBounds || navigationTrackingEnabled) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+        if (loadedStyle == null || routeBoundsPoints.isEmpty()) return@LaunchedEffect
+        val density = context.resources.displayMetrics.density
+        val sidePadding = (26f * density).toInt()
+        val verticalPadding = (34f * density).toInt()
+        fitMapCameraToRoute(
+            map = map,
+            mapView = mapView,
+            routePoints = routeBoundsPoints,
+            anchors = listOfNotNull(startPoint, selectedDestination),
+            insets = MapCameraInsets(
+                left = sidePadding,
+                top = verticalPadding,
+                right = sidePadding,
+                bottom = verticalPadding
+            )
         )
     }
 
