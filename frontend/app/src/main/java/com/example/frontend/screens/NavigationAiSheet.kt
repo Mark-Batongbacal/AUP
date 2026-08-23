@@ -54,29 +54,44 @@ private data class NavigationAiMessage(
     val fromUser: Boolean
 )
 
-private val navigationQuickPrompts = listOf(
-    "Am I still on the right route?",
-    "Where do I get off?",
-    "What comes after this leg?",
-    "How much fare is left?"
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NavigationAiSheet(
+    language: String,
     onDismiss: () -> Unit,
     ask: suspend (String) -> ApiResult<AssistantResponseDto>
 ) {
+    val filipino = language.equals("Filipino", ignoreCase = true)
+    val quickPrompts = if (filipino) {
+        listOf(
+            "Tama pa ba yung route natin?",
+            "Saan ako bababa?",
+            "Ano yung next instruction?",
+            "Lumagpas ba ako sa babaan?"
+        )
+    } else {
+        listOf(
+            "Am I still on the right route?",
+            "Where do I get off?",
+            "What's my next instruction?",
+            "Did I miss my stop?"
+        )
+    }
+    val intro = if (filipino) {
+        "Magtanong ka lang tungkol sa active trip natin. Gagamitin ko yung current navigation state natin, hindi ako manghuhula."
+    } else {
+        "Ask me anything about your active trip. I’ll use the current navigation state instead of guessing."
+    }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
     var thinking by remember { mutableStateOf(false) }
-    var messages by remember {
+    var messages by remember(language) {
         mutableStateOf(
             listOf(
                 NavigationAiMessage(
                     id = 0L,
-                    text = "Ask me anything about your active trip. I’ll use the current navigation state instead of guessing.",
+                    text = intro,
                     fromUser = false
                 )
             )
@@ -140,7 +155,11 @@ fun NavigationAiSheet(
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text("Ask TUKI", color = NavigationAiDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Questions about this active trip", color = NavigationAiMuted, fontSize = 12.sp)
+                    Text(
+                        if (filipino) "Mga tanong tungkol sa active trip natin" else "Questions about this active trip",
+                        color = NavigationAiMuted,
+                        fontSize = 12.sp
+                    )
                 }
             }
 
@@ -180,7 +199,11 @@ fun NavigationAiSheet(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(Modifier.size(16.dp), color = NavigationAiTeal, strokeWidth = 2.dp)
                             Spacer(Modifier.width(8.dp))
-                            Text("TUKI is checking your trip…", color = NavigationAiMuted, fontSize = 12.sp)
+                            Text(
+                                if (filipino) "Tinitingnan ni TUKI yung trip natin…" else "TUKI is checking your trip…",
+                                color = NavigationAiMuted,
+                                fontSize = 12.sp
+                            )
                         }
                     }
                 }
@@ -189,7 +212,7 @@ fun NavigationAiSheet(
             if (messages.size == 1) {
                 Spacer(Modifier.height(10.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    navigationQuickPrompts.forEach { prompt ->
+                    quickPrompts.forEach { prompt ->
                         Box(
                             Modifier
                                 .fillMaxWidth()
@@ -205,7 +228,11 @@ fun NavigationAiSheet(
 
             Spacer(Modifier.height(12.dp))
             Text(
-                "Need to change the route? Use Trip options so TUKI can explicitly recalculate it on the backend.",
+                if (filipino) {
+                    "May babaguhin sa route? Gamitin yung Trip options para malinaw na ipa-recalculate kay TUKI sa backend."
+                } else {
+                    "Need to change the route? Use Trip options so TUKI can explicitly recalculate it on the backend."
+                },
                 color = NavigationAiMuted,
                 fontSize = 11.sp,
                 lineHeight = 15.sp
@@ -218,7 +245,13 @@ fun NavigationAiSheet(
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
-                    placeholder = { Text("Ask about your trip…", color = NavigationAiMuted, fontSize = 13.sp) },
+                    placeholder = {
+                        Text(
+                            if (filipino) "Magtanong tungkol sa trip…" else "Ask about your trip…",
+                            color = NavigationAiMuted,
+                            fontSize = 13.sp
+                        )
+                    },
                     shape = RoundedCornerShape(22.dp),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.White,
