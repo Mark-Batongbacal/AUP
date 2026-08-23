@@ -57,6 +57,20 @@ fun FavoritesScreen(
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     val uniqueFavorites = remember(favorites) { favorites.distinctBy { it.uniqueFavoriteIdentity() } }
     var pendingRemoval by remember { mutableStateOf<FavoriteRoute?>(null) }
+    var openedFavorite by remember { mutableStateOf<FavoriteRoute?>(null) }
+
+    openedFavorite?.let { favorite ->
+        FavoriteRouteDetailsHost(
+            favorite = favorite,
+            onBack = { openedFavorite = null },
+            onRepeatTrip = {
+                // AppNavigation still receives the selected FavoriteRoute through the existing
+                // route callback so any parent-level repeat/navigation handling remains supported.
+                onRouteClick(favorite)
+            }
+        )
+        return
+    }
 
     Column(Modifier.fillMaxSize().background(TukiCream)) {
         LazyColumn(
@@ -114,7 +128,10 @@ fun FavoritesScreen(
                     FavoriteRouteCard(
                         route = route,
                         removing = route.id in removingFavoriteIds,
-                        onClick = { onRouteClick(route) },
+                        onClick = {
+                            openedFavorite = route
+                            onRouteClick(route)
+                        },
                         onRemove = { pendingRemoval = route }
                     )
                 }
