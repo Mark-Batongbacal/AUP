@@ -45,11 +45,13 @@ import com.example.frontend.data.users.UpdateUserProfileRequest
 import com.example.frontend.data.users.UserProfileDto
 import kotlinx.coroutines.launch
 
-private val TukiTeal = Color(0xFF15919B)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiCream2 = Color(0xFFFAEBC7)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiSky
 
 data class ProfileStat(val value: String, val label: String)
 
@@ -253,15 +255,14 @@ fun ProfileScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(TukiCream)
-            .statusBarsPadding()
-            .navigationBarsPadding()
     ) {
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .statusBarsPadding()
                 .padding(horizontal = 30.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 30.dp, bottom = 20.dp)
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 20.dp)
         ) {
             item {
                 Column(
@@ -277,20 +278,18 @@ fun ProfileScreen(
                         Text(
                             text = initials,
                             color = Color.White,
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            style = MaterialTheme.typography.displayMedium
                         )
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         text = displayName,
-                        color = TukiDark,
-                        fontSize = 21.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        color = TukiInk,
+                        style = MaterialTheme.typography.displaySmall
                     )
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = displayEmail, color = TukiGray, fontSize = 15.sp)
+                    Text(text = displayEmail, color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
@@ -309,9 +308,9 @@ fun ProfileScreen(
             item {
                 Text(
                     text = "ACCOUNT",
-                    color = TukiDark,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    color = TukiInk,
+                    style = MaterialTheme.typography.labelSmall,
+                    letterSpacing = 1.sp
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
@@ -325,11 +324,10 @@ fun ProfileScreen(
                 Text(
                     text = "Log out",
                     color = Color(0xFFB00020),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(TukiCream2, RoundedCornerShape(14.dp))
+                        .background(TukiSky.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
                         .clickable(onClick = onLogoutClick)
                         .padding(16.dp)
                 )
@@ -350,22 +348,20 @@ fun ProfileScreen(
 private fun ProfileStatCard(stat: ProfileStat, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .background(TukiCream2, RoundedCornerShape(14.dp))
+            .background(TukiSky.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
             .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = stat.value,
-            color = TukiDark,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.ExtraBold
+            color = TukiInk,
+            style = MaterialTheme.typography.titleLarge
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = stat.label,
-            color = TukiGray,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold
+            color = TukiMuted,
+            style = MaterialTheme.typography.labelSmall
         )
     }
 }
@@ -375,7 +371,7 @@ private fun AccountRowItem(row: ProfileAccountRow) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(TukiCream2, RoundedCornerShape(14.dp))
+            .background(TukiSky.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
             .clickable(onClick = row.onClick)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -396,19 +392,17 @@ private fun AccountRowItem(row: ProfileAccountRow) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = row.title,
-                color = TukiDark,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+                color = TukiInk,
+                style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Text(text = row.subtitle, color = TukiGray, fontSize = 13.sp)
+            Text(text = row.subtitle, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
         }
 
         Text(
             text = "\u203A",
-            color = TukiGray,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
+            color = TukiMuted,
+            style = MaterialTheme.typography.titleLarge
         )
     }
 }

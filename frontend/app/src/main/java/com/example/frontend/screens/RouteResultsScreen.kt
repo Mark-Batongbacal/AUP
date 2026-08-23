@@ -52,19 +52,17 @@ import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RouteOption
 import com.example.frontend.model.RoutePoint
 import kotlin.math.roundToInt
-
-// Route-results palette based on the approved TUKI reference screen.
-private val TukiScreen = com.example.frontend.ui.theme.TukiCream
-private val TukiCardCream = com.example.frontend.ui.theme.TukiGoldSurface
-private val TukiDark = com.example.frontend.ui.theme.TukiInk
-private val TukiDarkText = com.example.frontend.ui.theme.TukiInk
-private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
-private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
-private val TukiTabBackground = com.example.frontend.ui.theme.TukiSky.copy(alpha = 0.35f)
-private val TukiTile = com.example.frontend.ui.theme.TukiSurfaceRaised
-private val TukiMuted = com.example.frontend.ui.theme.TukiMuted
-private val TukiPurple = com.example.frontend.ui.theme.TukiDeepTeal
-private val TukiSeaGreen = com.example.frontend.ui.theme.TukiForest
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiForest
+import com.example.frontend.ui.theme.TukiGold
+import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiOutline
 
 @Composable
 fun RouteResultsScreen(
@@ -264,7 +262,7 @@ fun RouteResultsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(TukiScreen)
+            .background(TukiCream)
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
@@ -343,9 +341,8 @@ private fun RouteResultsHeader(onBack: () -> Unit) {
         ) {
             Text(
                 text = "←",
-                color = TukiDarkText,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Medium
+                color = TukiInk,
+                style = MaterialTheme.typography.displaySmall
             )
         }
 
@@ -353,10 +350,8 @@ private fun RouteResultsHeader(onBack: () -> Unit) {
 
         Text(
             text = "Where are you going?",
-            color = TukiDark,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+            color = TukiInk,
+            style = MaterialTheme.typography.displaySmall
         )
     }
 }
@@ -376,7 +371,7 @@ private fun CurrentAndDestinationCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(TukiCardCream, RoundedCornerShape(18.dp))
+            .background(TukiGold.copy(alpha = 0.1f), RoundedCornerShape(18.dp))
             .padding(start = 16.dp, end = 12.dp, top = 13.dp, bottom = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -406,9 +401,8 @@ private fun CurrentAndDestinationCard(
         ) {
             Text(
                 text = "⇅",
-                color = TukiDarkText,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
+                color = TukiInk,
+                style = MaterialTheme.typography.titleMedium
             )
         }
     }
@@ -431,10 +425,8 @@ private fun LocationRow(
         Text(
             text = text,
             modifier = Modifier.weight(1f),
-            color = TukiDarkText,
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
-            fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
+            color = TukiInk,
+            style = MaterialTheme.typography.labelLarge,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
@@ -451,7 +443,7 @@ private fun RouteTabs(
         modifier = modifier
             .fillMaxWidth()
             .height(42.dp)
-            .background(TukiTabBackground, RoundedCornerShape(22.dp))
+            .background(TukiSky.copy(alpha = 0.35f), RoundedCornerShape(22.dp))
             .padding(2.dp)
     ) {
         RouteTab(
@@ -480,7 +472,7 @@ private fun RouteTab(
         modifier = modifier
             .fillMaxSize()
             .background(
-                color = if (selected) TukiDark else Color.Transparent,
+                color = if (selected) TukiDeepTeal else Color.Transparent,
                 shape = RoundedCornerShape(20.dp)
             )
             .clickable(onClick = onClick),
@@ -489,8 +481,7 @@ private fun RouteTab(
         Text(
             text = text,
             color = if (selected) Color.White else TukiMuted,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.labelLarge
         )
     }
 }
@@ -528,17 +519,15 @@ private fun RouteMessageCard(title: String, message: String) {
     ) {
         Text(
             text = title,
-            color = TukiDark,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold,
+            color = TukiInk,
+            style = MaterialTheme.typography.titleLarge,
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = message,
             color = TukiMuted,
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
+            style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center
         )
     }
@@ -696,23 +685,20 @@ private fun RouteOptionCard(option: RouteOption) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(TukiTile, RoundedCornerShape(11.dp))
+                    .background(TukiSky.copy(alpha = 0.2f), RoundedCornerShape(11.dp))
                     .padding(horizontal = 14.dp, vertical = 11.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "Gen. Cost",
-                    color = TukiDarkText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
+                    color = TukiInk,
+                    style = MaterialTheme.typography.labelLarge
                 )
                 Text(
                     text = "₱${option.generalCost.roundToInt()}",
                     color = TukiOrange,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
+                    style = MaterialTheme.typography.titleLarge
                 )
             }
 
@@ -755,15 +741,14 @@ private fun StatTile(
     Row(
         modifier = modifier
             .height(62.dp)
-            .background(TukiTile, RoundedCornerShape(11.dp))
+            .background(TukiSky.copy(alpha = 0.2f), RoundedCornerShape(11.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = symbol,
-            color = com.example.frontend.ui.theme.TukiTeal,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold
+            color = TukiTeal,
+            style = MaterialTheme.typography.titleLarge
         )
 
         Spacer(modifier = Modifier.width(8.dp))
@@ -771,20 +756,15 @@ private fun StatTile(
         Column {
             Text(
                 text = value,
-                color = TukiDarkText,
-                fontSize = 14.sp,
-                lineHeight = 16.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily,
+                color = TukiInk,
+                style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = label,
                 color = TukiMuted,
-                fontSize = 9.sp,
-                lineHeight = 12.sp,
-                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -814,10 +794,10 @@ private fun routeSubtitle(option: RouteOption): String {
 
 private fun routeCardColor(option: RouteOption): Color {
     return when {
-        option.isRecommended -> com.example.frontend.ui.theme.TukiDeepTeal
-        option.label.contains("Fast", ignoreCase = true) -> TukiPurple
-        option.label.contains("Cheap", ignoreCase = true) -> TukiSeaGreen
-        else -> com.example.frontend.ui.theme.TukiDeepTeal
+        option.isRecommended -> TukiDeepTeal
+        option.label.contains("Fast", ignoreCase = true) -> TukiDeepTeal
+        option.label.contains("Cheap", ignoreCase = true) -> TukiForest
+        else -> TukiDeepTeal
     }
 }
 
@@ -884,7 +864,7 @@ private fun SuggestTodaBanner(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(TukiCardCream.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+            .background(TukiGold.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -895,20 +875,19 @@ private fun SuggestTodaBanner(
                 .background(TukiTeal, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text("+", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("+", color = Color.White, style = MaterialTheme.typography.titleLarge)
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column {
             Text(
                 text = "Know a TODA we don't have? Suggest it",
-                color = TukiDarkText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+                color = TukiInk,
+                style = MaterialTheme.typography.titleMedium
             )
             Text(
                 text = "Reviewed by our team before it goes live",
                 color = TukiMuted,
-                fontSize = 10.sp
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }

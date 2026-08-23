@@ -31,11 +31,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiCream2 = Color(0xFFFAEBC7)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiOrange = Color(0xFFE28B2B)
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiSky
 
 enum class LanguageOption(val title: String, val subtitle: String) {
     ENGLISH("English", "English (United States)"),
@@ -63,24 +66,21 @@ fun LanguageScreen(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(TukiCream2, CircleShape)
+                    .background(TukiSky.copy(alpha = 0.35f), CircleShape)
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "\u2039",
-                    color = TukiDark,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
+                    color = TukiInk,
+                    style = MaterialTheme.typography.displaySmall
                 )
             }
             Spacer(modifier = Modifier.width(16.dp))
             Text(
                 text = "Language",
-                color = TukiDark,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                color = TukiInk,
+                style = MaterialTheme.typography.displaySmall
             )
         }
 
@@ -89,9 +89,9 @@ fun LanguageScreen(
         // Section Title
         Text(
             text = "SELECT LANGUAGE",
-            color = TukiGray,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
+            color = TukiMuted,
+            style = MaterialTheme.typography.labelSmall,
+            letterSpacing = 1.sp
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -120,8 +120,7 @@ fun LanguageScreen(
             Text(
                 text = "Save",
                 color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.labelLarge
             )
         }
     }
@@ -138,10 +137,10 @@ private fun LanguageCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(TukiCream2, shape)
+            .background(TukiSky.copy(alpha = 0.2f), shape)
             .then(
                 if (isSelected) {
-                    Modifier.border(BorderStroke(2.dp, TukiOrange), shape)
+                    Modifier.border(BorderStroke(2.dp, TukiTeal), shape)
                 } else {
                     Modifier
                 }
@@ -156,24 +155,22 @@ private fun LanguageCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = option.title,
-                    color = TukiDark,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
+                    color = TukiInk,
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = option.subtitle,
-                    color = TukiGray,
-                    fontSize = 13.sp
+                    color = TukiMuted,
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
 
             if (isSelected) {
                 Text(
                     text = "\u2713",
-                    color = TukiOrange,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    color = TukiTeal,
+                    style = MaterialTheme.typography.titleLarge
                 )
             }
         }

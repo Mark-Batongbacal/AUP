@@ -21,10 +21,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
-
-private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
-private val TukiGray = com.example.frontend.ui.theme.TukiMuted
-private val TukiNavSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 
 enum class TukiTab { HOME, RECENT, FAVORITES, PROFILE }
 
@@ -39,7 +39,7 @@ fun BottomBar(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        color = TukiNavSurface,
+        color = TukiSurfaceRaised,
         shadowElevation = 8.dp
     ) {
         Row(
@@ -61,7 +61,7 @@ private fun BottomBarItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val tint = if (selected) TukiTeal else TukiGray
+    val tint = if (selected) TukiTeal else TukiMuted
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier.clickable(onClick = onClick).padding(vertical = 2.dp)
@@ -73,6 +73,6 @@ private fun BottomBarItem(
             modifier = Modifier.size(23.dp)
         )
         Spacer(Modifier.height(4.dp))
-        Text(label, color = tint, fontSize = 11.sp, fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold)
+        Text(label, color = tint, style = MaterialTheme.typography.labelSmall)
     }
 }
