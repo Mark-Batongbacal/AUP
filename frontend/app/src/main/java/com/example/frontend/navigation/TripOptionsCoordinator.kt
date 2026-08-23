@@ -1,6 +1,7 @@
 package com.example.frontend.navigation
 
 import android.content.Context
+import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.location.LocationDetectionFailureMessage
 import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.currentDeviceLocation
@@ -31,6 +32,13 @@ class TripOptionsCoordinator(context: Context) {
     private val navigation = provider.navigationRepository
     private val places = provider.placesRepository
     private val routing = provider.routingRepository
+    private val users = provider.userRepository
+
+    suspend fun refreshPreferredLanguage(): String =
+        when (val result = users.getCurrentUser()) {
+            is ApiResult.Success -> result.data.preferredLanguage
+            is ApiResult.Failure -> AppLanguagePreference.current()
+        }
 
     suspend fun rerouteNow(sessionId: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "MANUAL"))
