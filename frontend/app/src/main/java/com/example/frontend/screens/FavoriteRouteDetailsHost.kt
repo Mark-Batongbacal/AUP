@@ -100,7 +100,7 @@ fun FavoriteRouteDetailsHost(
                         val endLat = leg.endLatitude
                         val endLon = leg.endLongitude
                         if (startLat == null || startLon == null || endLat == null || endLon == null) {
-                            geometries += emptyList()
+                            geometries.add(emptyList())
                             continue
                         }
 
@@ -112,10 +112,12 @@ fun FavoriteRouteDetailsHost(
                             mode = leg.mode,
                             routeId = leg.routeId
                         )) {
-                            is ApiResult.Success -> geometries += result.data.points.map { point ->
-                                LatLng(point.latitude, point.longitude)
-                            }
-                            is ApiResult.Failure -> geometries += emptyList()
+                            is ApiResult.Success -> geometries.add(
+                                result.data.points.map { point ->
+                                    LatLng(point.latitude, point.longitude)
+                                }
+                            )
+                            is ApiResult.Failure -> geometries.add(emptyList())
                         }
                     }
                     legGeometries = geometries
