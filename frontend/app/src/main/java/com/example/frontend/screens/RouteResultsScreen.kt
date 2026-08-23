@@ -569,7 +569,10 @@ private fun RouteCarouselSection(
 
     val selectedRoute = routes.getOrNull(pagerState.currentPage) ?: routes.first()
     SelectRouteButton(
-        onClick = { onRouteSelect(selectedRoute) },
+        onClick = {
+            com.example.frontend.TukiMapOverlayState.selectJourneyJeepneyRoutes(selectedRoute.legRouteIds)
+            onRouteSelect(selectedRoute)
+        },
         modifier = Modifier.padding(horizontal = 22.dp)
     )
 }
