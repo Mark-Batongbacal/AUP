@@ -106,33 +106,40 @@ public sealed class LocationTrackingService(
         session.LastNavigationStatus = "ON_ROUTE";
 
         var remaining = Math.Max(0, legEnd - match.DistanceFromRouteStartMeters);
-        var candidate = session.CurrentNavigationState is TripNavigationState.OnJeepney or TripNavigationState.OnTricycle &&
+        var preparingToAlight = session.CurrentNavigationState is TripNavigationState.OnJeepney or TripNavigationState.OnTricycle &&
             remaining <= _options.PrepareToAlightDistanceMeters;
         var finalWalking = session.CurrentLegIndex == legs.Max(item => item.LegOrder) &&
             IsWalking(leg) && remaining <= _options.ArrivalDistanceMeters;
-        var walkingToBoard = session.CurrentNavigationState is
+        var approachingBoard = session.CurrentNavigationState is
                 TripNavigationState.WalkingToPickup or TripNavigationState.Transferring &&
-            IsWalking(leg) && remaining <= _options.ArrivalDistanceMeters;
-        var waitingToBoard = session.CurrentNavigationState == TripNavigationState.ApproachingBoardPoint &&
-            IsWalking(leg) && remaining <= _options.ArrivalDistanceMeters;
-        session.ConsecutiveStateConfirmationSamples = candidate || finalWalking || walkingToBoard || waitingToBoard
+            IsWalking(leg) && remaining <= _options.PrepareToBoardDistanceMeters;
+        var atBoardPoint = session.CurrentNavigationState is
+                TripNavigationState.WalkingToPickup or TripNavigationState.Transferring or TripNavigationState.ApproachingBoardPoint &&
+            IsWalking(leg) && remaining <= _options.ConfirmBoardDistanceMeters;
+        session.ConsecutiveStateConfirmationSamples = preparingToAlight || finalWalking || approachingBoard || atBoardPoint
             ? session.ConsecutiveStateConfirmationSamples + 1 : 0;
         if (session.ConsecutiveStateConfirmationSamples >= _options.StateConfirmationSamples)
         {
-            if (candidate && stateMachine.CanTransition(
+            if (preparingToAlight && stateMachine.CanTransition(
                     session.CurrentNavigationState, TripNavigationState.ApproachingAlightPoint))
-                session.CurrentNavigationState = TripNavigationState.ApproachingAlightPoint;
-            if (candidate) _telemetry.Event("PrepareToAlightTriggered", sessionId);
-            if (walkingToBoard && stateMachine.CanTransition(
-                    session.CurrentNavigationState, TripNavigationState.ApproachingBoardPoint))
-                session.CurrentNavigationState = TripNavigationState.ApproachingBoardPoint;
-            if (waitingToBoard && stateMachine.CanTransition(
-                    session.CurrentNavigationState, TripNavigationState.WaitingToBoard))
             {
+                session.CurrentNavigationState = TripNavigationState.ApproachingAlightPoint;
+                _telemetry.Event("PrepareToAlightTriggered", sessionId);
+            }
+            if (atBoardPoint)
+            {
+                if (!stateMachine.CanTransition(session.CurrentNavigationState, TripNavigationState.WaitingToBoard))
+                    return new(false, "INVALID_STATE_TRANSITION");
                 session.CurrentNavigationState = TripNavigationState.WaitingToBoard;
                 session.CurrentLegIndex++;
                 session.CurrentProgressMeters = 0;
                 session.CurrentRouteProgressMeters = null;
+                _telemetry.Event("BoardPointReached", sessionId);
+            }
+            else if (approachingBoard && stateMachine.CanTransition(
+                         session.CurrentNavigationState, TripNavigationState.ApproachingBoardPoint))
+            {
+                session.CurrentNavigationState = TripNavigationState.ApproachingBoardPoint;
             }
             if (finalWalking)
             {

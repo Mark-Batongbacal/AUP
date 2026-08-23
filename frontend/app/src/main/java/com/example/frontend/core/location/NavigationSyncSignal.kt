@@ -7,10 +7,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * needs server confirmation. Routine GPS updates remain fully local.
  */
 object NavigationSyncSignal {
-    // Five samples at the existing ~5 s coordinator cadence span about 20 seconds, which is enough
-    // for the backend's sustained off-route confirmation window as well as multi-step leg-end state
-    // transitions such as WalkingToPickup -> ApproachingBoardPoint -> WaitingToBoard.
-    private const val DefaultConfirmationSamples = 5
+    // Two server samples are enough for sustained off-route confirmation. Leg-end events can now
+    // transition on the first reliable server fix after local GPS has already confirmed the point.
+    private const val DefaultConfirmationSamples = 2
     private val pendingSyncs = AtomicInteger(0)
 
     fun requestImmediateSync(samples: Int = DefaultConfirmationSamples) {

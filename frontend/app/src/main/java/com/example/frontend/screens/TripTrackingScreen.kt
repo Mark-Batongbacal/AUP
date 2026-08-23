@@ -27,6 +27,7 @@ import com.example.frontend.LiveTripMapScreen
 import com.example.frontend.TodaPointOverlay
 import com.example.frontend.TransitRouteOverlay
 import com.example.frontend.components.ParaPoOverlay
+import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.RouteCoordinate
 import com.example.frontend.core.location.hasDeviceLocationPermission
@@ -100,6 +101,7 @@ fun TripTrackingScreen(
     var instructionCollapsed by remember { mutableStateOf(false) }
     var recenterRequestKey by remember { mutableStateOf(0) }
     var localLandmarkNotice by remember { mutableStateOf<String?>(null) }
+    var navigationLanguage by remember { mutableStateOf(AppLanguagePreference.current()) }
 
     val tts = remember(context) {
         TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
@@ -112,6 +114,10 @@ fun TripTrackingScreen(
     val geometryKey = snapshot?.let(::navigationGeometryKey)
     val serverRerouted = snapshot?.status.equals("REROUTE_SUCCEEDED", true)
     val effectiveRerouted = hasRerouted || serverRerouted
+
+    LaunchedEffect(snapshot?.sessionId) {
+        navigationLanguage = options.refreshPreferredLanguage()
+    }
 
     LaunchedEffect(navigationSnapshot?.state) {
         if (navigationSnapshot?.state.equals("Arrived", true)) {
@@ -218,9 +224,9 @@ fun TripTrackingScreen(
         NavigationSyncSignal.requestImmediateSync()
     }
 
-    LaunchedEffect(localProgress?.landmarkEvent) {
+    LaunchedEffect(localProgress?.landmarkEvent, navigationLanguage) {
         val event = localProgress?.landmarkEvent ?: return@LaunchedEffect
-        localLandmarkNotice = "Ayun, nalagpasan natin ang ${event.name}."
+        localLandmarkNotice = LocalNavigationSpeech.landmarkPassedText(event.name, navigationLanguage)
         delay(5_000)
         localLandmarkNotice = null
     }
@@ -240,7 +246,7 @@ fun TripTrackingScreen(
         remainingDistance
     )
     val instruction = localLandmarkNotice
-        ?: localGuidance?.let(LocalNavigationSpeech::guidanceText)
+        ?: localGuidance?.let { LocalNavigationSpeech.guidanceText(it, navigationLanguage) }
         ?: renderedTemplate
         ?: snapshot?.displayInstruction()
         ?: snapshot?.nextInstruction?.let { next ->
@@ -253,7 +259,7 @@ fun TripTrackingScreen(
         }
         ?: "Waiting for navigation guidance…"
 
-    val following = localFollowingGuidance?.let(LocalNavigationSpeech::guidanceText)
+    val following = localFollowingGuidance?.let { LocalNavigationSpeech.guidanceText(it, navigationLanguage) }
         ?: snapshot?.followingInstruction?.let { next ->
             next.text?.takeIf { it.isNotBlank() }
                 ?: listOfNotNull(next.type.takeIf { it.isNotBlank() }, next.routeName?.takeIf { it.isNotBlank() }).joinToString(" · ").takeIf { it.isNotBlank() }
