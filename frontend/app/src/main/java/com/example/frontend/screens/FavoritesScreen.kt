@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.LocalTukiDataProvider
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
+import com.example.frontend.core.localization.AppLanguagePreference
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.model.FavoriteRoute
 import kotlin.math.roundToInt
@@ -139,13 +141,13 @@ fun FavoritesScreen(
                         Modifier.size(38.dp).clickable { onBack?.invoke() ?: backDispatcher?.onBackPressed() },
                         contentAlignment = Alignment.Center
                     ) { Text("←", color = TukiInk, style = MaterialTheme.typography.displaySmall) }
-                    Text("Favorites", Modifier.weight(1f), color = TukiInk, style = MaterialTheme.typography.displaySmall, textAlign = TextAlign.Center)
+                    Text(TukiInterfaceText.favorites, Modifier.weight(1f), color = TukiInk, style = MaterialTheme.typography.displaySmall, textAlign = TextAlign.Center)
                     Spacer(Modifier.size(38.dp))
                 }
                 Spacer(Modifier.height(5.dp))
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("🌟", fontSize = 57.sp)
-                    Text("Save your favorite routes\nfor quick access", color = TukiMuted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                    Text(TukiInterfaceText.saveFavoriteRoutes, color = TukiMuted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 }
                 Spacer(Modifier.height(10.dp))
             }
@@ -153,13 +155,15 @@ fun FavoritesScreen(
             if (!errorMessage.isNullOrBlank()) item { Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
 
             when {
-                isGuest -> item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
+                isGuest -> item { EmptyFavoriteCard(TukiInterfaceText.signInFavorites) }
                 isLoading || (!historyLookupComplete && favorites.isNotEmpty()) -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = TukiTeal)
                     }
                 }
-                uniqueFavorites.isEmpty() -> item { EmptyFavoriteCard("No favorite routes yet.\nTap the star on a route to save it here.") }
+                uniqueFavorites.isEmpty() -> item {
+                    EmptyFavoriteCard("${TukiInterfaceText.noFavoriteRoutes}\n${TukiInterfaceText.tapStarToSave}")
+                }
                 else -> itemsIndexed(uniqueFavorites, key = { index, route -> route.favoriteListKey(index) }) { _, route ->
                     FavoriteRouteCard(
                         route = route,
@@ -179,9 +183,9 @@ fun FavoritesScreen(
                         }
                         Spacer(Modifier.width(11.dp))
                         Column {
-                            Text("How to add favorites?", color = TukiInk, style = MaterialTheme.typography.titleSmall)
+                            Text(TukiInterfaceText.howToAddFavorites, color = TukiInk, style = MaterialTheme.typography.titleSmall)
                             Spacer(Modifier.height(5.dp))
-                            Text("Tap the star on any route to save it here.", color = TukiMuted, style = MaterialTheme.typography.bodySmall)
+                            Text(TukiInterfaceText.tapStarToSave, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -193,17 +197,25 @@ fun FavoritesScreen(
 
     pendingRemoval?.let { route ->
         val removing = route.id in removingFavoriteIds
+        val filipino = AppLanguagePreference.isFilipino()
         AlertDialog(
             onDismissRequest = { if (!removing) pendingRemoval = null },
-            title = { Text("Remove from favorites?") },
-            text = { Text("Are you sure you want to remove ${route.origin} → ${route.destination} from your favorites?") },
+            title = { Text(if (filipino) "Alisin sa Favorites?" else "Remove from favorites?") },
+            text = {
+                Text(
+                    if (filipino) "Sigurado ka bang gusto mong alisin ang ${route.origin} → ${route.destination} sa Favorites?"
+                    else "Are you sure you want to remove ${route.origin} → ${route.destination} from your favorites?"
+                )
+            },
             confirmButton = {
                 TextButton(enabled = !removing, onClick = { pendingRemoval = null; onRemoveFavorite(route) }) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    Text(if (filipino) "Alisin" else "Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(enabled = !removing, onClick = { pendingRemoval = null }) { Text("Keep Favorite", color = TukiTeal) }
+                TextButton(enabled = !removing, onClick = { pendingRemoval = null }) {
+                    Text(if (filipino) "Panatilihin" else "Keep Favorite", color = TukiTeal)
+                }
             }
         )
     }
@@ -257,17 +269,17 @@ private fun EmptyFavoriteCard(message: String) {
 private fun formatRecommendation(type: String): String {
     val tags = type.split(',').map { it.trim().lowercase() }
     return when {
-        "fastest" in tags -> "Fastest"
-        "cheapest" in tags -> "Cheapest"
-        "efficient" in tags || "balanced" in tags -> "Balanced"
-        type.isBlank() -> "Route"
+        "fastest" in tags -> if (TukiInterfaceText.isFilipino) "Pinakamabilis" else "Fastest"
+        "cheapest" in tags -> if (TukiInterfaceText.isFilipino) "Pinakamura" else "Cheapest"
+        "efficient" in tags || "balanced" in tags -> if (TukiInterfaceText.isFilipino) "Balanseng Ruta" else "Balanced"
+        type.isBlank() -> if (TukiInterfaceText.isFilipino) "Ruta" else "Route"
         else -> type.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
     }
 }
 
-private fun routeIcon(type: String): String = when (formatRecommendation(type)) {
-    "Fastest" -> "⚡"
-    "Cheapest" -> "₱"
+private fun routeIcon(type: String): String = when {
+    type.contains("fast", true) -> "⚡"
+    type.contains("cheap", true) -> "₱"
     else -> "🛺"
 }
 
