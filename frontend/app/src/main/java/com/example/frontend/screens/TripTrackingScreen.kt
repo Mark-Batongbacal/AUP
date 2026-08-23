@@ -89,6 +89,7 @@ fun TripTrackingScreen(
     var showEndDialog by remember { mutableStateOf(false) }
     var showArrival by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
+    var showNavigationAi by remember { mutableStateOf(false) }
     var optionSnapshot by remember { mutableStateOf<NavigationSnapshotDto?>(null) }
     var stableLegRoute by remember { mutableStateOf<List<LatLng>>(emptyList()) }
     var stableLegRouteKey by remember { mutableStateOf<String?>(null) }
@@ -123,6 +124,7 @@ fun TripTrackingScreen(
         if (navigationSnapshot?.state.equals("Arrived", true)) {
             showArrival = true
             showOptions = false
+            showNavigationAi = false
         }
     }
 
@@ -364,6 +366,13 @@ fun TripTrackingScreen(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.End
         ) {
+            if (activeTrip && !guestTrip) {
+                NavigationAiButton(
+                    enabled = !working,
+                    onClick = { showNavigationAi = true },
+                    modifier = Modifier.padding(end = 16.dp, bottom = 8.dp)
+                )
+            }
             RecenterButton(
                 enabled = currentPosition != null || visibleRoute.isNotEmpty(),
                 onClick = { recenterRequestKey += 1 },
@@ -425,7 +434,15 @@ fun TripTrackingScreen(
         TripOptionsSheet(
             isWorking = working,
             onDismiss = { showOptions = false },
-            onRerouteNow = { applyOption { options.rerouteNow(snapshot.sessionId) } },
+            onRerouteNow = { reason ->
+                applyOption {
+                    options.rerouteNow(
+                        sessionId = snapshot.sessionId,
+                        reason = reason.code,
+                        avoidTransportMode = reason.avoidTransportMode
+                    )
+                }
+            },
             onPreferenceChange = { preference -> applyOption { options.changePreference(snapshot.sessionId, preference) } },
             onLoadPreferencePreviews = {
                 val destinationPoint = activeFinalDestination
@@ -453,6 +470,20 @@ fun TripTrackingScreen(
                 }
             },
             onDestinationChange = { place -> applyOption(place) { options.changeDestination(snapshot.sessionId, place) } }
+        )
+    }
+
+    if (showNavigationAi && snapshot != null && !guestTrip) {
+        NavigationAiSheet(
+            onDismiss = { showNavigationAi = false },
+            ask = { message ->
+                options.askNavigationAssistant(
+                    sessionId = snapshot.sessionId,
+                    message = message,
+                    latitude = currentPosition?.latitude ?: snapshot.currentLatitude,
+                    longitude = currentPosition?.longitude ?: snapshot.currentLongitude
+                )
+            }
         )
     }
 
