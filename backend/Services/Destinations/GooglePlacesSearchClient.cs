@@ -28,11 +28,17 @@ public static class GooglePlacesSearchClient
             throw new DestinationProviderUnavailableException(
                 $"Google Places is not configured. Set {ApiKeyEnvironmentVariable} on the backend.");
 
-        object? locationBias = null;
+        var body = new Dictionary<string, object>
+        {
+            ["textQuery"] = query,
+            ["pageSize"] = ResultLimit,
+            ["regionCode"] = "PH"
+        };
+
         if (context?.FocusLatitude is { } latitude && context.FocusLongitude is { } longitude &&
             latitude is >= -90 and <= 90 && longitude is >= -180 and <= 180)
         {
-            locationBias = new
+            body["locationBias"] = new
             {
                 circle = new
                 {
@@ -41,14 +47,6 @@ public static class GooglePlacesSearchClient
                 }
             };
         }
-
-        var body = new
-        {
-            textQuery = query,
-            pageSize = ResultLimit,
-            regionCode = "PH",
-            locationBias
-        };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, SearchEndpoint)
         {
