@@ -33,6 +33,11 @@ public interface IUserProfileService
         string? phoneNumber,
         string? profileImageUrl,
         CancellationToken cancellationToken = default);
+
+    Task<UserProfileMutationResult> UpdatePreferredLanguageAsync(
+        Guid userId,
+        string? preferredLanguage,
+        CancellationToken cancellationToken = default);
 }
 
 public enum UserProfileRegistrationStatus
