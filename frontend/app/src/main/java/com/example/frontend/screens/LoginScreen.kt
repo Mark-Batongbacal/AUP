@@ -55,6 +55,8 @@ import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiOutline
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 import com.example.frontend.ui.theme.TukiTeal
 import kotlinx.coroutines.launch
 
@@ -115,9 +117,7 @@ fun LoginScreen(
                         showGuestAccessNotice = false
                         onGuestLoginClick()
                     }
-                ) {
-                    Text("Continue")
-                }
+                ) { Text("Continue") }
             }
         )
     }
@@ -126,7 +126,7 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .background(Color.White)
+            .background(TukiCream)
             .statusBarsPadding()
             .padding(start = 34.dp, end = 34.dp, top = 12.dp, bottom = 15.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -142,41 +142,22 @@ fun LoginScreen(
                 contentScale = ContentScale.Fit
             )
             Spacer(modifier = Modifier.width(10.dp))
-            Text(
-                text = "TUKI.",
-                color = TukiDeepTeal,
-                style = MaterialTheme.typography.displaySmall
-            )
+            Text(text = "TUKI.", color = TukiTeal, style = MaterialTheme.typography.displaySmall)
         }
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        Text(
-            text = "Welcome back",
-            color = TukiInk,
-            style = MaterialTheme.typography.displaySmall
-        )
-
+        Text(text = "Welcome back", color = TukiInk, style = MaterialTheme.typography.displaySmall)
         Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "Log in to continue your commute",
-            color = TukiMuted,
-            style = MaterialTheme.typography.bodyLarge
-        )
-
+        Text(text = "Log in to continue your commute", color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
         Spacer(modifier = Modifier.height(25.dp))
 
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(text = "Email", color = TukiInk, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
-
             TextField(
                 value = email,
-                onValueChange = {
-                    email = it
-                    loginError = null
-                },
+                onValueChange = { email = it; loginError = null },
                 modifier = Modifier.fillMaxWidth().height(60.dp),
                 enabled = !isLoginInProgress,
                 singleLine = true,
@@ -186,16 +167,11 @@ fun LoginScreen(
             )
 
             Spacer(modifier = Modifier.height(10.dp))
-
             Text(text = "Password", color = TukiInk, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
-
             TextField(
                 value = password,
-                onValueChange = {
-                    password = it
-                    loginError = null
-                },
+                onValueChange = { password = it; loginError = null },
                 modifier = Modifier.fillMaxWidth().height(60.dp),
                 enabled = !isLoginInProgress,
                 singleLine = true,
@@ -206,11 +182,9 @@ fun LoginScreen(
                         text = if (passwordVisible) "HIDE" else "SHOW",
                         color = TukiTeal,
                         style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier
-                            .padding(end = 14.dp)
-                            .clickable(enabled = !isLoginInProgress) {
-                                passwordVisible = !passwordVisible
-                            }
+                        modifier = Modifier.padding(end = 14.dp).clickable(enabled = !isLoginInProgress) {
+                            passwordVisible = !passwordVisible
+                        }
                     )
                 },
                 colors = loginFieldColors(),
@@ -218,12 +192,9 @@ fun LoginScreen(
             )
 
             Spacer(modifier = Modifier.height(6.dp))
-
             Text(
                 text = "Forgot password?",
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .clickable(enabled = !isLoginInProgress) { onForgotPasswordClick() },
+                modifier = Modifier.align(Alignment.End).clickable(enabled = !isLoginInProgress) { onForgotPasswordClick() },
                 color = TukiTeal,
                 style = MaterialTheme.typography.labelLarge
             )
@@ -231,19 +202,13 @@ fun LoginScreen(
 
         loginError?.let { message ->
             Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = message,
-                color = TukiDanger,
-                style = MaterialTheme.typography.labelLarge
-            )
+            Text(text = message, color = TukiDanger, style = MaterialTheme.typography.labelLarge)
         }
 
         Spacer(modifier = Modifier.height(20.dp))
-
         Button(
             onClick = {
                 if (isLoginInProgress) return@Button
-
                 val normalizedEmail = email.trim()
                 when {
                     normalizedEmail.isBlank() -> loginError = "Enter your email address."
@@ -252,11 +217,8 @@ fun LoginScreen(
                     else -> coroutineScope.launch {
                         loginError = null
                         isPasswordLoggingIn = true
-                        try {
-                            handleResult(onPasswordLoginClick(normalizedEmail, password))
-                        } finally {
-                            isPasswordLoggingIn = false
-                        }
+                        try { handleResult(onPasswordLoginClick(normalizedEmail, password)) }
+                        finally { isPasswordLoggingIn = false }
                     }
                 }
             },
@@ -265,109 +227,67 @@ fun LoginScreen(
             shape = RoundedCornerShape(22.dp),
             colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
         ) {
-            if (isPasswordLoggingIn) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-            } else {
-                Text(text = "Log in", style = MaterialTheme.typography.titleLarge)
-            }
+            if (isPasswordLoggingIn) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+            else Text(text = "Log in", style = MaterialTheme.typography.titleLarge)
         }
 
         Spacer(modifier = Modifier.height(15.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.LightGray))
-            Text(
-                text = "OR",
-                modifier = Modifier.padding(horizontal = 14.dp),
-                color = TukiMuted,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Box(modifier = Modifier.weight(1f).height(1.dp).background(Color.LightGray))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(TukiOutline))
+            Text(text = "OR", modifier = Modifier.padding(horizontal = 14.dp), color = TukiMuted, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Box(modifier = Modifier.weight(1f).height(1.dp).background(TukiOutline))
         }
 
         Spacer(modifier = Modifier.height(15.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(
                 onClick = {
-                    if (!isLoginInProgress) {
-                        coroutineScope.launch {
-                            loginError = null
-                            isGoogleLoggingIn = true
-                            try {
-                                handleResult(onGoogleLoginClick())
-                            } finally {
-                                isGoogleLoggingIn = false
-                            }
-                        }
+                    if (!isLoginInProgress) coroutineScope.launch {
+                        loginError = null
+                        isGoogleLoggingIn = true
+                        try { handleResult(onGoogleLoginClick()) }
+                        finally { isGoogleLoggingIn = false }
                     }
                 },
                 modifier = Modifier.weight(1f).height(56.dp),
                 enabled = !isLoginInProgress,
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(2.dp, Color(0xFFE8E8E8)),
+                border = BorderStroke(1.dp, TukiOutline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = TukiSurfaceRaised, contentColor = TukiInk),
                 contentPadding = PaddingValues(0.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(R.drawable.google_logo),
-                        contentDescription = "Google",
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Image(painter = painterResource(R.drawable.google_logo), contentDescription = "Google", modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isGoogleLoggingIn) "..." else "Google",
-                        color = TukiInk,
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    Text(text = if (isGoogleLoggingIn) "..." else "Google", color = TukiInk, style = MaterialTheme.typography.labelLarge)
                 }
             }
 
             OutlinedButton(
                 onClick = {
-                    if (!isLoginInProgress) {
-                        coroutineScope.launch {
-                            loginError = null
-                            isFacebookLoggingIn = true
-                            try {
-                                handleResult(onFacebookLoginClick())
-                            } finally {
-                                isFacebookLoggingIn = false
-                            }
-                        }
+                    if (!isLoginInProgress) coroutineScope.launch {
+                        loginError = null
+                        isFacebookLoggingIn = true
+                        try { handleResult(onFacebookLoginClick()) }
+                        finally { isFacebookLoggingIn = false }
                     }
                 },
                 modifier = Modifier.weight(1f).height(56.dp),
                 enabled = !isLoginInProgress,
                 shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(2.dp, Color(0xFFE8E8E8)),
+                border = BorderStroke(1.dp, TukiOutline),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = TukiSurfaceRaised, contentColor = TukiInk),
                 contentPadding = PaddingValues(0.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(
-                        painter = painterResource(R.drawable.facebook_logo),
-                        contentDescription = "Facebook",
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Image(painter = painterResource(R.drawable.facebook_logo), contentDescription = "Facebook", modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isFacebookLoggingIn) "..." else "Facebook",
-                        color = TukiInk,
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    Text(text = if (isFacebookLoggingIn) "..." else "Facebook", color = TukiInk, style = MaterialTheme.typography.labelLarge)
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
-
         OutlinedButton(
             onClick = {
                 if (isLoginInProgress) return@OutlinedButton
@@ -379,55 +299,39 @@ fun LoginScreen(
                             is ApiResult.Success -> showGuestAccessNotice = true
                             is ApiResult.Failure -> loginError = result.message
                         }
-                    } finally {
-                        isGuestLoggingIn = false
-                    }
+                    } finally { isGuestLoggingIn = false }
                 }
             },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
             enabled = !isLoginInProgress,
             shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(2.dp, Color(0xFFE8E8E8))
+            border = BorderStroke(1.dp, TukiOutline),
+            colors = ButtonDefaults.outlinedButtonColors(containerColor = TukiSurfaceRaised, contentColor = TukiInk)
         ) {
-            if (isGuestLoggingIn) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TukiTeal)
-            } else {
-                Text(
-                    text = "Continue as Guest",
-                    color = TukiInk,
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
+            if (isGuestLoggingIn) CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TukiTeal)
+            else Text(text = "Continue as Guest", color = TukiInk, style = MaterialTheme.typography.labelLarge)
         }
 
         Spacer(modifier = Modifier.height(8.dp))
-
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "New to Tuki? ",
-                color = TukiMuted,
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(
-                text = "Sign up",
-                color = TukiOrange,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.clickable(enabled = !isLoginInProgress) { onSignUpClick() }
-            )
+            Text(text = "New to Tuki? ", color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
+            Text(text = "Sign up", color = TukiOrange, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable(enabled = !isLoginInProgress) { onSignUpClick() })
         }
     }
 }
 
 @Composable
 private fun loginFieldColors() = TextFieldDefaults.colors(
-    focusedContainerColor = TukiCream,
-    unfocusedContainerColor = TukiCream,
-    disabledContainerColor = TukiCream,
+    focusedContainerColor = TukiSurfaceRaised,
+    unfocusedContainerColor = TukiSurfaceRaised,
+    disabledContainerColor = TukiSurfaceRaised.copy(alpha = 0.7f),
     focusedIndicatorColor = Color.Transparent,
     unfocusedIndicatorColor = Color.Transparent,
-    disabledIndicatorColor = Color.Transparent
+    disabledIndicatorColor = Color.Transparent,
+    focusedTextColor = TukiInk,
+    unfocusedTextColor = TukiInk,
+    disabledTextColor = TukiMuted,
+    cursorColor = TukiTeal
 )
 
 sealed interface LoginActionResult {
