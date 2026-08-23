@@ -21,9 +21,11 @@ public sealed class ReroutingService(
     ILandmarkCorridorPrefetchService landmarkPrefetch,
     backend.Services.TripSessions.ITripSessionStateMachine stateMachine,
     IOptions<NavigationOptions> options,
+    IOptions<RoutingOptions>? routingOptions = null,
     ITukiTelemetry? telemetry = null) : IReroutingService
 {
     private readonly NavigationOptions _options = options.Value;
+    private readonly RoutingOptions _routingOptions = routingOptions?.Value ?? new RoutingOptions();
     private readonly ITukiTelemetry _telemetry = telemetry ?? NullTukiTelemetry.Instance;
 
     public async Task<RerouteResult> RerouteAsync(Guid userId, Guid sessionId,
@@ -84,6 +86,9 @@ public sealed class ReroutingService(
             var plans = await routing.PlanTripsAsync(latitude, longitude,
                 destinationLatitude, destinationLongitude, cancellationToken);
             var eligible = plans
+                .Where(plan => RoutingPlanSafety.HasValidTransitAccess(
+                    plan,
+                    _routingOptions.MaxWalkAccessDistanceMeters))
                 .Where(plan => budget is null || (decimal)plan.TotalFarePesos <= budget.Value)
                 .Where(plan => !UsesTransportMode(plan, avoidTransportMode))
                 .ToList();

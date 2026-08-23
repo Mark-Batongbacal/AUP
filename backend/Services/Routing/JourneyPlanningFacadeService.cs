@@ -1,5 +1,6 @@
 using backend.Models.Routing;
 using backend.Services.Assistant;
+using Microsoft.Extensions.Options;
 
 namespace backend.Services.Routing;
 
@@ -25,8 +26,12 @@ public interface IJourneyPlanningFacadeService
 
 public sealed class JourneyPlanningFacadeService(
     IRoutingService routing,
-    IJourneyPlanPersistenceService persistence) : IJourneyPlanningFacadeService
+    IJourneyPlanPersistenceService persistence,
+    IOptions<RoutingOptions>? routingOptions = null) : IJourneyPlanningFacadeService
 {
+    private readonly RoutingOptions _routingOptions =
+        routingOptions?.Value ?? new RoutingOptions();
+
     public async Task<IReadOnlyList<MobileJourneyRecommendation>> PlanAsync(
         Guid userId, JourneyPlanRequest request,
         CancellationToken cancellationToken = default)
@@ -38,8 +43,13 @@ public sealed class JourneyPlanningFacadeService(
             request.OriginLatitude, request.OriginLongitude,
             request.DestinationLatitude, request.DestinationLongitude,
             cancellationToken);
-        var eligible = plans.Where(plan => request.Budget is null ||
-            (decimal)plan.TotalFarePesos <= request.Budget.Value).ToList();
+        var eligible = plans
+            .Where(plan => RoutingPlanSafety.HasValidTransitAccess(
+                plan,
+                _routingOptions.MaxWalkAccessDistanceMeters))
+            .Where(plan => request.Budget is null ||
+                (decimal)plan.TotalFarePesos <= request.Budget.Value)
+            .ToList();
         if (!string.IsNullOrWhiteSpace(request.Preference))
             eligible = eligible.OrderByDescending(plan => plan.RecommendationType.Split(',')
                 .Contains(request.Preference, StringComparer.OrdinalIgnoreCase)).ToList();
