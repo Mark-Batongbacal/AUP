@@ -138,9 +138,9 @@ public partial class RoutingService
 
     /// <summary>
     /// Keeps a small, deliberately diverse set of boarding variants for one
-    /// jeepney route. The exact nearest full-route projection is always given a
-    /// chance, but it is not forced to win: provisional overall, fastest, and
-    /// cheapest variants are also preserved for authoritative confirmation.
+    /// jeepney route. Exact projections on the full route are injected for both
+    /// boarding and alighting, while sampled anchors remain useful for broader
+    /// candidate search. Exact projections can use walk or tricycle access.
     /// </summary>
     private List<RouteConnectionCandidate> FindBestConnections(
         StaticJeepneyRoute route,
@@ -171,30 +171,32 @@ public partial class RoutingService
             .Select(candidate => candidate!)
             .ToList();
 
-        var nearestBoard = BuildNearestFullRouteBoardAccess(
+        var exactBoard = BuildExactFullRouteBoardAccess(
             route.RouteId,
             samples,
             originLatitude,
             originLongitude);
-        if (nearestBoard is not null &&
-            boardCandidates.All(candidate =>
-                ApproximateDistanceMeters(
-                    candidate.Anchor.Latitude,
-                    candidate.Anchor.Longitude,
-                    nearestBoard.Anchor.Latitude,
-                    nearestBoard.Anchor.Longitude) > 1.0))
-        {
-            boardCandidates.Add(nearestBoard);
-        }
+        AddUniqueAccessCandidate(boardCandidates, exactBoard);
+
+        var alightCandidates = alightAccessOptions
+            .Select(ConstrainTransitAccess)
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .ToList();
+
+        var exactAlight = BuildExactFullRouteAlightAccess(
+            route.RouteId,
+            samples,
+            destinationLatitude,
+            destinationLongitude);
+        AddUniqueAccessCandidate(alightCandidates, exactAlight);
 
         var all = new List<RouteConnectionCandidate>();
 
-        for (var alightIndex = 0; alightIndex < samples.Count; alightIndex++)
+        foreach (var alightAccess in alightCandidates)
         {
-            var alightAccess = ConstrainTransitAccess(alightAccessOptions[alightIndex]);
-            if (alightAccess is null)
-                continue;
-
+            var alightIndex = alightAccess.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, alightAccess.Anchor);
             var alightAnchor = alightAccess.FullRouteAnchor ??
                 GetRouteAnchor(route.RouteId, alightIndex, alightAccess.Anchor);
 
@@ -265,7 +267,7 @@ public partial class RoutingService
                 selected.Add(candidate);
         }
 
-        // 1) Nearest directionally-valid boarding opportunity.
+        // 1) Nearest directionally-valid boarding opportunity on full geometry.
         Add(distinct
             .OrderBy(candidate =>
                 StraightLineBoardAccessMeters(
@@ -316,6 +318,24 @@ public partial class RoutingService
         return selected;
     }
 
+    private static void AddUniqueAccessCandidate(
+        List<AccessCandidate> candidates,
+        AccessCandidate? candidate)
+    {
+        if (candidate is null)
+            return;
+
+        var duplicate = candidates.Any(existing =>
+            ApproximateDistanceMeters(
+                existing.Anchor.Latitude,
+                existing.Anchor.Longitude,
+                candidate.Anchor.Latitude,
+                candidate.Anchor.Longitude) <= 1.0);
+
+        if (!duplicate)
+            candidates.Add(candidate);
+    }
+
     private double EstimateConnectionTimeSeconds(RouteConnectionCandidate candidate) =>
         candidate.BoardAccess.TotalTimeSeconds +
         GetJeepneyLegTimeSeconds(
@@ -341,7 +361,7 @@ public partial class RoutingService
             candidate.BoardAccess.Anchor.Latitude,
             candidate.BoardAccess.Anchor.Longitude);
 
-    private AccessCandidate? BuildNearestFullRouteBoardAccess(
+    private AccessCandidate? BuildExactFullRouteBoardAccess(
         string routeId,
         List<(double Latitude, double Longitude)> samples,
         double originLatitude,
@@ -351,21 +371,110 @@ public partial class RoutingService
             routeId,
             (originLatitude, originLongitude),
             0);
-        var distance = ApproximateDistanceMeters(
+        var point = (anchor.Latitude, anchor.Longitude);
+        var sampleIndex = GetNearestSampleIndex(samples, point);
+        var alternatives = new List<AccessCandidate>();
+
+        var walkDistance = ApproximateDistanceMeters(
             originLatitude,
             originLongitude,
             anchor.Latitude,
             anchor.Longitude);
+        if (walkDistance <= MaxWalkAccessDistanceMeters)
+        {
+            alternatives.Add(WalkAccess(
+                point,
+                walkDistance,
+                sampleIndex,
+                anchor));
+        }
 
-        // Straight-line distance is only a lower bound. If even that is over
-        // the walking access cap, this exact projection cannot become a valid
-        // direct walk after Valhalla confirmation.
-        if (distance > MaxWalkAccessDistanceMeters)
+        foreach (var trikePoint in FindNearbyTrikePoints(
+                     originLatitude,
+                     originLongitude))
+        {
+            var walkToTrikeMeters = ApproximateDistanceMeters(
+                originLatitude,
+                originLongitude,
+                trikePoint.Latitude,
+                trikePoint.Longitude);
+            var rideDistanceMeters = ApproximateDistanceMeters(
+                trikePoint.Latitude,
+                trikePoint.Longitude,
+                anchor.Latitude,
+                anchor.Longitude);
+
+            alternatives.Add(TrikeAccess(
+                point,
+                trikePoint,
+                walkToTrikeMeters,
+                rideDistanceMeters,
+                sampleIndex,
+                anchor));
+        }
+
+        if (alternatives.Count == 0)
             return null;
 
+        return ConstrainTransitAccess(WithAlternatives(alternatives));
+    }
+
+    private AccessCandidate? BuildExactFullRouteAlightAccess(
+        string routeId,
+        List<(double Latitude, double Longitude)> samples,
+        double destinationLatitude,
+        double destinationLongitude)
+    {
+        var anchor = ProjectOntoFullRoute(
+            routeId,
+            (destinationLatitude, destinationLongitude),
+            0);
         var point = (anchor.Latitude, anchor.Longitude);
         var sampleIndex = GetNearestSampleIndex(samples, point);
-        return WalkAccess(point, distance, sampleIndex, anchor);
+        var alternatives = new List<AccessCandidate>();
+
+        var walkDistance = ApproximateDistanceMeters(
+            anchor.Latitude,
+            anchor.Longitude,
+            destinationLatitude,
+            destinationLongitude);
+        if (walkDistance <= MaxWalkAccessDistanceMeters)
+        {
+            alternatives.Add(WalkAccess(
+                point,
+                walkDistance,
+                sampleIndex,
+                anchor));
+        }
+
+        foreach (var trikePoint in FindNearbyTrikePoints(
+                     anchor.Latitude,
+                     anchor.Longitude))
+        {
+            var walkToTrikeMeters = ApproximateDistanceMeters(
+                anchor.Latitude,
+                anchor.Longitude,
+                trikePoint.Latitude,
+                trikePoint.Longitude);
+            var rideDistanceMeters = ApproximateDistanceMeters(
+                trikePoint.Latitude,
+                trikePoint.Longitude,
+                destinationLatitude,
+                destinationLongitude);
+
+            alternatives.Add(TrikeAccess(
+                point,
+                trikePoint,
+                walkToTrikeMeters,
+                rideDistanceMeters,
+                sampleIndex,
+                anchor));
+        }
+
+        if (alternatives.Count == 0)
+            return null;
+
+        return ConstrainTransitAccess(WithAlternatives(alternatives));
     }
 
     private AccessCandidate? ConstrainTransitAccess(AccessCandidate candidate)
