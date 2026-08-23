@@ -47,11 +47,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
-import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiOrange
@@ -90,7 +90,8 @@ fun LoginScreen(
     var showGuestAccessNotice by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
 
-    val isLoginInProgress = isPasswordLoggingIn || isGoogleLoggingIn || isFacebookLoggingIn || isGuestLoggingIn
+    val isLoginInProgress =
+        isPasswordLoggingIn || isGoogleLoggingIn || isFacebookLoggingIn || isGuestLoggingIn
 
     fun handleResult(result: LoginActionResult) {
         when (result) {
@@ -103,14 +104,11 @@ fun LoginScreen(
     if (showGuestAccessNotice) {
         AlertDialog(
             onDismissRequest = {},
-            title = { Text(if (TukiInterfaceText.isFilipino) "Aktibo ang guest access" else "Guest access is active") },
+            title = { Text("Guest access is active") },
             text = {
                 Text(
-                    if (TukiInterfaceText.isFilipino) {
-                        "Magagamit mo ang TUKI sa loob ng 24 oras, kasama ang navigation, history, at Favorites. Gumawa ng account para magamit ito nang walang guest time limit."
-                    } else {
-                        "You can use TUKI for 24 hours, including navigation, history, and favorites. Create an account if you want access without the guest time limit."
-                    }
+                    "You can use TUKI for 24 hours, including navigation, history, and favorites. " +
+                        "Create an account if you want access without the guest time limit."
                 )
             },
             confirmButton = {
@@ -119,7 +117,7 @@ fun LoginScreen(
                         showGuestAccessNotice = false
                         onGuestLoginClick()
                     }
-                ) { Text(if (TukiInterfaceText.isFilipino) "Magpatuloy" else "Continue") }
+                ) { Text("Continue") }
             }
         )
     }
@@ -133,7 +131,10 @@ fun LoginScreen(
             .padding(start = 34.dp, end = 34.dp, top = 12.dp, bottom = 15.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
             Image(
                 painter = painterResource(R.drawable.tuki_logo),
                 contentDescription = "TUKI logo",
@@ -145,13 +146,14 @@ fun LoginScreen(
         }
 
         Spacer(modifier = Modifier.height(20.dp))
-        Text(text = TukiInterfaceText.welcomeBack, color = TukiInk, style = MaterialTheme.typography.displaySmall)
+
+        Text(text = "Welcome back", color = TukiInk, style = MaterialTheme.typography.displaySmall)
         Spacer(modifier = Modifier.height(4.dp))
-        Text(text = TukiInterfaceText.loginSubtitle, color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
+        Text(text = "Log in to continue your commute", color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
         Spacer(modifier = Modifier.height(25.dp))
 
         Column(modifier = Modifier.fillMaxWidth()) {
-            Text(text = TukiInterfaceText.email, color = TukiInk, style = MaterialTheme.typography.titleMedium)
+            Text(text = "Email", color = TukiInk, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
             TextField(
                 value = email,
@@ -165,7 +167,7 @@ fun LoginScreen(
             )
 
             Spacer(modifier = Modifier.height(10.dp))
-            Text(text = TukiInterfaceText.password, color = TukiInk, style = MaterialTheme.typography.titleMedium)
+            Text(text = "Password", color = TukiInk, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
             TextField(
                 value = password,
@@ -191,7 +193,7 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = TukiInterfaceText.forgotPassword,
+                text = "Forgot password?",
                 modifier = Modifier.align(Alignment.End).clickable(enabled = !isLoginInProgress) { onForgotPasswordClick() },
                 color = TukiTeal,
                 style = MaterialTheme.typography.labelLarge
@@ -209,9 +211,9 @@ fun LoginScreen(
                 if (isLoginInProgress) return@Button
                 val normalizedEmail = email.trim()
                 when {
-                    normalizedEmail.isBlank() -> loginError = if (TukiInterfaceText.isFilipino) "Ilagay ang email address mo." else "Enter your email address."
-                    password.isBlank() -> loginError = if (TukiInterfaceText.isFilipino) "Ilagay ang password mo." else "Enter your password."
-                    password.length < 8 -> loginError = if (TukiInterfaceText.isFilipino) "Dapat hindi bababa sa 8 character ang password." else "Password must be at least 8 characters."
+                    normalizedEmail.isBlank() -> loginError = "Enter your email address."
+                    password.isBlank() -> loginError = "Enter your password."
+                    password.length < 8 -> loginError = "Password must be at least 8 characters."
                     else -> coroutineScope.launch {
                         loginError = null
                         isPasswordLoggingIn = true
@@ -226,13 +228,13 @@ fun LoginScreen(
             colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
         ) {
             if (isPasswordLoggingIn) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-            else Text(text = TukiInterfaceText.logIn, style = MaterialTheme.typography.titleLarge)
+            else Text(text = "Log in", style = MaterialTheme.typography.titleLarge)
         }
 
         Spacer(modifier = Modifier.height(15.dp))
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(modifier = Modifier.weight(1f).height(1.dp).background(TukiOutline))
-            Text(text = if (TukiInterfaceText.isFilipino) "O" else "OR", modifier = Modifier.padding(horizontal = 14.dp), color = TukiMuted, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(text = "OR", modifier = Modifier.padding(horizontal = 14.dp), color = TukiMuted, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Box(modifier = Modifier.weight(1f).height(1.dp).background(TukiOutline))
         }
 
@@ -307,18 +309,13 @@ fun LoginScreen(
             colors = ButtonDefaults.outlinedButtonColors(containerColor = TukiSurfaceRaised, contentColor = TukiInk)
         ) {
             if (isGuestLoggingIn) CircularProgressIndicator(modifier = Modifier.size(22.dp), color = TukiTeal)
-            else Text(text = TukiInterfaceText.continueAsGuest, color = TukiInk, style = MaterialTheme.typography.labelLarge)
+            else Text(text = "Continue as Guest", color = TukiInk, style = MaterialTheme.typography.labelLarge)
         }
 
         Spacer(modifier = Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(text = "${TukiInterfaceText.newToTuki} ", color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = TukiInterfaceText.signUp,
-                color = TukiOrange,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.clickable(enabled = !isLoginInProgress) { onSignUpClick() }
-            )
+            Text(text = "New to Tuki? ", color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
+            Text(text = "Sign up", color = TukiOrange, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable(enabled = !isLoginInProgress) { onSignUpClick() })
         }
     }
 }

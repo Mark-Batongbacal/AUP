@@ -20,7 +20,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -36,25 +35,33 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import com.example.frontend.components.OtpCodeField
 import com.example.frontend.components.OtpResendButton
-import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+import androidx.compose.material3.MaterialTheme
 import com.example.frontend.ui.theme.TukiTeal
 import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiDanger
 import com.example.frontend.ui.theme.TukiSurfaceRaised
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
-private enum class ForgotPasswordStage { EMAIL, OTP, PASSWORD }
+private enum class ForgotPasswordStage {
+    EMAIL,
+    OTP,
+    PASSWORD
+}
 
 @Composable
 fun ForgotPasswordScreen(
@@ -79,7 +86,7 @@ fun ForgotPasswordScreen(
         if (isWorking) return
         val normalizedEmail = email.trim()
         if (normalizedEmail.isBlank() || !normalizedEmail.contains("@")) {
-            error = if (TukiInterfaceText.isFilipino) "Maglagay ng valid na email address." else "Enter a valid email address."
+            error = "Enter a valid email address."
             return
         }
 
@@ -92,7 +99,7 @@ fun ForgotPasswordScreen(
                     stage = ForgotPasswordStage.OTP
                     code = ""
                     otpSendGeneration += 1
-                    info = if (TukiInterfaceText.isFilipino) "Nagpadala kami ng 8-digit code sa $normalizedEmail." else "We sent an 8-digit code to $normalizedEmail."
+                    info = "We sent an 8-digit code to $normalizedEmail."
                 }
                 is ApiResult.Failure -> error = result.message
             }
@@ -103,7 +110,7 @@ fun ForgotPasswordScreen(
     fun verifyCode() {
         if (isWorking) return
         if (code.length != 8) {
-            error = if (TukiInterfaceText.isFilipino) "Ilagay ang kumpletong 8-digit code." else "Enter the complete 8-digit code."
+            error = "Enter the complete 8-digit code."
             return
         }
 
@@ -122,15 +129,15 @@ fun ForgotPasswordScreen(
     fun resetPassword() {
         if (isWorking) return
         when {
-            newPassword.length < 8 -> error = if (TukiInterfaceText.isFilipino) "Dapat hindi bababa sa 8 character ang bagong password." else "New password must be at least 8 characters."
-            newPassword != confirmPassword -> error = if (TukiInterfaceText.isFilipino) "Hindi magkapareho ang bagong password at confirmation." else "New password and confirmation do not match."
+            newPassword.length < 8 -> error = "New password must be at least 8 characters."
+            newPassword != confirmPassword -> error = "New password and confirmation do not match."
             else -> coroutineScope.launch {
                 isWorking = true
                 error = null
                 info = null
                 when (val result = authRepository.resetPassword(email.trim(), code, newPassword)) {
                     is ApiResult.Success -> {
-                        info = if (TukiInterfaceText.isFilipino) "Matagumpay na na-reset ang password." else "Password reset successfully."
+                        info = "Password reset successfully."
                         delay(800)
                         onResetSent()
                     }
@@ -150,7 +157,10 @@ fun ForgotPasswordScreen(
             .padding(start = 34.dp, end = 34.dp, top = 12.dp, bottom = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start
+        ) {
             Box(
                 modifier = Modifier
                     .size(38.dp)
@@ -183,14 +193,14 @@ fun ForgotPasswordScreen(
             modifier = Modifier.size(72.dp),
             contentScale = ContentScale.Fit
         )
-        Text("TUKI.", color = TukiTeal, style = MaterialTheme.typography.displaySmall)
+        Text("TUKI.", color = TukiDeepTeal, style = MaterialTheme.typography.displaySmall)
 
         Spacer(modifier = Modifier.height(28.dp))
         Text(
             text = when (stage) {
-                ForgotPasswordStage.EMAIL -> TukiInterfaceText.resetPassword
-                ForgotPasswordStage.OTP -> TukiInterfaceText.checkYourEmail
-                ForgotPasswordStage.PASSWORD -> if (TukiInterfaceText.isFilipino) "Gumawa ng bagong password" else "Create new password"
+                ForgotPasswordStage.EMAIL -> "Reset Password"
+                ForgotPasswordStage.OTP -> "Check your email"
+                ForgotPasswordStage.PASSWORD -> "Create new password"
             },
             color = TukiInk,
             style = MaterialTheme.typography.displaySmall
@@ -199,9 +209,9 @@ fun ForgotPasswordScreen(
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = when (stage) {
-                ForgotPasswordStage.EMAIL -> if (TukiInterfaceText.isFilipino) "Ilagay ang email na naka-link sa TUKI account mo." else "Enter the email linked to your TUKI account."
-                ForgotPasswordStage.OTP -> if (TukiInterfaceText.isFilipino) "Nagpadala kami ng 8-digit OTP sa ${email.trim()}." else "We've sent an 8-digit OTP to ${email.trim()}."
-                ForgotPasswordStage.PASSWORD -> if (TukiInterfaceText.isFilipino) "Na-verify na ang code mo. Pumili ng bagong password." else "Your code is verified. Choose a new password."
+                ForgotPasswordStage.EMAIL -> "Enter the email linked to your TUKI account."
+                ForgotPasswordStage.OTP -> "We've sent an 8-digit OTP to ${email.trim()}."
+                ForgotPasswordStage.PASSWORD -> "Your code is verified. Choose a new password."
             },
             color = TukiMuted,
             style = MaterialTheme.typography.bodyLarge,
@@ -212,31 +222,53 @@ fun ForgotPasswordScreen(
 
         when (stage) {
             ForgotPasswordStage.EMAIL -> ResetTextField(
-                label = TukiInterfaceText.email,
+                label = "Email",
                 value = email,
                 enabled = !isWorking,
-                onValueChange = { email = it; error = null }
+                onValueChange = {
+                    email = it
+                    error = null
+                }
             )
+
             ForgotPasswordStage.OTP -> {
-                OtpCodeField(code = code, onCodeChange = { code = it; error = null }, enabled = !isWorking)
+                OtpCodeField(
+                    code = code,
+                    onCodeChange = {
+                        code = it
+                        error = null
+                    },
+                    enabled = !isWorking
+                )
                 Spacer(modifier = Modifier.height(10.dp))
-                OtpResendButton(sendGeneration = otpSendGeneration, enabled = !isWorking, onResend = { requestCode() })
+                OtpResendButton(
+                    sendGeneration = otpSendGeneration,
+                    enabled = !isWorking,
+                    onResend = { requestCode() }
+                )
             }
+
             ForgotPasswordStage.PASSWORD -> {
                 ResetTextField(
-                    label = TukiInterfaceText.newPassword,
+                    label = "New password",
                     value = newPassword,
                     enabled = !isWorking,
                     isPassword = true,
-                    onValueChange = { newPassword = it; error = null }
+                    onValueChange = {
+                        newPassword = it
+                        error = null
+                    }
                 )
                 Spacer(modifier = Modifier.height(18.dp))
                 ResetTextField(
-                    label = TukiInterfaceText.confirmNewPassword,
+                    label = "Confirm new password",
                     value = confirmPassword,
                     enabled = !isWorking,
                     isPassword = true,
-                    onValueChange = { confirmPassword = it; error = null }
+                    onValueChange = {
+                        confirmPassword = it
+                        error = null
+                    }
                 )
             }
         }
@@ -264,13 +296,14 @@ fun ForgotPasswordScreen(
             shape = RoundedCornerShape(18.dp),
             colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
         ) {
-            if (isWorking) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
-            else {
+            if (isWorking) {
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
+            } else {
                 Text(
                     text = when (stage) {
-                        ForgotPasswordStage.EMAIL -> TukiInterfaceText.sendOtp
-                        ForgotPasswordStage.OTP -> TukiInterfaceText.verifyOtp
-                        ForgotPasswordStage.PASSWORD -> TukiInterfaceText.resetPassword
+                        ForgotPasswordStage.EMAIL -> "Send OTP"
+                        ForgotPasswordStage.OTP -> "Verify OTP"
+                        ForgotPasswordStage.PASSWORD -> "Reset Password"
                     },
                     style = MaterialTheme.typography.titleLarge
                 )

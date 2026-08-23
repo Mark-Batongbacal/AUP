@@ -38,7 +38,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.users.UserProfileDto
@@ -95,20 +94,32 @@ fun SettingsScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(TukiCream).statusBarsPadding(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TukiCream)
+            .statusBarsPadding(),
         contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
-                    modifier = Modifier.size(42.dp).clickable(onClick = onBack),
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clickable(onClick = onBack),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("←", color = TukiInk, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.width(8.dp))
-                Text(TukiInterfaceText.settings, color = TukiInk, style = MaterialTheme.typography.displaySmall)
+                Text(
+                    "Settings",
+                    color = TukiInk,
+                    style = MaterialTheme.typography.displaySmall
+                )
             }
         }
 
@@ -119,19 +130,38 @@ fun SettingsScreen(
                 color = TukiSurfaceRaised,
                 shadowElevation = if (isDarkMode) 0.dp else 1.dp
             ) {
-                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
-                        modifier = Modifier.size(58.dp).background(TukiTeal, CircleShape),
+                        modifier = Modifier
+                            .size(58.dp)
+                            .background(TukiTeal, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(initialsFor(displayName), color = Color.White, style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = initialsFor(displayName),
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleLarge
+                        )
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(displayName, color = TukiInk, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            displayName,
+                            color = TukiInk,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
                         if (displayEmail.isNotBlank()) {
                             Spacer(Modifier.height(2.dp))
-                            Text(displayEmail, color = TukiMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                            Text(
+                                displayEmail,
+                                color = TukiMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1
+                            )
                         }
                     }
                     Text("›", color = TukiMuted, fontSize = 25.sp)
@@ -140,34 +170,48 @@ fun SettingsScreen(
         }
 
         item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SettingsStatCard(
-                    displayTrips.toString(),
-                    if (TukiInterfaceText.isFilipino) "MGA BIYAHE" else "TRIPS TAKEN",
-                    Modifier.weight(1f)
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                SettingsStatCard(displayTrips.toString(), "TRIPS TAKEN", Modifier.weight(1f))
                 SettingsStatCard(displayFavorites.toString(), "FAVORITES", Modifier.weight(1f))
             }
         }
 
         item {
-            SettingsSectionLabel(TukiInterfaceText.appearance)
+            SettingsSectionLabel("APPEARANCE")
             Spacer(Modifier.height(10.dp))
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiSurfaceRaised) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = TukiSurfaceRaised
+            ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
-                        modifier = Modifier.size(44.dp).background(TukiSky, RoundedCornerShape(14.dp)),
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(TukiSky, RoundedCornerShape(14.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(if (isDarkMode) "☾" else "☀", color = TukiInk, fontSize = 22.sp)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(TukiInterfaceText.darkMode, color = TukiInk, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(TukiInterfaceText.darkModeSubtitle, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            "Dark Mode",
+                            color = TukiInk,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Switch between light and dark theme",
+                            color = TukiMuted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
                     Switch(
                         checked = isDarkMode,
@@ -187,46 +231,42 @@ fun SettingsScreen(
         }
 
         item {
-            SettingsSectionLabel(TukiInterfaceText.account)
+            SettingsSectionLabel("ACCOUNT")
             Spacer(Modifier.height(10.dp))
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiSurfaceRaised) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = TukiSurfaceRaised
+            ) {
                 Column {
-                    SettingsActionRow(
-                        TukiInterfaceText.editProfile,
-                        if (TukiInterfaceText.isFilipino) "Pangalan, email, phone" else "Name, email, phone",
-                        "♙"
-                    )
+                    SettingsActionRow("Edit Profile", "Name, email, phone", "♙")
                     SettingsDivider()
                     SettingsActionRow(
-                        TukiInterfaceText.changePassword,
-                        if (TukiInterfaceText.isFilipino) "Kumpirmahin gamit ang OTP sa email" else "Confirm changes with an email OTP",
+                        "Change password",
+                        "Confirm changes with an email OTP",
                         "◈",
                         onClick = { showChangePassword = true }
                     )
                     SettingsDivider()
-                    SettingsActionRow(TukiInterfaceText.language, displayLanguage, "◎")
+                    SettingsActionRow("Language", displayLanguage, "◎")
                 }
             }
         }
 
         item {
-            SettingsSectionLabel(TukiInterfaceText.support)
+            SettingsSectionLabel("SUPPORT")
             Spacer(Modifier.height(10.dp))
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiSurfaceRaised) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = TukiSurfaceRaised
+            ) {
                 Column {
-                    SettingsActionRow(
-                        TukiInterfaceText.helpCenter,
-                        if (TukiInterfaceText.isFilipino) "Mga FAQ at gabay" else "FAQs and guides",
-                        "?"
-                    )
+                    SettingsActionRow("Help Center", "FAQs and guides", "?")
                     SettingsDivider()
-                    SettingsActionRow(
-                        TukiInterfaceText.sendFeedback,
-                        if (TukiInterfaceText.isFilipino) "Tulungan kaming mapahusay ang TUKI" else "Help us improve TUKI",
-                        "✉"
-                    )
+                    SettingsActionRow("Send Feedback", "Help us improve TUKI", "✉")
                     SettingsDivider()
-                    SettingsActionRow(TukiInterfaceText.aboutTuki, "Version 1.0.0", "i")
+                    SettingsActionRow("About TUKI", "Version 1.0.0", "i")
                 }
             }
         }
@@ -234,7 +274,9 @@ fun SettingsScreen(
         item {
             Button(
                 onClick = onLogoutClick,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isDarkMode) TukiDanger.copy(alpha = 0.16f) else TukiDanger.copy(alpha = 0.10f),
@@ -242,7 +284,7 @@ fun SettingsScreen(
                 ),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
             ) {
-                Text(TukiInterfaceText.logOut, fontWeight = FontWeight.Bold)
+                Text("Log Out", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -250,8 +292,15 @@ fun SettingsScreen(
 
 @Composable
 private fun SettingsStatCard(value: String, label: String, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier, shape = RoundedCornerShape(16.dp), color = TukiSky.copy(alpha = 0.55f)) {
-        Column(modifier = Modifier.padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = TukiSky.copy(alpha = 0.55f)
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(value, color = TukiInk, style = MaterialTheme.typography.titleLarge)
             Text(label, color = TukiMuted, style = MaterialTheme.typography.labelSmall)
         }
@@ -277,14 +326,19 @@ private fun SettingsActionRow(
     onClick: () -> Unit = {}
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 13.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(42.dp).background(TukiSky, RoundedCornerShape(13.dp)),
+            modifier = Modifier
+                .size(42.dp)
+                .background(TukiSky, RoundedCornerShape(13.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text(icon, color = if (title == TukiInterfaceText.changePassword) TukiOrange else TukiInk, fontSize = 18.sp)
+            Text(icon, color = if (title == "Change password") TukiOrange else TukiInk, fontSize = 18.sp)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -298,7 +352,11 @@ private fun SettingsActionRow(
 @Composable
 private fun SettingsDivider() {
     Box(
-        Modifier.fillMaxWidth().padding(start = 68.dp).height(1.dp).background(TukiMuted.copy(alpha = 0.12f))
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 68.dp)
+            .height(1.dp)
+            .background(TukiMuted.copy(alpha = 0.12f))
     )
 }
 
