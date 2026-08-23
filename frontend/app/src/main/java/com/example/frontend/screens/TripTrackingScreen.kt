@@ -39,6 +39,7 @@ import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.navigation.LocalLegProximity
 import com.example.frontend.navigation.LocalNavigationEngine
 import com.example.frontend.navigation.LocalNavigationSpeech
+import com.example.frontend.navigation.LocalServerSyncReason
 import com.example.frontend.navigation.TripOptionsCoordinator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
@@ -214,14 +215,22 @@ fun TripTrackingScreen(
             transportMode = snapshot?.currentLeg?.transportMode,
             route = routeCoordinates,
             instructions = snapshot?.currentLegInstructions.orEmpty(),
-            landmarks = snapshot?.currentLegLandmarks.orEmpty()
+            landmarks = snapshot?.currentLegLandmarks.orEmpty(),
+            elapsedRealtimeNanos = location.elapsedRealtimeNanos.takeIf { it > 0L },
+            speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null
         )
     }
 
     LaunchedEffect(localProgress?.serverSyncReason, currentLegIndex, snapshot?.sessionId) {
         val reason = localProgress?.serverSyncReason ?: return@LaunchedEffect
-        if (snapshot?.sessionId?.startsWith("guest-") == true) return@LaunchedEffect
-        NavigationSyncSignal.requestImmediateSync()
+        val sessionId = snapshot?.sessionId ?: return@LaunchedEffect
+        if (sessionId.startsWith("guest-")) return@LaunchedEffect
+        when (reason) {
+            LocalServerSyncReason.MISSED_LEG_TARGET -> applyOption {
+                options.recoverMissedLegTarget(sessionId)
+            }
+            else -> NavigationSyncSignal.requestImmediateSync()
+        }
     }
 
     LaunchedEffect(localProgress?.landmarkEvent, navigationLanguage) {
