@@ -44,6 +44,12 @@ object PreviewMocks {
             focusLongitude: Double?
         ): ApiResult<List<DestinationSearchResultDto>> = ApiResult.Success(emptyList())
 
+        override suspend fun searchMorePlaces(
+            query: String,
+            focusLatitude: Double?,
+            focusLongitude: Double?
+        ): ApiResult<List<DestinationSearchResultDto>> = ApiResult.Success(emptyList())
+
         override suspend fun reverseGeocode(
             latitude: Double,
             longitude: Double
