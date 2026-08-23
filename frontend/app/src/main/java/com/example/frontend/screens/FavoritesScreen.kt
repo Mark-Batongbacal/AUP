@@ -8,12 +8,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,8 +28,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.LocalTukiDataProvider
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
+import com.example.frontend.core.network.ApiResult
 import com.example.frontend.model.FavoriteRoute
 import kotlin.math.roundToInt
 
@@ -32,11 +40,15 @@ import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
-import com.example.frontend.ui.theme.TukiForest
 import com.example.frontend.ui.theme.TukiGold
 import com.example.frontend.ui.theme.TukiSky
-import com.example.frontend.ui.theme.TukiGoldSurface
+
+private data class FavoriteHistorySummary(
+    val recommendationType: String,
+    val minutes: Int,
+    val totalFare: Double,
+    val walkingMeters: Int
+)
 
 @Composable
 fun FavoritesScreen(
@@ -53,7 +65,69 @@ fun FavoritesScreen(
     onProfileClick: () -> Unit = {}
 ) {
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
-    val uniqueFavorites = remember(favorites) { favorites.distinctBy { it.uniqueFavoriteIdentity() } }
+    val dataProvider = LocalTukiDataProvider.current
+    val favoriteRecommendationIds = remember(favorites) {
+        favorites.mapNotNull { it.recommendationId.takeIf(String::isNotBlank) }.distinct().sorted()
+    }
+    var historySummaries by remember(favoriteRecommendationIds) {
+        mutableStateOf<Map<String, FavoriteHistorySummary>>(emptyMap())
+    }
+    var historyLookupComplete by remember(favoriteRecommendationIds) {
+        mutableStateOf(favoriteRecommendationIds.isEmpty())
+    }
+    var pendingRemoval by remember { mutableStateOf<FavoriteRoute?>(null) }
+    var openedFavorite by remember { mutableStateOf<FavoriteRoute?>(null) }
+
+    LaunchedEffect(dataProvider, favoriteRecommendationIds) {
+        if (dataProvider == null || favoriteRecommendationIds.isEmpty()) {
+            historySummaries = emptyMap()
+            historyLookupComplete = true
+            return@LaunchedEffect
+        }
+
+        historyLookupComplete = false
+        historySummaries = when (val result = dataProvider.tripRepository.getHistory()) {
+            is ApiResult.Success -> result.data.mapNotNull { item ->
+                val recommendation = item.recommendation ?: return@mapNotNull null
+                recommendation.recommendationId to FavoriteHistorySummary(
+                    recommendationType = recommendation.recommendationType,
+                    minutes = recommendation.totalMinutes.toDouble().roundToInt().coerceAtLeast(0),
+                    totalFare = recommendation.totalFare.toDouble(),
+                    walkingMeters = recommendation.walkingDistanceMeters.toDouble().roundToInt().coerceAtLeast(0)
+                )
+            }.toMap()
+            is ApiResult.Failure -> emptyMap()
+        }
+        historyLookupComplete = true
+    }
+
+    val uniqueFavorites = remember(favorites, historySummaries) {
+        favorites.map { route ->
+            val summary = historySummaries[route.recommendationId]
+            if (summary == null) {
+                route
+            } else {
+                route.copy(
+                    recommendationType = summary.recommendationType.takeIf { it.isNotBlank() }
+                        ?: route.recommendationType,
+                    minutes = summary.minutes,
+                    totalFare = summary.totalFare,
+                    walkingMeters = summary.walkingMeters
+                )
+            }
+        }.distinctBy { it.uniqueFavoriteIdentity() }
+    }
+
+    openedFavorite?.let { favorite ->
+        FavoriteRouteDetailsHost(
+            favorite = favorite,
+            onBack = { openedFavorite = null },
+            onRepeatTrip = {
+                onRouteClick(favorite)
+            }
+        )
+        return
+    }
 
     Column(Modifier.fillMaxSize().background(TukiCream)) {
         LazyColumn(
@@ -101,7 +175,7 @@ fun FavoritesScreen(
 
             when {
                 isGuest -> item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
-                isLoading -> item {
+                isLoading || (!historyLookupComplete && favorites.isNotEmpty()) -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = TukiTeal)
                     }
@@ -111,8 +185,11 @@ fun FavoritesScreen(
                     FavoriteRouteCard(
                         route = route,
                         removing = route.id in removingFavoriteIds,
-                        onClick = { onRouteClick(route) },
-                        onRemove = { onRemoveFavorite(route) }
+                        onClick = {
+                            openedFavorite = route
+                            onRouteClick(route)
+                        },
+                        onRemove = { pendingRemoval = route }
                     )
                 }
             }
@@ -121,7 +198,7 @@ fun FavoritesScreen(
                 Spacer(Modifier.height(10.dp))
                 Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiGold.copy(alpha = 0.12f)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
-                        Surface(Modifier.size(27.dp), shape = CircleShape, color = com.example.frontend.ui.theme.TukiGold) {
+                        Surface(Modifier.size(27.dp), shape = CircleShape, color = TukiGold) {
                             Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, style = MaterialTheme.typography.labelLarge) }
                         }
                         Spacer(Modifier.width(11.dp))
@@ -143,12 +220,46 @@ fun FavoritesScreen(
             onProfileClick = onProfileClick
         )
     }
+
+    pendingRemoval?.let { route ->
+        val removing = route.id in removingFavoriteIds
+        AlertDialog(
+            onDismissRequest = {
+                if (!removing) pendingRemoval = null
+            },
+            title = { Text("Remove from favorites?") },
+            text = {
+                Text(
+                    "Are you sure you want to remove ${route.origin} → ${route.destination} from your favorites?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !removing,
+                    onClick = {
+                        pendingRemoval = null
+                        onRemoveFavorite(route)
+                    }
+                ) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !removing,
+                    onClick = { pendingRemoval = null }
+                ) {
+                    Text("Keep Favorite", color = TukiTeal)
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: () -> Unit, onRemove: () -> Unit) {
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = !removing, onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = Color.White,
         shadowElevation = 2.dp
@@ -174,7 +285,12 @@ private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: 
                 }
             }
             Spacer(Modifier.width(6.dp))
-            Box(Modifier.size(40.dp).clickable(enabled = !removing, onClick = onRemove), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clickable(enabled = !removing, onClick = onRemove),
+                contentAlignment = Alignment.Center
+            ) {
                 if (removing) CircularProgressIndicator(Modifier.size(18.dp), color = TukiTeal, strokeWidth = 2.dp)
                 else Text("★", color = TukiOrange, style = MaterialTheme.typography.displaySmall)
             }

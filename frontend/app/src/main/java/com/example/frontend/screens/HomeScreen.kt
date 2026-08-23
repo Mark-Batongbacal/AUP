@@ -887,6 +887,8 @@ private fun HomeMapPickerOverlay(
             modifier = Modifier.fillMaxSize(),
             startPoint = if (mode == HomeMapPickMode.Origin) selectedPoint ?: originPoint else originPoint,
             selectedDestination = null,
+            finalDestination = if (mode == HomeMapPickMode.Destination) selectedPoint else null,
+            cameraFocusPoint = if (mode == HomeMapPickMode.Destination) selectedPoint else null,
             onMapClick = onMapClick,
             visualStyle = MapVisualStyle.LiveTrip,
             showDeviceLocation = false

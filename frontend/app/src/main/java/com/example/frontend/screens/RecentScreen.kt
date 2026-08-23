@@ -7,10 +7,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -40,7 +42,6 @@ import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiForest
 import com.example.frontend.ui.theme.TukiGold
 import com.example.frontend.ui.theme.TukiSky
-import com.example.frontend.ui.theme.TukiOrangeSurface
 import com.example.frontend.ui.theme.TukiTealSurface
 import com.example.frontend.ui.theme.TukiForestSurface
 
@@ -62,6 +63,7 @@ fun RecentScreen(
     onProfileClick: () -> Unit = {}
 ) {
     var filter by rememberSaveable { mutableStateOf(RecentFilter.All) }
+    var pendingFavoriteRemoval by remember { mutableStateOf<RecentCommute?>(null) }
     val uniqueCommutes = remember(commutes) { commutes.distinctBy { it.uniqueRecentIdentity() } }
     val filtered = remember(uniqueCommutes, filter) {
         when (filter) {
@@ -117,12 +119,19 @@ fun RecentScreen(
                 }
                 else -> itemsIndexed(filtered, key = { index, commute -> commute.recentListKey(index) }) { _, commute ->
                     val recommendationId = commute.recommendationId
+                    val isFavorite = recommendationId != null && recommendationId in favoriteRecommendationIds
                     RecentTripCard(
                         commute = commute,
-                        isFavorite = recommendationId != null && recommendationId in favoriteRecommendationIds,
+                        isFavorite = isFavorite,
                         favoriteWorking = recommendationId != null && recommendationId in favoriteWorkingRecommendationIds,
                         canFavorite = !isGuest && !recommendationId.isNullOrBlank(),
-                        onFavoriteClick = { onToggleFavorite(commute) },
+                        onFavoriteClick = {
+                            if (isFavorite) {
+                                pendingFavoriteRemoval = commute
+                            } else {
+                                onToggleFavorite(commute)
+                            }
+                        },
                         onClick = { onCommuteClick(commute) }
                     )
                 }
@@ -135,6 +144,41 @@ fun RecentScreen(
             onRecentClick = {},
             onFavoritesClick = onFavoritesClick,
             onProfileClick = onProfileClick
+        )
+    }
+
+    pendingFavoriteRemoval?.let { commute ->
+        val recommendationId = commute.recommendationId
+        val working = recommendationId != null && recommendationId in favoriteWorkingRecommendationIds
+        AlertDialog(
+            onDismissRequest = {
+                if (!working) pendingFavoriteRemoval = null
+            },
+            title = { Text("Remove from favorites?") },
+            text = {
+                Text(
+                    "Are you sure you want to remove ${commute.origin} → ${commute.destination} from your favorites?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !working,
+                    onClick = {
+                        pendingFavoriteRemoval = null
+                        onToggleFavorite(commute)
+                    }
+                ) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !working,
+                    onClick = { pendingFavoriteRemoval = null }
+                ) {
+                    Text("Keep Favorite", color = TukiTeal)
+                }
+            }
         )
     }
 }

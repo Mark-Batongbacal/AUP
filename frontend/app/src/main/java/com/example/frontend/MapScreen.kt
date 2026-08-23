@@ -127,6 +127,7 @@ fun MapScreen(
     onMapClick: ((LatLng) -> Unit)? = null,
     navigationTrackingEnabled: Boolean = false,
     navigationTrackingPoint: LatLng? = null,
+    cameraFocusPoint: LatLng? = null,
     visualStyle: MapVisualStyle = MapVisualStyle.General,
     showDeviceLocation: Boolean = true,
     fitRouteBounds: Boolean = false,
@@ -205,6 +206,7 @@ fun MapScreen(
                 loadedStyle = style
 
                 val cameraTarget = if (navigationTrackingEnabled) navigationTrackingPoint else null
+                    ?: cameraFocusPoint
                     ?: routePoints.firstOrNull()
                     ?: startPoint
                     ?: selectedDestination
@@ -298,6 +300,20 @@ fun MapScreen(
                 CameraPosition.Builder().target(point).zoom(currentZoom).build()
             ),
             650
+        )
+    }
+
+    LaunchedEffect(mapLibreMap, loadedStyle, cameraFocusPoint, navigationTrackingEnabled) {
+        if (navigationTrackingEnabled) return@LaunchedEffect
+        val map = mapLibreMap ?: return@LaunchedEffect
+        if (loadedStyle == null) return@LaunchedEffect
+        val point = cameraFocusPoint ?: return@LaunchedEffect
+        val currentZoom = map.cameraPosition.zoom.takeIf { it >= DefaultMapZoom } ?: DefaultMapZoom
+        map.animateCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder().target(point).zoom(currentZoom).build()
+            ),
+            500
         )
     }
 
