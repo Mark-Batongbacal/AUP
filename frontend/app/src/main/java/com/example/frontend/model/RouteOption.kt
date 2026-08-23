@@ -18,5 +18,6 @@ class RouteOption (
     val isRecommended: Boolean = false,
     val routePoints: List<RoutePoint> = emptyList(),
     val legRoutePoints: List<List<RoutePoint>> = emptyList(),
-    val legEndPoints: List<RoutePoint> = emptyList()
+    val legEndPoints: List<RoutePoint> = emptyList(),
+    val legRouteIds: List<Long?> = emptyList()
 )

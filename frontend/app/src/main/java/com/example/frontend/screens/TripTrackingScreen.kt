@@ -334,6 +334,8 @@ fun TripTrackingScreen(
             } else legDestination,
             finalDestination = activeFinalDestination,
             futureRouteSegments = if (effectiveRerouted) emptyList() else futureRouteSegments,
+            nearbyJeepneyRoutes = nearbyJeepneyRoutes,
+            todaPoints = todaPoints,
             recenterRequestKey = recenterRequestKey,
             gpsPosition = gpsPosition,
             fullLegRoutePoints = baseRoute,

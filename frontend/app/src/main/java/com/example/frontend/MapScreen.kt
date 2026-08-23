@@ -122,8 +122,8 @@ fun MapScreen(
     selectedDestination: LatLng? = null,
     finalDestination: LatLng? = null,
     futureRouteSegments: List<List<LatLng>> = emptyList(),
-    transitRoutes: List<TransitRouteOverlay> = emptyList(),
-    todaPoints: List<TodaPointOverlay> = emptyList(),
+    transitRoutes: List<TransitRouteOverlay> = if (routePoints.isNotEmpty()) TukiMapOverlayState.selectedJourneyJeepneyRoutes else emptyList(),
+    todaPoints: List<TodaPointOverlay> = TukiMapOverlayState.todaPoints,
     onMapClick: ((LatLng) -> Unit)? = null,
     navigationTrackingEnabled: Boolean = false,
     navigationTrackingPoint: LatLng? = null,
@@ -174,9 +174,7 @@ fun MapScreen(
 
     val mapView = remember(context) {
         MapLibre.getInstance(context)
-        MapView(context).apply {
-            onCreate(null)
-        }
+        MapView(context).apply { onCreate(null) }
     }
 
     DisposableEffect(lifecycleOwner, mapView) {
@@ -189,9 +187,7 @@ fun MapScreen(
                 else -> Unit
             }
         }
-
         lifecycleOwner.lifecycle.addObserver(observer)
-
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) mapView.onPause()
@@ -225,7 +221,7 @@ fun MapScreen(
                 updateTodaLayer(style, todaPoints, visualStyle)
                 updateStartLayer(style, startPoint, visualStyle)
                 updateDestinationLayer(style, selectedDestination, visualStyle)
-                updateFinalDestinationLayer(style, finalDestination, visualStyle)
+                updateFinalDestinationLayer(style, finalDestination)
                 configureLocationComponent(context, map, style, hasLocationPermission && showDeviceLocation)
             }
         }
@@ -237,9 +233,7 @@ fun MapScreen(
             onDispose { }
         } else {
             mapView.setOnTouchListener { _, event ->
-                if (event.actionMasked == MotionEvent.ACTION_DOWN && followNavigationLocation) {
-                    followNavigationLocation = false
-                }
+                if (event.actionMasked == MotionEvent.ACTION_DOWN && followNavigationLocation) followNavigationLocation = false
                 false
             }
             onDispose { mapView.setOnTouchListener(null) }
@@ -301,23 +295,13 @@ fun MapScreen(
         val currentZoom = map.cameraPosition.zoom.takeIf { it >= NavigationMapZoom } ?: NavigationMapZoom
         map.animateCamera(
             CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder()
-                    .target(point)
-                    .zoom(currentZoom)
-                    .build()
+                CameraPosition.Builder().target(point).zoom(currentZoom).build()
             ),
             650
         )
     }
 
-    LaunchedEffect(
-        loadedStyle,
-        fitRouteBounds,
-        routeBoundsPoints,
-        startPoint,
-        selectedDestination,
-        navigationTrackingEnabled
-    ) {
+    LaunchedEffect(loadedStyle, fitRouteBounds, routeBoundsPoints, startPoint, selectedDestination, navigationTrackingEnabled) {
         if (!fitRouteBounds || navigationTrackingEnabled) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         if (loadedStyle == null || routeBoundsPoints.isEmpty()) return@LaunchedEffect
@@ -328,7 +312,7 @@ fun MapScreen(
             map = map,
             mapView = mapView,
             routePoints = routeBoundsPoints,
-            anchors = listOfNotNull(startPoint, selectedDestination),
+            anchors = listOfNotNull(startPoint, selectedDestination, finalDestination),
             insets = MapCameraInsets(
                 left = sidePadding,
                 top = verticalPadding,
@@ -341,31 +325,31 @@ fun MapScreen(
     LaunchedEffect(loadedStyle, routePoints, visualStyle) {
         loadedStyle?.let { updateRouteLayer(it, routePoints, visualStyle) }
     }
-
     LaunchedEffect(loadedStyle, startPoint, visualStyle) {
         loadedStyle?.let { updateStartLayer(it, startPoint, visualStyle) }
     }
-
     LaunchedEffect(loadedStyle, selectedDestination, visualStyle) {
         loadedStyle?.let { updateDestinationLayer(it, selectedDestination, visualStyle) }
     }
-
-    LaunchedEffect(loadedStyle, finalDestination, visualStyle) {
-        loadedStyle?.let { updateFinalDestinationLayer(it, finalDestination, visualStyle) }
+    LaunchedEffect(loadedStyle, finalDestination) {
+        loadedStyle?.let { updateFinalDestinationLayer(it, finalDestination) }
     }
-
     LaunchedEffect(loadedStyle, futureRouteSegments, visualStyle) {
         loadedStyle?.let { updateFutureLegLayers(it, futureRouteSegments, visualStyle) }
     }
-
-    LaunchedEffect(loadedStyle, transitRoutes, selectedTransitRouteId) {
-        loadedStyle?.let { updateTransitRouteLayers(it, transitRoutes, selectedTransitRouteId) }
+    LaunchedEffect(loadedStyle, transitRoutes, selectedTransitRouteId, todaPoints, visualStyle, finalDestination) {
+        loadedStyle?.let { style ->
+            updateTransitRouteLayers(style, transitRoutes, selectedTransitRouteId)
+            updateTodaLayer(style, todaPoints, visualStyle)
+            updateFinalDestinationLayer(style, finalDestination)
+        }
     }
-
-    LaunchedEffect(loadedStyle, todaPoints, visualStyle) {
-        loadedStyle?.let { updateTodaLayer(it, todaPoints, visualStyle) }
+    LaunchedEffect(loadedStyle, todaPoints, visualStyle, finalDestination) {
+        loadedStyle?.let {
+            updateTodaLayer(it, todaPoints, visualStyle)
+            updateFinalDestinationLayer(it, finalDestination)
+        }
     }
-
     LaunchedEffect(loadedStyle, hasLocationPermission, showDeviceLocation) {
         val style = loadedStyle ?: return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
@@ -373,17 +357,11 @@ fun MapScreen(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        AndroidView(
-            factory = { mapView },
-            modifier = Modifier.fillMaxSize()
-        )
+        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
 
         selectionInfo?.let { info ->
             Surface(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(16.dp)
-                    .widthIn(max = 230.dp),
+                modifier = Modifier.align(Alignment.CenterEnd).padding(16.dp).widthIn(max = 230.dp),
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 8.dp,
                 shadowElevation = 8.dp,
@@ -405,9 +383,7 @@ fun MapScreen(
             Button(
                 onClick = { followNavigationLocation = true },
                 modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp)
-            ) {
-                Text("◎ Recenter")
-            }
+            ) { Text("◎ Recenter") }
         }
 
         if (showDeviceLocation && !hasLocationPermission) {
@@ -420,26 +396,14 @@ fun MapScreen(
     }
 }
 
-private fun updateTransitRouteLayers(
-    style: Style,
-    routes: List<TransitRouteOverlay>,
-    selectedRouteId: Long?
-) {
+private fun updateTransitRouteLayers(style: Style, routes: List<TransitRouteOverlay>, selectedRouteId: Long?) {
     routes.forEachIndexed { index, route ->
         if (route.points.size < 2) return@forEachIndexed
-
         val sourceId = "$TransitRoutePrefix-source-${route.routeId}"
         val layerId = "$TransitRoutePrefix-layer-${route.routeId}"
-        val geometry = LineString.fromLngLats(
-            route.points.map { Point.fromLngLat(it.longitude, it.latitude) }
-        )
+        val geometry = LineString.fromLngLats(route.points.map { Point.fromLngLat(it.longitude, it.latitude) })
         val source = style.getSourceAs<GeoJsonSource>(sourceId)
-        if (source != null) {
-            source.setGeoJson(geometry)
-        } else {
-            style.addSource(GeoJsonSource(sourceId, geometry))
-        }
-
+        if (source != null) source.setGeoJson(geometry) else style.addSource(GeoJsonSource(sourceId, geometry))
         style.removeLayer(layerId)
         val selected = route.routeId == selectedRouteId
         style.addLayer(
@@ -454,23 +418,16 @@ private fun updateTransitRouteLayers(
     }
 }
 
-private fun updateFutureLegLayers(
-    style: Style,
-    segments: List<List<LatLng>>,
-    visualStyle: MapVisualStyle
-) {
+private fun updateFutureLegLayers(style: Style, segments: List<List<LatLng>>, visualStyle: MapVisualStyle) {
     repeat(24) { index ->
         style.removeLayer("$FutureLegPrefix-layer-$index")
         style.removeSource("$FutureLegPrefix-source-$index")
     }
-
     segments.take(24).forEachIndexed { index, points ->
         if (points.size < 2) return@forEachIndexed
         val sourceId = "$FutureLegPrefix-source-$index"
         val layerId = "$FutureLegPrefix-layer-$index"
-        val geometry = LineString.fromLngLats(
-            points.map { Point.fromLngLat(it.longitude, it.latitude) }
-        )
+        val geometry = LineString.fromLngLats(points.map { Point.fromLngLat(it.longitude, it.latitude) })
         style.addSource(GeoJsonSource(sourceId, geometry))
         style.addLayer(
             LineLayer(layerId, sourceId).withProperties(
@@ -490,27 +447,18 @@ private fun updateFutureLegLayers(
     }
 }
 
-private fun updateRouteLayer(
-    style: Style,
-    routePoints: List<LatLng>,
-    visualStyle: MapVisualStyle
-) {
+private fun updateRouteLayer(style: Style, routePoints: List<LatLng>, visualStyle: MapVisualStyle) {
     if (routePoints.size < 2) {
         style.removeLayer(RouteLayerId)
         style.removeSource(RouteSourceId)
         return
     }
-
-    val routeGeometry = LineString.fromLngLats(
-        routePoints.map { Point.fromLngLat(it.longitude, it.latitude) }
-    )
-
+    val routeGeometry = LineString.fromLngLats(routePoints.map { Point.fromLngLat(it.longitude, it.latitude) })
     val source = style.getSourceAs<GeoJsonSource>(RouteSourceId)
     if (source != null) {
         source.setGeoJson(routeGeometry)
         return
     }
-
     style.addSource(GeoJsonSource(RouteSourceId, routeGeometry))
     style.addLayer(
         LineLayer(RouteLayerId, RouteSourceId).withProperties(
@@ -523,35 +471,27 @@ private fun updateRouteLayer(
     )
 }
 
-private fun updateTodaLayer(
-    style: Style,
-    points: List<TodaPointOverlay>,
-    visualStyle: MapVisualStyle
-) {
+private fun updateTodaLayer(style: Style, points: List<TodaPointOverlay>, visualStyle: MapVisualStyle) {
     if (points.isEmpty()) {
         style.removeLayer(TodaLayerId)
         style.removeSource(TodaSourceId)
         return
     }
-
-    val features = points.map { item ->
-        Feature.fromGeometry(Point.fromLngLat(item.longitude, item.latitude))
-    }
-    val collection = FeatureCollection.fromFeatures(features)
+    val collection = FeatureCollection.fromFeatures(points.map { Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude)) })
     val source = style.getSourceAs<GeoJsonSource>(TodaSourceId)
     if (source != null) {
         source.setGeoJson(collection)
-        return
+        style.removeLayer(TodaLayerId)
+    } else {
+        style.addSource(GeoJsonSource(TodaSourceId, collection))
     }
-
-    style.addSource(GeoJsonSource(TodaSourceId, collection))
     style.addLayer(
         CircleLayer(TodaLayerId, TodaSourceId).withProperties(
             PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#3478F6" else "#076773"),
-            PropertyFactory.circleRadius(6f),
-            PropertyFactory.circleOpacity(0.78f),
+            PropertyFactory.circleRadius(7f),
+            PropertyFactory.circleOpacity(0.92f),
             PropertyFactory.circleStrokeColor(if (visualStyle == MapVisualStyle.LiveTrip) "#FFFFFF" else "#FFF9E9"),
-            PropertyFactory.circleStrokeWidth(2f)
+            PropertyFactory.circleStrokeWidth(2.5f)
         )
     )
 }
@@ -562,14 +502,12 @@ private fun updateStartLayer(style: Style, start: LatLng?, visualStyle: MapVisua
         style.removeSource(StartSourceId)
         return
     }
-
     val point = Point.fromLngLat(start.longitude, start.latitude)
     val source = style.getSourceAs<GeoJsonSource>(StartSourceId)
     if (source != null) {
         source.setGeoJson(point)
         return
     }
-
     style.addSource(GeoJsonSource(StartSourceId, point))
     style.addLayer(
         CircleLayer(StartLayerId, StartSourceId).withProperties(
@@ -587,49 +525,25 @@ private fun updateDestinationLayer(style: Style, destination: LatLng?, visualSty
         style.removeSource(DestinationSourceId)
         return
     }
-
     val point = Point.fromLngLat(destination.longitude, destination.latitude)
     val source = style.getSourceAs<GeoJsonSource>(DestinationSourceId)
-
     if (source != null) {
         source.setGeoJson(point)
         return
     }
-
     style.addSource(GeoJsonSource(DestinationSourceId, point))
     style.addLayer(
         CircleLayer(DestinationLayerId, DestinationSourceId).withProperties(
-            PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#EE5B57" else "#F4881F"),
-            PropertyFactory.circleRadius(9f),
+            PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#F59A3A" else "#F4881F"),
+            PropertyFactory.circleRadius(8f),
             PropertyFactory.circleStrokeColor(if (visualStyle == MapVisualStyle.LiveTrip) "#FFFFFF" else "#FFF9E9"),
             PropertyFactory.circleStrokeWidth(3f)
         )
     )
 }
 
-private fun updateFinalDestinationLayer(style: Style, destination: LatLng?, visualStyle: MapVisualStyle) {
-    if (destination == null) {
-        style.removeLayer(FinalDestinationLayerId)
-        style.removeSource(FinalDestinationSourceId)
-        return
-    }
-
-    val point = Point.fromLngLat(destination.longitude, destination.latitude)
-    val source = style.getSourceAs<GeoJsonSource>(FinalDestinationSourceId)
-    if (source != null) {
-        source.setGeoJson(point)
-        return
-    }
-
-    style.addSource(GeoJsonSource(FinalDestinationSourceId, point))
-    style.addLayer(
-        CircleLayer(FinalDestinationLayerId, FinalDestinationSourceId).withProperties(
-            PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#F59A3A" else "#EE5B57"),
-            PropertyFactory.circleRadius(11f),
-            PropertyFactory.circleStrokeColor(if (visualStyle == MapVisualStyle.LiveTrip) "#FFFFFF" else "#FFF9E9"),
-            PropertyFactory.circleStrokeWidth(4f)
-        )
-    )
+private fun updateFinalDestinationLayer(style: Style, destination: LatLng?) {
+    updateMainDestinationPinLayer(style, destination, FinalDestinationSourceId, FinalDestinationLayerId)
 }
 
 private fun nearestRoutePointDistanceMeters(point: LatLng, route: List<LatLng>): Double =
@@ -649,37 +563,21 @@ private fun distanceMeters(a: LatLng, b: LatLng): Double {
 }
 
 @SuppressLint("MissingPermission")
-private fun configureLocationComponent(
-    context: Context,
-    map: MapLibreMap,
-    style: Style,
-    enabled: Boolean
-) {
+private fun configureLocationComponent(context: Context, map: MapLibreMap, style: Style, enabled: Boolean) {
     val locationComponent = map.locationComponent
-
     if (!enabled) {
-        if (locationComponent.isLocationComponentActivated) {
-            locationComponent.isLocationComponentEnabled = false
-        }
+        if (locationComponent.isLocationComponentActivated) locationComponent.isLocationComponentEnabled = false
         return
     }
-
     if (!locationComponent.isLocationComponentActivated) {
-        val options = LocationComponentActivationOptions.builder(context, style)
-            .useDefaultLocationEngine(true)
-            .build()
+        val options = LocationComponentActivationOptions.builder(context, style).useDefaultLocationEngine(true).build()
         locationComponent.activateLocationComponent(options)
     }
-
     locationComponent.isLocationComponentEnabled = true
 }
 
 @Composable
-private fun LocationPermissionBanner(
-    canRequestAgain: Boolean,
-    onRequestPermission: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun LocationPermissionBanner(canRequestAgain: Boolean, onRequestPermission: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surface,

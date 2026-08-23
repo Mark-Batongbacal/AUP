@@ -220,6 +220,9 @@ fun RouteResultsScreen(
                         routePoints = routePoints,
                         legRoutePoints = legRoutePoints,
                         legEndPoints = legEndPoints,
+                        legRouteIds = plan.legs.map { leg ->
+                            if (leg.mode == TransitMode.Jeepney) leg.routeId?.toLongOrNull() else null
+                        },
                         steps = plan.legs.mapIndexed { legIndex, leg ->
                             val mode = when (leg.mode) {
                                 TransitMode.Walk -> "Walk"
@@ -313,8 +316,6 @@ fun RouteResultsScreen(
                     onRouteSelect = onRouteSelect
                 )
 
-                // Keep the TODA contribution feature available without changing the
-                // approved first-screen composition. It appears just below the main CTA.
                 Spacer(modifier = Modifier.height(22.dp))
                 SuggestTodaBanner(
                     onClick = onSuggestToda,
@@ -568,7 +569,10 @@ private fun RouteCarouselSection(
 
     val selectedRoute = routes.getOrNull(pagerState.currentPage) ?: routes.first()
     SelectRouteButton(
-        onClick = { onRouteSelect(selectedRoute) },
+        onClick = {
+            com.example.frontend.TukiMapOverlayState.selectJourneyJeepneyRoutes(selectedRoute.legRouteIds)
+            onRouteSelect(selectedRoute)
+        },
         modifier = Modifier.padding(horizontal = 22.dp)
     )
 }
