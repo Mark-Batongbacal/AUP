@@ -31,6 +31,7 @@ public sealed class AuthController(
     IPasswordResetService passwordResetService,
     ILocalAuthenticationService? localAuthenticationService = null) : ControllerBase
 {
+    private static readonly TimeSpan GuestAccessLifetime = TimeSpan.FromHours(24);
     private readonly LoginOptions _options = options.Value;
     private readonly GoogleOptions _googleOptions = googleOptions.Value;
     private readonly FacebookOptions _facebookOptions = facebookOptions.Value;
@@ -51,6 +52,19 @@ public sealed class AuthController(
         }
 
         var issuedKey = apiKeyService.Create(request.UserName.Trim());
+        return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
+    }
+
+    [HttpPost("guest")]
+    [AllowAnonymous]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<LoginResponse>> Guest(CancellationToken cancellationToken)
+    {
+        // A new temporary profile is created for every guest. This lets the existing UserId-based
+        // journey, navigation, history and favorites code remain unchanged while keeping guests
+        // isolated from one another.
+        var guest = await userProfileService.CreateGuestProfileAsync(cancellationToken);
+        var issuedKey = apiKeyService.Create(guest.CredentialOwner, GuestAccessLifetime);
         return Ok(new LoginResponse(issuedKey.Value, issuedKey.ExpiresAt));
     }
 
