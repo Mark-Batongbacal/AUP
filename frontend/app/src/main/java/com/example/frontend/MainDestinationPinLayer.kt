@@ -39,9 +39,11 @@ internal fun updateMainDestinationPinLayer(
         style.addSource(GeoJsonSource(sourceId, point))
     }
 
-    // addImage replaces the style image when it already exists, which also makes this safe after
-    // a MapLibre style reload.
-    style.addImage(MainDestinationPinImageId, mainDestinationPinBitmap)
+    if (style.getImage(MainDestinationPinImageId) == null) {
+        style.addImage(MainDestinationPinImageId, mainDestinationPinBitmap)
+    }
+
+    // Re-add the layer intentionally so the final destination remains above route and TODA layers.
     style.removeLayer(layerId)
     style.addLayer(
         SymbolLayer(layerId, sourceId).withProperties(
