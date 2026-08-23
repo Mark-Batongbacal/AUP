@@ -134,9 +134,6 @@ class LocalNavigationEngine(
             )
         }
 
-        // After process recreation the first good GPS fix reconstructs route progress directly.
-        // Treat that fix as a baseline instead of replaying every landmark crossed before the app
-        // was restored. Passed maneuver sequences are still consumed by selectGuidance above.
         val landmarkBaseline = if (establishingProgress) lastProgressMeters else previousProgress
         val landmark = detectLandmark(
             route = route,
@@ -206,10 +203,10 @@ class LocalNavigationEngine(
             transportMode.equals("TRICYCLE", true) ||
             transportMode.equals("TRIKE", true)
         val approachingMeters = if (transit) 400.0 else 120.0
-        val baseReachedMeters = if (transit) 75.0 else 35.0
+        val baseReachedMeters = if (transit) 100.0 else 60.0
         val accuracy = (accuracyMeters ?: 0.0).coerceAtLeast(0.0)
         val reachedMeters = max(baseReachedMeters, accuracy * 1.25)
-            .coerceAtMost(if (transit) 120.0 else 60.0)
+            .coerceAtMost(if (transit) 140.0 else 80.0)
         val trustworthyFix = hasAcceptedMatch && accuracy <= maximumUsableAccuracyMeters
 
         consecutiveEndFixes = if (trustworthyFix && remainingMeters <= reachedMeters) {

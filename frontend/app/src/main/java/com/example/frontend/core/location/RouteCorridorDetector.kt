@@ -30,7 +30,7 @@ class RouteCorridorDetector(
             outsideRoute = outside,
             consecutiveOutsideFixes = outsideFixes,
             toleranceMeters = tolerance,
-            shouldForceSync = outsideFixes == requiredOutsideFixes
+            shouldForceSync = outsideFixes >= requiredOutsideFixes
         )
     }
 
