@@ -83,22 +83,13 @@ public sealed class UsersController(
             request.PhoneNumber is not null ||
             request.ProfileImageUrl is not null;
 
-        // Guests may keep a temporary language preference, but account/profile identity fields
-        // remain read-only. Registered passengers continue through the existing mutation path.
-        if (hasEditableProfileFields)
+        // The authentication handler already resolved the profile and attached its role. This
+        // avoids adding any extra database/service lookup to the normal registered-user path.
+        if (hasEditableProfileFields && User.IsInRole(GuestRole))
         {
-            var currentProfile = await userProfileService.GetCurrentUserProfileAsync(userId, cancellationToken);
-            if (currentProfile is null)
-            {
-                return NotFound(Error($"User profile {userId} was not found."));
-            }
-
-            if (string.Equals(currentProfile.Role, GuestRole, StringComparison.OrdinalIgnoreCase))
-            {
-                return StatusCode(
-                    StatusCodes.Status403Forbidden,
-                    Error("Guest profiles cannot be edited. Create an account for permanent profile settings."));
-            }
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                Error("Guest profiles cannot be edited. Create an account for permanent profile settings."));
         }
 
         UserProfileMutationResult result;
@@ -153,13 +144,7 @@ public sealed class UsersController(
             return Unauthorized();
         }
 
-        var currentProfile = await userProfileService.GetCurrentUserProfileAsync(userId, cancellationToken);
-        if (currentProfile is null)
-        {
-            return NotFound(Error($"User profile {userId} was not found."));
-        }
-
-        if (string.Equals(currentProfile.Role, GuestRole, StringComparison.OrdinalIgnoreCase))
+        if (User.IsInRole(GuestRole))
         {
             return StatusCode(
                 StatusCodes.Status403Forbidden,
