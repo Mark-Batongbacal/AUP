@@ -11,7 +11,16 @@ object LocalNavigationSpeech {
         return value.replace(DistanceToken, formatDynamicDistance(remainingMeters))
     }
 
-    fun guidanceText(guidance: LocalNavigationGuidance): String {
+    fun guidanceText(
+        guidance: LocalNavigationGuidance,
+        language: String = "English"
+    ): String = if (isFilipino(language)) {
+        filipinoGuidanceText(guidance)
+    } else {
+        englishGuidanceText(guidance)
+    }
+
+    private fun filipinoGuidanceText(guidance: LocalNavigationGuidance): String {
         val street = guidance.streetName?.takeIf { it.isNotBlank() }
         return when (guidance.type.lowercase()) {
             "turnleft" -> if (guidance.stage == LocalGuidanceStage.NOW) {
@@ -36,6 +45,31 @@ object LocalNavigationSpeech {
         }
     }
 
+    private fun englishGuidanceText(guidance: LocalNavigationGuidance): String {
+        val street = guidance.streetName?.takeIf { it.isNotBlank() }
+        return when (guidance.type.lowercase()) {
+            "turnleft" -> if (guidance.stage == LocalGuidanceStage.NOW) {
+                street?.let { "Turn left here onto $it." } ?: "Turn left here."
+            } else {
+                street?.let { "In about ${formatDynamicDistance(guidance.distanceMeters)}, turn left onto $it." }
+                    ?: "In about ${formatDynamicDistance(guidance.distanceMeters)}, turn left."
+            }
+            "turnright" -> if (guidance.stage == LocalGuidanceStage.NOW) {
+                street?.let { "Turn right here onto $it." } ?: "Turn right here."
+            } else {
+                street?.let { "In about ${formatDynamicDistance(guidance.distanceMeters)}, turn right onto $it." }
+                    ?: "In about ${formatDynamicDistance(guidance.distanceMeters)}, turn right."
+            }
+            "roundabout" -> if (guidance.stage == LocalGuidanceStage.NOW) {
+                "Take the roundabout here and follow the planned exit."
+            } else {
+                "There's a roundabout in about ${formatDynamicDistance(guidance.distanceMeters)}."
+            }
+            else -> guidance.text.takeIf { it.isNotBlank() }
+                ?: "Keep going on the planned route."
+        }
+    }
+
     fun formatDynamicDistance(distanceMeters: Double?): String {
         val safe = max(0.0, distanceMeters ?: 0.0)
         if (safe >= 1_000) return "%.1f km".format(safe / 1_000.0)
@@ -47,5 +81,10 @@ object LocalNavigationSpeech {
         }
         val rounded = max(bucket, kotlin.math.round(safe / bucket) * bucket)
         return "${rounded.toInt()}m"
+    }
+
+    private fun isFilipino(language: String): Boolean {
+        val normalized = language.trim().lowercase()
+        return normalized == "filipino" || normalized == "tagalog" || normalized.startsWith("fil-")
     }
 }
