@@ -122,7 +122,7 @@ fun MapScreen(
     selectedDestination: LatLng? = null,
     finalDestination: LatLng? = null,
     futureRouteSegments: List<List<LatLng>> = emptyList(),
-    transitRoutes: List<TransitRouteOverlay> = emptyList(),
+    transitRoutes: List<TransitRouteOverlay> = if (routePoints.isNotEmpty()) TukiMapOverlayState.selectedJourneyJeepneyRoutes else emptyList(),
     todaPoints: List<TodaPointOverlay> = TukiMapOverlayState.todaPoints,
     onMapClick: ((LatLng) -> Unit)? = null,
     navigationTrackingEnabled: Boolean = false,
