@@ -51,15 +51,15 @@ public sealed class GuestAccessControllerTests
 
         var ok = Assert.IsType<OkObjectResult>(response.Result);
         var body = Assert.IsType<LoginResponse>(ok.Value);
+        var profile = Assert.IsType<UserProfile>(savedProfile);
         Assert.Equal("GUEST_TEST_KEY", body.ApiKey);
-        Assert.NotNull(savedProfile);
-        Assert.Equal("Guest", savedProfile.Role);
-        Assert.Equal("Guest", savedProfile.FirstName);
-        Assert.Equal("guest", savedProfile.ExternalAuthProvider);
-        Assert.False(savedProfile.IsEmailVerified);
-        Assert.True(savedProfile.IsActive);
-        Assert.StartsWith("guest:", savedProfile.Email, StringComparison.Ordinal);
-        Assert.Equal(savedProfile.Email, credentialOwner);
+        Assert.Equal("Guest", profile.Role);
+        Assert.Equal("Guest", profile.FirstName);
+        Assert.Equal("guest", profile.ExternalAuthProvider);
+        Assert.False(profile.IsEmailVerified);
+        Assert.True(profile.IsActive);
+        Assert.True(profile.Email.StartsWith("guest:", StringComparison.Ordinal));
+        Assert.Equal(profile.Email, credentialOwner);
         Assert.Equal(TimeSpan.FromHours(24), requestedLifetime);
     }
 
