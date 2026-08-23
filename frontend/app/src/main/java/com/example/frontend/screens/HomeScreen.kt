@@ -63,22 +63,33 @@ import com.example.frontend.data.places.PlacesRepository
 import com.example.frontend.data.trips.TripRepository
 import com.example.frontend.data.trips.toRecentCommute
 import com.example.frontend.model.RecentCommute
+import com.example.frontend.ui.theme.TukiThemeRuntime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 import kotlin.math.abs
 
-private val HomeBg = Color(0xFFF8F5EC)
-private val HomeSurface = Color(0xFFFFFBF0)
-private val HomeSoft = Color(0xFFEAF1EE)
-private val HomeCurrentSky = Color(0xFFDAF1F7)
-private val HomeWarm = Color(0xFFFFF0D5)
-private val HomeDark = Color(0xFF153E4B)
-private val HomeTeal = Color(0xFF2C8E95)
+private val HomeBg: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF08171D) else Color(0xFFF8F5EC)
+private val HomeSurface: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF10242D) else Color(0xFFFFFBF0)
+private val HomeSoft: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF17333D) else Color(0xFFEAF1EE)
+private val HomeCurrentSky: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF123842) else Color(0xFFDAF1F7)
+private val HomeWarm: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF302A1D) else Color(0xFFFFF0D5)
+private val HomeDark: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFFF1F7F8) else Color(0xFF153E4B)
+private val HomeTeal: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF43B5BD) else Color(0xFF2C8E95)
 private val HomeOrange = Color(0xFFFF8A1D)
-private val HomeMuted = Color(0xFF707A80)
-private val HomeDivider = Color(0xFFD4D6D1)
-private val HomeAiSurface = HomeDark
+private val HomeMuted: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFFA4B5BA) else Color(0xFF707A80)
+private val HomeDivider: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF28434B) else Color(0xFFD4D6D1)
+private val HomeAiSurface: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF0C303A) else Color(0xFF153E4B)
 private val MapPanel = Color(0xFF173B43)
 private val MapYellow = Color(0xFFFFCA19)
 
@@ -507,7 +518,7 @@ private fun ActiveTripCard(
             .fillMaxWidth()
             .clickable(onClick = onResumeClick),
         shape = RoundedCornerShape(22.dp),
-        color = HomeDark,
+        color = HomeAiSurface,
         shadowElevation = 4.dp
     ) {
         Row(
@@ -563,7 +574,7 @@ private fun CurrentLocationCard(
             Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = Color.White.copy(alpha = 0.42f)) {
+            Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = Color.White.copy(alpha = if (TukiThemeRuntime.darkMode) 0.08f else 0.42f)) {
                 Box(contentAlignment = Alignment.Center) {
                     Text("⊙", color = HomeTeal, fontSize = 35.sp, fontWeight = FontWeight.Bold)
                 }
@@ -650,7 +661,10 @@ private fun DestinationCard(
                         .fillMaxWidth(0.82f)
                         .height(40.dp)
                         .widthIn(min = 190.dp, max = 250.dp)
-                        .background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(16.dp))
+                        .background(
+                            if (TukiThemeRuntime.darkMode) HomeSoft else Color.White.copy(alpha = 0.92f),
+                            RoundedCornerShape(16.dp)
+                        )
                         .padding(horizontal = 13.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -919,7 +933,7 @@ private fun HomeMapPickerOverlay(
                 ) {
                     Text(
                         areaLabel.ifBlank { "Current area" },
-                        color = HomeDark,
+                        color = Color(0xFF153E4B),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -1061,7 +1075,7 @@ private fun HomeMapPickerOverlay(
                     .padding(vertical = 17.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Done", color = HomeDark, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Done", color = Color(0xFF153E4B), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
     }
