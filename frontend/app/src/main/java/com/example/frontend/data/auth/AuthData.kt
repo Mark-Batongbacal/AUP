@@ -134,8 +134,11 @@ class AuthRepositoryImpl(
     override suspend fun login(userName: String, password: String) =
         authenticate { authApi.login(LoginRequest(userName, password)) }
 
-    override suspend fun loginAsGuest() =
-        authenticate { authApi.guest() }
+    override suspend fun loginAsGuest(): ApiResult<AuthenticatedUser> =
+        when (val result = authenticate { authApi.guest() }) {
+            is ApiResult.Success -> result
+            is ApiResult.Failure -> result.toGuestLoginFailure()
+        }
 
     override suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser> {
         return when (val response = apiCall(errors) { authApi.register(request) }) {
@@ -242,4 +245,10 @@ class AuthRepositoryImpl(
 
     private fun LoginResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
     private fun RegisterResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
+
+    private fun ApiResult.Failure.toGuestLoginFailure(): ApiResult.Failure = when (statusCode) {
+        404, 405 -> copy(message = "Guest access is not available on this server version.")
+        401 -> copy(message = "Guest access could not be started. Please try again.")
+        else -> this
+    }
 }

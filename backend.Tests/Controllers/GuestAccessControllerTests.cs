@@ -94,6 +94,33 @@ public sealed class GuestAccessControllerTests
     }
 
     [Fact]
+    public async Task CreateGuestProfileAsync_WhenCalledRepeatedly_CreatesUniqueGuestIdentities()
+    {
+        var savedProfiles = new List<UserProfile>();
+        var profiles = new Mock<IUserProfileRepository>(MockBehavior.Strict);
+        profiles
+            .Setup(repository => repository.AddOrUpdateAsync(
+                It.IsAny<UserProfile>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<UserProfile, CancellationToken>((profile, _) => savedProfiles.Add(profile))
+            .Returns((UserProfile profile, CancellationToken _) => Task.FromResult(profile));
+
+        var service = new UserProfileService(profiles.Object);
+
+        var first = await service.CreateGuestProfileAsync(CancellationToken.None);
+        var second = await service.CreateGuestProfileAsync(CancellationToken.None);
+
+        Assert.NotEqual(first.UserId, second.UserId);
+        Assert.NotEqual(first.CredentialOwner, second.CredentialOwner);
+        Assert.All(savedProfiles, profile =>
+        {
+            Assert.Equal("Guest", profile.Role);
+            Assert.Equal("guest", profile.ExternalAuthProvider);
+            Assert.StartsWith("guest:", profile.Email);
+        });
+    }
+
+    [Fact]
     public void ApiKeyService_CustomLifetime_DoesNotChangeConfiguredNormalLifetime()
     {
         var service = new InMemoryApiKeyService(Options.Create(new LoginOptions
