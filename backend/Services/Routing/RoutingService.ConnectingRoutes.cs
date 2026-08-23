@@ -235,16 +235,27 @@ public partial class RoutingService
         if (all.Count == 0)
             return [];
 
-        // Identity is the physical board/alight position, NOT the sample
-        // index that produced it. Many neighbouring samples clamp onto the
-        // same projected point, and keying by index would let one physical
-        // boarding position consume the entire per-route quota as
-        // "different" candidates.
-        static string PositionKey(RouteConnectionCandidate candidate) => string.Join(':',
+        // Identity is the physical board/alight position PLUS where each sits
+        // along the route, NOT the sample index that produced it. Many
+        // neighbouring samples clamp onto the same projected point, and
+        // keying by index would let one physical boarding position consume
+        // the entire per-route quota as "different" candidates -- those
+        // duplicates share a projection, so they share progress too and still
+        // collapse here.
+        //
+        // Progress has to be part of the key because a route may legitimately
+        // traverse the same road twice (out and back, or a loop). Those are
+        // the same coordinate but genuinely different boarding opportunities:
+        // collapsing them to whichever is physically nearest can strand the
+        // passenger on the outbound pass when the return pass is the one
+        // heading towards their destination.
+        string PositionKey(RouteConnectionCandidate candidate) => string.Join(':',
             Math.Round(candidate.BoardAccess.Anchor.Latitude, 6),
             Math.Round(candidate.BoardAccess.Anchor.Longitude, 6),
             Math.Round(candidate.AlightAccess.Anchor.Latitude, 6),
-            Math.Round(candidate.AlightAccess.Anchor.Longitude, 6));
+            Math.Round(candidate.AlightAccess.Anchor.Longitude, 6),
+            Math.Round(GetBoardProgressMeters(candidate), 1),
+            Math.Round(GetAlightProgressMeters(candidate), 1));
 
         var distinct = all
             .GroupBy(PositionKey, StringComparer.Ordinal)
@@ -388,6 +399,14 @@ public partial class RoutingService
         }
     }
 
+    /// <summary>
+    /// Adds an access candidate unless the list already holds the same
+    /// boarding/alighting opportunity. Two candidates are the same only when
+    /// they sit at the same physical point AND at the same place along the
+    /// route: a route that traverses one road twice offers two genuinely
+    /// different opportunities at identical coordinates, and discarding the
+    /// second would hide whichever pass actually heads for the destination.
+    /// </summary>
     private static void AddUniqueAccessCandidate(
         List<AccessCandidate> candidates,
         AccessCandidate? candidate)
@@ -400,11 +419,26 @@ public partial class RoutingService
                 existing.Anchor.Latitude,
                 existing.Anchor.Longitude,
                 candidate.Anchor.Latitude,
-                candidate.Anchor.Longitude) <= 1.0);
+                candidate.Anchor.Longitude) <= 1.0 &&
+            IsSameRouteOccurrence(existing.FullRouteAnchor, candidate.FullRouteAnchor));
 
         if (!duplicate)
             candidates.Add(candidate);
     }
+
+    /// <summary>
+    /// Occurrences match when both anchors report effectively the same
+    /// distance travelled from the route start. Unknown progress on either
+    /// side falls back to treating them as the same, preserving the previous
+    /// coordinate-only behaviour.
+    /// </summary>
+    private static bool IsSameRouteOccurrence(
+        RouteAnchor? left,
+        RouteAnchor? right) =>
+        left is null || right is null ||
+        Math.Abs(
+            left.DistanceFromRouteStartMeters -
+            right.DistanceFromRouteStartMeters) <= 1.0;
 
     private double EstimateConnectionTimeSeconds(RouteConnectionCandidate candidate) =>
         candidate.BoardAccess.TotalTimeSeconds +
@@ -437,6 +471,14 @@ public partial class RoutingService
                 candidate.RouteId,
                 candidate.BoardIndex,
                 candidate.BoardAccess.Anchor))
+        .DistanceFromRouteStartMeters;
+
+    private double GetAlightProgressMeters(RouteConnectionCandidate candidate) =>
+        (candidate.AlightAccess.FullRouteAnchor ??
+            GetRouteAnchor(
+                candidate.RouteId,
+                candidate.AlightIndex,
+                candidate.AlightAccess.Anchor))
         .DistanceFromRouteStartMeters;
 
     private AccessCandidate? BuildExactFullRouteBoardAccess(

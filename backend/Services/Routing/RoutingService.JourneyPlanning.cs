@@ -663,6 +663,11 @@ public partial class RoutingService
         $"|{candidate.OriginAccess.Mode}:{candidate.OriginAccess.TrikePoint?.Id}" +
         $"|{candidate.DestinationAccess.Mode}:{candidate.DestinationAccess.TrikePoint?.Id}";
 
+    // Leg distance is part of the identity because a route may pass the same
+    // physical point twice. Two rides can share board and alight coordinates
+    // yet be completely different journeys -- one riding the short way, the
+    // other all the way around the loop -- and they are told apart by how far
+    // the vehicle actually travels between them.
     private static string GetPlanKey(JeepneyTripPlan plan) =>
         string.Join('|', plan.Legs.Select(leg => string.Join(':',
             leg.Mode,
@@ -671,6 +676,7 @@ public partial class RoutingService
             Math.Round(leg.OriginLongitude, 6),
             Math.Round(leg.DestinationLatitude, 6),
             Math.Round(leg.DestinationLongitude, 6),
+            Math.Round(leg.DistanceMeters, 1),
             leg.TrikePointId ?? string.Empty)));
 
     private async Task<List<JeepneyTripPlan>>
