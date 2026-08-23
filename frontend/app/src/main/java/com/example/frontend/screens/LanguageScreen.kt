@@ -32,12 +32,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 import androidx.compose.material3.MaterialTheme
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.ui.theme.TukiTeal
 import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiSky
 
 enum class LanguageOption(val title: String, val subtitle: String) {
@@ -51,7 +51,7 @@ fun LanguageScreen(
     onBack: () -> Unit = {},
     onSaveLanguage: (LanguageOption) -> Unit = {}
 ) {
-    var selectedLanguage by remember { mutableStateOf(initialLanguage) }
+    var selectedLanguage by remember(initialLanguage) { mutableStateOf(initialLanguage) }
 
     Column(
         modifier = Modifier
@@ -61,7 +61,6 @@ fun LanguageScreen(
             .navigationBarsPadding()
             .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
-        // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
@@ -70,34 +69,22 @@ fun LanguageScreen(
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "\u2039",
-                    color = TukiInk,
-                    style = MaterialTheme.typography.displaySmall
-                )
+                Text("\u2039", color = TukiInk, style = MaterialTheme.typography.displaySmall)
             }
             Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = "Language",
-                color = TukiInk,
-                style = MaterialTheme.typography.displaySmall
-            )
+            Text(TukiInterfaceText.language, color = TukiInk, style = MaterialTheme.typography.displaySmall)
         }
 
         Spacer(modifier = Modifier.height(28.dp))
-
-        // Section Title
         Text(
-            text = "SELECT LANGUAGE",
+            TukiInterfaceText.selectLanguage,
             color = TukiMuted,
             style = MaterialTheme.typography.labelSmall,
             letterSpacing = 1.sp
         )
-
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Language Options
-        LanguageOption.values().forEach { option ->
+        LanguageOption.entries.forEach { option ->
             LanguageCard(
                 option = option,
                 isSelected = option == selectedLanguage,
@@ -107,8 +94,6 @@ fun LanguageScreen(
         }
 
         Spacer(modifier = Modifier.weight(1f))
-
-        // Save Button
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -117,11 +102,7 @@ fun LanguageScreen(
                 .clickable { onSaveLanguage(selectedLanguage) },
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "Save",
-                color = Color.White,
-                style = MaterialTheme.typography.labelLarge
-            )
+            Text(TukiInterfaceText.save, color = Color.White, style = MaterialTheme.typography.labelLarge)
         }
     }
 }
@@ -133,46 +114,21 @@ private fun LanguageCard(
     onClick: () -> Unit
 ) {
     val shape = RoundedCornerShape(18.dp)
-
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .background(TukiSky.copy(alpha = 0.2f), shape)
-            .then(
-                if (isSelected) {
-                    Modifier.border(BorderStroke(2.dp, TukiTeal), shape)
-                } else {
-                    Modifier
-                }
-            )
+            .then(if (isSelected) Modifier.border(BorderStroke(2.dp, TukiTeal), shape) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 18.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = option.title,
-                    color = TukiInk,
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Text(option.title, color = TukiInk, style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = option.subtitle,
-                    color = TukiMuted,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text(option.subtitle, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
             }
-
-            if (isSelected) {
-                Text(
-                    text = "\u2713",
-                    color = TukiTeal,
-                    style = MaterialTheme.typography.titleLarge
-                )
-            }
+            if (isSelected) Text("\u2713", color = TukiTeal, style = MaterialTheme.typography.titleLarge)
         }
     }
 }
