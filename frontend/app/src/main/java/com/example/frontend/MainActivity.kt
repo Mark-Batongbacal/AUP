@@ -43,9 +43,14 @@ fun TukiApp(
 ) {
     val context = LocalContext.current
     val dataProvider = remember { TukiDataProvider(context.applicationContext) }
+    val selectedJeepneyRouteIds = TukiMapOverlayState.selectedJourneyJeepneyRouteIds
 
     LaunchedEffect(dataProvider) {
         TukiMapOverlayState.ensureTodaPoints(dataProvider)
+    }
+
+    LaunchedEffect(dataProvider, selectedJeepneyRouteIds) {
+        TukiMapOverlayState.ensureSelectedJeepneyRoutes(dataProvider)
     }
 
     CompositionLocalProvider(LocalTukiDataProvider provides dataProvider) {
