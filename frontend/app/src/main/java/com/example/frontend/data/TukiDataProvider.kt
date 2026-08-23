@@ -1,6 +1,7 @@
 package com.example.frontend.data
 
 import android.content.Context
+import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.network.ApiClient
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.storage.AuthSessionStore
@@ -52,6 +53,12 @@ class TukiDataProvider(
     context: Context,
     val sessionStore: AuthSessionStore = SharedPreferencesAuthSessionStore(context)
 ) {
+    private val appContext = context.applicationContext
+
+    init {
+        AppLanguagePreference.initialize(appContext)
+    }
+
     private val client = ApiClient(sessionStore)
     private val errors = ApiErrorParser(client.gson)
     private fun <T> api(type: Class<T>): T = client.create(type)
@@ -59,13 +66,20 @@ class TukiDataProvider(
     private val authApi = api(AuthApi::class.java)
     private val usersApi = api(UsersApi::class.java)
     private val navigationLocalStore = SharedPreferencesNavigationLocalStore(
-        context = context,
+        context = appContext,
         sessions = sessionStore,
         gson = client.gson
     )
 
     val authRepository: AuthRepository = AuthRepositoryImpl(authApi, usersApi, sessionStore, errors)
-    val userRepository: UserRepository = UserRepositoryImpl(usersApi, sessionStore, errors)
+    val userRepository: UserRepository = UserRepositoryImpl(
+        usersApi,
+        sessionStore,
+        errors,
+        onPreferredLanguageChanged = { language ->
+            AppLanguagePreference.update(appContext, language)
+        }
+    )
     val placesRepository: PlacesRepository = PlacesRepositoryImpl(api(PlacesApi::class.java), sessionStore, errors)
     val routingRepository: RoutingRepository = RoutingRepositoryImpl(api(RoutingApi::class.java), sessionStore, errors)
     val tripRepository: TripRepository = TripRepositoryImpl(api(TripsApi::class.java), sessionStore, errors)
