@@ -235,14 +235,19 @@ public partial class RoutingService
         if (all.Count == 0)
             return [];
 
+        // Identity is the physical board/alight position, NOT the sample
+        // index that produced it. Many neighbouring samples clamp onto the
+        // same projected point, and keying by index would let one physical
+        // boarding position consume the entire per-route quota as
+        // "different" candidates.
+        static string PositionKey(RouteConnectionCandidate candidate) => string.Join(':',
+            Math.Round(candidate.BoardAccess.Anchor.Latitude, 6),
+            Math.Round(candidate.BoardAccess.Anchor.Longitude, 6),
+            Math.Round(candidate.AlightAccess.Anchor.Latitude, 6),
+            Math.Round(candidate.AlightAccess.Anchor.Longitude, 6));
+
         var distinct = all
-            .GroupBy(candidate => string.Join(':',
-                candidate.BoardIndex,
-                candidate.AlightIndex,
-                Math.Round(candidate.BoardAccess.Anchor.Latitude, 6),
-                Math.Round(candidate.BoardAccess.Anchor.Longitude, 6),
-                Math.Round(candidate.AlightAccess.Anchor.Latitude, 6),
-                Math.Round(candidate.AlightAccess.Anchor.Longitude, 6)))
+            .GroupBy(PositionKey, StringComparer.Ordinal)
             .Select(group => group
                 .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
                 .First())
@@ -256,12 +261,7 @@ public partial class RoutingService
             if (selected.Count >= MaxBoardingVariantsPerRoute)
                 return;
 
-            var key = $"{candidate.BoardIndex}:{candidate.AlightIndex}:" +
-                $"{candidate.BoardAccess.Anchor.Latitude:F6}:" +
-                $"{candidate.BoardAccess.Anchor.Longitude:F6}:" +
-                $"{candidate.AlightAccess.Anchor.Latitude:F6}:" +
-                $"{candidate.AlightAccess.Anchor.Longitude:F6}";
-            if (seen.Add(key))
+            if (seen.Add(PositionKey(candidate)))
                 selected.Add(candidate);
         }
 
@@ -310,15 +310,40 @@ public partial class RoutingService
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
             .First());
 
+        // 5) Fill the remaining quota with boards spread along the route
+        // rather than more of the same cluster. All the objectives above
+        // rank on straight-line access, so they crowd around whichever part
+        // of the corridor happens to be geometrically closest -- which is
+        // exactly the part real road access may turn out to be poor at.
+        // Taking the cheapest candidate from each distinct progress bucket
+        // keeps a genuinely different boarding region available for
+        // Valhalla to confirm.
+        // 5) Fill the remaining quota with boards spread along the route
+        // rather than more of the same cluster. All the objectives above
+        // rank on straight-line access, so they crowd around whichever part
+        // of the corridor happens to be geometrically closest -- which is
+        // exactly the part real road access may turn out to be poor at.
+        //
+        // The buckets are sampled ACROSS the whole progress range rather
+        // than taken lowest-first: taking the lowest buckets would just
+        // rebuild a cluster at the route start and would never surface the
+        // only reachable board when a near obstacle blocks the early
+        // corridor.
         if (selected.Count < MaxBoardingVariantsPerRoute)
         {
-            foreach (var candidate in distinct
-                         .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-                         .ThenBy(candidate =>
-                             StraightLineBoardAccessMeters(
-                                 candidate,
-                                 originLatitude,
-                                 originLongitude)))
+            var bucketSize = Math.Max(1, _options.BoardingDiversityBucketMeters);
+            var bucketRepresentatives = distinct
+                .GroupBy(candidate =>
+                    (long)Math.Floor(GetBoardProgressMeters(candidate) / bucketSize))
+                .OrderBy(group => group.Key)
+                .Select(group => group
+                    .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
+                    .First())
+                .ToList();
+
+            foreach (var candidate in SpreadEvenly(
+                         bucketRepresentatives,
+                         MaxBoardingVariantsPerRoute - selected.Count))
             {
                 Add(candidate);
                 if (selected.Count >= MaxBoardingVariantsPerRoute)
@@ -327,6 +352,40 @@ public partial class RoutingService
         }
 
         return selected;
+    }
+
+    /// <summary>
+    /// Samples up to <paramref name="count"/> items spread evenly across the
+    /// ordered source, always including both ends. Used so boarding-variant
+    /// diversity covers the whole route instead of clustering at one end.
+    /// </summary>
+    private static IEnumerable<T> SpreadEvenly<T>(IReadOnlyList<T> source, int count)
+    {
+        if (source.Count == 0 || count <= 0)
+            yield break;
+
+        if (count >= source.Count)
+        {
+            foreach (var item in source)
+                yield return item;
+            yield break;
+        }
+
+        if (count == 1)
+        {
+            yield return source[0];
+            yield break;
+        }
+
+        var emitted = new HashSet<int>();
+        for (var i = 0; i < count; i++)
+        {
+            var index = (int)Math.Round(
+                (double)i * (source.Count - 1) / (count - 1));
+
+            if (emitted.Add(index))
+                yield return source[index];
+        }
     }
 
     private static void AddUniqueAccessCandidate(
