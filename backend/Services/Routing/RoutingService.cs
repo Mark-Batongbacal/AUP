@@ -32,6 +32,10 @@ public partial class RoutingService : IRoutingService
     private double FeederShadowingAccessDistanceRatio =>
         _options.FeederShadowingAccessDistanceRatio;
     private int MaxBoardingVariantsPerRoute => _options.MaxBoardingVariantsPerRoute;
+    private double PrimaryJeepneyMinimumDistanceMeters =>
+        _options.PrimaryJeepneyMinimumDistanceMeters;
+    private double PrimaryJeepneyMinimumJourneyShare =>
+        _options.PrimaryJeepneyMinimumJourneyShare;
     private double MaxStaticRouteSegmentJumpMeters => _options.MaxStaticRouteSegmentJumpMeters;
     private double TrikeBaseFarePesos => _options.TrikeBaseFarePesos;
     private double TrikeBaseDistanceMeters => _options.TrikeBaseDistanceMeters;

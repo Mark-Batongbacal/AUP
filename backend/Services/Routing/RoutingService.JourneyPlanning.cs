@@ -515,15 +515,46 @@ public partial class RoutingService
         candidate.Plan.OriginAccess.WalkDistanceMeters +
         (candidate.Plan.OriginAccess.TrikeRideDistanceMeters ?? 0);
 
+    /// <summary>
+    /// Decides whether a journey actually uses the jeepney as its PRIMARY
+    /// corridor mode, rather than merely containing a jeepney leg.
+    ///
+    /// Everything reaching this point is already a valid journey: direction,
+    /// continuity, walking limits, transfer structure and feeder shadowing
+    /// have all been enforced upstream. What is left to establish is a
+    /// transport-role question -- is the jeepney carrying this trip, or is it
+    /// a token hop bolted onto a journey the feeder modes are really making?
+    ///
+    /// Two conditions, both required. The absolute distance rules out a
+    /// jeepney segment so short the mode is pointless. The share rules out a
+    /// journey whose ground is mostly covered by walking or tricycle, which
+    /// is what a feeder mode overstepping its role looks like.
+    /// </summary>
+    private bool IsPracticalJeepneyJourney(JeepneyTripPlan plan)
+    {
+        var jeepneyDistance = plan.Legs
+            .Where(leg => leg.Mode == AccessMode.Jeepney)
+            .Sum(leg => leg.DistanceMeters);
+
+        if (jeepneyDistance < PrimaryJeepneyMinimumDistanceMeters)
+            return false;
+
+        var totalDistance = plan.Legs.Sum(leg => leg.DistanceMeters);
+
+        return totalDistance > 0 &&
+               jeepneyDistance / totalDistance >= PrimaryJeepneyMinimumJourneyShare;
+    }
+
     private List<JeepneyTripPlan> SelectObjectivePlans(
         List<JeepneyTripPlan> plans)
     {
         if (plans.Count == 0)
             return [];
 
-        // Fastest and cheapest remain pure objectives. The feeder-shadowing
-        // guard above only removes a farther board when its advantage is too
-        // small to justify chasing the same jeepney downstream.
+        // Fastest and cheapest remain pure objectives over every valid
+        // journey: if a direct tricycle really is the quickest way to get
+        // there, saying so is honest. Only the default recommendation is
+        // role-aware (see below).
         var cheapest = plans
             .OrderBy(plan => plan.TotalFarePesos)
             .ThenBy(plan => plan.GeneralizedCostPesos)
@@ -536,15 +567,42 @@ public partial class RoutingService
             .ThenBy(plan => plan.TotalFarePesos)
             .First();
 
+        // Tuki is a public-transport planner: the jeepney is the cheap
+        // long-distance backbone, and walking/tricycles exist to connect the
+        // gaps around it. Generalized cost alone cannot express that -- it
+        // treats a 9km tricycle and a 9km jeepney ride as interchangeable
+        // ways to cover ground, so a direct tricycle can capture the default
+        // recommendation purely by dodging jeepney boarding wait.
+        //
+        // So when a practical jeepney journey exists, the default is chosen
+        // from among those journeys. When none does (a short local hop, or a
+        // corridor that would need an absurd detour), every mode competes as
+        // an equal peer exactly as before -- the jeepney is preferred, never
+        // forced.
+        var jeepneyJourneys = plans.Where(IsPracticalJeepneyJourney).ToList();
+        var defaultPlans = jeepneyJourneys.Count > 0 ? jeepneyJourneys : plans;
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "Routing default recommendation drawn from {Scope} ({Count} of {Total} plans)",
+                jeepneyJourneys.Count > 0 ? "practical jeepney journeys" : "all valid journeys",
+                defaultPlans.Count,
+                plans.Count);
+        }
+
         // Efficient balances total time, fare, and access burden. Access burden
         // intentionally includes tricycle and transfer time instead of looking
         // only at walking, so a long feeder leg cannot appear "comfortable"
-        // merely because it contains little walking.
-        var minTime = plans.Min(plan => plan.TotalTimeSeconds);
-        var maxTime = plans.Max(plan => plan.TotalTimeSeconds);
-        var minFare = plans.Min(plan => plan.TotalFarePesos);
-        var maxFare = plans.Max(plan => plan.TotalFarePesos);
-        var accessBurden = plans.ToDictionary(
+        // merely because it contains little walking. Normalizing within the
+        // chosen scope keeps the trade-off meaningful: comparing jeepney
+        // journeys against each other, not against a mode that is not
+        // supposed to be carrying the corridor.
+        var minTime = defaultPlans.Min(plan => plan.TotalTimeSeconds);
+        var maxTime = defaultPlans.Max(plan => plan.TotalTimeSeconds);
+        var minFare = defaultPlans.Min(plan => plan.TotalFarePesos);
+        var maxFare = defaultPlans.Max(plan => plan.TotalFarePesos);
+        var accessBurden = defaultPlans.ToDictionary(
             plan => plan,
             plan => plan.Legs
                 .Where(leg => leg.Mode != AccessMode.Jeepney)
@@ -555,7 +613,7 @@ public partial class RoutingService
         static double Normalize(double value, double min, double max) =>
             max <= min ? 0 : (value - min) / (max - min);
 
-        var efficient = plans
+        var efficient = defaultPlans
             .OrderBy(plan =>
                 Normalize(plan.TotalTimeSeconds, minTime, maxTime) +
                 Normalize(plan.TotalFarePesos, minFare, maxFare) +

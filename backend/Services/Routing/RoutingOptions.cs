@@ -62,6 +62,26 @@ public sealed class RoutingOptions
     public double FeederShadowingAccessDistanceRatio { get; init; } = 0.60;
 
     /// <summary>
+    /// Jeepney distance a journey must carry before the jeepney counts as the
+    /// journey's PRIMARY corridor mode. Below this the jeepney leg is an
+    /// incidental hop rather than the backbone of the trip, so the journey is
+    /// not treated as a practical public-transport option and the default
+    /// recommendation falls back to ordinary balanced scoring. This is
+    /// deliberately not a ban on short jeepney legs: it only decides whether a
+    /// jeepney journey is strong enough to be PREFERRED as the default.
+    /// </summary>
+    public double PrimaryJeepneyMinimumDistanceMeters { get; init; } = 2_000;
+
+    /// <summary>
+    /// Share of a journey's total distance the jeepney legs must cover before
+    /// the jeepney counts as the journey's primary corridor mode. This is what
+    /// keeps feeder modes in a feeder role: a journey whose walking/tricycle
+    /// legs cover most of the ground is not a jeepney journey, whatever its
+    /// generalized cost happens to say.
+    /// </summary>
+    public double PrimaryJeepneyMinimumJourneyShare { get; init; } = 0.5;
+
+    /// <summary>
     /// Full-route progress bucket used when reserving confirmation capacity for
     /// spatially distinct boarding regions. This prevents one dense cluster of
     /// nearly-identical anchors from crowding out other useful route variants.
@@ -130,6 +150,13 @@ public sealed class RoutingOptions
         if (FeederShadowingAccessDistanceRatio is <= 0 or > 1)
         {
             error = "Feeder shadowing access-distance ratio must be greater than zero and at most one.";
+            return false;
+        }
+
+        if (PrimaryJeepneyMinimumJourneyShare is <= 0 or > 1 ||
+            PrimaryJeepneyMinimumDistanceMeters < 0)
+        {
+            error = "Primary jeepney share must be greater than zero and at most one, and its minimum distance must be non-negative.";
             return false;
         }
 
