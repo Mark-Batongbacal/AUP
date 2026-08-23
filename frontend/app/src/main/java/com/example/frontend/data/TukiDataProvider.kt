@@ -70,15 +70,22 @@ class TukiDataProvider(
         sessions = sessionStore,
         gson = client.gson
     )
+    private val syncPreferredLanguage: (String) -> Unit = { language ->
+        AppLanguagePreference.update(appContext, language)
+    }
 
-    val authRepository: AuthRepository = AuthRepositoryImpl(authApi, usersApi, sessionStore, errors)
+    val authRepository: AuthRepository = AuthRepositoryImpl(
+        authApi,
+        usersApi,
+        sessionStore,
+        errors,
+        onPreferredLanguageChanged = syncPreferredLanguage
+    )
     val userRepository: UserRepository = UserRepositoryImpl(
         usersApi,
         sessionStore,
         errors,
-        onPreferredLanguageChanged = { language ->
-            AppLanguagePreference.update(appContext, language)
-        }
+        onPreferredLanguageChanged = syncPreferredLanguage
     )
     val placesRepository: PlacesRepository = PlacesRepositoryImpl(api(PlacesApi::class.java), sessionStore, errors)
     val routingRepository: RoutingRepository = RoutingRepositoryImpl(api(RoutingApi::class.java), sessionStore, errors)
