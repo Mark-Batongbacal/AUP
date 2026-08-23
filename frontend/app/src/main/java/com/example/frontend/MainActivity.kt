@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.example.frontend.auth.FacebookSignInClient
@@ -42,8 +43,10 @@ fun TukiApp(
     val context = LocalContext.current
     val dataProvider = remember { TukiDataProvider(context.applicationContext) }
 
-    AppNavigation(
-        dataProvider = dataProvider,
-        facebookSignInClient = facebookSignInClient
-    )
+    CompositionLocalProvider(LocalTukiDataProvider provides dataProvider) {
+        AppNavigation(
+            dataProvider = dataProvider,
+            facebookSignInClient = facebookSignInClient
+        )
+    }
 }
