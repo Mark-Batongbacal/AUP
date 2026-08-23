@@ -18,28 +18,33 @@ public partial class RoutingService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!_routeSamples.TryGetValue(route.RouteId, out var samples))
+            if (!_routeGeometries.ContainsKey(route.RouteId))
                 continue;
 
-            foreach (var point in samples)
-            {
-                var distanceMeters = ApproximateDistanceMeters(
-                    latitude,
-                    longitude,
-                    point.Latitude,
-                    point.Longitude);
+            // "Nearest" must be the nearest point on the full route geometry,
+            // not merely the nearest sampled point. Sampling is for search
+            // efficiency elsewhere; using it here can make long/sparse routes
+            // appear nearest only at one of their endpoints.
+            var anchor = ProjectOntoFullRoute(
+                route.RouteId,
+                (latitude, longitude),
+                0);
+            var distanceMeters = ApproximateDistanceMeters(
+                latitude,
+                longitude,
+                anchor.Latitude,
+                anchor.Longitude);
 
-                candidates.Add(new SampledRoutePoint(
-                    route.RouteId,
-                    new NearbyJeepneyResponse
-                    {
-                        RouteId = route.RouteId,
-                        RouteName = route.RouteName,
-                        RouteDistanceMeters = distanceMeters,
-                        NearestPointLatitude = point.Latitude,
-                        NearestPointLongitude = point.Longitude
-                    }));
-            }
+            candidates.Add(new SampledRoutePoint(
+                route.RouteId,
+                new NearbyJeepneyResponse
+                {
+                    RouteId = route.RouteId,
+                    RouteName = route.RouteName,
+                    RouteDistanceMeters = distanceMeters,
+                    NearestPointLatitude = anchor.Latitude,
+                    NearestPointLongitude = anchor.Longitude
+                }));
         }
 
         if (candidates.Count == 0)
@@ -60,12 +65,8 @@ public partial class RoutingService
                 "Failed to fetch Valhalla walking matrix; returning straight-line ranked routes.");
 
             return candidates
-                .GroupBy(candidate => candidate.RouteId)
-                .Select(group => group
-                    .OrderBy(candidate => candidate.Response.RouteDistanceMeters)
-                    .First()
-                    .Response)
-                .OrderBy(candidate => candidate.RouteDistanceMeters)
+                .OrderBy(candidate => candidate.Response.RouteDistanceMeters)
+                .Select(candidate => candidate.Response)
                 .Take(MaxNearbyRoutes)
                 .ToList();
         }
