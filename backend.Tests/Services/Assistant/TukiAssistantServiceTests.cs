@@ -129,7 +129,7 @@ public sealed class TukiAssistantServiceTests
                 It.IsAny<Guid>(), userId, default)).ReturnsAsync([]);
         var result = await Service().RespondAsync(userId, new("Am I still going right?"));
         Assert.Equal("OFF_ROUTE", result.Status);
-        Assert.Contains("sustained", result.Message);
+        Assert.Contains("planned route", result.Message);
     }
 
     [Fact]

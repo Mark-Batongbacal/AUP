@@ -93,23 +93,15 @@ public sealed class NavigationBoardingOptimizationTests
                 Code = "JEEPNEY",
                 Name = "Jeepney"
             },
-            RoutePoints =
-            [
-                new RoutePoint
+            RoutePoints = Enumerable.Range(0, 11)
+                .Select(index => new RoutePoint
                 {
                     RouteId = 1,
-                    PointOrder = 0,
+                    PointOrder = index,
                     Latitude = 15.0000,
-                    Longitude = 120.5000
-                },
-                new RoutePoint
-                {
-                    RouteId = 1,
-                    PointOrder = 1,
-                    Latitude = 15.0000,
-                    Longitude = 120.5500
-                }
-            ]
+                    Longitude = 120.5000 + index * 0.005
+                })
+                .ToList()
         };
 
         var terminal = new TricyclePoint
