@@ -283,7 +283,7 @@ fun DestinationSearchScreen(
                         routePoints = emptyList(),
                         modifier = Modifier.fillMaxSize(),
                         startPoint = mapOriginPoint,
-                        selectedDestination = if (!isPickingOrigin) selectedDestination?.let {
+                        finalDestination = if (!isPickingOrigin) selectedDestination?.let {
                             LatLng(it.latitude, it.longitude)
                         } else null,
                         onMapClick = { point ->
