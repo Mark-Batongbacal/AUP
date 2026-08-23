@@ -8,15 +8,21 @@ public partial class RoutingService
         CancellationToken cancellationToken)
     {
         if (MaxTransfers == 0) yield break;
-        _logger.LogWarning(
-            "DIAGTEMP _interchangesByRoute has keys: {Keys}",
-            string.Join(",", _interchangesByRoute.Keys));
         var routeNames = _routes.ToDictionary(route => route.RouteId, route => route.RouteName);
         var emitted = 0;
         // Candidate diversity is applied later. Generate a wider transfer pool
         // first so route iteration order cannot consume the entire confirmation
         // budget before other transfer regions are even considered.
         var generationLimit = MaxCandidatesToConfirm * Math.Max(1, MaxTransfers + 1);
+
+        // The pool is shared across every possible starting route, so it must
+        // be rationed per route rather than first-come-first-served. A single
+        // dense corridor can otherwise expand hundreds of variants, exhaust
+        // the pool, and leave every route after it in iteration order with no
+        // transfer candidate at all -- including the one nearest the origin.
+        var routeCount = Math.Max(1, _routes.Count);
+        var perRouteLimit = Math.Max(8, generationLimit / routeCount);
+        var globalLimit = Math.Max(generationLimit, perRouteLimit * routeCount);
         var dominance = new Dictionary<string, double>(StringComparer.Ordinal);
 
         foreach (var startRoute in _routes)
@@ -24,8 +30,7 @@ public partial class RoutingService
             if (!_interchangesByRoute.TryGetValue(startRoute.RouteId, out var firstEdges) ||
                 !_routeSamples.TryGetValue(startRoute.RouteId, out var startSamples)) continue;
 
-            if (startRoute.RouteId == "JEEP-SAMPLE-02")
-                _logger.LogWarning("DIAGTEMP J2 has {Count} first-edges", firstEdges.Count);
+            var emittedForRoute = 0;
 
             foreach (var first in firstEdges)
             {
@@ -34,22 +39,10 @@ public partial class RoutingService
                     startRoute.RouteId,
                     first.OtherRouteId,
                     StringComparison.Ordinal);
-                if (startRoute.RouteId == "JEEP-SAMPLE-02")
-                {
-                    _logger.LogWarning(
-                        "DIAGTEMP J2 edge own={Own} other={OtherRoute}:{OtherIdx} dist={Dist:F0}m selfIC={Self}",
-                        first.OwnIndex, first.OtherRouteId, first.OtherIndex, first.DistanceMeters, firstIsSelfInterchange);
-                }
                 if (first.OwnIndex <= 0 ||
                     first.DistanceMeters > MaxTransferWalkMeters ||
                     (firstIsSelfInterchange && !IsForwardSelfInterchange(first))) continue;
                 var board = boardPrefixes[startRoute.RouteId].Access[first.OwnIndex];
-                if (startRoute.RouteId == "JEEP-SAMPLE-02")
-                {
-                    _logger.LogWarning(
-                        "DIAGTEMP J2 board access at index {Idx} is {Status}",
-                        first.OwnIndex, board is null ? "NULL" : $"cost={board.GeneralizedCostPesos:F2}");
-                }
                 if (board is null) continue;
                 var state = new TransferSearchState(
                     first.OtherRouteId, first.OtherIndex, board,
@@ -65,13 +58,30 @@ public partial class RoutingService
                 foreach (var candidate in Expand(state))
                 {
                     yield return candidate;
-                    if (++emitted < generationLimit)
-                        continue;
+                    emitted++;
+                    emittedForRoute++;
 
+                    if (emitted >= globalLimit)
+                    {
+                        _logger.LogDebug(
+                            "Transfer candidate generation reached global pool limit {GlobalLimit}",
+                            globalLimit);
+                        yield break;
+                    }
+
+                    // Stop expanding THIS route, but let every later route
+                    // still claim its own share of the pool.
+                    if (emittedForRoute >= perRouteLimit)
+                        break;
+                }
+
+                if (emittedForRoute >= perRouteLimit)
+                {
                     _logger.LogDebug(
-                        "Transfer candidate generation reached diversity pool limit {GenerationLimit}",
-                        generationLimit);
-                    yield break;
+                        "Transfer candidate generation reached per-route limit {PerRouteLimit} for {RouteId}",
+                        perRouteLimit,
+                        startRoute.RouteId);
+                    break;
                 }
             }
         }
