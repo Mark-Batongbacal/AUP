@@ -36,7 +36,7 @@ class SharedPreferencesNavigationLocalStore(
     override fun readActiveSnapshot(): NavigationSnapshotDto? {
         val owner = preferences.getString(KEY_ACTIVE_OWNER, null) ?: return null
         val currentOwner = currentOwnerFingerprint()
-        if (currentOwner == null || currentOwner != owner) {
+        if (currentOwner != owner) {
             clearActiveSnapshot()
             return null
         }
@@ -58,7 +58,7 @@ class SharedPreferencesNavigationLocalStore(
             clearActiveSnapshot(snapshot.sessionId)
             return
         }
-        val owner = currentOwnerFingerprint() ?: return
+        val owner = currentOwnerFingerprint()
         preferences.edit()
             .putString(KEY_ACTIVE_OWNER, owner)
             .putString(KEY_ACTIVE_SNAPSHOT, gson.toJson(snapshot))
@@ -108,8 +108,9 @@ class SharedPreferencesNavigationLocalStore(
             .getOrDefault(emptyList())
     }
 
-    private fun currentOwnerFingerprint(): String? =
+    private fun currentOwnerFingerprint(): String =
         sessions.validSession()?.apiKey?.takeIf { it.isNotBlank() }?.let(::sha256)
+            ?: GUEST_OWNER
 
     private fun geometryPreferenceKey(cacheKey: String): String =
         "$GEOMETRY_PREFIX${sha256(cacheKey)}"
@@ -124,6 +125,7 @@ class SharedPreferencesNavigationLocalStore(
         const val KEY_GEOMETRY_INDEX = "geometry_index"
         const val GEOMETRY_PREFIX = "geometry_"
         const val MAX_GEOMETRIES = 12
+        const val GUEST_OWNER = "guest"
     }
 }
 

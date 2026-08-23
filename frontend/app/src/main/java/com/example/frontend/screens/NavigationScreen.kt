@@ -9,10 +9,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,14 +49,16 @@ fun NavigationScreen(
     isStartingNavigation: Boolean = false,
     navigationStartError: String? = null,
     hasActiveTrip: Boolean = false,
+    activeTripDescription: String? = null,
     onBack: () -> Unit = {},
     onStartTracking: () -> Unit = {},
     onResumeActiveTrip: () -> Unit = {},
-    onEndActiveTrip: () -> Unit = {}
+    onReplaceActiveTrip: () -> Unit = {}
 ) {
     val shownMinutes = totalMinutes ?: steps.sumOf { it.minutes }
     val shownFare = totalFare ?: steps.sumOf { it.fare ?: 0.0 }
     val shownLegs = legCount ?: steps.size
+    var showReplacementConfirmation by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -139,6 +147,30 @@ fun NavigationScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (hasActiveTrip) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = NavTip
+                ) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
+                        Text(
+                            "Current trip is still active",
+                            color = NavDark,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        activeTripDescription?.takeIf { it.isNotBlank() }?.let { description ->
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                description,
+                                color = NavMuted,
+                                fontSize = 12.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
                 Button(
                     onClick = onResumeActiveTrip,
                     enabled = !isStartingNavigation,
@@ -149,12 +181,17 @@ fun NavigationScreen(
                     Text("Resume Active Trip", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 OutlinedButton(
-                    onClick = onEndActiveTrip,
+                    onClick = { showReplacementConfirmation = true },
                     enabled = !isStartingNavigation,
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     shape = RoundedCornerShape(18.dp)
                 ) {
-                    Text("End Active Trip", color = NavOrange, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        "End Current & Start This Trip",
+                        color = NavOrange,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
                 }
             }
 
@@ -174,6 +211,39 @@ fun NavigationScreen(
                 }
             }
         }
+    }
+
+    if (showReplacementConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isStartingNavigation) showReplacementConfirmation = false
+            },
+            title = { Text("Start this trip instead?") },
+            text = {
+                Text(
+                    "Your current trip will end, then TUKI will immediately start the route you selected."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isStartingNavigation,
+                    onClick = {
+                        showReplacementConfirmation = false
+                        onReplaceActiveTrip()
+                    }
+                ) {
+                    Text("End & Start New", color = com.example.frontend.ui.theme.TukiDanger)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isStartingNavigation,
+                    onClick = { showReplacementConfirmation = false }
+                ) {
+                    Text("Keep Current Trip", color = NavTeal)
+                }
+            }
+        )
     }
 }
 

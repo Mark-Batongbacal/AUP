@@ -201,6 +201,8 @@ interface NavigationRepository {
         sessionId: String,
         request: NavigationRerouteRequest = NavigationRerouteRequest()
     ): ApiResult<NavigationSnapshotDto>
+    fun saveLocalActiveNavigation(snapshot: NavigationSnapshotDto)
+    fun clearLocalActiveNavigation(sessionId: String)
     fun clearLocalNavigation()
 }
 
@@ -227,6 +229,9 @@ class NavigationRepositoryImpl(
         if (remote is ApiResult.Success) return cacheSnapshot(remote)
 
         val failure = remote as ApiResult.Failure
+        if (failure.statusCode == 404) {
+            restoreActiveNavigation()?.let { clearSessionCache(it.sessionId) }
+        }
         val restored = if (failure.isTransientForLocalRecovery()) restoreActiveNavigation() else null
         return restored?.let { ApiResult.Success(it) } ?: failure
     }
@@ -316,6 +321,19 @@ class NavigationRepositoryImpl(
         request: NavigationRerouteRequest
     ): ApiResult<NavigationSnapshotDto> =
         cacheSnapshot(call { api.reroute(sessionId, request) }, resetSyncSignal = true)
+
+    override fun saveLocalActiveNavigation(snapshot: NavigationSnapshotDto) {
+        if (snapshot.isActiveNavigation()) {
+            saveLocalSnapshot(snapshot)
+        } else {
+            clearSessionCache(snapshot.sessionId)
+        }
+    }
+
+    override fun clearLocalActiveNavigation(sessionId: String) {
+        clearSessionCache(sessionId)
+        NavigationSyncSignal.reset()
+    }
 
     override fun clearLocalNavigation() {
         synchronized(cacheLock) { snapshotsBySession.clear() }
