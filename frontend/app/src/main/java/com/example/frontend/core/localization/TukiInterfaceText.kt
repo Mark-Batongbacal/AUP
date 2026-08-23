@@ -1,8 +1,10 @@
 package com.example.frontend.core.localization
 
 object TukiInterfaceText {
+    val isFilipino: Boolean get() = AppLanguagePreference.isFilipino()
+
     private fun pick(english: String, filipino: String): String =
-        if (AppLanguagePreference.isFilipino()) filipino else english
+        if (isFilipino) filipino else english
 
     val home: String get() = "Home"
     val recent: String get() = "Recent"
@@ -21,6 +23,7 @@ object TukiInterfaceText {
     val currentArea: String get() = pick("Current area", "Kasalukuyang lugar")
     val locatingYou: String get() = pick("Locating you...", "Hinahanap ang lokasyon mo...")
     val tapToChange: String get() = pick("Tap to change", "I-tap para baguhin")
+    val tapToChangeMultiline: String get() = pick("Tap to\nchange", "I-tap para\nbaguhin")
     val destination: String get() = pick("Destination", "Destinasyon")
     val destinationUpper: String get() = pick("DESTINATION", "DESTINASYON")
     val whereAreYouGoing: String get() = pick("Where are you going?", "Saan ka pupunta?")
@@ -81,9 +84,16 @@ object TukiInterfaceText {
     val selectLanguage: String get() = pick("SELECT LANGUAGE", "PUMILI NG WIKA")
     val save: String get() = pick("Save", "I-save")
     val account: String get() = "ACCOUNT"
+    val appearance: String get() = pick("APPEARANCE", "ITSURA")
+    val support: String get() = pick("SUPPORT", "SUPPORT")
     val editProfile: String get() = pick("Edit Profile", "I-edit ang Profile")
     val privacySecurity: String get() = pick("Privacy & Security", "Privacy at Security")
     val appearancePreferences: String get() = pick("Appearance and app preferences", "Itsura at mga preference ng app")
+    val darkMode: String get() = pick("Dark Mode", "Dark Mode")
+    val darkModeSubtitle: String get() = pick("Switch between light and dark theme", "Palitan ang light at dark theme")
+    val helpCenter: String get() = pick("Help Center", "Help Center")
+    val sendFeedback: String get() = pick("Send Feedback", "Magpadala ng Feedback")
+    val aboutTuki: String get() = pick("About TUKI", "Tungkol sa TUKI")
     val logOut: String get() = "Log out"
 
     val logIn: String get() = "Log in"
@@ -106,7 +116,7 @@ object TukiInterfaceText {
     val confirmNewPassword: String get() = pick("Confirm new password", "Kumpirmahin ang bagong password")
 
     fun status(raw: String): String = when {
-        !AppLanguagePreference.isFilipino() -> raw
+        !isFilipino -> raw
         raw.equals("Completed", true) -> completed
         raw.equals("Cancelled", true) -> cancelled
         raw.equals("WaitingToBoard", true) -> waitingToBoard
