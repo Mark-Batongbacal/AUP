@@ -18,6 +18,14 @@ public sealed class RoutingOptions
     public int MaxInterchangesPerRoutePair { get; init; } = 4;
     public double MaxTransferWalkMeters { get; init; } = 400;
     /// <summary>
+    /// Provisional (pre-Valhalla) boarding variants kept per route before
+    /// confirmation. One slot is always reserved for the earliest full-route
+    /// board progress so a sensible nearby boarding opportunity cannot be
+    /// crowded out by cost/time/fare heuristics computed on unconfirmed,
+    /// straight-line access estimates.
+    /// </summary>
+    public int MaxBoardingVariantsPerRoute { get; init; } = 5;
+    /// <summary>
     /// Minimum forward route progress skipped by a same-route transfer. The
     /// 1 km default is deliberately well above the normal 150 m sample spacing
     /// so adjacent route samples cannot be mistaken for a new boarding.
@@ -46,21 +54,12 @@ public sealed class RoutingOptions
     /// <summary>
     /// Fraction of downstream jeepney progress that must also appear as extra
     /// confirmed feeder distance before the feeder is considered to be chasing
-    /// the same jeepney corridor.
+    /// the same jeepney corridor. Once this threshold is crossed the farther
+    /// board is a feeder replacing transit, not a network-access optimization,
+    /// so no fastest/cheapest advantage can excuse it (see
+    /// PruneConfirmedFeederShadowing / PruneConfirmedTransferBoardingShadowing).
     /// </summary>
     public double FeederShadowingAccessDistanceRatio { get; init; } = 0.60;
-
-    /// <summary>
-    /// A farther boarding point is preserved for the fastest objective when it
-    /// saves at least this much confirmed end-to-end time.
-    /// </summary>
-    public double FeederShadowingRequiredTimeSavingsSeconds { get; init; } = 120;
-
-    /// <summary>
-    /// A farther boarding point is preserved for the cheapest objective when
-    /// it saves at least this much confirmed fare.
-    /// </summary>
-    public double FeederShadowingRequiredFareSavingsPesos { get; init; } = 10;
 
     /// <summary>
     /// Full-route progress bucket used when reserving confirmation capacity for
@@ -101,6 +100,7 @@ public sealed class RoutingOptions
         if (MaxNearbyRoutes <= 0 || MaxTripOptions <= 0 || MaxRouteSamples < 2 ||
             MatrixMaxTargets <= 0 || MaxInterchangesPerRoutePair <= 0 ||
             MaxNearbyTrikeCandidates < 0 || MaxCandidatesToConfirm <= 0 ||
+            MaxBoardingVariantsPerRoute <= 0 ||
             MaxTransfers is < 0 or > 5)
         {
             error = "Routing count limits must be positive (except MaxNearbyTrikeCandidates, which may be zero).";
@@ -119,8 +119,6 @@ public sealed class RoutingOptions
             ValueOfTimePesosPerMinute < 0 || WalkingFatiguePesosPerKilometer < 0 ||
             JeepneyBoardingWaitTimeSeconds < 0 || JeepneyBaseFarePesos < 0 ||
             FeederShadowingMinProgressMeters < 0 ||
-            FeederShadowingRequiredTimeSavingsSeconds < 0 ||
-            FeederShadowingRequiredFareSavingsPesos < 0 ||
             BoardingDiversityBucketMeters <= 0 ||
             JourneyLegContinuityToleranceMeters <= 0 ||
             string.IsNullOrWhiteSpace(TrikeCostingModel))

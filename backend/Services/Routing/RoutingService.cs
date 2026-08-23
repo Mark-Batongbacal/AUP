@@ -31,10 +31,7 @@ public partial class RoutingService : IRoutingService
         _options.FeederShadowingMinProgressMeters;
     private double FeederShadowingAccessDistanceRatio =>
         _options.FeederShadowingAccessDistanceRatio;
-    private double FeederShadowingRequiredTimeSavingsSeconds =>
-        _options.FeederShadowingRequiredTimeSavingsSeconds;
-    private double FeederShadowingRequiredFareSavingsPesos =>
-        _options.FeederShadowingRequiredFareSavingsPesos;
+    private int MaxBoardingVariantsPerRoute => _options.MaxBoardingVariantsPerRoute;
     private double MaxStaticRouteSegmentJumpMeters => _options.MaxStaticRouteSegmentJumpMeters;
     private double TrikeBaseFarePesos => _options.TrikeBaseFarePesos;
     private double TrikeBaseDistanceMeters => _options.TrikeBaseDistanceMeters;

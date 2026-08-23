@@ -5,8 +5,6 @@ namespace backend.Services.Routing;
 
 public partial class RoutingService
 {
-    private const int MaxBoardingVariantsPerRoute = 4;
-
     public async Task<List<JeepneyTripOption>> FindConnectingRoutesAsync(
         double originLatitude,
         double originLongitude,
@@ -267,6 +265,19 @@ public partial class RoutingService
                 selected.Add(candidate);
         }
 
+        // 0) Earliest full-route board progress. Cost/time/fare heuristics
+        // below are computed from cheap, unconfirmed straight-line access
+        // estimates and can rank a downstream board above a perfectly
+        // reasonable early one. Guaranteeing the earliest-progress board a
+        // slot means it always reaches Valhalla confirmation, so later
+        // feeder-shadowing pruning has a real early baseline to compare
+        // against instead of comparing only cost-optimistic downstream
+        // candidates against each other.
+        Add(distinct
+            .OrderBy(GetBoardProgressMeters)
+            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
+            .First());
+
         // 1) Nearest directionally-valid boarding opportunity on full geometry.
         Add(distinct
             .OrderBy(candidate =>
@@ -360,6 +371,14 @@ public partial class RoutingService
             originLongitude,
             candidate.BoardAccess.Anchor.Latitude,
             candidate.BoardAccess.Anchor.Longitude);
+
+    private double GetBoardProgressMeters(RouteConnectionCandidate candidate) =>
+        (candidate.BoardAccess.FullRouteAnchor ??
+            GetRouteAnchor(
+                candidate.RouteId,
+                candidate.BoardIndex,
+                candidate.BoardAccess.Anchor))
+        .DistanceFromRouteStartMeters;
 
     private AccessCandidate? BuildExactFullRouteBoardAccess(
         string routeId,

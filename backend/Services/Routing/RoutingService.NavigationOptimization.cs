@@ -111,10 +111,13 @@ public partial class RoutingService
     }
 
     /// <summary>
-    /// Applies the Phase 1 feeder-shadowing principle to transfer boarding.
-    /// A passenger should not walk substantially downstream along the next
-    /// jeepney route when an earlier confirmed transfer is already practical,
-    /// unless the farther boarding produces a meaningful fastest/cheapest gain.
+    /// Applies the same feeder-replaces-transit principle (see
+    /// PruneConfirmedFeederShadowing) to transfer boarding. A passenger
+    /// should not walk/trike substantially downstream along the next jeepney
+    /// route when an earlier confirmed transfer boarding is already
+    /// accessible on the same route: that is the transfer replacing most of
+    /// route B, not a network-access optimization, and no fastest/cheapest
+    /// gain excuses it.
     /// </summary>
     private List<ConfirmedJourneyCandidate> PruneConfirmedTransferBoardingShadowing(
         List<ConfirmedJourneyCandidate> candidates)
@@ -146,68 +149,57 @@ public partial class RoutingService
                     continue;
                 }
 
-                var reference = variants
+                var accessibleVariants = variants
                     .Where(candidate => ConfirmedTransferDistanceMeters(candidate, legIndex) is not null)
-                    .OrderBy(candidate => ConfirmedTransferDistanceMeters(candidate, legIndex))
-                    .ThenBy(candidate => GetBoardProgressMeters(candidate.Candidate.Legs[legIndex]))
-                    .ThenBy(candidate => candidate.Plan.GeneralizedCostPesos)
-                    .FirstOrDefault();
-
-                if (reference is null)
-                {
-                    next.AddRange(variants);
-                    continue;
-                }
-
-                var referenceProgress = GetBoardProgressMeters(
-                    reference.Candidate.Legs[legIndex]);
-                var referenceTransferDistance =
-                    ConfirmedTransferDistanceMeters(reference, legIndex)!.Value;
+                    .ToList();
 
                 foreach (var variant in variants)
                 {
-                    if (ReferenceEquals(variant, reference))
+                    var variantTransferDistance =
+                        ConfirmedTransferDistanceMeters(variant, legIndex);
+                    if (variantTransferDistance is null)
                     {
                         next.Add(variant);
                         continue;
                     }
 
-                    var transferDistance = ConfirmedTransferDistanceMeters(variant, legIndex);
-                    if (transferDistance is null)
+                    var baseline = FindEarlierAccessibleBaseline(
+                        accessibleVariants,
+                        variant,
+                        candidate => GetBoardProgressMeters(candidate.Candidate.Legs[legIndex]),
+                        candidate => ConfirmedTransferDistanceMeters(candidate, legIndex)!.Value);
+
+                    if (baseline is null)
                     {
                         next.Add(variant);
                         continue;
                     }
 
-                    var downstreamProgress =
-                        GetBoardProgressMeters(variant.Candidate.Legs[legIndex]) -
-                        referenceProgress;
-                    var extraTransferDistance = transferDistance.Value -
-                        referenceTransferDistance;
+                    var baselineTransferDistance =
+                        ConfirmedTransferDistanceMeters(baseline, legIndex)!.Value;
 
-                    var shadowsNextRoute =
-                        downstreamProgress >= FeederShadowingMinProgressMeters &&
-                        extraTransferDistance > 0 &&
-                        extraTransferDistance >=
-                        downstreamProgress * FeederShadowingAccessDistanceRatio;
-
-                    if (!shadowsNextRoute ||
-                        HasMeaningfulFastestOrCheapestAdvantage(
-                            variant.Plan,
-                            reference.Plan))
+                    if (IsFeederReplacingTransit(
+                            laterProgress: GetBoardProgressMeters(variant.Candidate.Legs[legIndex]),
+                            earlierProgress: GetBoardProgressMeters(baseline.Candidate.Legs[legIndex]),
+                            laterAccessDistance: variantTransferDistance.Value,
+                            earlierAccessDistance: baselineTransferDistance,
+                            out var skippedProgress,
+                            out var extraTransferDistance))
                     {
-                        next.Add(variant);
+                        LogFeederShadowRejection(
+                            $"transfer feeder shadowing at leg {legIndex}",
+                            variant,
+                            baseline,
+                            variant.Candidate.Legs[legIndex].RouteId,
+                            legIndex,
+                            baselineTransferDistance,
+                            variantTransferDistance.Value,
+                            skippedProgress,
+                            extraTransferDistance);
                         continue;
                     }
 
-                    _logger.LogDebug(
-                        "Routing candidate rejected: transfer feeder shadows route {RouteId} at leg {LegIndex}; downstream={DownstreamMeters:F0}m extraTransfer={ExtraTransferMeters:F0}m totalTime={TotalTime:F0}s fare={Fare:F2}",
-                        variant.Candidate.Legs[legIndex].RouteId,
-                        legIndex,
-                        downstreamProgress,
-                        extraTransferDistance,
-                        variant.Plan.TotalTimeSeconds,
-                        variant.Plan.TotalFarePesos);
+                    next.Add(variant);
                 }
             }
 
@@ -217,12 +209,23 @@ public partial class RoutingService
         return kept;
     }
 
+    /// <summary>
+    /// Identifies the downstream itinerary from the target leg onward: the
+    /// route/alighting sequence, with the target leg's own boarding position
+    /// masked out since that is exactly the alternative being compared. How
+    /// the passenger reached the trip's first jeepney (origin access mode/
+    /// TODA identity) and how they finish from the last one (destination
+    /// access mode/TODA identity) are excluded -- neither is the axis of
+    /// variation this comparison evaluates, and including them would
+    /// fragment equivalent transfer alternatives the same way origin access
+    /// mode fragmented origin-side boarding comparisons.
+    /// </summary>
     private string GetTransferBoardingComparisonKey(
         ConfirmedJourneyCandidate candidate,
         int targetLegIndex)
     {
         var bucketSize = _options.BoardingDiversityBucketMeters;
-        var legSignature = string.Join('>', candidate.Candidate.Legs.Select((leg, index) =>
+        return string.Join('>', candidate.Candidate.Legs.Select((leg, index) =>
         {
             var alightBucket = (long)Math.Floor(
                 GetAlightProgressMeters(leg) / bucketSize);
@@ -231,11 +234,6 @@ public partial class RoutingService
                 : ((long)Math.Floor(GetBoardProgressMeters(leg) / bucketSize)).ToString();
             return $"{leg.RouteId}:{boardPart}-{alightBucket}";
         }));
-
-        return string.Join('|',
-            legSignature,
-            $"origin:{candidate.Plan.OriginAccess.Mode}:{candidate.Plan.OriginAccess.TrikePointId}",
-            $"destination:{candidate.Plan.DestinationAccess.Mode}:{candidate.Plan.DestinationAccess.TrikePointId}");
     }
 
     private static double? ConfirmedTransferDistanceMeters(

@@ -1,5 +1,6 @@
 using backend.Models.Routing;
 using backend.Models.Valhalla;
+using Microsoft.Extensions.Logging;
 
 namespace backend.Services.Routing;
 
@@ -298,11 +299,19 @@ public partial class RoutingService
         (candidate.OriginAccess.TrikeRideDistanceMeters ?? 0);
 
     /// <summary>
-    /// Removes a confirmed boarding variant only when it looks like the feeder
-    /// is physically chasing the same jeepney downstream and the farther board
-    /// does not provide a meaningful fastest/cheapest advantage. Comparison is
-    /// performed after Valhalla confirmation, so walls, divided roads, and road
-    /// network detours are reflected in the access metrics.
+    /// Removes a confirmed boarding variant when it is a feeder (walk/trike)
+    /// replacing a large share of the SAME downstream jeepney corridor rather
+    /// than merely getting the passenger to transit. Comparison is performed
+    /// after Valhalla confirmation, so walls, divided roads, and road network
+    /// detours are reflected in the access metrics -- geometry only decides
+    /// route progress, never accessibility or journey sensibility.
+    ///
+    /// Every candidate is compared against the best-accessible candidate that
+    /// actually boards EARLIER on the same route (not a single fixed
+    /// reference), so a group can contain several boarding regions without
+    /// losing pairwise shadow detection. A candidate with no earlier
+    /// accessible alternative in its group survives unconditionally: there is
+    /// nothing to have replaced.
     /// </summary>
     private List<ConfirmedJourneyCandidate> PruneConfirmedFeederShadowing(
         List<ConfirmedJourneyCandidate> candidates)
@@ -323,52 +332,146 @@ public partial class RoutingService
                 continue;
             }
 
-            var reference = variants
-                .OrderBy(ConfirmedOriginAccessDistanceMeters)
-                .ThenBy(candidate => candidate.Plan.OriginAccess.TotalTimeSeconds)
-                .ThenBy(candidate => candidate.Plan.GeneralizedCostPesos)
-                .First();
-
-            var referenceBoardProgress = GetBoardProgressMeters(
-                reference.Candidate.Legs[0]);
-            var referenceAccessDistance = ConfirmedOriginAccessDistanceMeters(reference);
-
             foreach (var variant in variants)
             {
-                if (ReferenceEquals(variant, reference))
+                var baseline = FindEarlierAccessibleBaseline(
+                    variants,
+                    variant,
+                    candidate => GetBoardProgressMeters(candidate.Candidate.Legs[0]),
+                    ConfirmedOriginAccessDistanceMeters);
+
+                if (baseline is null)
                 {
                     kept.Add(variant);
                     continue;
                 }
 
-                var downstreamProgress =
-                    GetBoardProgressMeters(variant.Candidate.Legs[0]) -
-                    referenceBoardProgress;
-                if (downstreamProgress < FeederShadowingMinProgressMeters)
+                var variantAccessDistance = ConfirmedOriginAccessDistanceMeters(variant);
+                var baselineAccessDistance = ConfirmedOriginAccessDistanceMeters(baseline);
+
+                if (IsFeederReplacingTransit(
+                        laterProgress: GetBoardProgressMeters(variant.Candidate.Legs[0]),
+                        earlierProgress: GetBoardProgressMeters(baseline.Candidate.Legs[0]),
+                        laterAccessDistance: variantAccessDistance,
+                        earlierAccessDistance: baselineAccessDistance,
+                        out var skippedProgress,
+                        out var extraAccessDistance))
                 {
-                    kept.Add(variant);
+                    LogFeederShadowRejection(
+                        "origin feeder shadowing",
+                        variant,
+                        baseline,
+                        variant.Candidate.Legs[0].RouteId,
+                        legIndex: 0,
+                        baselineAccessDistance,
+                        variantAccessDistance,
+                        skippedProgress,
+                        extraAccessDistance);
                     continue;
                 }
 
-                var extraAccessDistance =
-                    ConfirmedOriginAccessDistanceMeters(variant) -
-                    referenceAccessDistance;
-                var followsSameCorridor =
-                    extraAccessDistance > 0 &&
-                    extraAccessDistance >=
-                    downstreamProgress * FeederShadowingAccessDistanceRatio;
-
-                if (!followsSameCorridor ||
-                    HasMeaningfulFastestOrCheapestAdvantage(variant.Plan, reference.Plan))
-                {
-                    kept.Add(variant);
-                }
+                kept.Add(variant);
             }
         }
 
         return kept;
     }
 
+    /// <summary>
+    /// Finds the strongest earlier-boarding baseline for a candidate within
+    /// its downstream-itinerary group: among variants that actually board
+    /// strictly earlier (by authoritative full-route progress), pick the one
+    /// with the lowest confirmed access burden. "Strictly earlier" is
+    /// required -- a candidate with the smallest access distance overall is
+    /// not a valid baseline if it does not actually board earlier.
+    /// </summary>
+    private static ConfirmedJourneyCandidate? FindEarlierAccessibleBaseline(
+        List<ConfirmedJourneyCandidate> variants,
+        ConfirmedJourneyCandidate candidate,
+        Func<ConfirmedJourneyCandidate, double> getProgressMeters,
+        Func<ConfirmedJourneyCandidate, double> getAccessDistanceMeters)
+    {
+        var candidateProgress = getProgressMeters(candidate);
+
+        return variants
+            .Where(other =>
+                !ReferenceEquals(other, candidate) &&
+                getProgressMeters(other) < candidateProgress)
+            .OrderBy(getAccessDistanceMeters)
+            .ThenBy(other => other.Plan.GeneralizedCostPesos)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// A later board is a feeder replacing transit -- not a legitimate
+    /// network-access optimization -- when the extra confirmed access burden
+    /// it costs is a large fraction of the jeepney progress it skips. This is
+    /// unconditional: a faster or cheaper total trip does not excuse it,
+    /// because the time/fare "savings" exist precisely because the feeder
+    /// substituted for the jeepney ride.
+    /// </summary>
+    private bool IsFeederReplacingTransit(
+        double laterProgress,
+        double earlierProgress,
+        double laterAccessDistance,
+        double earlierAccessDistance,
+        out double skippedProgress,
+        out double extraAccessDistance)
+    {
+        skippedProgress = laterProgress - earlierProgress;
+        extraAccessDistance = laterAccessDistance - earlierAccessDistance;
+
+        return skippedProgress >= FeederShadowingMinProgressMeters &&
+               extraAccessDistance > 0 &&
+               extraAccessDistance >= skippedProgress * FeederShadowingAccessDistanceRatio;
+    }
+
+    private void LogFeederShadowRejection(
+        string reason,
+        ConfirmedJourneyCandidate rejected,
+        ConfirmedJourneyCandidate baseline,
+        string routeId,
+        int legIndex,
+        double earlierAccessDistanceMeters,
+        double laterAccessDistanceMeters,
+        double skippedProgressMeters,
+        double extraAccessDistanceMeters)
+    {
+        if (!_logger.IsEnabled(LogLevel.Debug))
+            return;
+
+        var earlierBoard = baseline.Candidate.Legs[legIndex].Board;
+        var laterBoard = rejected.Candidate.Legs[legIndex].Board;
+
+        _logger.LogDebug(
+            "Routing candidate rejected: {Reason}; route={RouteId} " +
+            "earlierBoard=({EarlierLat:F6},{EarlierLon:F6})@{EarlierProgress:F0}m " +
+            "laterBoard=({LaterLat:F6},{LaterLon:F6})@{LaterProgress:F0}m " +
+            "earlierFeeder={EarlierAccess:F0}m laterFeeder={LaterAccess:F0}m " +
+            "skippedProgress={Skipped:F0}m extraFeeder={Extra:F0}m",
+            reason,
+            routeId,
+            earlierBoard.Latitude,
+            earlierBoard.Longitude,
+            GetBoardProgressMeters(baseline.Candidate.Legs[legIndex]),
+            laterBoard.Latitude,
+            laterBoard.Longitude,
+            GetBoardProgressMeters(rejected.Candidate.Legs[legIndex]),
+            earlierAccessDistanceMeters,
+            laterAccessDistanceMeters,
+            skippedProgressMeters,
+            extraAccessDistanceMeters);
+    }
+
+    /// <summary>
+    /// Identifies the downstream transit itinerary a boarding candidate
+    /// produces: the jeepney route sequence and approximate alighting
+    /// regions. Origin access mode/TODA identity are deliberately excluded --
+    /// those are exactly the alternatives feeder-shadow pruning must compare
+    /// against each other, not partition into separate, single-member groups.
+    /// Destination access is kept: it is part of what happens downstream of
+    /// the first boarding, not an alternative way of reaching it.
+    /// </summary>
     private string GetConfirmedBoardingComparisonKey(
         ConfirmedJourneyCandidate candidate)
     {
@@ -382,7 +485,6 @@ public partial class RoutingService
 
         return string.Join('|',
             downstreamSignature,
-            $"origin:{candidate.Plan.OriginAccess.Mode}:{candidate.Plan.OriginAccess.TrikePointId}",
             $"destination:{candidate.Plan.DestinationAccess.Mode}:{candidate.Plan.DestinationAccess.TrikePointId}");
     }
 
@@ -412,17 +514,6 @@ public partial class RoutingService
         ConfirmedJourneyCandidate candidate) =>
         candidate.Plan.OriginAccess.WalkDistanceMeters +
         (candidate.Plan.OriginAccess.TrikeRideDistanceMeters ?? 0);
-
-    private bool HasMeaningfulFastestOrCheapestAdvantage(
-        JeepneyTripPlan candidate,
-        JeepneyTripPlan reference)
-    {
-        var timeSavings = reference.TotalTimeSeconds - candidate.TotalTimeSeconds;
-        var fareSavings = reference.TotalFarePesos - candidate.TotalFarePesos;
-
-        return timeSavings >= FeederShadowingRequiredTimeSavingsSeconds ||
-               fareSavings >= FeederShadowingRequiredFareSavingsPesos;
-    }
 
     private List<JeepneyTripPlan> SelectObjectivePlans(
         List<JeepneyTripPlan> plans)
