@@ -95,6 +95,40 @@ class LocalNavigationEngineTest {
     }
 
     @Test
+    fun walkingLegEnd_reachesWithinSixtyMetersAfterTwoGoodFixes() {
+        val engine = LocalNavigationEngine()
+        val route = listOf(
+            RouteCoordinate(15.0, 120.0),
+            RouteCoordinate(15.0, 120.001)
+        )
+        val nearEnd = RouteCoordinate(15.0, 120.0005)
+
+        engine.update(nearEnd, 5.0, 0, "WALK", route, emptyList(), emptyList())
+        val second = engine.update(nearEnd, 5.0, 0, "WALK", route, emptyList(), emptyList())!!
+
+        assertTrue(second.remainingMeters <= 60.0)
+        assertEquals(LocalLegProximity.REACHED, second.legProximity)
+        assertTrue(second.shouldForceServerSync)
+    }
+
+    @Test
+    fun transitLegEnd_reachesWithinHundredMetersAfterTwoGoodFixes() {
+        val engine = LocalNavigationEngine()
+        val route = listOf(
+            RouteCoordinate(15.0, 120.0),
+            RouteCoordinate(15.0, 120.001)
+        )
+        val nearEnd = RouteCoordinate(15.0, 120.0001)
+
+        engine.update(nearEnd, 5.0, 0, "JEEPNEY", route, emptyList(), emptyList())
+        val second = engine.update(nearEnd, 5.0, 0, "JEEPNEY", route, emptyList(), emptyList())!!
+
+        assertTrue(second.remainingMeters <= 100.0)
+        assertEquals(LocalLegProximity.REACHED, second.legProximity)
+        assertTrue(second.shouldForceServerSync)
+    }
+
+    @Test
     fun progressLandmark_triggersOnlyOnce() {
         val engine = LocalNavigationEngine()
         val route = route()
