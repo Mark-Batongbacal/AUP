@@ -224,10 +224,10 @@ class TripOptionsCoordinator(context: Context) {
             is ApiResult.Success -> update
         }
 
-        val changesConstraints = request.Preference != null ||
-            request.Budget != null || request.ClearBudget ||
-            request.DestinationName != null || request.DestinationLatitude != null ||
-            request.DestinationLongitude != null
+        val changesConstraints = request.preference != null ||
+            request.budget != null || request.clearBudget ||
+            request.destinationName != null || request.destinationLatitude != null ||
+            request.destinationLongitude != null
         if (locationResult.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true) && !changesConstraints) {
             // The location sync can itself trigger the backend's authoritative off-route reroute.
             // Do not immediately calculate a second replacement route for the same GPS fix.
