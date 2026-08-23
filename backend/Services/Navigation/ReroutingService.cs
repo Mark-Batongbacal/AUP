@@ -54,6 +54,10 @@ public sealed class ReroutingService(
         if (budget.HasValue && budget.Value <= 0)
             return new(false, "INVALID_BUDGET");
 
+        var avoidTransportMode = NormalizeTransportMode(request.AvoidTransportMode);
+        if (request.AvoidTransportMode is not null && avoidTransportMode is null)
+            return new(false, "INVALID_AVOID_TRANSPORT_MODE");
+
         var hasAnyDestinationField = request.DestinationName is not null ||
             request.DestinationLatitude is not null || request.DestinationLongitude is not null;
         var hasCompleteDestination = !string.IsNullOrWhiteSpace(request.DestinationName) &&
@@ -79,15 +83,18 @@ public sealed class ReroutingService(
         {
             var plans = await routing.PlanTripsAsync(latitude, longitude,
                 destinationLatitude, destinationLongitude, cancellationToken);
-            var eligible = plans.Where(plan => budget is null ||
-                (decimal)plan.TotalFarePesos <= budget.Value).ToList();
+            var eligible = plans
+                .Where(plan => budget is null || (decimal)plan.TotalFarePesos <= budget.Value)
+                .Where(plan => !UsesTransportMode(plan, avoidTransportMode))
+                .ToList();
             var selected = Select(eligible, preference);
             if (selected is null)
                 return await RestoreAfterFailureAsync(session, previousState,
                     "NO_REROUTE_AVAILABLE", "NO_ROUTE", cancellationToken);
 
             var recommendation = await PersistAsync(session, selected, latitude, longitude,
-                destinationName, destinationLatitude, destinationLongitude, budget, preference, cancellationToken);
+                destinationName, destinationLatitude, destinationLongitude, budget, preference,
+                normalizedReason, avoidTransportMode, cancellationToken);
 
             session.RecommendationId = recommendation.RecommendationId;
             session.DestinationName = destinationName;
@@ -170,6 +177,26 @@ public sealed class ReroutingService(
         };
     }
 
+    private static string? NormalizeTransportMode(string? mode)
+    {
+        if (string.IsNullOrWhiteSpace(mode)) return null;
+        return mode.Trim().ToUpperInvariant() switch
+        {
+            "TRIKE" or "TRICYCLE" or "TODA" => "TRICYCLE",
+            "WALK" or "WALKING" or "PEDESTRIAN" => "WALK",
+            "JEEP" or "JEEPNEY" => "JEEPNEY",
+            _ => null
+        };
+    }
+
+    private static bool UsesTransportMode(JeepneyTripPlan plan, string? mode) => mode switch
+    {
+        "TRICYCLE" => plan.Legs.Any(item => item.Mode == AccessMode.Trike),
+        "WALK" => plan.Legs.Any(item => item.Mode == AccessMode.Walk),
+        "JEEPNEY" => plan.Legs.Any(item => item.Mode != AccessMode.Walk && item.Mode != AccessMode.Trike),
+        _ => false
+    };
+
     private static JeepneyTripPlan? Select(List<JeepneyTripPlan> plans, string? preference) =>
         plans.FirstOrDefault(plan => preference is not null &&
             plan.RecommendationType.Split(',').Any(item =>
@@ -179,7 +206,8 @@ public sealed class ReroutingService(
     private async Task<RouteRecommendation> PersistAsync(
         TripSession session, JeepneyTripPlan plan, double latitude, double longitude,
         string? destinationName, double destinationLatitude, double destinationLongitude,
-        decimal? budget, string? preference, CancellationToken cancellationToken)
+        decimal? budget, string? preference, string rerouteReason, string? avoidTransportMode,
+        CancellationToken cancellationToken)
     {
         var search = await searches.AddAsync(new TripSearch
         {
@@ -207,7 +235,9 @@ public sealed class ReroutingService(
                 .Sum(item => item.DistanceMeters),
             TransferCount = plan.TransferCount,
             RecommendationScore = (decimal)plan.GeneralizedCostPesos,
-            Explanation = "Rerouted from current reliable location",
+            Explanation = avoidTransportMode is null
+                ? $"Rerouted from current reliable location ({rerouteReason})"
+                : $"Rerouted from current reliable location ({rerouteReason}); avoided {avoidTransportMode}",
             GeneratedAt = DateTime.UtcNow
         }, cancellationToken);
         foreach (var (leg, index) in plan.Legs.Select((value, index) => (value, index)))
