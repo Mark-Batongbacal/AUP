@@ -30,6 +30,8 @@ import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import kotlin.math.atan2
@@ -51,6 +53,18 @@ private const val LiveTripDestinationLayer = "live-trip-destination-layer"
 private const val LiveTripFinalSource = "live-trip-final-source"
 private const val LiveTripFinalLayer = "live-trip-final-layer"
 private const val LiveTripFuturePrefix = "live-trip-future"
+private const val LiveTripTransitPrefix = "live-trip-transit-route"
+private const val LiveTripTodaSource = "live-trip-toda-source"
+private const val LiveTripTodaLayer = "live-trip-toda-layer"
+
+private val LiveTripTransitColors = listOf(
+    "#0D8B97",
+    "#F4881F",
+    "#0A5B48",
+    "#FABE3A",
+    "#076773",
+    "#112E36"
+)
 
 /**
  * Presentation-only live map. GPS matching, route progress, corridor detection and trimming are
@@ -63,6 +77,8 @@ fun LiveTripMapScreen(
     legDestination: LatLng?,
     finalDestination: LatLng?,
     futureRouteSegments: List<List<LatLng>> = emptyList(),
+    nearbyJeepneyRoutes: List<TransitRouteOverlay> = emptyList(),
+    todaPoints: List<TodaPointOverlay> = emptyList(),
     recenterRequestKey: Int = 0,
     gpsPosition: LatLng? = currentPosition,
     fullLegRoutePoints: List<LatLng> = routePoints,
@@ -83,6 +99,7 @@ fun LiveTripMapScreen(
     var followLocation by rememberSaveable { mutableStateOf(true) }
     var showLegOverview by rememberSaveable { mutableStateOf(false) }
     var previousLegIdentity by rememberSaveable { mutableStateOf<String?>(null) }
+    var renderedTransitRouteIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     val latestMap by rememberUpdatedState(mapLibreMap)
     val latestGpsPosition by rememberUpdatedState(gpsPosition)
     val latestRoutePoints by rememberUpdatedState(routePoints)
@@ -120,6 +137,10 @@ fun LiveTripMapScreen(
             map.uiSettings.isCompassEnabled = false
             map.setStyle(LiveTripMapStyleUrl) { style ->
                 loadedStyle = style
+                renderedTransitRouteIds = emptySet()
+                updateLiveTripTransitRoutes(style, nearbyJeepneyRoutes, emptySet())
+                renderedTransitRouteIds = nearbyJeepneyRoutes.map { it.routeId }.toSet()
+                updateLiveTripTodaPoints(style, todaPoints)
                 updateLiveTripFutureLayers(style, futureRouteSegments)
                 updateLiveTripRoute(style, routePoints)
                 updateLiveTripCurrentPoint(style, currentPosition)
@@ -162,6 +183,13 @@ fun LiveTripMapScreen(
     LaunchedEffect(loadedStyle, legDestination) { loadedStyle?.let { updateLiveTripDestination(it, legDestination) } }
     LaunchedEffect(loadedStyle, finalDestination) { loadedStyle?.let { updateLiveTripFinalDestination(it, finalDestination) } }
     LaunchedEffect(loadedStyle, futureRouteSegments) { loadedStyle?.let { updateLiveTripFutureLayers(it, futureRouteSegments) } }
+    LaunchedEffect(loadedStyle, nearbyJeepneyRoutes) {
+        loadedStyle?.let { style ->
+            updateLiveTripTransitRoutes(style, nearbyJeepneyRoutes, renderedTransitRouteIds)
+            renderedTransitRouteIds = nearbyJeepneyRoutes.map { it.routeId }.toSet()
+        }
+    }
+    LaunchedEffect(loadedStyle, todaPoints) { loadedStyle?.let { updateLiveTripTodaPoints(it, todaPoints) } }
 
     LaunchedEffect(mapLibreMap, gpsPosition, routePoints, followLocation) {
         if (!followLocation) return@LaunchedEffect
@@ -269,6 +297,79 @@ private fun fitLiveTripLeg(
             top = (174f * density).toInt(),
             right = (28f * density).toInt(),
             bottom = (bottomPaddingDp * density).toInt()
+        )
+    )
+}
+
+private fun updateLiveTripTransitRoutes(
+    style: Style,
+    routes: List<TransitRouteOverlay>,
+    previouslyRenderedRouteIds: Set<Long>
+) {
+    val currentIds = routes.map { it.routeId }.toSet()
+    (previouslyRenderedRouteIds - currentIds).forEach { routeId ->
+        style.removeLayer("$LiveTripTransitPrefix-layer-$routeId")
+        style.removeSource("$LiveTripTransitPrefix-source-$routeId")
+    }
+
+    routes.forEachIndexed { index, route ->
+        val sourceId = "$LiveTripTransitPrefix-source-${route.routeId}"
+        val layerId = "$LiveTripTransitPrefix-layer-${route.routeId}"
+        if (route.points.size < 2) {
+            style.removeLayer(layerId)
+            style.removeSource(sourceId)
+            return@forEachIndexed
+        }
+
+        val geometry = LineString.fromLngLats(
+            route.points.map { Point.fromLngLat(it.longitude, it.latitude) }
+        )
+        val source = style.getSourceAs<GeoJsonSource>(sourceId)
+        if (source != null) {
+            source.setGeoJson(geometry)
+        } else {
+            style.addSource(GeoJsonSource(sourceId, geometry))
+        }
+
+        style.removeLayer(layerId)
+        style.addLayer(
+            LineLayer(layerId, sourceId).withProperties(
+                PropertyFactory.lineColor(LiveTripTransitColors[index % LiveTripTransitColors.size]),
+                PropertyFactory.lineWidth(2.5f),
+                PropertyFactory.lineOpacity(0.24f),
+                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+            )
+        )
+    }
+}
+
+private fun updateLiveTripTodaPoints(style: Style, points: List<TodaPointOverlay>) {
+    if (points.isEmpty()) {
+        style.removeLayer(LiveTripTodaLayer)
+        style.removeSource(LiveTripTodaSource)
+        return
+    }
+
+    val collection = FeatureCollection.fromFeatures(
+        points.map { item ->
+            Feature.fromGeometry(Point.fromLngLat(item.longitude, item.latitude))
+        }
+    )
+    val source = style.getSourceAs<GeoJsonSource>(LiveTripTodaSource)
+    if (source != null) {
+        source.setGeoJson(collection)
+        return
+    }
+
+    style.addSource(GeoJsonSource(LiveTripTodaSource, collection))
+    style.addLayer(
+        CircleLayer(LiveTripTodaLayer, LiveTripTodaSource).withProperties(
+            PropertyFactory.circleColor("#3478F6"),
+            PropertyFactory.circleRadius(6f),
+            PropertyFactory.circleOpacity(0.78f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+            PropertyFactory.circleStrokeWidth(2f)
         )
     )
 }
