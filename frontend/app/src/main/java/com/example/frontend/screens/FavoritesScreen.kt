@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,8 +28,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.LocalTukiDataProvider
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
+import com.example.frontend.core.network.ApiResult
 import com.example.frontend.model.FavoriteRoute
 import kotlin.math.roundToInt
 
@@ -39,6 +42,13 @@ import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiGold
 import com.example.frontend.ui.theme.TukiSky
+
+private data class FavoriteHistorySummary(
+    val recommendationType: String,
+    val minutes: Int,
+    val totalFare: Double,
+    val walkingMeters: Int
+)
 
 @Composable
 fun FavoritesScreen(
@@ -55,17 +65,64 @@ fun FavoritesScreen(
     onProfileClick: () -> Unit = {}
 ) {
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
-    val uniqueFavorites = remember(favorites) { favorites.distinctBy { it.uniqueFavoriteIdentity() } }
+    val dataProvider = LocalTukiDataProvider.current
+    val favoriteRecommendationIds = remember(favorites) {
+        favorites.mapNotNull { it.recommendationId.takeIf(String::isNotBlank) }.distinct().sorted()
+    }
+    var historySummaries by remember(favoriteRecommendationIds) {
+        mutableStateOf<Map<String, FavoriteHistorySummary>>(emptyMap())
+    }
+    var historyLookupComplete by remember(favoriteRecommendationIds) {
+        mutableStateOf(favoriteRecommendationIds.isEmpty())
+    }
     var pendingRemoval by remember { mutableStateOf<FavoriteRoute?>(null) }
     var openedFavorite by remember { mutableStateOf<FavoriteRoute?>(null) }
+
+    LaunchedEffect(dataProvider, favoriteRecommendationIds) {
+        if (dataProvider == null || favoriteRecommendationIds.isEmpty()) {
+            historySummaries = emptyMap()
+            historyLookupComplete = true
+            return@LaunchedEffect
+        }
+
+        historyLookupComplete = false
+        historySummaries = when (val result = dataProvider.tripRepository.getHistory()) {
+            is ApiResult.Success -> result.data.mapNotNull { item ->
+                val recommendation = item.recommendation ?: return@mapNotNull null
+                recommendation.recommendationId to FavoriteHistorySummary(
+                    recommendationType = recommendation.recommendationType,
+                    minutes = recommendation.totalMinutes.toDouble().roundToInt().coerceAtLeast(0),
+                    totalFare = recommendation.totalFare.toDouble(),
+                    walkingMeters = recommendation.walkingDistanceMeters.toDouble().roundToInt().coerceAtLeast(0)
+                )
+            }.toMap()
+            is ApiResult.Failure -> emptyMap()
+        }
+        historyLookupComplete = true
+    }
+
+    val uniqueFavorites = remember(favorites, historySummaries) {
+        favorites.map { route ->
+            val summary = historySummaries[route.recommendationId]
+            if (summary == null) {
+                route
+            } else {
+                route.copy(
+                    recommendationType = summary.recommendationType.takeIf { it.isNotBlank() }
+                        ?: route.recommendationType,
+                    minutes = summary.minutes,
+                    totalFare = summary.totalFare,
+                    walkingMeters = summary.walkingMeters
+                )
+            }
+        }.distinctBy { it.uniqueFavoriteIdentity() }
+    }
 
     openedFavorite?.let { favorite ->
         FavoriteRouteDetailsHost(
             favorite = favorite,
             onBack = { openedFavorite = null },
             onRepeatTrip = {
-                // AppNavigation still receives the selected FavoriteRoute through the existing
-                // route callback so any parent-level repeat/navigation handling remains supported.
                 onRouteClick(favorite)
             }
         )
@@ -118,7 +175,7 @@ fun FavoritesScreen(
 
             when {
                 isGuest -> item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
-                isLoading -> item {
+                isLoading || (!historyLookupComplete && favorites.isNotEmpty()) -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = TukiTeal)
                     }
