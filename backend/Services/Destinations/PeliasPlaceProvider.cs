@@ -92,10 +92,19 @@ public sealed class PeliasPlaceProvider(
         var properties = feature.Properties;
         var name = properties.Name ?? properties.Label;
         if (string.IsNullOrWhiteSpace(name)) return null;
+        var locality = FirstNonBlank(
+            properties.Locality,
+            properties.LocalAdmin,
+            properties.Borough,
+            properties.County,
+            properties.Region);
         return new(properties.Gid, name, coordinates[1], coordinates[0],
             properties.Categories.FirstOrDefault() ?? properties.Layer ?? "place",
-            "pelias", properties.Label);
+            "pelias", properties.Label, locality);
     }
+
+    private static string? FirstNonBlank(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
 
     private sealed class PeliasResponse
     {
@@ -117,5 +126,10 @@ public sealed class PeliasPlaceProvider(
         [JsonPropertyName("label")] public string? Label { get; set; }
         [JsonPropertyName("layer")] public string? Layer { get; set; }
         [JsonPropertyName("category")] public List<string> Categories { get; set; } = [];
+        [JsonPropertyName("locality")] public string? Locality { get; set; }
+        [JsonPropertyName("localadmin")] public string? LocalAdmin { get; set; }
+        [JsonPropertyName("borough")] public string? Borough { get; set; }
+        [JsonPropertyName("county")] public string? County { get; set; }
+        [JsonPropertyName("region")] public string? Region { get; set; }
     }
 }

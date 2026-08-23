@@ -108,6 +108,7 @@ fun HomeScreen(
     onResumeActiveTrip: () -> Unit = {}
 ) {
     var currentLocationLabel by remember { mutableStateOf("Locating you...") }
+    var currentAreaLabel by remember { mutableStateOf("Current area") }
     var originLatitude by remember { mutableStateOf<Double?>(null) }
     var originLongitude by remember { mutableStateOf<Double?>(null) }
     var isLocating by remember { mutableStateOf(true) }
@@ -149,7 +150,8 @@ fun HomeScreen(
                         longitude = lon,
                         category = "origin",
                         source = "current",
-                        address = "Pickup point"
+                        address = "Pickup point",
+                        locality = currentAreaLabel
                     )
                 } else {
                     null
@@ -178,12 +180,14 @@ fun HomeScreen(
         } else {
             isLocating = false
             currentLocationLabel = "Location permission denied"
+            currentAreaLabel = "Current area"
         }
     }
 
     LaunchedEffect(locateRequest) {
         if (inPreview) {
             currentLocationLabel = "Sun Street"
+            currentAreaLabel = "Current area"
             originLatitude = 15.2193
             originLongitude = 120.5816
             isLocating = false
@@ -204,6 +208,7 @@ fun HomeScreen(
         val location = context.currentDeviceLocation()
         if (location == null) {
             currentLocationLabel = "Unable to detect location"
+            currentAreaLabel = "Current area"
             isLocating = false
             return@LaunchedEffect
         }
@@ -211,8 +216,12 @@ fun HomeScreen(
         originLatitude = location.latitude
         originLongitude = location.longitude
         currentLocationLabel = "Current location"
+        currentAreaLabel = "Current area"
         when (val place = placesRepository.reverseGeocode(location.latitude, location.longitude)) {
-            is ApiResult.Success -> currentLocationLabel = place.data.name
+            is ApiResult.Success -> {
+                currentLocationLabel = place.data.name
+                currentAreaLabel = place.data.locality?.takeIf { it.isNotBlank() } ?: "Current area"
+            }
             is ApiResult.Failure -> Unit
         }
         isLocating = false
@@ -277,8 +286,12 @@ fun HomeScreen(
                     name = resolved.name,
                     address = resolved.address,
                     category = resolved.category,
-                    source = "map-resolved"
+                    source = "map-resolved",
+                    locality = resolved.locality
                 )
+                if (mapMode == HomeMapPickMode.Origin) {
+                    currentAreaLabel = resolved.locality?.takeIf { it.isNotBlank() } ?: currentAreaLabel
+                }
             }
             is ApiResult.Failure -> Unit
         }
@@ -331,6 +344,7 @@ fun HomeScreen(
 
                 CurrentLocationCard(
                     currentLocationLabel = currentLocationLabel,
+                    areaLabel = currentAreaLabel,
                     isLocating = isLocating,
                     onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
                 )
@@ -380,6 +394,7 @@ fun HomeScreen(
             BackHandler { showMapPicker = false }
             HomeMapPickerOverlay(
                 mode = mapMode,
+                areaLabel = currentAreaLabel,
                 selection = mapSelection,
                 searchText = mapSearchText,
                 searchResults = mapSearchResults,
@@ -448,6 +463,7 @@ fun HomeScreen(
                             originLatitude = selection.latitude
                             originLongitude = selection.longitude
                             currentLocationLabel = selection.name
+                            currentAreaLabel = selection.locality?.takeIf { it.isNotBlank() } ?: currentAreaLabel
                         } else {
                             selectedDestination = selection
                         }
@@ -533,6 +549,7 @@ private fun ActiveTripCard(
 @Composable
 private fun CurrentLocationCard(
     currentLocationLabel: String,
+    areaLabel: String,
     isLocating: Boolean,
     onChangeClick: () -> Unit
 ) {
@@ -571,7 +588,7 @@ private fun CurrentLocationCard(
                         fontWeight = FontWeight.ExtraBold
                     )
                 }
-                Text("Mabalacat City", color = HomeMuted, fontSize = 14.sp)
+                Text(areaLabel.ifBlank { "Current area" }, color = HomeMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Box(Modifier.width(1.dp).height(55.dp).background(HomeTeal.copy(alpha = 0.18f)))
             Column(
@@ -843,6 +860,7 @@ private fun AskTukiAiCard(onClick: () -> Unit) {
 @Composable
 private fun HomeMapPickerOverlay(
     mode: HomeMapPickMode,
+    areaLabel: String,
     selection: DestinationSearchResultDto?,
     searchText: String,
     searchResults: List<DestinationSearchResultDto>,
@@ -893,10 +911,18 @@ private fun HomeMapPickerOverlay(
                 }
                 Box(
                     Modifier
+                        .widthIn(max = 120.dp)
                         .background(MapYellow, RoundedCornerShape(10.dp))
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
-                    Text("Mabalacat", color = HomeDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        areaLabel.ifBlank { "Current area" },
+                        color = HomeDark,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 Spacer(Modifier.width(8.dp))
                 TextField(

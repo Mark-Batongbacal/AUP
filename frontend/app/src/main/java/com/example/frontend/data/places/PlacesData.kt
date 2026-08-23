@@ -15,7 +15,8 @@ data class DestinationSearchResultDto(
     val longitude: Double,
     val category: String,
     val source: String,
-    val address: String?
+    val address: String?,
+    val locality: String? = null
 )
 
 interface PlacesApi {

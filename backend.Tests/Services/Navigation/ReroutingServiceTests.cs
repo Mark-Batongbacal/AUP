@@ -1,4 +1,5 @@
 using backend.Models.Database;
+using backend.Models.Routing;
 using backend.Repositories;
 using backend.Services.Navigation;
 using backend.Services.Routing;
@@ -144,6 +145,47 @@ public sealed class ReroutingServiceTests
     }
 
     [Fact]
+    public async Task InvalidAvoidTransportMode_IsRejectedBeforeRoutePlanning()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        session.CurrentNavigationState = TripNavigationState.OnJeepney;
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default)).ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest("TRANSPORT_UNAVAILABLE", AvoidTransportMode: "AIRPLANE"));
+
+        Assert.Equal("INVALID_AVOID_TRANSPORT_MODE", result.Status);
+        routing.Verify(item => item.PlanTripsAsync(It.IsAny<double>(), It.IsAny<double>(),
+            It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UnavailableToda_FiltersTricycleOnlyReplacement()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        session.CurrentNavigationState = TripNavigationState.OnJeepney;
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default)).ReturnsAsync(session);
+        sessions.Setup(item => item.UpdateAsync(session, default)).ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+        routing.Setup(item => item.PlanTripsAsync(session.LastLatitude!.Value, session.LastLongitude!.Value,
+                session.DestinationLatitude, session.DestinationLongitude, default))
+            .ReturnsAsync([TricycleOnlyPlan()]);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest(
+                Reason: "TRANSPORT_UNAVAILABLE",
+                AvoidTransportMode: "TRICYCLE"));
+
+        Assert.Equal("NO_REROUTE_AVAILABLE", result.Status);
+        Assert.Equal(TripNavigationState.OnJeepney, session.CurrentNavigationState);
+        routing.Verify(item => item.PlanTripsAsync(session.LastLatitude!.Value, session.LastLongitude!.Value,
+            session.DestinationLatitude, session.DestinationLongitude, default), Times.Once);
+    }
+
+    [Fact]
     public async Task PartialDestination_IsRejectedBeforeRoutePlanning()
     {
         var sessions = new Mock<ITripSessionRepository>();
@@ -172,6 +214,25 @@ public sealed class ReroutingServiceTests
             new backend.Services.TripSessions.TripSessionStateMachine(),
             Options.Create(new NavigationOptions { RerouteCooldownSeconds = 120 })), routing);
     }
+
+    private static JeepneyTripPlan TricycleOnlyPlan() => new()
+    {
+        OriginAccess = new JeepneyAccessSegment { Mode = AccessMode.Walk },
+        DestinationAccess = new JeepneyAccessSegment { Mode = AccessMode.Walk },
+        Legs =
+        [
+            new JeepneyTripLeg
+            {
+                Mode = AccessMode.Trike,
+                DistanceMeters = 1_000,
+                DurationSeconds = 300,
+                FarePesos = 35
+            }
+        ],
+        TotalTimeSeconds = 300,
+        TotalFarePesos = 35,
+        GeneralizedCostPesos = 35
+    };
 
     private static TripSession OffRouteSession() => new()
     {

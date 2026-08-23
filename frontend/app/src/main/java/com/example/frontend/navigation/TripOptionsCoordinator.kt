@@ -7,6 +7,8 @@ import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.data.ai.AssistantRequest
+import com.example.frontend.data.ai.AssistantResponseDto
 import com.example.frontend.data.navigation.NavigationGeometryResponseDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRerouteRequest
@@ -33,6 +35,7 @@ class TripOptionsCoordinator(context: Context) {
     private val places = provider.placesRepository
     private val routing = provider.routingRepository
     private val users = provider.userRepository
+    private val ai = provider.aiRepository
 
     suspend fun refreshPreferredLanguage(): String =
         when (val result = users.getCurrentUser()) {
@@ -40,8 +43,18 @@ class TripOptionsCoordinator(context: Context) {
             is ApiResult.Failure -> AppLanguagePreference.current()
         }
 
-    suspend fun rerouteNow(sessionId: String): ApiResult<NavigationSnapshotDto> =
-        reroute(sessionId, NavigationRerouteRequest(reason = "MANUAL"))
+    suspend fun rerouteNow(
+        sessionId: String,
+        reason: String = "MANUAL",
+        avoidTransportMode: String? = null
+    ): ApiResult<NavigationSnapshotDto> =
+        reroute(
+            sessionId,
+            NavigationRerouteRequest(
+                reason = reason,
+                avoidTransportMode = avoidTransportMode
+            )
+        )
 
     suspend fun changePreference(sessionId: String, preference: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "PREFERENCE_CHANGED", preference = preference))
@@ -62,6 +75,33 @@ class TripOptionsCoordinator(context: Context) {
                 destinationLongitude = destination.longitude
             )
         )
+
+    suspend fun askNavigationAssistant(
+        sessionId: String,
+        message: String,
+        latitude: Double?,
+        longitude: Double?
+    ): ApiResult<AssistantResponseDto> {
+        var originLatitude = latitude
+        var originLongitude = longitude
+        if (originLatitude == null || originLongitude == null) {
+            val location = appContext.currentDeviceLocation()
+                ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
+            originLatitude = location.latitude
+            originLongitude = location.longitude
+        }
+        return ai.ask(
+            AssistantRequest(
+                message = message,
+                originLatitude = originLatitude,
+                originLongitude = originLongitude,
+                tripSessionId = sessionId
+            )
+        )
+    }
+
+    suspend fun refreshActiveNavigation(): ApiResult<NavigationSnapshotDto> =
+        navigation.getActiveNavigation()
 
     /**
      * Uses the same journey planner and recommendation payload as RouteResultsScreen.
