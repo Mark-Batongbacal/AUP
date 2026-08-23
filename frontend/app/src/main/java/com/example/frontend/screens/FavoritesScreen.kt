@@ -8,12 +8,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,11 +37,8 @@ import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
-import com.example.frontend.ui.theme.TukiForest
 import com.example.frontend.ui.theme.TukiGold
 import com.example.frontend.ui.theme.TukiSky
-import com.example.frontend.ui.theme.TukiGoldSurface
 
 @Composable
 fun FavoritesScreen(
@@ -54,6 +56,7 @@ fun FavoritesScreen(
 ) {
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     val uniqueFavorites = remember(favorites) { favorites.distinctBy { it.uniqueFavoriteIdentity() } }
+    var pendingRemoval by remember { mutableStateOf<FavoriteRoute?>(null) }
 
     Column(Modifier.fillMaxSize().background(TukiCream)) {
         LazyColumn(
@@ -112,7 +115,7 @@ fun FavoritesScreen(
                         route = route,
                         removing = route.id in removingFavoriteIds,
                         onClick = { onRouteClick(route) },
-                        onRemove = { onRemoveFavorite(route) }
+                        onRemove = { pendingRemoval = route }
                     )
                 }
             }
@@ -121,7 +124,7 @@ fun FavoritesScreen(
                 Spacer(Modifier.height(10.dp))
                 Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiGold.copy(alpha = 0.12f)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
-                        Surface(Modifier.size(27.dp), shape = CircleShape, color = com.example.frontend.ui.theme.TukiGold) {
+                        Surface(Modifier.size(27.dp), shape = CircleShape, color = TukiGold) {
                             Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, style = MaterialTheme.typography.labelLarge) }
                         }
                         Spacer(Modifier.width(11.dp))
@@ -143,12 +146,46 @@ fun FavoritesScreen(
             onProfileClick = onProfileClick
         )
     }
+
+    pendingRemoval?.let { route ->
+        val removing = route.id in removingFavoriteIds
+        AlertDialog(
+            onDismissRequest = {
+                if (!removing) pendingRemoval = null
+            },
+            title = { Text("Remove from favorites?") },
+            text = {
+                Text(
+                    "Are you sure you want to remove ${route.origin} → ${route.destination} from your favorites?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !removing,
+                    onClick = {
+                        pendingRemoval = null
+                        onRemoveFavorite(route)
+                    }
+                ) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !removing,
+                    onClick = { pendingRemoval = null }
+                ) {
+                    Text("Keep Favorite", color = TukiTeal)
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: () -> Unit, onRemove: () -> Unit) {
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = !removing, onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = Color.White,
         shadowElevation = 2.dp
@@ -174,7 +211,12 @@ private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: 
                 }
             }
             Spacer(Modifier.width(6.dp))
-            Box(Modifier.size(40.dp).clickable(enabled = !removing, onClick = onRemove), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clickable(enabled = !removing, onClick = onRemove),
+                contentAlignment = Alignment.Center
+            ) {
                 if (removing) CircularProgressIndicator(Modifier.size(18.dp), color = TukiTeal, strokeWidth = 2.dp)
                 else Text("★", color = TukiOrange, style = MaterialTheme.typography.displaySmall)
             }
