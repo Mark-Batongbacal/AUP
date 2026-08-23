@@ -288,6 +288,14 @@ fun ProfileScreen(
                 { page = ProfilePage.LANGUAGE }
             )
         )
+        add(
+            ProfileAccountRow(
+                R.drawable.edit_profile,
+                "Settings",
+                "Appearance and app preferences",
+                onEditProfileClick
+            )
+        )
     }
 
     Column(

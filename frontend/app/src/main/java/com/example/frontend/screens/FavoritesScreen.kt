@@ -42,6 +42,7 @@ import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiGold
 import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 
 private data class FavoriteHistorySummary(
     val recommendationType: String,
@@ -104,17 +105,12 @@ fun FavoritesScreen(
     val uniqueFavorites = remember(favorites, historySummaries) {
         favorites.map { route ->
             val summary = historySummaries[route.recommendationId]
-            if (summary == null) {
-                route
-            } else {
-                route.copy(
-                    recommendationType = summary.recommendationType.takeIf { it.isNotBlank() }
-                        ?: route.recommendationType,
-                    minutes = summary.minutes,
-                    totalFare = summary.totalFare,
-                    walkingMeters = summary.walkingMeters
-                )
-            }
+            if (summary == null) route else route.copy(
+                recommendationType = summary.recommendationType.takeIf { it.isNotBlank() } ?: route.recommendationType,
+                minutes = summary.minutes,
+                totalFare = summary.totalFare,
+                walkingMeters = summary.walkingMeters
+            )
         }.distinctBy { it.uniqueFavoriteIdentity() }
     }
 
@@ -122,9 +118,7 @@ fun FavoritesScreen(
         FavoriteRouteDetailsHost(
             favorite = favorite,
             onBack = { openedFavorite = null },
-            onRepeatTrip = {
-                onRouteClick(favorite)
-            }
+            onRepeatTrip = { onRouteClick(favorite) }
         )
         return
     }
@@ -144,34 +138,19 @@ fun FavoritesScreen(
                     Box(
                         Modifier.size(38.dp).clickable { onBack?.invoke() ?: backDispatcher?.onBackPressed() },
                         contentAlignment = Alignment.Center
-                    ) {
-                        Text("←", color = TukiInk, style = MaterialTheme.typography.displaySmall)
-                    }
-                    Text(
-                        "Favorites",
-                        Modifier.weight(1f),
-                        color = TukiInk,
-                        style = MaterialTheme.typography.displaySmall,
-                        textAlign = TextAlign.Center
-                    )
+                    ) { Text("←", color = TukiInk, style = MaterialTheme.typography.displaySmall) }
+                    Text("Favorites", Modifier.weight(1f), color = TukiInk, style = MaterialTheme.typography.displaySmall, textAlign = TextAlign.Center)
                     Spacer(Modifier.size(38.dp))
                 }
                 Spacer(Modifier.height(5.dp))
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("🌟", fontSize = 57.sp)
-                    Text(
-                        "Save your favorite routes\nfor quick access",
-                        color = TukiMuted,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center
-                    )
+                    Text("Save your favorite routes\nfor quick access", color = TukiMuted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
                 }
                 Spacer(Modifier.height(10.dp))
             }
 
-            if (!errorMessage.isNullOrBlank()) {
-                item { Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
-            }
+            if (!errorMessage.isNullOrBlank()) item { Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
 
             when {
                 isGuest -> item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
@@ -185,10 +164,7 @@ fun FavoritesScreen(
                     FavoriteRouteCard(
                         route = route,
                         removing = route.id in removingFavoriteIds,
-                        onClick = {
-                            openedFavorite = route
-                            onRouteClick(route)
-                        },
+                        onClick = { openedFavorite = route; onRouteClick(route) },
                         onRemove = { pendingRemoval = route }
                     )
                 }
@@ -212,45 +188,22 @@ fun FavoritesScreen(
             }
         }
 
-        BottomBar(
-            selectedTab = TukiTab.FAVORITES,
-            onHomeClick = onHomeClick,
-            onRecentClick = onRecentClick,
-            onFavoritesClick = {},
-            onProfileClick = onProfileClick
-        )
+        BottomBar(selectedTab = TukiTab.FAVORITES, onHomeClick = onHomeClick, onRecentClick = onRecentClick, onFavoritesClick = {}, onProfileClick = onProfileClick)
     }
 
     pendingRemoval?.let { route ->
         val removing = route.id in removingFavoriteIds
         AlertDialog(
-            onDismissRequest = {
-                if (!removing) pendingRemoval = null
-            },
+            onDismissRequest = { if (!removing) pendingRemoval = null },
             title = { Text("Remove from favorites?") },
-            text = {
-                Text(
-                    "Are you sure you want to remove ${route.origin} → ${route.destination} from your favorites?"
-                )
-            },
+            text = { Text("Are you sure you want to remove ${route.origin} → ${route.destination} from your favorites?") },
             confirmButton = {
-                TextButton(
-                    enabled = !removing,
-                    onClick = {
-                        pendingRemoval = null
-                        onRemoveFavorite(route)
-                    }
-                ) {
+                TextButton(enabled = !removing, onClick = { pendingRemoval = null; onRemoveFavorite(route) }) {
                     Text("Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(
-                    enabled = !removing,
-                    onClick = { pendingRemoval = null }
-                ) {
-                    Text("Keep Favorite", color = TukiTeal)
-                }
+                TextButton(enabled = !removing, onClick = { pendingRemoval = null }) { Text("Keep Favorite", color = TukiTeal) }
             }
         )
     }
@@ -261,7 +214,7 @@ private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: 
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(enabled = !removing, onClick = onClick),
         shape = RoundedCornerShape(18.dp),
-        color = Color.White,
+        color = TukiSurfaceRaised,
         shadowElevation = 2.dp
     ) {
         Row(Modifier.padding(horizontal = 11.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -270,13 +223,7 @@ private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: 
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    "${route.origin} → ${route.destination}",
-                    color = TukiInk,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text("${route.origin} → ${route.destination}", color = TukiInk, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                     FavoritePill(formatRecommendation(route.recommendationType), TukiSky.copy(alpha = 0.35f), TukiInk)
@@ -285,12 +232,7 @@ private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: 
                 }
             }
             Spacer(Modifier.width(6.dp))
-            Box(
-                Modifier
-                    .size(40.dp)
-                    .clickable(enabled = !removing, onClick = onRemove),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(Modifier.size(40.dp).clickable(enabled = !removing, onClick = onRemove), contentAlignment = Alignment.Center) {
                 if (removing) CircularProgressIndicator(Modifier.size(18.dp), color = TukiTeal, strokeWidth = 2.dp)
                 else Text("★", color = TukiOrange, style = MaterialTheme.typography.displaySmall)
             }
@@ -301,19 +243,13 @@ private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: 
 @Composable
 private fun FavoritePill(text: String, color: Color, textColor: Color) {
     Surface(shape = RoundedCornerShape(11.dp), color = color) {
-        Text(
-            text,
-            Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-            color = textColor,
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 1
-        )
+        Text(text, Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = textColor, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }
 
 @Composable
 private fun EmptyFavoriteCard(message: String) {
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = Color.White) {
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiSurfaceRaised) {
         Text(message, Modifier.padding(22.dp), color = TukiMuted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
     }
 }
@@ -335,10 +271,5 @@ private fun routeIcon(type: String): String = when (formatRecommendation(type)) 
     else -> "🛺"
 }
 
-private fun FavoriteRoute.uniqueFavoriteIdentity(): String =
-    recommendationId.takeIf { it.isNotBlank() }
-        ?: id.takeIf { it.isNotBlank() }
-        ?: listOf(origin, destination, recommendationType).joinToString("|")
-
-private fun FavoriteRoute.favoriteListKey(index: Int): String =
-    "${uniqueFavoriteIdentity()}-$index"
+private fun FavoriteRoute.uniqueFavoriteIdentity(): String = recommendationId.takeIf { it.isNotBlank() } ?: id.takeIf { it.isNotBlank() } ?: listOf(origin, destination, recommendationType).joinToString("|")
+private fun FavoriteRoute.favoriteListKey(index: Int): String = "${uniqueFavoriteIdentity()}-$index"
