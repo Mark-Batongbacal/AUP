@@ -6,6 +6,7 @@ namespace backend.Services.Routing;
 public partial class RoutingService
 {
     private const int MaxBoardingVariantsPerRoute = 3;
+    private const double BoardingAccessEnvelopeMeters = 300.0;
 
     public async Task<List<JeepneyTripOption>> FindConnectingRoutesAsync(
         double originLatitude,
@@ -77,56 +78,29 @@ public partial class RoutingService
                 {
                     RouteId = candidate.RouteId,
                     RouteName = candidate.RouteName,
-
-                    BoardLatitude =
-                        candidate.BoardAccess.Anchor.Latitude,
-
-                    BoardLongitude =
-                        candidate.BoardAccess.Anchor.Longitude,
-
+                    BoardLatitude = candidate.BoardAccess.Anchor.Latitude,
+                    BoardLongitude = candidate.BoardAccess.Anchor.Longitude,
                     BoardAccess = board,
-
-                    AlightLatitude =
-                        candidate.AlightAccess.Anchor.Latitude,
-
-                    AlightLongitude =
-                        candidate.AlightAccess.Anchor.Longitude,
-
+                    AlightLatitude = candidate.AlightAccess.Anchor.Latitude,
+                    AlightLongitude = candidate.AlightAccess.Anchor.Longitude,
                     AlightAccess = alight,
-
-                    TotalTimeSeconds =
-                        board.TotalTimeSeconds +
-                        jeepneyTime +
-                        alight.TotalTimeSeconds,
-
-                    TotalFarePesos =
-                        board.TotalFarePesos +
-                        alight.TotalFarePesos +
-                        JeepneyBaseFarePesos,
-
+                    TotalTimeSeconds = board.TotalTimeSeconds + jeepneyTime + alight.TotalTimeSeconds,
+                    TotalFarePesos = board.TotalFarePesos + alight.TotalFarePesos + JeepneyBaseFarePesos,
                     GeneralizedCostPesos =
                         board.GeneralizedCostPesos +
-                        GeneralizedCostFromTimeAndFare(
-                            jeepneyTime,
-                            JeepneyBaseFarePesos) +
+                        GeneralizedCostFromTimeAndFare(jeepneyTime, JeepneyBaseFarePesos) +
                         alight.GeneralizedCostPesos
                 };
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _logger.LogWarning(
-                    ex,
-                    "Failed to confirm trip option for route {RouteId}",
-                    candidate.RouteId);
-
+                _logger.LogWarning(ex, "Failed to confirm trip option for route {RouteId}", candidate.RouteId);
                 return null;
             }
         });
 
         var results = await Task.WhenAll(confirmTasks);
 
-        // Several boarding anchors from the same route are deliberately confirmed.
-        // Keep the best route after authoritative walking distances are known.
         return results
             .Where(option => option is not null)
             .Select(option => option!)
@@ -160,18 +134,10 @@ public partial class RoutingService
 
     /// <summary>
     /// Keeps a small set of useful boarding variants for one jeepney route.
-    ///
-    /// The previous prefix-minimum shortcut could collapse a route to one
-    /// provisional boarding anchor before Valhalla had confirmed pedestrian
-    /// access. That is brittle around intersections and long/curved routes:
-    /// a passenger can be told to walk downstream along the same jeep route
-    /// even though the route already passes close to them.
-    ///
-    /// Route samples are intentionally small (normally <= 40), so evaluating
-    /// board/alight pairs against cumulative full-route progress is cheap. We
-    /// additionally inject the exact nearest projection on the full geometry,
-    /// ensuring a sensible nearby board is considered even when sampling is
-    /// sparse around a bend.
+    /// Boarding opportunities that are substantially farther from the origin
+    /// than the nearest directionally-valid opportunity are pruned before
+    /// generalized-cost ranking. This prevents a feeder leg from chasing the
+    /// same jeepney downstream merely to reduce the jeepney ride portion.
     /// </summary>
     private List<RouteConnectionCandidate> FindBestConnections(
         StaticJeepneyRoute route,
@@ -185,19 +151,10 @@ public partial class RoutingService
         if (samples.Count < 2)
             return [];
 
-        var boardAccessOptions =
-            ComputeBoardAccessOptions(
-                route.RouteId,
-                samples,
-                originLatitude,
-                originLongitude);
-
-        var alightAccessOptions =
-            ComputeAlightAccessOptions(
-                route.RouteId,
-                samples,
-                destinationLatitude,
-                destinationLongitude);
+        var boardAccessOptions = ComputeBoardAccessOptions(
+            route.RouteId, samples, originLatitude, originLongitude);
+        var alightAccessOptions = ComputeAlightAccessOptions(
+            route.RouteId, samples, destinationLatitude, destinationLongitude);
 
         var boardCandidates = boardAccessOptions
             .Select(ConstrainTransitAccess)
@@ -206,10 +163,7 @@ public partial class RoutingService
             .ToList();
 
         var nearestBoard = BuildNearestFullRouteBoardAccess(
-            route.RouteId,
-            samples,
-            originLatitude,
-            originLongitude);
+            route.RouteId, samples, originLatitude, originLongitude);
         if (nearestBoard is not null &&
             boardCandidates.All(candidate =>
                 ApproximateDistanceMeters(
@@ -243,16 +197,13 @@ public partial class RoutingService
                 if (rideDistance <= 0)
                     continue;
 
-                var jeepneyTime =
-                    JeepneyBoardingWaitTimeSeconds +
+                var jeepneyTime = JeepneyBoardingWaitTimeSeconds +
                     rideDistance / JeepneySpeedMetersPerSecond;
 
                 var total =
                     boardAccess.GeneralizedCostPesos +
                     alightAccess.GeneralizedCostPesos +
-                    GeneralizedCostFromTimeAndFare(
-                        jeepneyTime,
-                        JeepneyBaseFarePesos);
+                    GeneralizedCostFromTimeAndFare(jeepneyTime, JeepneyBaseFarePesos);
 
                 all.Add(new RouteConnectionCandidate(
                     route.RouteId,
@@ -268,7 +219,7 @@ public partial class RoutingService
         if (all.Count == 0)
             return [];
 
-        var ranked = all
+        var distinct = all
             .GroupBy(candidate => string.Join(':',
                 candidate.BoardIndex,
                 candidate.AlightIndex,
@@ -279,7 +230,32 @@ public partial class RoutingService
             .Select(group => group
                 .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
                 .First())
+            .ToList();
+
+        // Phase 1 boarding guard: compare only candidates that can actually
+        // continue forward to an alighting point, then establish the nearest
+        // useful boarding opportunity. A modest envelope still allows a nearby
+        // intersection/stop to beat the exact projection when it is genuinely
+        // more practical, while eliminating large downstream feeder detours.
+        var nearestBoardDistance = distinct.Min(candidate =>
+            StraightLineBoardAccessMeters(
+                candidate,
+                originLatitude,
+                originLongitude));
+
+        var boardingEnvelope = distinct
+            .Where(candidate =>
+                StraightLineBoardAccessMeters(
+                    candidate,
+                    originLatitude,
+                    originLongitude) <=
+                nearestBoardDistance + BoardingAccessEnvelopeMeters)
+            .ToList();
+
+        var ranked = boardingEnvelope
             .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
+            .ThenBy(candidate =>
+                StraightLineBoardAccessMeters(candidate, originLatitude, originLongitude))
             .ThenBy(candidate => ProvisionalWalkToBoardMeters(candidate.BoardAccess))
             .ToList();
 
@@ -293,17 +269,20 @@ public partial class RoutingService
             if (seen.Add(key)) selected.Add(candidate);
         }
 
-        // Best full provisional journey.
-        Add(ranked[0]);
-
-        // Also preserve the closest sensible same-route boarding opportunity.
-        // This gives authoritative Valhalla confirmation a chance to choose it
-        // instead of committing early to a downstream board anchor.
-        var nearestBoardCandidate = ranked
-            .OrderBy(candidate => ProvisionalWalkToBoardMeters(candidate.BoardAccess))
+        // Keep the closest valid board first. PlanTripsAsync currently consumes
+        // FirstOrDefault(), so this ordering is intentional: the full planner
+        // must not discard the nearby board in favor of a downstream one before
+        // authoritative confirmation has a chance to run.
+        var nearestBoardCandidate = boardingEnvelope
+            .OrderBy(candidate =>
+                StraightLineBoardAccessMeters(candidate, originLatitude, originLongitude))
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
             .First();
         Add(nearestBoardCandidate);
+
+        // Preserve the best complete provisional journey inside the safe
+        // boarding envelope as a separate confirmation candidate.
+        Add(ranked[0]);
 
         foreach (var candidate in ranked)
         {
@@ -312,11 +291,18 @@ public partial class RoutingService
             Add(candidate);
         }
 
-        return selected
-            .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-            .ThenBy(candidate => ProvisionalWalkToBoardMeters(candidate.BoardAccess))
-            .ToList();
+        return selected;
     }
+
+    private static double StraightLineBoardAccessMeters(
+        RouteConnectionCandidate candidate,
+        double originLatitude,
+        double originLongitude) =>
+        ApproximateDistanceMeters(
+            originLatitude,
+            originLongitude,
+            candidate.BoardAccess.Anchor.Latitude,
+            candidate.BoardAccess.Anchor.Longitude);
 
     private AccessCandidate? BuildNearestFullRouteBoardAccess(
         string routeId,
@@ -334,9 +320,6 @@ public partial class RoutingService
             anchor.Latitude,
             anchor.Longitude);
 
-        // Straight-line distance is a lower bound. If even that exceeds the
-        // transit access cap, this cannot become a valid walking access after
-        // road-network confirmation.
         if (distance > MaxWalkAccessDistanceMeters)
             return null;
 
