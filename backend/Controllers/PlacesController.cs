@@ -1,4 +1,5 @@
 using backend.Services.Destinations;
+using backend.Services.Routing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,7 +9,8 @@ namespace backend.Controllers;
 [Route("api/places")]
 public sealed class PlacesController(
     IDestinationSearchService searchService,
-    IReverseGeocodingService reverseGeocoding) : ControllerBase
+    IReverseGeocodingService reverseGeocoding,
+    ITripAreaValidator areaValidator) : ControllerBase
 {
     [HttpGet("search")]
     [AllowAnonymous]
@@ -21,6 +23,35 @@ public sealed class PlacesController(
         var response = await searchService.SearchAsync(
             q ?? string.Empty, new(focusLat, focusLon), cancellationToken);
         return response.Error is null ? Ok(response.Results) : BadRequest(response);
+    }
+
+    [HttpGet("search/more")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SearchMore(
+        [FromQuery] string q,
+        [FromQuery] double? focusLat,
+        [FromQuery] double? focusLon,
+        CancellationToken cancellationToken)
+    {
+        var query = q?.Trim() ?? string.Empty;
+        if (query.Length < 2)
+            return BadRequest(new { error = "INVALID_QUERY", message = "Enter at least two characters." });
+
+        try
+        {
+            var results = await GooglePlacesSearchClient.SearchAsync(
+                query, new(focusLat, focusLon), cancellationToken);
+            var supported = results
+                .Where(result => areaValidator.ValidateCoordinate(
+                    result.Latitude, result.Longitude).IsValid)
+                .ToList();
+            return Ok(supported);
+        }
+        catch (DestinationProviderUnavailableException exception)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { error = "GOOGLE_PLACES_UNAVAILABLE", message = exception.Message });
+        }
     }
 
     [HttpGet("reverse")]
