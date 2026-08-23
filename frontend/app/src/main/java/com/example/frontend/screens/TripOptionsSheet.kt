@@ -45,16 +45,16 @@ import kotlinx.coroutines.delay
 import java.math.BigDecimal
 import kotlin.math.roundToInt
 
-private val TripSheetScreen = Color(0xFFF8F5EC)
-private val TripSheetSurface = Color(0xFFFFFBF0)
-private val TripSheetTile = Color(0xFFF5F1E7)
-private val TripSheetCream = Color(0xFFFFF0C7)
-private val TripSheetTeal = Color(0xFF2C8E95)
-private val TripSheetDark = Color(0xFF153E4B)
-private val TripSheetDarkText = Color(0xFF244B58)
-private val TripSheetMuted = Color(0xFF7A898E)
-private val TripSheetOrange = Color(0xFFF59A3A)
-private val TripSheetOutline = Color(0xFFDCD5C7)
+private val TripSheetScreen = com.example.frontend.ui.theme.TukiCream
+private val TripSheetSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val TripSheetTile = com.example.frontend.ui.theme.TukiSky.copy(alpha = 0.30f)
+private val TripSheetCream = com.example.frontend.ui.theme.TukiGoldSurface
+private val TripSheetTeal = com.example.frontend.ui.theme.TukiTeal
+private val TripSheetDark = com.example.frontend.ui.theme.TukiInk
+private val TripSheetDarkText = com.example.frontend.ui.theme.TukiInk
+private val TripSheetMuted = com.example.frontend.ui.theme.TukiMuted
+private val TripSheetOrange = com.example.frontend.ui.theme.TukiOrange
+private val TripSheetOutline = com.example.frontend.ui.theme.TukiOutline
 
 private enum class TripOptionEditor { Preference, Budget, Destination }
 
@@ -237,8 +237,8 @@ private fun PreferenceCard(
                     shape = CircleShape,
                     color = when (title) {
                         "Fastest" -> TripSheetOrange.copy(alpha = 0.16f)
-                        "Cheapest" -> Color(0xFFE7F1D8)
-                        else -> Color(0xFFE5F1ED)
+                        "Cheapest" -> com.example.frontend.ui.theme.TukiForestSurface
+                        else -> com.example.frontend.ui.theme.TukiTealSurface
                     }
                 ) { Box(contentAlignment = Alignment.Center) { Text(icon, fontSize = 20.sp, color = TripSheetDark) } }
                 Spacer(Modifier.width(11.dp))

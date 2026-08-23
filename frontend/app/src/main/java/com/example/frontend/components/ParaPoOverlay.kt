@@ -13,9 +13,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiDark = Color(0xFF173B43)
+private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
+private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
+private val TukiDark = com.example.frontend.ui.theme.TukiInk
 
 @Composable
 fun ParaPoOverlay(

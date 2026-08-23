@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace backend.Models.Database;
 
@@ -22,6 +23,9 @@ public partial class UserProfile
     public string Role { get; set; } = null!;
 
     public string? ProfileImageUrl { get; set; }
+
+    [MaxLength(20)]
+    public string PreferredLanguage { get; set; } = "English";
 
     public bool IsActive { get; set; }
 

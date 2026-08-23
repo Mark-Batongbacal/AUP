@@ -184,7 +184,13 @@ fun AskAiChatScreen(
             }
             Spacer(modifier = Modifier.width(10.dp))
             Column {
-                Text("Ask our AI", color = TukiDark, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    "Ask our AI",
+                    color = TukiDark,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                )
                 Text("Get TUKI route recommendations", color = TukiGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
         }
@@ -239,7 +245,7 @@ fun AskAiChatScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(TukiDark)
+                .background(TukiChatBubble)
                 .navigationBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -363,7 +369,7 @@ private fun AiRouteCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(TukiDark, RoundedCornerShape(18.dp))
+            .background(TukiChatBubble, RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
             .padding(16.dp)
     ) {

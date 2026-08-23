@@ -22,6 +22,7 @@ import com.example.frontend.data.health.HealthService
 import com.example.frontend.data.navigation.NavigationApi
 import com.example.frontend.data.navigation.NavigationRepository
 import com.example.frontend.data.navigation.NavigationRepositoryImpl
+import com.example.frontend.data.navigation.SharedPreferencesNavigationLocalStore
 import com.example.frontend.data.places.PlacesApi
 import com.example.frontend.data.places.PlacesRepository
 import com.example.frontend.data.places.PlacesRepositoryImpl
@@ -57,6 +58,11 @@ class TukiDataProvider(
 
     private val authApi = api(AuthApi::class.java)
     private val usersApi = api(UsersApi::class.java)
+    private val navigationLocalStore = SharedPreferencesNavigationLocalStore(
+        context = context,
+        sessions = sessionStore,
+        gson = client.gson
+    )
 
     val authRepository: AuthRepository = AuthRepositoryImpl(authApi, usersApi, sessionStore, errors)
     val userRepository: UserRepository = UserRepositoryImpl(usersApi, sessionStore, errors)
@@ -64,7 +70,12 @@ class TukiDataProvider(
     val routingRepository: RoutingRepository = RoutingRepositoryImpl(api(RoutingApi::class.java), sessionStore, errors)
     val tripRepository: TripRepository = TripRepositoryImpl(api(TripsApi::class.java), sessionStore, errors)
     val tripSessionRepository: TripSessionRepository = TripSessionRepositoryImpl(api(TripSessionsApi::class.java), sessionStore, errors)
-    val navigationRepository: NavigationRepository = NavigationRepositoryImpl(api(NavigationApi::class.java), sessionStore, errors)
+    val navigationRepository: NavigationRepository = NavigationRepositoryImpl(
+        api(NavigationApi::class.java),
+        sessionStore,
+        errors,
+        navigationLocalStore
+    )
     val transportRouteRepository: TransportRouteRepository = TransportRouteRepositoryImpl(api(TransportRoutesApi::class.java), sessionStore, errors)
     val tricycleRepository: TricycleRepository = TricycleRepositoryImpl(api(TricyclePointsApi::class.java), sessionStore, errors)
     val rideMatchingRepository: RideMatchingRepository = RideMatchingRepositoryImpl(api(RideMatchingApi::class.java), sessionStore, errors)

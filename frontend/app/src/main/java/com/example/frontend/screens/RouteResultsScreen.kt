@@ -54,17 +54,17 @@ import com.example.frontend.model.RoutePoint
 import kotlin.math.roundToInt
 
 // Route-results palette based on the approved TUKI reference screen.
-private val TukiScreen = Color(0xFFF8F5EC)
-private val TukiCardCream = Color(0xFFFFF0C7)
-private val TukiDark = Color(0xFF153E4B)
-private val TukiDarkText = Color(0xFF244B58)
-private val TukiTeal = Color(0xFF2C8E95)
-private val TukiOrange = Color(0xFFF59A3A)
-private val TukiTabBackground = Color(0xFFE9EAE5)
-private val TukiTile = Color(0xFFF8F8F3)
-private val TukiMuted = Color(0xFF7A898E)
-private val TukiPurple = Color(0xFF625394)
-private val TukiSeaGreen = Color(0xFF1B7C79)
+private val TukiScreen = com.example.frontend.ui.theme.TukiCream
+private val TukiCardCream = com.example.frontend.ui.theme.TukiGoldSurface
+private val TukiDark = com.example.frontend.ui.theme.TukiInk
+private val TukiDarkText = com.example.frontend.ui.theme.TukiInk
+private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
+private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
+private val TukiTabBackground = com.example.frontend.ui.theme.TukiSky.copy(alpha = 0.35f)
+private val TukiTile = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val TukiMuted = com.example.frontend.ui.theme.TukiMuted
+private val TukiPurple = com.example.frontend.ui.theme.TukiDeepTeal
+private val TukiSeaGreen = com.example.frontend.ui.theme.TukiForest
 
 @Composable
 fun RouteResultsScreen(
@@ -355,7 +355,8 @@ private fun RouteResultsHeader(onBack: () -> Unit) {
             text = "Where are you going?",
             color = TukiDark,
             fontSize = 22.sp,
-            fontWeight = FontWeight.ExtraBold
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
         )
     }
 }
@@ -626,7 +627,7 @@ private fun RouteOptionCard(option: RouteOption) {
             ) {
                 Text(
                     text = titleIcon,
-                    color = if (option.isRecommended) Color(0xFFFFD45A) else Color.White,
+                    color = if (option.isRecommended) com.example.frontend.ui.theme.TukiGold else Color.White,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -636,6 +637,7 @@ private fun RouteOptionCard(option: RouteOption) {
                     color = Color.White,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -709,7 +711,8 @@ private fun RouteOptionCard(option: RouteOption) {
                     text = "₱${option.generalCost.roundToInt()}",
                     color = TukiOrange,
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
                 )
             }
 
@@ -758,7 +761,7 @@ private fun StatTile(
     ) {
         Text(
             text = symbol,
-            color = Color(0xFF557D8E),
+            color = com.example.frontend.ui.theme.TukiTeal,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
         )
@@ -772,6 +775,7 @@ private fun StatTile(
                 fontSize = 14.sp,
                 lineHeight = 16.sp,
                 fontWeight = FontWeight.ExtraBold,
+                fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -810,10 +814,10 @@ private fun routeSubtitle(option: RouteOption): String {
 
 private fun routeCardColor(option: RouteOption): Color {
     return when {
-        option.isRecommended -> TukiDark
+        option.isRecommended -> com.example.frontend.ui.theme.TukiDeepTeal
         option.label.contains("Fast", ignoreCase = true) -> TukiPurple
         option.label.contains("Cheap", ignoreCase = true) -> TukiSeaGreen
-        else -> TukiDark
+        else -> com.example.frontend.ui.theme.TukiDeepTeal
     }
 }
 
@@ -834,7 +838,7 @@ private fun PagerDots(pageCount: Int, currentPage: Int) {
                     .padding(horizontal = 3.dp)
                     .size(if (index == currentPage) 8.dp else 7.dp)
                     .background(
-                        color = if (index == currentPage) TukiTeal else Color(0xFFD4D4CF),
+                        color = if (index == currentPage) TukiTeal else com.example.frontend.ui.theme.TukiOutline,
                         shape = CircleShape
                     )
             )

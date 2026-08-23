@@ -45,7 +45,7 @@ public sealed class NavigationFacadeService(
     {
         var result = await tripSessions.GetAsync(userId, sessionId, cancellationToken);
         return result.Succeeded
-            ? await BuildAsync(userId, result.Session!, result.Session!.LastNavigationStatus ?? result.Session.CurrentNavigationState.ToString(), [], cancellationToken)
+            ? await BuildAsync(userId, result.Session!, result.Session!.LastNavigationStatus ?? result.Session.CurrentNavigationState.ToString(), [], cancellationToken, allowDynamicSpeech: false)
             : Fail(result.Error!);
     }
 
@@ -53,7 +53,7 @@ public sealed class NavigationFacadeService(
     {
         var active = await tripSessions.GetActiveAsync(userId, cancellationToken);
         return active.Succeeded
-            ? await BuildAsync(userId, active.Session!, active.Session!.LastNavigationStatus ?? "ACTIVE", [], cancellationToken)
+            ? await BuildAsync(userId, active.Session!, active.Session!.LastNavigationStatus ?? "ACTIVE", [], cancellationToken, allowDynamicSpeech: false)
             : Fail(active.Error!);
     }
 
@@ -97,12 +97,32 @@ public sealed class NavigationFacadeService(
     private async Task<NavigationOperation> FromSessionOperationAsync(Guid userId, TripSessionOperation operation, string status, CancellationToken cancellationToken) =>
         operation.Succeeded ? await BuildAsync(userId, operation.Session!, status, [], cancellationToken) : Fail(operation.Error!);
 
-    private async Task<NavigationOperation> BuildAsync(Guid userId, TripSession session, string status, IReadOnlyList<NavigationInstruction> triggered, CancellationToken cancellationToken)
+    private async Task<NavigationOperation> BuildAsync(
+        Guid userId,
+        TripSession session,
+        string status,
+        IReadOnlyList<NavigationInstruction> triggered,
+        CancellationToken cancellationToken,
+        bool allowDynamicSpeech = true)
     {
         var legs = await recommendations.GetOrderedLegsAsync(session.RecommendationId, cancellationToken);
         var leg = legs.FirstOrDefault(item => item.LegOrder == session.CurrentLegIndex);
         var allInstructions = await instructions.GetForOwnedSessionAsync(session.TripSessionId, userId, cancellationToken);
-        var legLandmarks = leg is null ? [] : await landmarks.GetForLegAsync(session.TripSessionId, leg.LegOrder, cancellationToken);
+        var legLandmarks = leg is null
+            ? new List<TripLandmarkCandidate>()
+            : await landmarks.GetForLegAsync(session.TripSessionId, leg.LegOrder, cancellationToken);
+        var legInstructions = leg is null
+            ? new List<NavigationInstructionDetailSnapshot>()
+            : allInstructions
+                .Where(item => item.Audience == NavigationInstructionAudience.Passenger && item.LegIndex == leg.LegOrder)
+                .OrderBy(item => item.Sequence)
+                .Select(MapInstructionDetail)
+                .ToList();
+        var legLandmarkPackage = legLandmarks
+            .Select(MapLandmark)
+            .Where(item => item is not null)
+            .Cast<NavigationLandmarkSnapshot>()
+            .ToList();
         var boardLandmark = legLandmarks.FirstOrDefault(item => item.Role == LandmarkRole.BoardReference);
         var alightLandmark = legLandmarks.FirstOrDefault(item => item.Role == LandmarkRole.AlightReference);
         var progressLandmark = triggered.LastOrDefault(item => item.Type == NavigationInstructionType.LandmarkNotice);
@@ -111,7 +131,7 @@ public sealed class NavigationFacadeService(
         var speechType = EventInstructionType(session, status, selected, progressLandmark);
         var instructionType = speechType is "OffRoute" or "MissedAlight" or "Cancelled" or "Arrived" ? speechType : selected?.Type.ToString() ?? "Continue";
         var activeLandmark = progressLandmark is not null
-            ? new NavigationLandmarkSnapshot(progressLandmark.Text.Replace("You just passed ", "", StringComparison.OrdinalIgnoreCase).TrimEnd('.'), "", "PROGRESS_REFERENCE", "ALONG_ROUTE", progressLandmark.Latitude ?? 0, progressLandmark.Longitude ?? 0, 0)
+            ? new NavigationLandmarkSnapshot(progressLandmark.Text.Replace("You just passed ", "", StringComparison.OrdinalIgnoreCase).TrimEnd('.'), "", "PROGRESS_REFERENCE", "ALONG_ROUTE", progressLandmark.Latitude ?? 0, progressLandmark.Longitude ?? 0, 0, progressLandmark.DistanceFromRouteStartMeters)
             : instructionType is "BoardJeepney" or "BoardTricycle" ? MapLandmark(boardLandmark)
             : instructionType is "PrepareToAlight" or "AlightJeepney" or "AlightTricycle" ? MapLandmark(alightLandmark) : null;
         var remaining = NavigationTripRules.RemainingMeters(session, leg);
@@ -129,10 +149,28 @@ public sealed class NavigationFacadeService(
         var sameEvent = session.LastSpeechEventKey == eventKey;
         var noNewMeaningfulEvent = speechType == "Continue" && status != "BOARDING_CONFIRMED" &&
             session.LastSpeechEventKey?.StartsWith($"{session.RecommendationId}:{session.CurrentLegIndex}:", StringComparison.Ordinal) == true;
-        var spoken = (sameEvent || noNewMeaningfulEvent) && !string.IsNullOrWhiteSpace(session.LastSpokenInstruction)
+        var useDynamicDistance = remaining.GetValueOrDefault() > 0 &&
+            (speechType is "Continue" or "PrepareToAlight");
+        var speechContext = new NavigationSpeechContext(
+            speechType,
+            session.CurrentNavigationState.ToString(),
+            mode,
+            routeName,
+            activeLandmark?.Name,
+            activeLandmark?.Role,
+            activeLandmark?.Relation,
+            remaining,
+            status,
+            useDynamicDistance);
+        var spokenTemplate = (sameEvent || noNewMeaningfulEvent) && !string.IsNullOrWhiteSpace(session.LastSpokenInstruction)
             ? session.LastSpokenInstruction
-            : await GenerateSpeechAsync(session, eventKey, new NavigationSpeechContext(speechType, session.CurrentNavigationState.ToString(), mode, routeName,
-                activeLandmark?.Name, activeLandmark?.Role, activeLandmark?.Relation, remaining, status), cancellationToken);
+            : allowDynamicSpeech
+                ? await GenerateSpeechAsync(session, eventKey, speechContext, cancellationToken)
+                : !string.IsNullOrWhiteSpace(session.LastSpokenInstruction)
+                    ? session.LastSpokenInstruction
+                    : DeterministicNavigationSpeech.Phrase(speechContext);
+        spokenTemplate = NavigationSpeechTemplate.Normalize(spokenTemplate, speechContext);
+        var spoken = NavigationSpeechTemplate.Render(spokenTemplate, remaining);
 
         var snapshot = new NavigationSnapshot(
             session.TripSessionId, session.CurrentNavigationState.ToString(), session.CurrentLegIndex, MapLeg(leg), structuredInstruction, spoken,
@@ -145,7 +183,10 @@ public sealed class NavigationFacadeService(
             session.CurrentNavigationState == TripNavigationState.OffRoute,
             status, TriggeredEvents(triggered, speechType, status), session.LastLatitude, session.LastLongitude,
             session.ApproxFareSpent, NavigationTripRules.EstimatedRemainingFare(session, legs),
-            followingSnapshot, BuildTripSummary(session, legs));
+            followingSnapshot, BuildTripSummary(session, legs),
+            SpokenInstructionTemplate: spokenTemplate,
+            CurrentLegInstructions: legInstructions,
+            CurrentLegLandmarks: legLandmarkPackage);
         return new(snapshot);
     }
 
@@ -158,6 +199,7 @@ public sealed class NavigationFacadeService(
             logger.LogWarning(exception, "AI navigation speech unavailable for session {TripSessionId}; using fallback", session.TripSessionId);
             spoken = DeterministicNavigationSpeech.Phrase(context);
         }
+        spoken = NavigationSpeechTemplate.Normalize(spoken, context);
         session.LastSpeechEventKey = eventKey;
         session.LastSpokenInstruction = spoken;
         session.UpdatedAt = DateTime.UtcNow;
@@ -215,6 +257,18 @@ public sealed class NavigationFacadeService(
             instruction.Type.ToString(), routeName, mode, null, instruction.RequiresConfirmation, instruction.Text);
     }
 
+    private static NavigationInstructionDetailSnapshot MapInstructionDetail(NavigationInstruction instruction) => new(
+        instruction.Sequence,
+        instruction.Type.ToString(),
+        instruction.LegIndex,
+        instruction.Text,
+        instruction.StreetName,
+        instruction.Latitude,
+        instruction.Longitude,
+        instruction.DistanceFromLegStartMeters,
+        instruction.TriggerDistanceMeters,
+        instruction.RequiresConfirmation);
+
     private static NavigationTripSummarySnapshot? BuildTripSummary(
         TripSession session,
         IReadOnlyList<RecommendationLeg> legs)
@@ -256,7 +310,16 @@ public sealed class NavigationFacadeService(
         (double?)leg.DistanceMeters, leg.EstimatedFare);
 
     private static NavigationLandmarkSnapshot? MapLandmark(TripLandmarkCandidate? item) => item is null ? null : new(
-        item.Name, item.Category, Role(item.Role), Relation(item.Relation), item.Latitude, item.Longitude, item.DistanceFromTargetMeters);
+        item.Name,
+        item.Category,
+        Role(item.Role),
+        Relation(item.Relation),
+        item.Latitude,
+        item.Longitude,
+        item.DistanceFromTargetMeters,
+        item.DistanceFromRouteStartMeters,
+        item.TriggerBeforeMeters,
+        item.TriggerAfterMeters);
 
     private static IReadOnlyList<NavigationTriggeredEvent> TriggeredEvents(IReadOnlyList<NavigationInstruction> triggered, string speechType, string status)
     {

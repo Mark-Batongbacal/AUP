@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.users.UpdateUserProfileRequest
 import com.example.frontend.data.users.UserProfileDto
+import kotlinx.coroutines.launch
 
 private val TukiTeal = Color(0xFF15919B)
 private val TukiCream = Color(0xFFFFF8E8)
@@ -83,6 +85,7 @@ fun ProfileScreen(
 ) {
     val context = LocalContext.current
     val dataProvider = remember { TukiDataProvider(context.applicationContext) }
+    val scope = rememberCoroutineScope()
 
     var page by remember { mutableStateOf(ProfilePage.OVERVIEW) }
     var loadedProfile by remember { mutableStateOf<UserProfileDto?>(null) }
@@ -103,6 +106,10 @@ fun ProfileScreen(
 
     val displayEmail = loadedProfile?.email?.takeIf { it.isNotBlank() } ?: userEmail
     val displayPhone = loadedProfile?.phoneNumber.orEmpty()
+    val currentLanguage = when (loadedProfile?.preferredLanguage?.trim()?.lowercase()) {
+        "filipino", "tagalog" -> LanguageOption.FILIPINO
+        else -> LanguageOption.ENGLISH
+    }
 
     when (page) {
         ProfilePage.EDIT_PROFILE -> {
@@ -188,8 +195,25 @@ fun ProfileScreen(
 
         ProfilePage.LANGUAGE -> {
             LanguageScreen(
+                initialLanguage = currentLanguage,
                 onBack = { page = ProfilePage.OVERVIEW },
-                onSaveLanguage = { page = ProfilePage.OVERVIEW }
+                onSaveLanguage = { selectedLanguage ->
+                    scope.launch {
+                        when (
+                            val result = dataProvider.userRepository.updateCurrentUser(
+                                UpdateUserProfileRequest(
+                                    preferredLanguage = selectedLanguage.title
+                                )
+                            )
+                        ) {
+                            is ApiResult.Success -> {
+                                loadedProfile = result.data
+                                page = ProfilePage.OVERVIEW
+                            }
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                }
             )
             return
         }
@@ -220,7 +244,7 @@ fun ProfileScreen(
         ProfileAccountRow(
             R.drawable.language,
             "Language",
-            "English",
+            currentLanguage.title,
             { page = ProfilePage.LANGUAGE }
         )
     )
