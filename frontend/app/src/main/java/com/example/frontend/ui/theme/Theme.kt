@@ -4,8 +4,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 
-private val TukiLightColorScheme = lightColorScheme(
+private fun tukiLightColorScheme() = lightColorScheme(
     primary = TukiTeal,
     onPrimary = TukiOnDark,
     primaryContainer = TukiSky,
@@ -29,12 +30,12 @@ private val TukiLightColorScheme = lightColorScheme(
     onError = TukiOnDark
 )
 
-private val TukiDarkColorScheme = darkColorScheme(
+private fun tukiDarkColorScheme() = darkColorScheme(
     primary = TukiTeal,
     onPrimary = TukiOnDark,
     primaryContainer = TukiTealSurface,
     onPrimaryContainer = TukiInk,
-    secondary = ColorTokens.darkSecondary,
+    secondary = Color(0xFF45B89E),
     onSecondary = TukiOnDark,
     secondaryContainer = TukiForestSurface,
     onSecondaryContainer = TukiInk,
@@ -53,10 +54,6 @@ private val TukiDarkColorScheme = darkColorScheme(
     onError = TukiOnDark
 )
 
-private object ColorTokens {
-    val darkSecondary = androidx.compose.ui.graphics.Color(0xFF45B89E)
-}
-
 @Composable
 fun FrontendTheme(
     darkTheme: Boolean = TukiThemeRuntime.darkMode,
@@ -64,7 +61,7 @@ fun FrontendTheme(
 ) {
     TukiThemeRuntime.darkMode = darkTheme
     MaterialTheme(
-        colorScheme = if (darkTheme) TukiDarkColorScheme else TukiLightColorScheme,
+        colorScheme = if (darkTheme) tukiDarkColorScheme() else tukiLightColorScheme(),
         typography = Typography,
         content = content
     )
