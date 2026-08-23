@@ -285,8 +285,6 @@ POST {{host}}/api/navigation/{{sessionId}}/alighting
 Accept: application/json
 X-Api-Key: {{apiKey}}
 
-@apiKey = API_KEY
-
 ### Explicit reroute
 # Normally the facade attempts rerouting automatically after deterministic
 # OFF_ROUTE / MISSED_ALIGHT detection.
