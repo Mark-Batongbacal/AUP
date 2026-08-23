@@ -21,6 +21,15 @@ object LocalNavigationSpeech {
         englishGuidanceText(guidance)
     }
 
+    fun landmarkPassedText(
+        landmarkName: String,
+        language: String = AppLanguagePreference.current()
+    ): String = if (AppLanguagePreference.isFilipino(language)) {
+        "Ayun, nalagpasan natin ang $landmarkName."
+    } else {
+        "We just passed $landmarkName."
+    }
+
     private fun filipinoGuidanceText(guidance: LocalNavigationGuidance): String {
         val street = guidance.streetName?.takeIf { it.isNotBlank() }
         return when (guidance.type.lowercase()) {
