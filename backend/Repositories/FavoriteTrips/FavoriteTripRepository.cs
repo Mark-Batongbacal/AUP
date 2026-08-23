@@ -29,6 +29,8 @@ public sealed class FavoriteTripRepository(TukiDbContext context) : IFavoriteTri
     public Task<FavoriteTrip?> GetByUserAndRecommendationAsync(Guid userId, Guid recommendationId, CancellationToken cancellationToken = default) =>
         _context.FavoriteTrips
             .AsNoTracking()
+            .Include(favorite => favorite.Recommendation)
+                .ThenInclude(recommendation => recommendation.TripSearch)
             .FirstOrDefaultAsync(favorite => favorite.UserId == userId && favorite.RecommendationId == recommendationId, cancellationToken);
 
     public async Task<FavoriteTrip> AddAsync(FavoriteTrip favoriteTrip, CancellationToken cancellationToken = default)

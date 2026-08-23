@@ -31,6 +31,11 @@ public sealed record FavoriteTripDto(
     Guid RecommendationId,
     string? Origin,
     string? Destination,
+    string? RecommendationType,
+    decimal? TotalMinutes,
+    decimal? TotalFare,
+    decimal? WalkingDistanceMeters,
+    int? TransferCount,
     int TimesUsed,
     string? Note,
     DateTime CreatedAt);
