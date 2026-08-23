@@ -43,10 +43,13 @@ Login__Users__2__Password=<secure-password>
 Login__Users__3__UserName=<fourth-user-name>
 Login__Users__3__Password=<secure-password>
 NVIDIA_API_KEY=<your-nvidia-api-key>
+GEMINI_API_KEY=<your-gemini-api-key>
 ConnectionStrings__TukiDbConnection=<sql-server-connection-string>
 Valhalla__BaseUrl=<your-valhalla-base-url>
 Pelias__BaseUrl=<your-pelias-base-url>
 ```
+
+`NVIDIA_API_KEY` is currently used by the Nemotron intent extractor. `GEMINI_API_KEY` is used by Gemini 3.5 Flash-Lite for Tuki's conversational voice and navigation-speech templates. Navigation remains deterministic if Gemini is unavailable.
 
 Never commit real passwords or API keys. `appsettings.json` contains only non-secret defaults; `appsettings.Development.json` and `.env` are ignored.
 
@@ -66,7 +69,7 @@ dotnet run
 
 On macOS/Linux, use `ASPNETCORE_ENVIRONMENT=Development dotnet run` instead.
 
-The local API runs at `http://localhost:5129` by default. Use `backend/backend.http` to test login, authenticated API calls, and the NVIDIA NIM request.
+The local API runs at `http://localhost:5129` by default. Use `backend/backend.http` to test login, authenticated API calls, and the Tuki flows.
 
 The public health endpoint requires no API key:
 
