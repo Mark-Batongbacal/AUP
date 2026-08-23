@@ -44,6 +44,7 @@ import com.example.frontend.ui.theme.TukiGold
 import com.example.frontend.ui.theme.TukiSky
 import com.example.frontend.ui.theme.TukiTealSurface
 import com.example.frontend.ui.theme.TukiForestSurface
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 
 private enum class RecentFilter { All, Completed, Cancelled }
 
@@ -109,7 +110,7 @@ fun RecentScreen(
                 filtered.isEmpty() -> item {
                     Surface(
                         Modifier.fillMaxWidth().padding(top = 18.dp),
-                        color = Color.White,
+                        color = TukiSurfaceRaised,
                         shape = RoundedCornerShape(20.dp)
                     ) {
                         Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -222,7 +223,7 @@ private fun RecentTripCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color.White,
+        color = TukiSurfaceRaised,
         shape = RoundedCornerShape(18.dp),
         shadowElevation = 2.dp
     ) {
