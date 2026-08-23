@@ -86,7 +86,6 @@ fun TripTrackingScreen(
     val options = remember(context) { TripOptionsCoordinator(context) }
 
     var showParaPo by remember { mutableStateOf(false) }
-    var showBackDialog by remember { mutableStateOf(false) }
     var showEndDialog by remember { mutableStateOf(false) }
     var showArrival by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
@@ -140,8 +139,6 @@ fun TripTrackingScreen(
         if (current.sessionId.startsWith("guest-") || current.state.equals("Arrived", true) || current.state.equals("Cancelled", true)) return@LaunchedEffect
         if (stableLegRouteKey == key && stableLegRoute.size >= 2) return@LaunchedEffect
 
-        // Fetch the complete planned leg once. We intentionally do not use the moving GPS position
-        // as the start, because local maneuver/landmark anchors need a stable coordinate system.
         when (val geometry = options.currentLegGeometry(current)) {
             is ApiResult.Success -> {
                 stableLegRoute = geometry.data.points.map { LatLng(it.latitude, it.longitude) }
@@ -187,7 +184,7 @@ fun TripTrackingScreen(
     val liveDeviceLocation by produceState<Location?>(initialValue = null, snapshot?.sessionId) {
         if (!context.hasDeviceLocationPermission()) return@produceState
         context.navigationLocationUpdates()
-            .catch { /* Keep the latest server location as fallback if GPS temporarily fails. */ }
+            .catch { }
             .collect { location ->
                 val ageMillis = if (location.time > 0L) System.currentTimeMillis() - location.time else 0L
                 if (ageMillis <= TripFreshFixMaxAgeMillis) value = location
@@ -322,8 +319,7 @@ fun TripTrackingScreen(
         ?: "₱0"
     val totalLegs = max(1, currentLegIndex + 1 + futureRouteSegments.size)
 
-    fun requestBack() { if (activeTrip) showBackDialog = true else onBack() }
-    BackHandler(enabled = activeTrip) { showBackDialog = true }
+    BackHandler(enabled = activeTrip) { onBack() }
 
     Box(Modifier.fillMaxSize().background(TripScreen)) {
         LiveTripMapScreen(
@@ -356,7 +352,7 @@ fun TripTrackingScreen(
                         showOptions = activeTrip && !guestTrip,
                         activeTrip = activeTrip,
                         working = working,
-                        onBack = ::requestBack,
+                        onBack = onBack,
                         onOptions = { showOptions = true },
                         onEnd = { showEndDialog = true }
                     )
@@ -509,34 +505,6 @@ fun TripTrackingScreen(
                     latitude = currentPosition?.latitude ?: snapshot.currentLatitude,
                     longitude = currentPosition?.longitude ?: snapshot.currentLongitude
                 )
-            }
-        )
-    }
-
-    if (showBackDialog) {
-        AlertDialog(
-            onDismissRequest = { showBackDialog = false },
-            title = { Text("Trip is still active") },
-            text = {
-                Text(
-                    "You can leave this screen without ending your trip. TUKI will keep it active so you can resume it later."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showBackDialog = false
-                        onBack()
-                    },
-                    enabled = !working
-                ) {
-                    Text("Leave Navigation", color = TripTeal, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBackDialog = false }, enabled = !working) {
-                    Text("Stay in Navigation", color = TripDark)
-                }
             }
         )
     }
