@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -43,26 +42,33 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.MapScreen
-import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.location.LocationDetectionFailureMessage
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.location.isLocationSupported
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.places.PlacesRepository
-import com.example.frontend.ui.theme.TukiCream
-import com.example.frontend.ui.theme.TukiInk
-import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiOrange
-import com.example.frontend.ui.theme.TukiSurfaceRaised
-import com.example.frontend.ui.theme.TukiTeal
-import com.example.frontend.ui.theme.TukiTealSurface
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 import kotlin.math.abs
 
-private enum class MapPickMode { Origin, Destination }
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiSurfaceRaised
+import com.example.frontend.ui.theme.TukiTealSurface
+import com.example.frontend.ui.theme.TukiOrangeSurface
+
+private enum class MapPickMode {
+    Origin,
+    Destination
+}
 
 @Composable
 fun DestinationSearchScreen(
@@ -100,7 +106,9 @@ fun DestinationSearchScreen(
 
     fun validateSupported(latitude: Double, longitude: Double): Boolean {
         val supported = isLocationSupported(latitude, longitude)
-        if (!supported) showUnsupportedLocationDialog = true
+        if (!supported) {
+            showUnsupportedLocationDialog = true
+        }
         return supported
     }
 
@@ -111,6 +119,7 @@ fun DestinationSearchScreen(
             locationError = LocationDetectionFailureMessage
             return
         }
+
         currentLatitude = location.latitude
         currentLongitude = location.longitude
         currentLocationLabel = "Current location"
@@ -119,7 +128,9 @@ fun DestinationSearchScreen(
         validateSupported(location.latitude, location.longitude)
     }
 
-    LaunchedEffect(Unit) { useCurrentDeviceLocation() }
+    LaunchedEffect(Unit) {
+        useCurrentDeviceLocation()
+    }
 
     LaunchedEffect(currentLatitude, currentLongitude) {
         val lat = currentLatitude ?: return@LaunchedEffect
@@ -140,16 +151,25 @@ fun DestinationSearchScreen(
             originSearchError = null
             return@LaunchedEffect
         }
+
         delay(350)
         isSearchingOrigin = true
         originSearchError = null
-        when (val result = placesRepository.searchPlaces(query, currentLatitude, currentLongitude)) {
+
+        when (
+            val result = placesRepository.searchPlaces(
+                query = query,
+                focusLatitude = currentLatitude,
+                focusLongitude = currentLongitude
+            )
+        ) {
             is ApiResult.Success -> originSearchResults = result.data.take(5)
             is ApiResult.Failure -> {
                 originSearchResults = emptyList()
                 originSearchError = result.message
             }
         }
+
         isSearchingOrigin = false
     }
 
@@ -180,23 +200,34 @@ fun DestinationSearchScreen(
             hasExpandedSearch = false
             return@LaunchedEffect
         }
+
         delay(350)
         isSearching = true
         isSearchingMore = false
         hasExpandedSearch = false
         searchError = null
-        when (val result = placesRepository.searchPlaces(query, currentLatitude, currentLongitude)) {
+
+        when (
+            val result = placesRepository.searchPlaces(
+                query = query,
+                focusLatitude = currentLatitude,
+                focusLongitude = currentLongitude
+            )
+        ) {
             is ApiResult.Success -> searchResults = result.data.take(5)
             is ApiResult.Failure -> {
                 searchResults = emptyList()
                 searchError = result.message
             }
         }
+
         isSearching = false
     }
 
     if (showUnsupportedLocationDialog) {
-        LocationNotSupportedDialog { showUnsupportedLocationDialog = false }
+        LocationNotSupportedDialog {
+            showUnsupportedLocationDialog = false
+        }
     }
 
     if (showMap) {
@@ -204,35 +235,57 @@ fun DestinationSearchScreen(
         val isPickingOrigin = mapPickMode == MapPickMode.Origin
         val mapOriginLatitude = currentLatitude
         val mapOriginLongitude = currentLongitude
-        val mapOriginPoint = if (isPickingOrigin && mapOriginLatitude != null && mapOriginLongitude != null) LatLng(mapOriginLatitude, mapOriginLongitude) else null
+        val mapOriginPoint = if (isPickingOrigin && mapOriginLatitude != null && mapOriginLongitude != null) {
+            LatLng(mapOriginLatitude, mapOriginLongitude)
+        } else {
+            null
+        }
 
         Box(
-            modifier = Modifier.fillMaxSize().background(TukiInk.copy(alpha = 0.35f)),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(TukiInk.copy(alpha = 0.35f)),
             contentAlignment = Alignment.Center
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth(0.92f).background(TukiCream, RoundedCornerShape(24.dp)).padding(16.dp)
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .background(TukiCream, RoundedCornerShape(24.dp))
+                    .padding(16.dp)
             ) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = if (isPickingOrigin) {
-                            if (TukiInterfaceText.isFilipino) "Pumili ng pinanggagalingan" else "Pick origin"
-                        } else {
-                            if (TukiInterfaceText.isFilipino) "Pumili ng destinasyon" else "Pick destination"
-                        },
+                        text = if (isPickingOrigin) "Pick origin" else "Pick destination",
                         color = TukiInk,
                         style = MaterialTheme.typography.titleLarge
                     )
-                    Text(text = "✕", color = TukiInk, style = MaterialTheme.typography.titleLarge, modifier = Modifier.clickable { showMap = false })
+                    Text(
+                        text = "✕",
+                        color = TukiInk,
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.clickable { showMap = false }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-                Box(modifier = Modifier.fillMaxWidth().height(420.dp).clip(RoundedCornerShape(18.dp))) {
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                ) {
                     MapScreen(
                         routePoints = emptyList(),
                         modifier = Modifier.fillMaxSize(),
                         startPoint = mapOriginPoint,
-                        finalDestination = if (!isPickingOrigin) selectedDestination?.let { LatLng(it.latitude, it.longitude) } else null,
+                        finalDestination = if (!isPickingOrigin) selectedDestination?.let {
+                            LatLng(it.latitude, it.longitude)
+                        } else null,
                         onMapClick = { point ->
                             if (isPickingOrigin) {
                                 currentLatitude = point.latitude
@@ -260,33 +313,37 @@ fun DestinationSearchScreen(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
+
                 Text(
                     text = if (isPickingOrigin) {
                         if (mapOriginLatitude != null && mapOriginLongitude != null) {
                             "📍 $currentLocationLabel · %.5f, %.5f".format(mapOriginLatitude, mapOriginLongitude)
                         } else {
-                            if (TukiInterfaceText.isFilipino) "I-tap ang mapa para piliin ang pinanggagalingan" else "Tap the map to choose your origin"
+                            "Tap the map to choose your origin"
                         }
                     } else {
-                        selectedDestination?.let { "📍 ${it.name} · %.5f, %.5f".format(it.latitude, it.longitude) }
-                            ?: if (TukiInterfaceText.isFilipino) "I-tap ang mapa para pumili ng destinasyon" else "Tap the map to choose a destination"
+                        selectedDestination?.let {
+                            "📍 ${it.name} · %.5f, %.5f".format(it.latitude, it.longitude)
+                        } ?: "Tap the map to choose a destination"
                     },
                     color = TukiMuted,
                     style = MaterialTheme.typography.bodySmall
                 )
 
-                if ((isPickingOrigin && mapOriginPoint != null) || (!isPickingOrigin && selectedDestination != null)) {
+                if ((isPickingOrigin && mapOriginPoint != null) ||
+                    (!isPickingOrigin && selectedDestination != null)
+                ) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth().background(TukiOrange, RoundedCornerShape(14.dp)).clickable { showMap = false }.padding(vertical = 13.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(TukiOrange, RoundedCornerShape(14.dp))
+                            .clickable { showMap = false }
+                            .padding(vertical = 13.dp),
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = if (isPickingOrigin) {
-                                if (TukiInterfaceText.isFilipino) "Gamitin ang Pinanggagalingan" else "Use This Origin"
-                            } else {
-                                if (TukiInterfaceText.isFilipino) "Gamitin ang Destinasyon" else "Use This Destination"
-                            },
+                            text = if (isPickingOrigin) "Use This Origin" else "Use This Destination",
                             color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
@@ -294,39 +351,59 @@ fun DestinationSearchScreen(
                 }
             }
         }
+
         return
     }
 
     val canSubmit = selectedDestination != null && currentLatitude != null && currentLongitude != null
 
-    Column(modifier = Modifier.fillMaxSize().background(TukiCream).statusBarsPadding().navigationBarsPadding()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TukiCream)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+    ) {
         Column(
-            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 18.dp)
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 22.dp, vertical = 18.dp)
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(40.dp).background(TukiSurfaceRaised, RoundedCornerShape(14.dp)).clickable(onClick = onBack),
+                    Modifier
+                        .size(40.dp)
+                        .background(Color.White, RoundedCornerShape(14.dp))
+                        .clickable(onClick = onBack),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("‹", color = TukiInk, style = MaterialTheme.typography.displaySmall)
                 }
                 Spacer(Modifier.width(12.dp))
-                Text(TukiInterfaceText.whereAreYouGoing, color = TukiInk, style = MaterialTheme.typography.displaySmall)
+                Text(
+                    "Where are you going?",
+                    color = TukiInk,
+                    style = MaterialTheme.typography.displaySmall
+                )
             }
 
             Spacer(Modifier.height(8.dp))
             Text(
-                if (TukiInterfaceText.isFilipino) {
-                    "Itakda ang pickup at destinasyon, pagkatapos hahanapin ng TUKI ang pinakamainam na commute options."
-                } else {
-                    "Set your pickup and destination in one place, then TUKI will find your best commute options."
-                },
+                "Set your pickup and destination in one place, then TUKI will find your best commute options.",
                 color = TukiMuted,
                 style = MaterialTheme.typography.bodySmall
             )
 
             Spacer(Modifier.height(20.dp))
-            Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = TukiSurfaceRaised, shadowElevation = 3.dp) {
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                color = TukiSurfaceRaised,
+                shadowElevation = 3.dp
+            ) {
                 Column(Modifier.padding(16.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -334,9 +411,11 @@ fun DestinationSearchScreen(
                             Box(Modifier.width(2.dp).height(118.dp).background(TukiTeal.copy(alpha = 0.35f)))
                             RouteDot(TukiOrange)
                         }
+
                         Spacer(Modifier.width(13.dp))
+
                         Column(Modifier.weight(1f)) {
-                            Text(if (TukiInterfaceText.isFilipino) "PICKUP" else "PICKUP", color = TukiTeal, style = MaterialTheme.typography.labelSmall)
+                            Text("PICKUP", color = TukiTeal, style = MaterialTheme.typography.labelSmall)
                             Spacer(Modifier.height(6.dp))
                             TextField(
                                 value = originText,
@@ -347,13 +426,7 @@ fun DestinationSearchScreen(
                                         currentLongitude = null
                                     }
                                 },
-                                placeholder = {
-                                    Text(
-                                        if (TukiInterfaceText.isFilipino) "Kasalukuyang lokasyon o pickup" else "Current location or pickup",
-                                        color = TukiMuted,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                },
+                                placeholder = { Text("Current location or pickup", color = TukiMuted, style = MaterialTheme.typography.bodyMedium) },
                                 singleLine = true,
                                 colors = tukiTextFieldColors(),
                                 shape = RoundedCornerShape(16.dp),
@@ -363,16 +436,16 @@ fun DestinationSearchScreen(
 
                             Spacer(Modifier.height(9.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SmallActionButton(if (TukiInterfaceText.isFilipino) "Gamitin ang current" else "Use current", TukiTeal) {
+                                SmallActionButton("Use current", TukiTeal) {
                                     coroutineScope.launch { useCurrentDeviceLocation() }
                                 }
-                                SmallActionButton(if (TukiInterfaceText.isFilipino) "Piliin sa mapa" else "Pick on map", TukiInk) {
+                                SmallActionButton("Pick on map", TukiInk) {
                                     mapPickMode = MapPickMode.Origin
                                     showMap = true
                                 }
                             }
 
-                            if (isSearchingOrigin) InlineSearchStatus(if (TukiInterfaceText.isFilipino) "Hinahanap ang pickup..." else "Searching pickup...")
+                            if (isSearchingOrigin) InlineSearchStatus("Searching pickup...")
                             originSearchResults.forEach { result ->
                                 SearchResultRow(
                                     result = result,
@@ -391,8 +464,9 @@ fun DestinationSearchScreen(
                             locationError?.let { InlineError(it) }
 
                             Spacer(Modifier.height(18.dp))
+
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(TukiInterfaceText.destinationUpper, Modifier.weight(1f), color = TukiOrange, style = MaterialTheme.typography.labelSmall)
+                                Text("DESTINATION", Modifier.weight(1f), color = TukiOrange, style = MaterialTheme.typography.labelSmall)
                                 Text(
                                     "Map",
                                     color = TukiTeal,
@@ -410,7 +484,7 @@ fun DestinationSearchScreen(
                                     destinationText = value
                                     if (selectedDestination?.name != value) selectedDestination = null
                                 },
-                                placeholder = { Text(TukiInterfaceText.searchOrEnterPlace, color = TukiMuted, style = MaterialTheme.typography.bodyMedium) },
+                                placeholder = { Text("Search or enter a place", color = TukiMuted, style = MaterialTheme.typography.bodyMedium) },
                                 singleLine = true,
                                 colors = tukiTextFieldColors(),
                                 shape = RoundedCornerShape(16.dp),
@@ -418,7 +492,7 @@ fun DestinationSearchScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            if (isSearching) InlineSearchStatus(if (TukiInterfaceText.isFilipino) "Naghahanap ng mga lugar..." else "Searching places...")
+                            if (isSearching) InlineSearchStatus("Searching places...")
                             searchResults.forEach { result ->
                                 SearchResultRow(
                                     result = result,
@@ -431,37 +505,58 @@ fun DestinationSearchScreen(
                                 )
                             }
                             if (isSearchingMore) {
-                                InlineSearchStatus(if (TukiInterfaceText.isFilipino) "Naghahanap pa ng ibang lugar..." else "Searching more places...")
+                                InlineSearchStatus("Searching more places...")
                             } else if (!isSearching && !hasExpandedSearch && searchResults.isNotEmpty()) {
                                 Text(
-                                    text = if (TukiInterfaceText.isFilipino) "Iba pang lugar..." else "More places...",
+                                    text = "More places...",
                                     color = TukiTeal,
                                     style = MaterialTheme.typography.labelLarge,
-                                    modifier = Modifier.padding(top = 10.dp).clickable {
-                                        val query = destinationText.trim()
-                                        if (query.length < 2) return@clickable
-                                        coroutineScope.launch {
-                                            isSearchingMore = true
-                                            searchError = null
-                                            when (val result = placesRepository.searchMorePlaces(query, currentLatitude, currentLongitude)) {
-                                                is ApiResult.Success -> {
-                                                    if (destinationText.trim() == query) {
-                                                        searchResults = mergePlaceResults(searchResults, result.data).take(12)
-                                                        hasExpandedSearch = true
+                                    modifier = Modifier
+                                        .padding(top = 10.dp)
+                                        .clickable {
+                                            val query = destinationText.trim()
+                                            if (query.length < 2) return@clickable
+                                            coroutineScope.launch {
+                                                isSearchingMore = true
+                                                searchError = null
+                                                when (
+                                                    val result = placesRepository.searchMorePlaces(
+                                                        query = query,
+                                                        focusLatitude = currentLatitude,
+                                                        focusLongitude = currentLongitude
+                                                    )
+                                                ) {
+                                                    is ApiResult.Success -> {
+                                                        if (destinationText.trim() == query) {
+                                                            searchResults = mergePlaceResults(
+                                                                searchResults,
+                                                                result.data
+                                                            ).take(12)
+                                                            hasExpandedSearch = true
+                                                        }
+                                                    }
+                                                    is ApiResult.Failure -> {
+                                                        if (destinationText.trim() == query) {
+                                                            searchError = result.message
+                                                        }
                                                     }
                                                 }
-                                                is ApiResult.Failure -> if (destinationText.trim() == query) searchError = result.message
+                                                isSearchingMore = false
                                             }
-                                            isSearchingMore = false
                                         }
-                                    }
                                 )
                             }
                             searchError?.let { InlineError(it) }
 
                             selectedDestination?.address?.takeIf { it.isNotBlank() }?.let { address ->
                                 Spacer(Modifier.height(8.dp))
-                                Text(address, color = TukiMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    address,
+                                    color = TukiMuted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
@@ -476,8 +571,7 @@ fun DestinationSearchScreen(
                     }
                     Spacer(Modifier.width(11.dp))
                     Text(
-                        if (TukiInterfaceText.isFilipino) "Tip: piliin muna ang pickup kung hindi ka magsisimula sa kasalukuyang lokasyon mo."
-                        else "Tip: choose pickup first if you are not starting from your current location.",
+                        "Tip: choose pickup first if you are not starting from your current location.",
                         color = TukiInk,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -486,25 +580,40 @@ fun DestinationSearchScreen(
         }
 
         Box(
-            Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp)
-                .background(if (canSubmit) TukiOrange else TukiOrange.copy(alpha = 0.45f), RoundedCornerShape(18.dp))
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 22.dp, vertical = 18.dp)
+                .background(
+                    if (canSubmit) TukiOrange else TukiOrange.copy(alpha = 0.45f),
+                    RoundedCornerShape(18.dp)
+                )
                 .clickable(enabled = canSubmit) {
                     val originLat = currentLatitude!!
                     val originLon = currentLongitude!!
                     val destination = selectedDestination!!
-                    if (!isLocationSupported(originLat, originLon) || !isLocationSupported(destination.latitude, destination.longitude)) {
+                    if (!isLocationSupported(originLat, originLon) ||
+                        !isLocationSupported(destination.latitude, destination.longitude)
+                    ) {
                         showUnsupportedLocationDialog = true
                         return@clickable
                     }
-                    onFindRoutes(destination, originText.ifBlank { currentLocationLabel }, originLat, originLon)
+
+                    onFindRoutes(
+                        destination,
+                        originText.ifBlank { currentLocationLabel },
+                        originLat,
+                        originLon
+                    )
                 }
                 .padding(vertical = 15.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = if (currentLatitude == null || currentLongitude == null) {
-                    if (TukiInterfaceText.isFilipino) "Hinihintay ang pickup..." else "Waiting for pickup..."
-                } else TukiInterfaceText.findRoutes,
+                    "Waiting for pickup..."
+                } else {
+                    "Find Routes"
+                },
                 color = Color.White,
                 style = MaterialTheme.typography.titleMedium
             )
@@ -512,26 +621,37 @@ fun DestinationSearchScreen(
     }
 }
 
-private fun mergePlaceResults(existing: List<DestinationSearchResultDto>, expanded: List<DestinationSearchResultDto>): List<DestinationSearchResultDto> {
+private fun mergePlaceResults(
+    existing: List<DestinationSearchResultDto>,
+    expanded: List<DestinationSearchResultDto>
+): List<DestinationSearchResultDto> {
     val merged = mutableListOf<DestinationSearchResultDto>()
     (existing + expanded).forEach { candidate ->
-        if (merged.none { current -> likelySamePlace(current, candidate) }) merged += candidate
+        if (merged.none { current -> likelySamePlace(current, candidate) }) {
+            merged += candidate
+        }
     }
     return merged
 }
 
-private fun likelySamePlace(first: DestinationSearchResultDto, second: DestinationSearchResultDto): Boolean {
+private fun likelySamePlace(
+    first: DestinationSearchResultDto,
+    second: DestinationSearchResultDto
+): Boolean {
     val firstName = normalizePlaceText(first.name)
     val secondName = normalizePlaceText(second.name)
     if (firstName.isEmpty() || firstName != secondName) return false
-    val closeCoordinates = abs(first.latitude - second.latitude) <= 0.002 && abs(first.longitude - second.longitude) <= 0.002
+
+    val closeCoordinates = abs(first.latitude - second.latitude) <= 0.002 &&
+        abs(first.longitude - second.longitude) <= 0.002
     val firstAddress = normalizePlaceText(first.address.orEmpty())
     val secondAddress = normalizePlaceText(second.address.orEmpty())
     val sameAddress = firstAddress.isNotEmpty() && firstAddress == secondAddress
     return closeCoordinates || sameAddress
 }
 
-private fun normalizePlaceText(value: String): String = value.lowercase().filter { it.isLetterOrDigit() }
+private fun normalizePlaceText(value: String): String =
+    value.lowercase().filter { it.isLetterOrDigit() }
 
 @Composable
 private fun RouteDot(color: Color) {
@@ -541,7 +661,10 @@ private fun RouteDot(color: Color) {
 @Composable
 private fun SmallActionButton(text: String, color: Color, onClick: () -> Unit) {
     Box(
-        Modifier.background(color, RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(horizontal = 13.dp, vertical = 9.dp),
+        Modifier
+            .background(color, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 9.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(text, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
@@ -551,11 +674,15 @@ private fun SmallActionButton(text: String, color: Color, onClick: () -> Unit) {
 @Composable
 private fun SearchResultRow(result: DestinationSearchResultDto, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).background(TukiTealSurface, RoundedCornerShape(14.dp)).clickable(onClick = onClick)
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .background(TukiTealSurface, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(30.dp).background(TukiSurfaceRaised, CircleShape), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(30.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
             Text("⌖", color = TukiTeal, fontSize = 18.sp)
         }
         Spacer(Modifier.width(10.dp))
@@ -570,7 +697,10 @@ private fun SearchResultRow(result: DestinationSearchResultDto, onClick: () -> U
 
 @Composable
 private fun InlineSearchStatus(text: String) {
-    Row(modifier = Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier.padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = TukiTeal)
         Spacer(Modifier.width(8.dp))
         Text(text, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
@@ -579,13 +709,18 @@ private fun InlineSearchStatus(text: String) {
 
 @Composable
 private fun InlineError(message: String) {
-    Text(text = message, color = com.example.frontend.ui.theme.TukiDanger, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+    Text(
+        text = message,
+        color = com.example.frontend.ui.theme.TukiDanger,
+        fontSize = 11.sp,
+        modifier = Modifier.padding(top = 8.dp)
+    )
 }
 
 @Composable
 private fun tukiTextFieldColors() = TextFieldDefaults.colors(
-    focusedContainerColor = TukiSurfaceRaised,
-    unfocusedContainerColor = TukiSurfaceRaised,
+    focusedContainerColor = Color.White,
+    unfocusedContainerColor = Color.White,
     disabledContainerColor = Color.Transparent,
     focusedIndicatorColor = Color.Transparent,
     unfocusedIndicatorColor = Color.Transparent,
