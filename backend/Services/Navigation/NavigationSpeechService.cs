@@ -1,3 +1,10 @@
+using System.Security.Claims;
+using System.Text.Json;
+using backend.Repositories;
+using backend.Services.Localization;
+using OpenAI;
+using OpenAI.Chat;
+
 namespace backend.Services.Navigation;
 
 public sealed record NavigationSpeechContext(
@@ -10,7 +17,8 @@ public sealed record NavigationSpeechContext(
     string? LandmarkRelation = null,
     double? DistanceMeters = null,
     string? Status = null,
-    bool UseDynamicDistance = false);
+    bool UseDynamicDistance = false,
+    string Language = TukiLanguage.English);
 
 public interface INavigationSpeechService
 {
@@ -19,18 +27,126 @@ public interface INavigationSpeechService
         CancellationToken cancellationToken = default);
 }
 
-// Kept under the existing class name so current DI wiring and tests remain compatible.
-// Navigation speech is intentionally local and deterministic: the hot path must never
-// wait on an external LLM/provider just to say the next navigation instruction.
-public sealed class NemotronNavigationSpeechService : INavigationSpeechService
+// Kept under the existing class name so current DI wiring remains compatible.
+// Qwen phrases meaningful navigation events, while deterministic speech is always
+// available as the safety/latency fallback.
+public sealed class NemotronNavigationSpeechService(
+    IConfiguration configuration,
+    IHttpContextAccessor httpContextAccessor,
+    IUserProfileRepository userProfiles,
+    ILogger<NemotronNavigationSpeechService> logger)
+    : INavigationSpeechService
 {
-    public Task<string> PhraseAsync(
+    private static readonly TimeSpan QwenTimeout = TimeSpan.FromSeconds(15);
+
+    public async Task<string> PhraseAsync(
         NavigationSpeechContext context,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(DeterministicNavigationSpeech.Phrase(context));
+        var language = await ResolveLanguageAsync(cancellationToken);
+        var localizedContext = context with { Language = language };
+
+        var apiKey = Environment.GetEnvironmentVariable(
+            configuration["Qwen:ApiKeyEnvironmentVariable"] ??
+            configuration["Nvidia:ApiKeyEnvironmentVariable"] ??
+            "NVIDIA_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return DeterministicNavigationSpeech.Phrase(localizedContext);
+
+        var client = new ChatClient(
+            configuration["Qwen:Model"] ?? "qwen/qwen3-next-80b-a3b-instruct",
+            new System.ClientModel.ApiKeyCredential(apiKey),
+            new OpenAIClientOptions
+            {
+                Endpoint = new Uri(configuration["Qwen:BaseUrl"] ??
+                    configuration["Nvidia:BaseUrl"] ??
+                    "https://integrate.api.nvidia.com/v1")
+            });
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(QwenTimeout);
+
+        try
+        {
+            var response = await client.CompleteChatAsync(
+            [
+                new SystemChatMessage(PromptFor(language)),
+                new UserChatMessage(JsonSerializer.Serialize(localizedContext))
+            ], cancellationToken: timeout.Token);
+
+            var text = response.Value.Content.FirstOrDefault()?.Text?.Trim();
+            return NavigationSpeechTemplate.Normalize(text, localizedContext);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "Qwen navigation speech exceeded {TimeoutSeconds}s; using deterministic fallback",
+                QwenTimeout.TotalSeconds);
+            return DeterministicNavigationSpeech.Phrase(localizedContext);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Qwen navigation speech unavailable; using deterministic fallback");
+            return DeterministicNavigationSpeech.Phrase(localizedContext);
+        }
     }
+
+    private async Task<string> ResolveLanguageAsync(CancellationToken cancellationToken)
+    {
+        var userIdText = httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdText, out var userId))
+            return TukiLanguage.English;
+
+        try
+        {
+            var profile = await userProfiles.GetActiveByUserIdAsync(userId, cancellationToken);
+            return TukiLanguage.Normalize(profile?.PreferredLanguage);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "Could not load navigation language preference; defaulting to English");
+            return TukiLanguage.English;
+        }
+    }
+
+    private static string PromptFor(string language) =>
+        TukiLanguage.IsFilipino(language)
+            ? """
+                You are Tuki, a cheerful Filipino commute buddy and friendly toucan.
+                Write exactly ONE short spoken navigation sentence in natural conversational Filipino/Taglish.
+                Sound like a helpful local friend riding with the user. Prefer tayo/natin/mo/ka and everyday commute words.
+                Keep it warm and clear, never formal, robotic, or customer-service-like.
+
+                Use ONLY facts in the JSON. Never invent routes, landmarks, turns, stops, fares, distances, modes, or events.
+                Preserve route and landmark names exactly in meaning. Do not expose technical state names.
+                If UseDynamicDistance is true, include the literal token {distance} exactly once where the changing distance belongs; never print DistanceMeters yourself.
+                If UseDynamicDistance is false, do not use {distance} and do not infer a distance.
+                Return plain text only.
+
+                Natural tone examples only:
+                "Sige, lakad pa tayo nang {distance}. Konti na lang!"
+                "Mga {distance} pa, tapos baba na tayo."
+                "Kaliwa tayo dito."
+                "Ayun, nandito na tayo!"
+                """
+            : """
+                You are Tuki, a cheerful commute buddy and friendly toucan.
+                Write exactly ONE short spoken navigation sentence in natural English.
+                Sound warm, concise, encouraging, and clear, like a helpful friend traveling with the user.
+                Never sound formal, robotic, or like customer support.
+
+                Use ONLY facts in the JSON. Never invent routes, landmarks, turns, stops, fares, distances, modes, or events.
+                Preserve route and landmark names exactly in meaning. Do not expose technical state names.
+                If UseDynamicDistance is true, include the literal token {distance} exactly once where the changing distance belongs; never print DistanceMeters yourself.
+                If UseDynamicDistance is false, do not use {distance} and do not infer a distance.
+                Return plain text only.
+
+                Natural tone examples only:
+                "Keep walking for {distance}. Almost there!"
+                "About {distance} more, then get ready to hop off."
+                "Turn left here."
+                "We're here!"
+                """;
 }
 
 public static class NavigationSpeechTemplate
@@ -85,7 +201,12 @@ public static class NavigationSpeechTemplate
 
 public static class DeterministicNavigationSpeech
 {
-    public static string Phrase(NavigationSpeechContext context)
+    public static string Phrase(NavigationSpeechContext context) =>
+        TukiLanguage.IsFilipino(context.Language)
+            ? PhraseFilipino(context)
+            : PhraseEnglish(context);
+
+    private static string PhraseFilipino(NavigationSpeechContext context)
     {
         var route = string.IsNullOrWhiteSpace(context.RouteName)
             ? null
@@ -139,6 +260,63 @@ public static class DeterministicNavigationSpeech
                 $"Diretso lang muna tayo, mga {NavigationSpeechTemplate.DistanceToken} pa.",
 
             _ => "Diretso lang muna tayo sa route."
+        };
+    }
+
+    private static string PhraseEnglish(NavigationSpeechContext context)
+    {
+        var route = string.IsNullOrWhiteSpace(context.RouteName)
+            ? null
+            : context.RouteName.Trim();
+        var mode = context.TransportMode?.Trim().ToUpperInvariant();
+        var isWalking = mode is "WALK" or "WALKING" or "PEDESTRIAN";
+
+        return context.InstructionType switch
+        {
+            "BoardJeepney" => context.LandmarkName is { Length: > 0 } landmark
+                ? route is { Length: > 0 }
+                    ? $"Let's take the {route} jeep near {landmark}."
+                    : $"Let's take the jeep near {landmark}."
+                : route is { Length: > 0 }
+                    ? $"Let's take the {route} jeep here."
+                    : "Let's take the jeep here.",
+
+            "BoardTricycle" => context.LandmarkName is { Length: > 0 } landmark
+                ? $"Let's take the tricycle near {landmark}."
+                : "Let's take the tricycle here.",
+
+            "PrepareToAlight" when context.UseDynamicDistance =>
+                $"Almost there—get ready to hop off in about {NavigationSpeechTemplate.DistanceToken}.",
+
+            "PrepareToAlight" => context.LandmarkName is { Length: > 0 } landmark
+                ? $"We're getting close. Get ready to hop off after {landmark}."
+                : "We're getting close. Get ready to hop off.",
+
+            "AlightJeepney" or "AlightTricycle" => "This is our stop. Let's get off here.",
+
+            "LandmarkNotice" => context.LandmarkName is { Length: > 0 } landmark
+                ? $"We just passed {landmark}."
+                : "Keep going on the current route.",
+
+            "Transfer" => "Let's get off here, then continue to the next ride.",
+            "Arrived" => "We're here!",
+            "Cancelled" => "Okay, navigation is cancelled.",
+            "MissedAlight" => "Looks like we passed the stop. Let's check the next route.",
+            "OffRoute" => "Looks like we're off the planned route. Let's check the next step.",
+            "Rerouted" => "Route updated. Let's follow the next instruction.",
+            "TurnLeft" => "Turn left here.",
+            "TurnRight" => "Turn right here.",
+
+            _ when context.UseDynamicDistance && isWalking && context.DistanceMeters is <= 500 =>
+                $"Keep walking for {NavigationSpeechTemplate.DistanceToken}. Almost there!",
+
+            _ when context.UseDynamicDistance && isWalking =>
+                $"Keep walking for {NavigationSpeechTemplate.DistanceToken}.",
+
+            _ when context.UseDynamicDistance =>
+                $"Keep going for about {NavigationSpeechTemplate.DistanceToken}.",
+
+            _ => "Keep going on the planned route."
         };
     }
 }
