@@ -358,8 +358,11 @@ fun MapScreen(
         loadedStyle?.let { updateFutureLegLayers(it, futureRouteSegments, visualStyle) }
     }
 
-    LaunchedEffect(loadedStyle, transitRoutes, selectedTransitRouteId) {
-        loadedStyle?.let { updateTransitRouteLayers(it, transitRoutes, selectedTransitRouteId) }
+    LaunchedEffect(loadedStyle, transitRoutes, selectedTransitRouteId, todaPoints, visualStyle) {
+        loadedStyle?.let { style ->
+            updateTransitRouteLayers(style, transitRoutes, selectedTransitRouteId)
+            updateTodaLayer(style, todaPoints, visualStyle)
+        }
     }
 
     LaunchedEffect(loadedStyle, todaPoints, visualStyle) {
@@ -541,17 +544,18 @@ private fun updateTodaLayer(
     val source = style.getSourceAs<GeoJsonSource>(TodaSourceId)
     if (source != null) {
         source.setGeoJson(collection)
-        return
+        style.removeLayer(TodaLayerId)
+    } else {
+        style.addSource(GeoJsonSource(TodaSourceId, collection))
     }
 
-    style.addSource(GeoJsonSource(TodaSourceId, collection))
     style.addLayer(
         CircleLayer(TodaLayerId, TodaSourceId).withProperties(
             PropertyFactory.circleColor(if (visualStyle == MapVisualStyle.LiveTrip) "#3478F6" else "#076773"),
-            PropertyFactory.circleRadius(6f),
-            PropertyFactory.circleOpacity(0.78f),
+            PropertyFactory.circleRadius(7f),
+            PropertyFactory.circleOpacity(0.92f),
             PropertyFactory.circleStrokeColor(if (visualStyle == MapVisualStyle.LiveTrip) "#FFFFFF" else "#FFF9E9"),
-            PropertyFactory.circleStrokeWidth(2f)
+            PropertyFactory.circleStrokeWidth(2.5f)
         )
     )
 }
