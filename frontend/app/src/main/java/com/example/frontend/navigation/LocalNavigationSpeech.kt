@@ -1,5 +1,6 @@
 package com.example.frontend.navigation
 
+import com.example.frontend.core.localization.AppLanguagePreference
 import kotlin.math.max
 
 object LocalNavigationSpeech {
@@ -13,8 +14,8 @@ object LocalNavigationSpeech {
 
     fun guidanceText(
         guidance: LocalNavigationGuidance,
-        language: String = "English"
-    ): String = if (isFilipino(language)) {
+        language: String = AppLanguagePreference.current()
+    ): String = if (AppLanguagePreference.isFilipino(language)) {
         filipinoGuidanceText(guidance)
     } else {
         englishGuidanceText(guidance)
@@ -81,10 +82,5 @@ object LocalNavigationSpeech {
         }
         val rounded = max(bucket, kotlin.math.round(safe / bucket) * bucket)
         return "${rounded.toInt()}m"
-    }
-
-    private fun isFilipino(language: String): Boolean {
-        val normalized = language.trim().lowercase()
-        return normalized == "filipino" || normalized == "tagalog" || normalized.startsWith("fil-")
     }
 }
