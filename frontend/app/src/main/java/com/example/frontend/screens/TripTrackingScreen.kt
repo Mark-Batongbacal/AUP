@@ -460,14 +460,26 @@ fun TripTrackingScreen(
         AlertDialog(
             onDismissRequest = { showBackDialog = false },
             title = { Text("Trip is still active") },
-            text = { Text("Going back will not end your navigation. Continue the trip or end it first?") },
+            text = {
+                Text(
+                    "You can leave this screen without ending your trip. TUKI will keep it active so you can resume it later."
+                )
+            },
             confirmButton = {
-                TextButton(onClick = { showBackDialog = false; showEndDialog = true }, enabled = !working) {
-                    Text("End Trip", color = TripDanger)
+                TextButton(
+                    onClick = {
+                        showBackDialog = false
+                        onBack()
+                    },
+                    enabled = !working
+                ) {
+                    Text("Leave Navigation", color = TripTeal, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBackDialog = false }, enabled = !working) { Text("Continue Trip", color = TripTeal) }
+                TextButton(onClick = { showBackDialog = false }, enabled = !working) {
+                    Text("Stay in Navigation", color = TripDark)
+                }
             }
         )
     }

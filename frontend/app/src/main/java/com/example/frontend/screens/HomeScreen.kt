@@ -100,7 +100,9 @@ fun HomeScreen(
     onProfileClick: () -> Unit = {},
     onNewHereClick: () -> Unit = {},
     onPinDestinationClick: (origin: String) -> Unit = {},
-    onAskAiClick: () -> Unit = {}
+    onAskAiClick: () -> Unit = {},
+    activeTripDescription: String? = null,
+    onResumeActiveTrip: () -> Unit = {}
 ) {
     var currentLocationLabel by remember { mutableStateOf("Locating you...") }
     var originLatitude by remember { mutableStateOf<Double?>(null) }
@@ -322,6 +324,14 @@ fun HomeScreen(
                     onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
                 )
 
+                activeTripDescription?.takeIf { it.isNotBlank() }?.let { description ->
+                    Spacer(Modifier.height(12.dp))
+                    ActiveTripCard(
+                        description = description,
+                        onResumeClick = onResumeActiveTrip
+                    )
+                }
+
                 Spacer(Modifier.height(12.dp))
 
                 DestinationCard(
@@ -421,6 +431,55 @@ private fun HomeHeader() {
             fontWeight = FontWeight.ExtraBold,
             fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
         )
+    }
+}
+
+@Composable
+private fun ActiveTripCard(
+    description: String,
+    onResumeClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onResumeClick),
+        shape = RoundedCornerShape(22.dp),
+        color = HomeDark,
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(HomeOrange.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("▶", color = HomeOrange, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "TRIP IN PROGRESS",
+                    color = HomeOrange,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    description,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("Resume  →", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+        }
     }
 }
 
