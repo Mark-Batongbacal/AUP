@@ -18,33 +18,57 @@ public partial class RoutingService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!_routeGeometries.ContainsKey(route.RouteId))
+            if (!_routeSamples.TryGetValue(route.RouteId, out var samples) ||
+                !_routeGeometries.ContainsKey(route.RouteId))
+            {
                 continue;
+            }
 
-            // "Nearest" must be the nearest point on the full route geometry,
-            // not merely the nearest sampled point. Sampling is for search
-            // efficiency elsewhere; using it here can make long/sparse routes
-            // appear nearest only at one of their endpoints.
-            var anchor = ProjectOntoFullRoute(
+            // Always include the exact nearest point on the full route. The
+            // sampled points remain as alternatives because a slightly farther
+            // point can have much better real pedestrian access (bridge,
+            // divided road, wall, etc.). This prevents sparse sampling from
+            // making a route endpoint look like the only "nearest" point while
+            // preserving Valhalla as the authority for walkability.
+            var exact = ProjectOntoFullRoute(
                 route.RouteId,
                 (latitude, longitude),
                 0);
-            var distanceMeters = ApproximateDistanceMeters(
-                latitude,
-                longitude,
-                anchor.Latitude,
-                anchor.Longitude);
+            AddCandidate(exact.Latitude, exact.Longitude);
 
-            candidates.Add(new SampledRoutePoint(
-                route.RouteId,
-                new NearbyJeepneyResponse
+            foreach (var point in samples)
+                AddCandidate(point.Latitude, point.Longitude);
+
+            void AddCandidate(double pointLatitude, double pointLongitude)
+            {
+                if (candidates.Any(candidate =>
+                        candidate.RouteId == route.RouteId &&
+                        ApproximateDistanceMeters(
+                            candidate.Response.NearestPointLatitude,
+                            candidate.Response.NearestPointLongitude,
+                            pointLatitude,
+                            pointLongitude) <= 1.0))
                 {
-                    RouteId = route.RouteId,
-                    RouteName = route.RouteName,
-                    RouteDistanceMeters = distanceMeters,
-                    NearestPointLatitude = anchor.Latitude,
-                    NearestPointLongitude = anchor.Longitude
-                }));
+                    return;
+                }
+
+                var distanceMeters = ApproximateDistanceMeters(
+                    latitude,
+                    longitude,
+                    pointLatitude,
+                    pointLongitude);
+
+                candidates.Add(new SampledRoutePoint(
+                    route.RouteId,
+                    new NearbyJeepneyResponse
+                    {
+                        RouteId = route.RouteId,
+                        RouteName = route.RouteName,
+                        RouteDistanceMeters = distanceMeters,
+                        NearestPointLatitude = pointLatitude,
+                        NearestPointLongitude = pointLongitude
+                    }));
+            }
         }
 
         if (candidates.Count == 0)
@@ -65,8 +89,12 @@ public partial class RoutingService
                 "Failed to fetch Valhalla walking matrix; returning straight-line ranked routes.");
 
             return candidates
-                .OrderBy(candidate => candidate.Response.RouteDistanceMeters)
-                .Select(candidate => candidate.Response)
+                .GroupBy(candidate => candidate.RouteId)
+                .Select(group => group
+                    .OrderBy(candidate => candidate.Response.RouteDistanceMeters)
+                    .First()
+                    .Response)
+                .OrderBy(candidate => candidate.RouteDistanceMeters)
                 .Take(MaxNearbyRoutes)
                 .ToList();
         }
