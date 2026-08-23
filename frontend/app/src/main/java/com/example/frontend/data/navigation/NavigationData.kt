@@ -24,7 +24,8 @@ data class NavigationRerouteRequest(
     val clearBudget: Boolean = false,
     val destinationName: String? = null,
     val destinationLatitude: Double? = null,
-    val destinationLongitude: Double? = null
+    val destinationLongitude: Double? = null,
+    val avoidTransportMode: String? = null
 )
 data class NavigationGeometryPointDto(val latitude: Double, val longitude: Double)
 data class NavigationGeometryResponseDto(val points: List<NavigationGeometryPointDto>)

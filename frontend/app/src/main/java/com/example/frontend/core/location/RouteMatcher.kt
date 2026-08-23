@@ -24,23 +24,38 @@ object RouteMatcher {
     fun match(
         raw: RouteCoordinate,
         route: List<RouteCoordinate>,
-        minimumProgressMeters: Double = 0.0
+        minimumProgressMeters: Double = 0.0,
+        maximumProgressMeters: Double = Double.POSITIVE_INFINITY
     ): RouteMatch? {
-        if (route.size < 2) return null
+        if (route.size < 2 || maximumProgressMeters + 0.01 < minimumProgressMeters) return null
+
+        val segmentLengths = DoubleArray(route.lastIndex)
+        var totalDistance = 0.0
+        for (index in 0 until route.lastIndex) {
+            val length = distanceMeters(route[index], route[index + 1])
+            segmentLengths[index] = length
+            totalDistance += length
+        }
 
         var best: RouteMatch? = null
         var progressBeforeSegment = 0.0
-        val totalDistance = route.zipWithNext { start, end -> distanceMeters(start, end) }.sum()
 
         for (index in 0 until route.lastIndex) {
             val start = route[index]
             val end = route[index + 1]
-            val segmentLength = distanceMeters(start, end)
+            val segmentLength = segmentLengths[index]
+            val segmentEndProgress = progressBeforeSegment + segmentLength
+
+            if (segmentEndProgress + 0.01 < minimumProgressMeters) {
+                progressBeforeSegment = segmentEndProgress
+                continue
+            }
+            if (progressBeforeSegment > maximumProgressMeters + 0.01) break
+
             val projection = project(raw, start, end)
             val progress = progressBeforeSegment + segmentLength * projection.second
-            val distance = distanceMeters(raw, projection.first)
-
-            if (progress + 0.01 >= minimumProgressMeters) {
+            if (progress + 0.01 >= minimumProgressMeters && progress <= maximumProgressMeters + 0.01) {
+                val distance = distanceMeters(raw, projection.first)
                 val candidate = RouteMatch(
                     coordinate = projection.first,
                     segmentIndex = index,
@@ -54,7 +69,7 @@ object RouteMatcher {
                 }
             }
 
-            progressBeforeSegment += segmentLength
+            progressBeforeSegment = segmentEndProgress
         }
 
         return best

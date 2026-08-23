@@ -7,7 +7,8 @@ public sealed record DestinationSearchResult(
     double Longitude,
     string Category,
     string Source,
-    string? Address = null);
+    string? Address = null,
+    string? Locality = null);
 
 public sealed record DestinationSearchResponse(
     IReadOnlyList<DestinationSearchResult> Results,

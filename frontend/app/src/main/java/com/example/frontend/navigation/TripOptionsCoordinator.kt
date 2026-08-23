@@ -7,6 +7,8 @@ import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.data.ai.AssistantRequest
+import com.example.frontend.data.ai.AssistantResponseDto
 import com.example.frontend.data.navigation.NavigationGeometryResponseDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRerouteRequest
@@ -33,6 +35,7 @@ class TripOptionsCoordinator(context: Context) {
     private val places = provider.placesRepository
     private val routing = provider.routingRepository
     private val users = provider.userRepository
+    private val ai = provider.aiRepository
 
     suspend fun refreshPreferredLanguage(): String =
         when (val result = users.getCurrentUser()) {
@@ -40,8 +43,21 @@ class TripOptionsCoordinator(context: Context) {
             is ApiResult.Failure -> AppLanguagePreference.current()
         }
 
-    suspend fun rerouteNow(sessionId: String): ApiResult<NavigationSnapshotDto> =
-        reroute(sessionId, NavigationRerouteRequest(reason = "MANUAL"))
+    suspend fun rerouteNow(
+        sessionId: String,
+        reason: String = "MANUAL",
+        avoidTransportMode: String? = null
+    ): ApiResult<NavigationSnapshotDto> =
+        reroute(
+            sessionId,
+            NavigationRerouteRequest(
+                reason = reason,
+                avoidTransportMode = avoidTransportMode
+            )
+        )
+
+    suspend fun recoverMissedLegTarget(sessionId: String): ApiResult<NavigationSnapshotDto> =
+        reroute(sessionId, NavigationRerouteRequest(reason = "MISSED_LEG_TARGET"))
 
     suspend fun changePreference(sessionId: String, preference: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "PREFERENCE_CHANGED", preference = preference))
@@ -62,6 +78,33 @@ class TripOptionsCoordinator(context: Context) {
                 destinationLongitude = destination.longitude
             )
         )
+
+    suspend fun askNavigationAssistant(
+        sessionId: String,
+        message: String,
+        latitude: Double?,
+        longitude: Double?
+    ): ApiResult<AssistantResponseDto> {
+        var originLatitude = latitude
+        var originLongitude = longitude
+        if (originLatitude == null || originLongitude == null) {
+            val location = appContext.currentDeviceLocation()
+                ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
+            originLatitude = location.latitude
+            originLongitude = location.longitude
+        }
+        return ai.ask(
+            AssistantRequest(
+                message = message,
+                originLatitude = originLatitude,
+                originLongitude = originLongitude,
+                tripSessionId = sessionId
+            )
+        )
+    }
+
+    suspend fun refreshActiveNavigation(): ApiResult<NavigationSnapshotDto> =
+        navigation.getActiveNavigation()
 
     /**
      * Uses the same journey planner and recommendation payload as RouteResultsScreen.
@@ -173,14 +216,33 @@ class TripOptionsCoordinator(context: Context) {
             speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null,
             bearingDegrees = if (location.hasBearing()) location.bearing.toDouble() else null
         )
-        // Manual replans are meaningful server events. Force exactly this fresh fix through the
-        // normally-local repository before asking the backend to calculate the replacement plan.
+        // Replans are meaningful server events. Force exactly this fresh fix through the normally
+        // local repository before asking the backend to calculate the replacement plan.
         NavigationSyncSignal.requestImmediateSync(samples = 1)
-        when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
+        val locationResult = when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
             is ApiResult.Failure -> return update
-            is ApiResult.Success -> Unit
+            is ApiResult.Success -> update
         }
-        return navigation.reroute(sessionId, request)
+
+        val changesConstraints = request.preference != null ||
+            request.budget != null || request.clearBudget ||
+            request.destinationName != null || request.destinationLatitude != null ||
+            request.destinationLongitude != null
+        if (locationResult.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true) && !changesConstraints) {
+            // The location sync can itself trigger the backend's authoritative off-route reroute.
+            // Do not immediately calculate a second replacement route for the same GPS fix.
+            NavigationSyncSignal.requestImmediateSync(samples = 1)
+            return locationResult
+        }
+
+        val rerouted = navigation.reroute(sessionId, request)
+        if (rerouted is ApiResult.Success) {
+            // TripTracking owns a short-lived coordinator repository while AppNavigation owns the
+            // long-lived tracking repository. Force the next tracking fix to refresh that parent
+            // cache from the backend so a successful reroute cannot fall back to stale geometry.
+            NavigationSyncSignal.requestImmediateSync(samples = 1)
+        }
+        return rerouted
     }
 
     private fun findTagged(plans: List<PlannedJourney>, tag: String): PlannedJourney? =
