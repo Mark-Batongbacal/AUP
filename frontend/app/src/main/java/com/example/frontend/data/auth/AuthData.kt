@@ -73,6 +73,7 @@ data class AuthenticatedUser(val session: AuthSession, val profile: UserProfileD
 
 interface AuthApi {
     @POST("api/auth/login") suspend fun login(@Body request: LoginRequest): Response<LoginResponseDto>
+    @POST("api/auth/guest") suspend fun guest(): Response<LoginResponseDto>
     @POST("api/auth/register/complete") suspend fun register(@Body request: RegisterRequest): Response<RegisterResponseDto>
     @POST("api/auth/register/request-otp") suspend fun requestRegistrationOtp(
         @Body request: RegistrationOtpRequest
@@ -106,6 +107,7 @@ interface AuthApi {
 
 interface AuthRepository {
     suspend fun login(userName: String, password: String): ApiResult<AuthenticatedUser>
+    suspend fun loginAsGuest(): ApiResult<AuthenticatedUser>
     suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser>
     suspend fun requestRegistrationOtp(email: String): ApiResult<Unit>
     suspend fun verifyRegistrationOtp(email: String, code: String): ApiResult<Unit>
@@ -131,6 +133,9 @@ class AuthRepositoryImpl(
 ) : AuthRepository {
     override suspend fun login(userName: String, password: String) =
         authenticate { authApi.login(LoginRequest(userName, password)) }
+
+    override suspend fun loginAsGuest() =
+        authenticate { authApi.guest() }
 
     override suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser> {
         return when (val response = apiCall(errors) { authApi.register(request) }) {
