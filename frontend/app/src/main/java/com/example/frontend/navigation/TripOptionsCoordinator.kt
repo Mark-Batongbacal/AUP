@@ -179,9 +179,20 @@ class TripOptionsCoordinator(context: Context) {
         // Replans are meaningful server events. Force exactly this fresh fix through the normally
         // local repository before asking the backend to calculate the replacement plan.
         NavigationSyncSignal.requestImmediateSync(samples = 1)
-        when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
+        val locationResult = when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
             is ApiResult.Failure -> return update
-            is ApiResult.Success -> Unit
+            is ApiResult.Success -> update
+        }
+
+        val changesConstraints = request.Preference != null ||
+            request.Budget != null || request.ClearBudget ||
+            request.DestinationName != null || request.DestinationLatitude != null ||
+            request.DestinationLongitude != null
+        if (locationResult.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true) && !changesConstraints) {
+            // The location sync can itself trigger the backend's authoritative off-route reroute.
+            // Do not immediately calculate a second replacement route for the same GPS fix.
+            NavigationSyncSignal.requestImmediateSync(samples = 1)
+            return locationResult
         }
 
         val rerouted = navigation.reroute(sessionId, request)
