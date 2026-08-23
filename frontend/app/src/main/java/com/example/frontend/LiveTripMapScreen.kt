@@ -94,6 +94,15 @@ fun LiveTripMapScreen(
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val sharedTodaPoints = TukiMapOverlayState.todaPoints
+    val effectiveTodaPoints = if (todaPoints.isNotEmpty()) todaPoints else sharedTodaPoints
+    val activeJeepneyRouteId = remember(legIdentity) { currentJeepneyRouteId(legIdentity) }
+    val visibleJeepneyRoutes = remember(nearbyJeepneyRoutes, activeJeepneyRouteId) {
+        activeJeepneyRouteId?.let { routeId ->
+            nearbyJeepneyRoutes.filter { it.routeId == routeId }
+        }.orEmpty()
+    }
+
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
     var loadedStyle by remember { mutableStateOf<Style?>(null) }
     var followLocation by rememberSaveable { mutableStateOf(true) }
@@ -138,14 +147,14 @@ fun LiveTripMapScreen(
             map.setStyle(LiveTripMapStyleUrl) { style ->
                 loadedStyle = style
                 renderedTransitRouteIds = emptySet()
-                updateLiveTripTransitRoutes(style, nearbyJeepneyRoutes, emptySet())
-                renderedTransitRouteIds = nearbyJeepneyRoutes.map { it.routeId }.toSet()
-                updateLiveTripTodaPoints(style, todaPoints)
+                updateLiveTripTransitRoutes(style, visibleJeepneyRoutes, emptySet())
+                renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
                 updateLiveTripFutureLayers(style, futureRouteSegments)
                 updateLiveTripRoute(style, routePoints)
                 updateLiveTripCurrentPoint(style, currentPosition)
                 updateLiveTripDestination(style, legDestination)
                 updateLiveTripFinalDestination(style, finalDestination)
+                updateLiveTripTodaPoints(style, effectiveTodaPoints)
 
                 val target = gpsPosition
                     ?: currentPosition
@@ -177,19 +186,43 @@ fun LiveTripMapScreen(
                 routePoints
             }
             updateLiveTripRoute(style, displayedRoute)
+            updateLiveTripTodaPoints(style, effectiveTodaPoints)
         }
     }
-    LaunchedEffect(loadedStyle, currentPosition) { loadedStyle?.let { updateLiveTripCurrentPoint(it, currentPosition) } }
-    LaunchedEffect(loadedStyle, legDestination) { loadedStyle?.let { updateLiveTripDestination(it, legDestination) } }
-    LaunchedEffect(loadedStyle, finalDestination) { loadedStyle?.let { updateLiveTripFinalDestination(it, finalDestination) } }
-    LaunchedEffect(loadedStyle, futureRouteSegments) { loadedStyle?.let { updateLiveTripFutureLayers(it, futureRouteSegments) } }
-    LaunchedEffect(loadedStyle, nearbyJeepneyRoutes) {
+    LaunchedEffect(loadedStyle, currentPosition) {
+        loadedStyle?.let {
+            updateLiveTripCurrentPoint(it, currentPosition)
+            updateLiveTripTodaPoints(it, effectiveTodaPoints)
+        }
+    }
+    LaunchedEffect(loadedStyle, legDestination) {
+        loadedStyle?.let {
+            updateLiveTripDestination(it, legDestination)
+            updateLiveTripTodaPoints(it, effectiveTodaPoints)
+        }
+    }
+    LaunchedEffect(loadedStyle, finalDestination) {
+        loadedStyle?.let {
+            updateLiveTripFinalDestination(it, finalDestination)
+            updateLiveTripTodaPoints(it, effectiveTodaPoints)
+        }
+    }
+    LaunchedEffect(loadedStyle, futureRouteSegments) {
+        loadedStyle?.let {
+            updateLiveTripFutureLayers(it, futureRouteSegments)
+            updateLiveTripTodaPoints(it, effectiveTodaPoints)
+        }
+    }
+    LaunchedEffect(loadedStyle, visibleJeepneyRoutes) {
         loadedStyle?.let { style ->
-            updateLiveTripTransitRoutes(style, nearbyJeepneyRoutes, renderedTransitRouteIds)
-            renderedTransitRouteIds = nearbyJeepneyRoutes.map { it.routeId }.toSet()
+            updateLiveTripTransitRoutes(style, visibleJeepneyRoutes, renderedTransitRouteIds)
+            renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
+            updateLiveTripTodaPoints(style, effectiveTodaPoints)
         }
     }
-    LaunchedEffect(loadedStyle, todaPoints) { loadedStyle?.let { updateLiveTripTodaPoints(it, todaPoints) } }
+    LaunchedEffect(loadedStyle, effectiveTodaPoints) {
+        loadedStyle?.let { updateLiveTripTodaPoints(it, effectiveTodaPoints) }
+    }
 
     LaunchedEffect(mapLibreMap, gpsPosition, routePoints, followLocation) {
         if (!followLocation) return@LaunchedEffect
@@ -269,6 +302,13 @@ fun LiveTripMapScreen(
     }
 }
 
+private fun currentJeepneyRouteId(legIdentity: String?): Long? {
+    val parts = legIdentity?.split(':').orEmpty()
+    val mode = parts.getOrNull(2)?.uppercase()
+    if (mode != "JEEP" && mode != "JEEPNEY") return null
+    return parts.getOrNull(1)?.toLongOrNull()
+}
+
 private fun animateLiveTripCamera(map: MapLibreMap, current: LatLng, route: List<LatLng>) {
     val bearing = navigationBearing(current, route)
     val builder = CameraPosition.Builder()
@@ -335,8 +375,8 @@ private fun updateLiveTripTransitRoutes(
         style.addLayer(
             LineLayer(layerId, sourceId).withProperties(
                 PropertyFactory.lineColor(LiveTripTransitColors[index % LiveTripTransitColors.size]),
-                PropertyFactory.lineWidth(2.5f),
-                PropertyFactory.lineOpacity(0.24f),
+                PropertyFactory.lineWidth(3.5f),
+                PropertyFactory.lineOpacity(0.42f),
                 PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
                 PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
             )
@@ -359,17 +399,18 @@ private fun updateLiveTripTodaPoints(style: Style, points: List<TodaPointOverlay
     val source = style.getSourceAs<GeoJsonSource>(LiveTripTodaSource)
     if (source != null) {
         source.setGeoJson(collection)
-        return
+        style.removeLayer(LiveTripTodaLayer)
+    } else {
+        style.addSource(GeoJsonSource(LiveTripTodaSource, collection))
     }
 
-    style.addSource(GeoJsonSource(LiveTripTodaSource, collection))
     style.addLayer(
         CircleLayer(LiveTripTodaLayer, LiveTripTodaSource).withProperties(
-            PropertyFactory.circleColor("#3478F6"),
-            PropertyFactory.circleRadius(6f),
-            PropertyFactory.circleOpacity(0.78f),
-            PropertyFactory.circleStrokeColor("#FFFFFF"),
-            PropertyFactory.circleStrokeWidth(2f)
+            PropertyFactory.circleColor("#076773"),
+            PropertyFactory.circleRadius(7f),
+            PropertyFactory.circleOpacity(0.92f),
+            PropertyFactory.circleStrokeColor("#FFF9EB"),
+            PropertyFactory.circleStrokeWidth(2.5f)
         )
     )
 }
