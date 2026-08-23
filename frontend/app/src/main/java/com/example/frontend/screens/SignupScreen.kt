@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -46,16 +47,14 @@ import com.example.frontend.components.OtpResendButton
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
 import com.example.frontend.data.auth.RegisterRequest
-import kotlinx.coroutines.launch
-
-import androidx.compose.material3.MaterialTheme
 import com.example.frontend.ui.theme.TukiTeal
 import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiSurfaceRaised
+import kotlinx.coroutines.launch
 
 private enum class SignupStage {
     VERIFY_EMAIL,
@@ -173,7 +172,7 @@ fun SignupScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(TukiCream)
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState()),
@@ -209,11 +208,7 @@ fun SignupScreen(
                 modifier = Modifier.size(72.dp),
                 contentScale = ContentScale.Fit
             )
-            Text(
-                text = "TUKI.",
-                color = TukiDeepTeal,
-                style = MaterialTheme.typography.displaySmall
-            )
+            Text(text = "TUKI.", color = TukiTeal, style = MaterialTheme.typography.displaySmall)
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
@@ -235,80 +230,47 @@ fun SignupScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             if (stage == SignupStage.VERIFY_EMAIL) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SignUpTextField(
                         label = "Full Name",
                         value = fullName,
                         enabled = !isWorking && !otpSent,
-                        onValueChange = {
-                            fullName = it
-                            signUpError = null
-                        }
+                        onValueChange = { fullName = it; signUpError = null }
                     )
                     SignUpTextField(
                         label = "Email",
                         value = email,
                         enabled = !isWorking && !otpSent,
-                        onValueChange = {
-                            email = it
-                            signUpError = null
-                        }
+                        onValueChange = { email = it; signUpError = null }
                     )
                     Text(
-                        text = if (otpSent) {
-                            "OTP sent. Enter the 8-digit code below."
-                        } else {
-                            "We'll send a one-time code to confirm this email."
-                        },
+                        text = if (otpSent) "OTP sent. Enter the 8-digit code below." else "We'll send a one-time code to confirm this email.",
                         color = TukiMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
 
                     if (otpSent) {
                         Spacer(modifier = Modifier.height(4.dp))
-                        OtpCodeField(
-                            code = otpCode,
-                            onCodeChange = {
-                                otpCode = it
-                                signUpError = null
-                            },
-                            enabled = !isWorking
-                        )
-                        OtpResendButton(
-                            sendGeneration = otpSendGeneration,
-                            enabled = !isWorking,
-                            onResend = { requestOtp() }
-                        )
+                        OtpCodeField(code = otpCode, onCodeChange = { otpCode = it; signUpError = null }, enabled = !isWorking)
+                        OtpResendButton(sendGeneration = otpSendGeneration, enabled = !isWorking, onResend = { requestOtp() })
                     }
                 }
             } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    PasswordField(
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SignupPasswordField(
                         label = "Password",
                         value = password,
                         visible = passwordVisible,
                         enabled = !isWorking,
-                        onValueChange = {
-                            password = it
-                            signUpError = null
-                        },
+                        onValueChange = { password = it; signUpError = null },
                         onVisibilityToggle = { passwordVisible = !passwordVisible }
                     )
-                    PasswordField(
+                    SignupPasswordField(
                         label = "Confirm Password",
                         value = confirmPassword,
                         visible = confirmPasswordVisible,
                         enabled = !isWorking,
-                        onValueChange = {
-                            confirmPassword = it
-                            signUpError = null
-                        },
+                        onValueChange = { confirmPassword = it; signUpError = null },
                         onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
                     )
                 }
@@ -326,13 +288,9 @@ fun SignupScreen(
             Spacer(modifier = Modifier.height(20.dp))
             Button(
                 onClick = {
-                    if (stage == SignupStage.PASSWORD) {
-                        completeRegistration()
-                    } else if (otpSent) {
-                        verifyOtp()
-                    } else {
-                        requestOtp()
-                    }
+                    if (stage == SignupStage.PASSWORD) completeRegistration()
+                    else if (otpSent) verifyOtp()
+                    else requestOtp()
                 },
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 enabled = !isWorking,
@@ -392,7 +350,7 @@ private fun SignUpTextField(
 }
 
 @Composable
-private fun PasswordField(
+private fun SignupPasswordField(
     label: String,
     value: String,
     visible: Boolean,
@@ -427,10 +385,14 @@ private fun PasswordField(
 
 @Composable
 private fun signUpFieldColors() = TextFieldDefaults.colors(
-    focusedContainerColor = TukiCream,
-    unfocusedContainerColor = TukiCream,
-    disabledContainerColor = TukiCream,
+    focusedContainerColor = TukiSurfaceRaised,
+    unfocusedContainerColor = TukiSurfaceRaised,
+    disabledContainerColor = TukiSurfaceRaised.copy(alpha = 0.7f),
     focusedIndicatorColor = Color.Transparent,
     unfocusedIndicatorColor = Color.Transparent,
-    disabledIndicatorColor = Color.Transparent
+    disabledIndicatorColor = Color.Transparent,
+    focusedTextColor = TukiInk,
+    unfocusedTextColor = TukiInk,
+    disabledTextColor = TukiMuted,
+    cursorColor = TukiTeal
 )
