@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,14 +46,15 @@ import com.example.frontend.R
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
 import kotlinx.coroutines.launch
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
-
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiError = Color(0xFFB00020)
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiDanger
 
 @Composable
 fun LoginScreen(
@@ -79,9 +81,6 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var isPasswordLoggingIn by remember { mutableStateOf(false) }
 
-    var isLoggingIn by remember {
-        mutableStateOf(false)
-    }
     var isGoogleLoggingIn by remember { mutableStateOf(false) }
     var isFacebookLoggingIn by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
@@ -101,7 +100,8 @@ fun LoginScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .background(Color.White)
-            .padding(start = 34.dp, end = 34.dp, top = 25.dp, bottom = 15.dp),
+            .statusBarsPadding()
+            .padding(start = 34.dp, end = 34.dp, top = 12.dp, bottom = 15.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -117,10 +117,8 @@ fun LoginScreen(
             Spacer(modifier = Modifier.width(10.dp))
             Text(
                 text = "TUKI.",
-                color = TukiTeal,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                color = TukiDeepTeal,
+                style = MaterialTheme.typography.displaySmall
             )
         }
 
@@ -128,25 +126,22 @@ fun LoginScreen(
 
         Text(
             text = "Welcome back",
-            color = Color.Black,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+            color = TukiInk,
+            style = MaterialTheme.typography.displaySmall
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
             text = "Log in to continue your commute",
-            color = TukiGray,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
+            color = TukiMuted,
+            style = MaterialTheme.typography.bodyLarge
         )
 
         Spacer(modifier = Modifier.height(25.dp))
 
         Column(modifier = Modifier.fillMaxWidth()) {
-            Text(text = "Email", color = Color.Black, fontSize = 18.sp)
+            Text(text = "Email", color = TukiInk, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
 
             TextField(
@@ -159,12 +154,13 @@ fun LoginScreen(
                 enabled = !isLoginInProgress,
                 singleLine = true,
                 shape = RoundedCornerShape(15.dp),
-                colors = loginFieldColors()
+                colors = loginFieldColors(),
+                textStyle = MaterialTheme.typography.bodyLarge
             )
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            Text(text = "Password", color = Color.Black, fontSize = 18.sp)
+            Text(text = "Password", color = TukiInk, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(8.dp))
 
             TextField(
@@ -182,8 +178,7 @@ fun LoginScreen(
                     Text(
                         text = if (passwordVisible) "HIDE" else "SHOW",
                         color = TukiTeal,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier
                             .padding(end = 14.dp)
                             .clickable(enabled = !isLoginInProgress) {
@@ -191,7 +186,8 @@ fun LoginScreen(
                             }
                     )
                 },
-                colors = loginFieldColors()
+                colors = loginFieldColors(),
+                textStyle = MaterialTheme.typography.bodyLarge
             )
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -202,8 +198,7 @@ fun LoginScreen(
                     .align(Alignment.End)
                     .clickable(enabled = !isLoginInProgress) { onForgotPasswordClick() },
                 color = TukiTeal,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.labelLarge
             )
         }
 
@@ -211,9 +206,8 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = message,
-                color = TukiError,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
+                color = TukiDanger,
+                style = MaterialTheme.typography.labelLarge
             )
         }
 
@@ -244,13 +238,12 @@ fun LoginScreen(
             shape = RoundedCornerShape(22.dp),
             colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
         ) {
-            if (isLoggingIn) {
+            if (isLoginInProgress) {
                 CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
             } else {
                 Text(
-                    text = if (isPasswordLoggingIn) "Logging in..." else "Log in",
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "Log in",
+                    style = MaterialTheme.typography.titleLarge
                 )
             }
         }
@@ -265,7 +258,7 @@ fun LoginScreen(
             Text(
                 text = "OR",
                 modifier = Modifier.padding(horizontal = 14.dp),
-                color = TukiGray,
+                color = TukiMuted,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -307,9 +300,8 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (isGoogleLoggingIn) "..." else "Google",
-                        color = TukiDark,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
+                        color = TukiInk,
+                        style = MaterialTheme.typography.labelLarge
                     )
                 }
             }
@@ -343,9 +335,8 @@ fun LoginScreen(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (isFacebookLoggingIn) "..." else "Facebook",
-                        color = TukiDark,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
+                        color = TukiInk,
+                        style = MaterialTheme.typography.labelLarge
                     )
                 }
             }
@@ -364,9 +355,8 @@ fun LoginScreen(
         ) {
             Text(
                 text = "Continue as Guest",
-                color = TukiDark,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+                color = TukiInk,
+                style = MaterialTheme.typography.labelLarge
             )
         }
 
@@ -375,15 +365,13 @@ fun LoginScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "New to Tuki? ",
-                color = TukiGray,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold
+                color = TukiMuted,
+                style = MaterialTheme.typography.bodyLarge
             )
             Text(
                 text = "Sign up",
                 color = TukiOrange,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.clickable(enabled = !isLoginInProgress) { onSignUpClick() }
             )
         }

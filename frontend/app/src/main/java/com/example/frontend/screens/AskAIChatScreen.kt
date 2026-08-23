@@ -52,11 +52,14 @@ import com.example.frontend.data.routing.toDomain
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+
 private val TukiChatBubble = Color(0xFF1F4B52)
 
 private data class AiChatMessage(
@@ -171,7 +174,7 @@ fun AskAiChatScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
-                Text("←", color = TukiDark, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text("←", color = TukiInk, style = MaterialTheme.typography.displaySmall)
             }
             Spacer(modifier = Modifier.width(4.dp))
             Box(
@@ -186,12 +189,10 @@ fun AskAiChatScreen(
             Column {
                 Text(
                     "Ask our AI",
-                    color = TukiDark,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                    color = TukiInk,
+                    style = MaterialTheme.typography.titleLarge
                 )
-                Text("Get TUKI route recommendations", color = TukiGray, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text("Get TUKI route recommendations", color = TukiMuted, style = MaterialTheme.typography.bodySmall)
             }
         }
 
@@ -230,7 +231,7 @@ fun AskAiChatScreen(
             if (messages.size <= 1) {
                 item {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Text("Try asking:", color = TukiGray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Try asking:", color = TukiMuted, style = MaterialTheme.typography.labelSmall)
                         Spacer(modifier = Modifier.height(8.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             quickPrompts.forEach { prompt ->
@@ -253,7 +254,7 @@ fun AskAiChatScreen(
             TextField(
                 value = inputText,
                 onValueChange = { inputText = it },
-                placeholder = { Text("Type your message...", color = TukiGray, fontSize = 14.sp) },
+                placeholder = { Text("Type your message...", color = TukiMuted, style = MaterialTheme.typography.bodyMedium) },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.White.copy(alpha = 0.08f),
@@ -307,7 +308,7 @@ private fun AiMessageBubble(
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
-                Text(message.text, color = Color.White, fontSize = 14.sp)
+                Text(message.text, color = Color.White, style = MaterialTheme.typography.bodyLarge)
             }
 
             if (!message.isFromUser && message.destinationChoices.isNotEmpty()) {
@@ -378,23 +379,23 @@ private fun AiRouteCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("$icon $label", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
-            Text("View route ›", color = TukiOrange, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("$icon $label", color = Color.White, style = MaterialTheme.typography.titleLarge)
+            Text("View route ›", color = TukiOrange, style = MaterialTheme.typography.labelLarge)
         }
         Spacer(modifier = Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("₱${journey.farePesos.roundToInt()}", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text("~${(journey.durationSeconds / 60).roundToInt()} min", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text("₱${journey.farePesos.roundToInt()}", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text("~${(journey.durationSeconds / 60).roundToInt()} min", color = Color.White, style = MaterialTheme.typography.titleMedium)
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             "${journey.walkingMeters.roundToInt()} m walk",
             color = Color.White.copy(alpha = 0.75f),
-            fontSize = 12.sp
+            style = MaterialTheme.typography.bodySmall
         )
         if (modes.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(modes, color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
+            Text(modes, color = Color.White.copy(alpha = 0.78f), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -412,12 +413,12 @@ private fun DestinationChoiceCard(place: DestinationSearchResultDto, onClick: ()
         Text("📍", fontSize = 17.sp)
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(place.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(place.name, color = Color.White, style = MaterialTheme.typography.titleMedium)
             place.address?.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp)
+                Text(it, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall)
             }
         }
-        Text("Select", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("Select", color = Color.White, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -442,6 +443,6 @@ private fun QuickPromptChip(text: String, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 9.dp)
     ) {
-        Text(text, color = TukiDark, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Text(text, color = TukiInk, style = MaterialTheme.typography.bodyMedium)
     }
 }

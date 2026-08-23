@@ -27,16 +27,16 @@ import com.example.frontend.components.TukiTab
 import com.example.frontend.model.FavoriteRoute
 import kotlin.math.roundToInt
 
-private val FavoriteBg = Color(0xFFF8F5EC)
-private val FavoriteSurface = Color(0xFFFFFBF0)
-private val FavoriteDark = Color(0xFF153E4B)
-private val FavoriteTeal = Color(0xFF2C8E95)
-private val FavoriteMuted = Color(0xFF7A898E)
-private val FavoriteOrange = Color(0xFFF4BF52)
-private val FavoriteTip = Color(0xFFFFF0C7)
-private val FavoriteBlue = Color(0xFFE8F2F2)
-private val FavoriteGreen = Color(0xFFE7F1D8)
-private val FavoriteDanger = Color(0xFFDF5D58)
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiForest
+import com.example.frontend.ui.theme.TukiGold
+import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiGoldSurface
 
 @Composable
 fun FavoritesScreen(
@@ -55,10 +55,14 @@ fun FavoritesScreen(
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
     val uniqueFavorites = remember(favorites) { favorites.distinctBy { it.uniqueFavoriteIdentity() } }
 
-    Column(Modifier.fillMaxSize().background(FavoriteBg)) {
+    Column(Modifier.fillMaxSize().background(TukiCream)) {
         LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 20.dp),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(horizontal = 20.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
@@ -67,15 +71,13 @@ fun FavoritesScreen(
                         Modifier.size(38.dp).clickable { onBack?.invoke() ?: backDispatcher?.onBackPressed() },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("←", color = FavoriteDark, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                        Text("←", color = TukiInk, style = MaterialTheme.typography.displaySmall)
                     }
                     Text(
                         "Favorites",
                         Modifier.weight(1f),
-                        color = FavoriteDark,
-                        fontSize = 25.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily,
+                        color = TukiInk,
+                        style = MaterialTheme.typography.displaySmall,
                         textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.size(38.dp))
@@ -85,25 +87,23 @@ fun FavoritesScreen(
                     Text("🌟", fontSize = 57.sp)
                     Text(
                         "Save your favorite routes\nfor quick access",
-                        color = FavoriteMuted,
-                        fontSize = 14.sp,
-                        lineHeight = 18.sp,
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.SemiBold
+                        color = TukiMuted,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
                     )
                 }
                 Spacer(Modifier.height(10.dp))
             }
 
             if (!errorMessage.isNullOrBlank()) {
-                item { Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                item { Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
             }
 
             when {
                 isGuest -> item { EmptyFavoriteCard("Sign in to save and view your favorite routes.") }
                 isLoading -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = FavoriteTeal)
+                        CircularProgressIndicator(color = TukiTeal)
                     }
                 }
                 uniqueFavorites.isEmpty() -> item { EmptyFavoriteCard("No favorite routes yet.\nTap the star on a route to save it here.") }
@@ -119,16 +119,16 @@ fun FavoritesScreen(
 
             item {
                 Spacer(Modifier.height(10.dp))
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = FavoriteTip) {
+                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiGold.copy(alpha = 0.12f)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.Top) {
                         Surface(Modifier.size(27.dp), shape = CircleShape, color = com.example.frontend.ui.theme.TukiGold) {
-                            Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, fontWeight = FontWeight.Bold) }
+                            Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, style = MaterialTheme.typography.labelLarge) }
                         }
                         Spacer(Modifier.width(11.dp))
                         Column {
-                            Text("How to add favorites?", color = FavoriteDark, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("How to add favorites?", color = TukiInk, style = MaterialTheme.typography.titleSmall)
                             Spacer(Modifier.height(5.dp))
-                            Text("Tap the star on any route to save it here.", color = FavoriteMuted, fontSize = 12.sp, lineHeight = 17.sp)
+                            Text("Tap the star on any route to save it here.", color = TukiMuted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -150,34 +150,33 @@ private fun FavoriteRouteCard(route: FavoriteRoute, removing: Boolean, onClick: 
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
-        color = FavoriteSurface,
+        color = Color.White,
         shadowElevation = 2.dp
     ) {
         Row(Modifier.padding(horizontal = 11.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = FavoriteGreen) {
-                Box(contentAlignment = Alignment.Center) { Text(routeIcon(route.recommendationType), fontSize = 21.sp) }
+            Surface(Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = TukiTeal.copy(alpha = 0.12f)) {
+                Box(contentAlignment = Alignment.Center) { Text(routeIcon(route.recommendationType), style = MaterialTheme.typography.titleLarge) }
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     "${route.origin} → ${route.destination}",
-                    color = FavoriteDark,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    color = TukiInk,
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FavoritePill(formatRecommendation(route.recommendationType), FavoriteBlue, FavoriteDark)
-                    FavoritePill("${route.minutes} min", Color(0xFFE9ECE8), FavoriteDark)
-                    FavoritePill("₱${route.totalFare.roundToInt()}", Color(0xFFE9ECE8), FavoriteDark)
+                    FavoritePill(formatRecommendation(route.recommendationType), TukiSky.copy(alpha = 0.35f), TukiInk)
+                    FavoritePill("${route.minutes} min", TukiSky.copy(alpha = 0.2f), TukiInk)
+                    FavoritePill("₱${route.totalFare.roundToInt()}", TukiSky.copy(alpha = 0.2f), TukiInk)
                 }
             }
             Spacer(Modifier.width(6.dp))
             Box(Modifier.size(40.dp).clickable(enabled = !removing, onClick = onRemove), contentAlignment = Alignment.Center) {
-                if (removing) CircularProgressIndicator(Modifier.size(18.dp), color = FavoriteTeal, strokeWidth = 2.dp)
-                else Text("★", color = FavoriteOrange, fontSize = 26.sp)
+                if (removing) CircularProgressIndicator(Modifier.size(18.dp), color = TukiTeal, strokeWidth = 2.dp)
+                else Text("★", color = TukiOrange, style = MaterialTheme.typography.displaySmall)
             }
         }
     }
@@ -190,9 +189,7 @@ private fun FavoritePill(text: String, color: Color, textColor: Color) {
             text,
             Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
             color = textColor,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily,
+            style = MaterialTheme.typography.labelSmall,
             maxLines = 1
         )
     }
@@ -200,8 +197,8 @@ private fun FavoritePill(text: String, color: Color, textColor: Color) {
 
 @Composable
 private fun EmptyFavoriteCard(message: String) {
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = FavoriteSurface) {
-        Text(message, Modifier.padding(22.dp), color = FavoriteMuted, fontSize = 13.sp, lineHeight = 18.sp, textAlign = TextAlign.Center)
+    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = Color.White) {
+        Text(message, Modifier.padding(22.dp), color = TukiMuted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
     }
 }
 

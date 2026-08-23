@@ -36,13 +36,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiCream2 = Color(0xFFFAEBC7)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiRed = Color(0xFFD64545)
-private val TukiTeal = Color(0xFF15919B)
-private val TukiError = Color(0xFFB00020)
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiGold
+import com.example.frontend.ui.theme.TukiGoldSurface
 
 // Icon background tints
 private val KeyBoxBg = Color(0xFFFCEAD8)
@@ -105,24 +109,21 @@ fun PrivacySecurityScreen(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(TukiCream2, CircleShape)
+                    .background(TukiSky.copy(alpha = 0.35f), CircleShape)
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "\u203A".let { "\u2039" },
-                    color = TukiDark,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "\u2039",
+                    color = TukiInk,
+                    style = MaterialTheme.typography.displaySmall
                 )
             }
             Spacer(modifier = Modifier.width(16.dp))
             Text(
                 text = "Privacy & security",
-                color = TukiDark,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                color = TukiInk,
+                style = MaterialTheme.typography.displaySmall
             )
         }
 
@@ -133,13 +134,13 @@ fun PrivacySecurityScreen(
         Spacer(modifier = Modifier.height(8.dp))
         SettingCard(
             iconText = "🔑",
-            iconBgColor = KeyBoxBg,
+            iconBgColor = TukiOrange.copy(alpha = 0.12f),
             title = "Change password",
             subtitle = lastPasswordChange,
-            titleColor = TukiDark,
+            titleColor = TukiInk,
             onClick = onChangePasswordClick,
             trailingContent = {
-                Text(text = "\u203A", color = TukiGray, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(text = "\u203A", color = TukiMuted, style = MaterialTheme.typography.titleLarge)
             }
         )
 
@@ -150,10 +151,10 @@ fun PrivacySecurityScreen(
         Spacer(modifier = Modifier.height(8.dp))
         SettingCard(
             iconText = "🛡️",
-            iconBgColor = ShieldBoxBg,
+            iconBgColor = TukiTeal.copy(alpha = 0.12f),
             title = "Two-factor authentication",
             subtitle = "Add an extra layer of security",
-            titleColor = TukiDark,
+            titleColor = TukiInk,
             onClick = {
                 is2FAEnabled = !is2FAEnabled
                 on2FAToggle(is2FAEnabled)
@@ -182,16 +183,16 @@ fun PrivacySecurityScreen(
         Spacer(modifier = Modifier.height(8.dp))
         SettingCard(
             iconText = "🗑️",
-            iconBgColor = DeleteBoxBg,
+            iconBgColor = TukiDanger.copy(alpha = 0.12f),
             title = "Delete account",
             subtitle = "Permanently remove your data",
-            titleColor = TukiRed,
+            titleColor = TukiDanger,
             onClick = {
                 deleteError = null
                 showDeleteDialog = true
             },
             trailingContent = {
-                Text(text = "\u203A", color = TukiGray, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(text = "\u203A", color = TukiMuted, style = MaterialTheme.typography.titleLarge)
             }
         )
     }
@@ -205,19 +206,19 @@ fun PrivacySecurityScreen(
                 }
             },
             title = {
-                Text(text = "Delete your account?", color = TukiDark, fontWeight = FontWeight.ExtraBold)
+                Text(text = "Delete your account?", color = TukiInk, style = MaterialTheme.typography.titleMedium)
             },
             text = {
                 Column {
                     Text(
                         text = "This will permanently delete your account and all of your data, " +
                                 "including trip history and favorites. This can't be undone.",
-                        color = TukiGray,
-                        fontSize = 14.sp
+                        color = TukiMuted,
+                        style = MaterialTheme.typography.bodyMedium
                     )
                     deleteError?.let { message ->
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(text = message, color = TukiError, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(text = message, color = TukiDanger, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             },
@@ -227,9 +228,9 @@ fun PrivacySecurityScreen(
                     enabled = !isDeleting
                 ) {
                     if (isDeleting) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = TukiRed)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = TukiDanger)
                     } else {
-                        Text(text = "Delete", color = TukiRed, fontWeight = FontWeight.Bold)
+                        Text(text = "Delete", color = TukiDanger, style = MaterialTheme.typography.labelLarge)
                     }
                 }
             },
@@ -241,7 +242,7 @@ fun PrivacySecurityScreen(
                     },
                     enabled = !isDeleting
                 ) {
-                    Text(text = "Cancel", color = TukiDark, fontWeight = FontWeight.SemiBold)
+                    Text(text = "Cancel", color = TukiInk, style = MaterialTheme.typography.labelLarge)
                 }
             },
             containerColor = TukiCream
@@ -253,9 +254,9 @@ fun PrivacySecurityScreen(
 private fun SectionLabel(text: String) {
     Text(
         text = text,
-        color = TukiGray,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Bold
+        color = TukiMuted,
+        style = MaterialTheme.typography.labelSmall,
+        letterSpacing = 1.sp
     )
 }
 
@@ -272,7 +273,7 @@ private fun SettingCard(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(TukiCream2, RoundedCornerShape(18.dp))
+            .background(TukiSky.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -294,14 +295,13 @@ private fun SettingCard(
             Text(
                 text = title,
                 color = titleColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
-                color = TukiGray,
-                fontSize = 12.sp
+                color = TukiMuted,
+                style = MaterialTheme.typography.bodySmall
             )
         }
 

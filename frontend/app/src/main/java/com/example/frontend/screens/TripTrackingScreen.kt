@@ -1,6 +1,10 @@
 package com.example.frontend.screens
 
 import android.location.Location
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
@@ -49,16 +53,16 @@ import java.math.RoundingMode
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-private val TripScreen = com.example.frontend.ui.theme.TukiCream
-private val TripCream = com.example.frontend.ui.theme.TukiGoldSurface
-private val TripSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
-private val TripTile = com.example.frontend.ui.theme.TukiSky.copy(alpha = 0.30f)
-private val TripDark = com.example.frontend.ui.theme.TukiInk
-private val TripTeal = com.example.frontend.ui.theme.TukiTeal
-private val TripOrange = com.example.frontend.ui.theme.TukiOrange
-private val TripGray = com.example.frontend.ui.theme.TukiMuted
-private val TripSoftTeal = com.example.frontend.ui.theme.TukiTealSurface
-private val TripDanger = com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiTealSurface
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 private const val TripFreshFixMaxAgeMillis = 30_000L
 
 @Composable
@@ -107,6 +111,25 @@ fun TripTrackingScreen(
         TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
     }
     DisposableEffect(tts) { onDispose { tts.stop(); tts.shutdown() } }
+
+    val vibrator = remember(context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = context.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
+        }
+    }
+
+    fun triggerVibration(pattern: LongArray) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(pattern, -1)
+        }
+    }
 
     val snapshot = optionSnapshot ?: navigationSnapshot
     val working = isNavigationActionInProgress || optionWorking
@@ -298,6 +321,13 @@ fun TripTrackingScreen(
     val canParaPo = requiresAlighting ||
         snapshot?.nextInstruction?.type?.contains("alight", true) == true ||
         (transitMode && localApproachingEnd)
+
+    LaunchedEffect(canParaPo) {
+        if (canParaPo) {
+            // Triple pulse for "Time to Para Po" notice
+            triggerVibration(longArrayOf(0, 400, 200, 400, 200, 400))
+        }
+    }
     val activeTrip = snapshot != null && !snapshot.state.equals("Arrived", true) && !snapshot.state.equals("Cancelled", true)
     val guestTrip = snapshot?.sessionId?.startsWith("guest-") == true
     val modeIcon = transportIcon(leg?.transportMode)
@@ -313,7 +343,7 @@ fun TripTrackingScreen(
     fun requestBack() { if (activeTrip) showBackDialog = true else onBack() }
     BackHandler(enabled = activeTrip) { showBackDialog = true }
 
-    Box(Modifier.fillMaxSize().background(TripScreen)) {
+    Box(Modifier.fillMaxSize().background(TukiCream)) {
         LiveTripMapScreen(
             routePoints = visibleRoute,
             currentPosition = currentPosition,
@@ -331,7 +361,7 @@ fun TripTrackingScreen(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
         ) {
-            Surface(color = TripScreen.copy(alpha = 0.97f), shadowElevation = 1.dp) {
+            Surface(color = TukiCream.copy(alpha = 0.97f), shadowElevation = 1.dp) {
                 Column(Modifier.fillMaxWidth().statusBarsPadding()) {
                     LiveTripHeader(
                         showOptions = activeTrip && !guestTrip,
@@ -392,7 +422,11 @@ fun TripTrackingScreen(
                 onSpeak = {
                     if (ttsReady) tts.speak(instruction, TextToSpeech.QUEUE_FLUSH, null, "tuki-navigation")
                 },
-                onParaPo = { showParaPo = true },
+                onParaPo = {
+                    // Quick double pulse for button feedback
+                    triggerVibration(longArrayOf(0, 50, 50, 50))
+                    showParaPo = true
+                },
                 onBoard = onConfirmBoarding,
                 onAlight = onConfirmAlighting
             )
@@ -402,13 +436,13 @@ fun TripTrackingScreen(
             Surface(
                 modifier = Modifier.align(Alignment.Center),
                 shape = RoundedCornerShape(18.dp),
-                color = TripSurface,
+                color = TukiSurfaceRaised,
                 shadowElevation = 10.dp
             ) {
                 Row(Modifier.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(22.dp), color = TripTeal, strokeWidth = 3.dp)
+                    CircularProgressIndicator(Modifier.size(22.dp), color = TukiTeal, strokeWidth = 3.dp)
                     Spacer(Modifier.width(12.dp))
-                    Text("Updating your trip…", color = TripDark, fontWeight = FontWeight.Bold)
+                    Text("Updating your trip…", color = TukiInk, style = MaterialTheme.typography.titleMedium)
                 }
             }
         }
@@ -416,7 +450,7 @@ fun TripTrackingScreen(
 
     if (showParaPo) {
         Box(
-            Modifier.fillMaxSize().background(TripDark.copy(alpha = 0.4f)).clickable { showParaPo = false },
+            Modifier.fillMaxSize().background(TukiInk.copy(alpha = 0.4f)).clickable { showParaPo = false },
             contentAlignment = Alignment.Center
         ) { ParaPoOverlay(onDismiss = { showParaPo = false }) }
     }
@@ -473,12 +507,12 @@ fun TripTrackingScreen(
                     },
                     enabled = !working
                 ) {
-                    Text("Leave Navigation", color = TripTeal, fontWeight = FontWeight.Bold)
+                    Text("Leave Navigation", color = TukiTeal, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBackDialog = false }, enabled = !working) {
-                    Text("Stay in Navigation", color = TripDark)
+                    Text("Stay in Navigation", color = TukiInk)
                 }
             }
         )
@@ -491,11 +525,11 @@ fun TripTrackingScreen(
             text = { Text("Your active navigation will be stopped.") },
             confirmButton = {
                 TextButton(onClick = { showEndDialog = false; onEndTrip() }, enabled = !working) {
-                    Text("End Trip", color = TripDanger, fontWeight = FontWeight.Bold)
+                    Text("End Trip", color = TukiDanger, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showEndDialog = false }, enabled = !working) { Text("Continue Trip", color = TripTeal) }
+                TextButton(onClick = { showEndDialog = false }, enabled = !working) { Text("Continue Trip", color = TukiTeal) }
             }
         )
     }
@@ -504,7 +538,7 @@ fun TripTrackingScreen(
         val summary = snapshot?.tripSummary
         AlertDialog(
             onDismissRequest = {},
-            title = { Text("You have arrived 🎉") },
+            title = { Text("You have arrived \uD83C\uDF89") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("You've reached ${summary?.destinationName ?: activeDestinationName}.")
@@ -519,7 +553,7 @@ fun TripTrackingScreen(
             confirmButton = {
                 Button(
                     onClick = { showArrival = false; onArrivalAcknowledged() },
-                    colors = ButtonDefaults.buttonColors(containerColor = TripTeal)
+                    colors = ButtonDefaults.buttonColors(containerColor = TukiTeal)
                 ) { Text("Done") }
             }
         )
@@ -540,32 +574,30 @@ private fun LiveTripHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(38.dp).clickable(onClick = onBack), contentAlignment = Alignment.Center) {
-            Text("←", color = TripDark, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("←", color = TukiInk, style = MaterialTheme.typography.displaySmall)
         }
         Text(
             "Live Trip",
             Modifier.weight(1f),
-            color = TripDark,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily,
+            color = TukiInk,
+            style = MaterialTheme.typography.displaySmall,
             textAlign = TextAlign.Center
         )
         if (showOptions) {
             Surface(
                 Modifier.size(36.dp).clickable(enabled = !working, onClick = onOptions),
                 shape = CircleShape,
-                color = TripTile
-            ) { Box(contentAlignment = Alignment.Center) { Text("⋯", color = TripDark, fontSize = 20.sp, fontWeight = FontWeight.Bold) } }
+                color = TukiSky.copy(alpha = 0.3f)
+            ) { Box(contentAlignment = Alignment.Center) { Text("⋯", color = TukiInk, style = MaterialTheme.typography.titleLarge) } }
             Spacer(Modifier.width(8.dp))
         }
         Surface(
             Modifier.height(36.dp).clickable(enabled = activeTrip && !working, onClick = onEnd),
             shape = RoundedCornerShape(18.dp),
-            color = if (activeTrip) TripDanger else TripGray.copy(alpha = 0.4f)
+            color = if (activeTrip) TukiDanger else TukiMuted.copy(alpha = 0.4f)
         ) {
             Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
-                Text("End Trip", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("End Trip", color = Color.White, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -576,27 +608,25 @@ private fun CurrentLegCard(icon: String, title: String, eta: String, fare: Strin
     Surface(
         Modifier.fillMaxWidth().padding(horizontal = 18.dp),
         shape = RoundedCornerShape(20.dp),
-        color = TripSurface.copy(alpha = 0.96f),
+        color = TukiSurfaceRaised.copy(alpha = 0.96f),
         shadowElevation = 6.dp
     ) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(Modifier.size(46.dp), shape = RoundedCornerShape(14.dp), color = TripSoftTeal) {
-                Box(contentAlignment = Alignment.Center) { Text(icon, fontSize = 22.sp) }
+            Surface(Modifier.size(46.dp), shape = RoundedCornerShape(14.dp), color = TukiTealSurface) {
+                Box(contentAlignment = Alignment.Center) { Text(icon, style = MaterialTheme.typography.displaySmall) }
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = TripDark, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(title, color = TukiInk, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(3.dp))
                 Text(
                     "$eta remaining  •  $fare",
-                    color = TripGray,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
+                    color = TukiMuted,
+                    style = MaterialTheme.typography.labelSmall
                 )
                 status?.let {
                     Spacer(Modifier.height(2.dp))
-                    Text(it, color = TripOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text(it, color = TukiOrange, style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
@@ -614,7 +644,7 @@ private fun RecenterButton(
             .size(52.dp)
             .clickable(enabled = enabled, onClick = onClick),
         shape = CircleShape,
-        color = if (enabled) TripSurface else TripTile,
+        color = if (enabled) TukiSurfaceRaised else TukiSky.copy(alpha = 0.3f),
         border = BorderStroke(1.dp, com.example.frontend.ui.theme.TukiOutline),
         shadowElevation = 10.dp,
         tonalElevation = 2.dp
@@ -622,8 +652,8 @@ private fun RecenterButton(
         Box(contentAlignment = Alignment.Center) {
             Text(
                 "◎",
-                color = if (enabled) TripDark else TripGray.copy(alpha = 0.65f),
-                fontSize = 28.sp
+                color = if (enabled) TukiInk else TukiMuted.copy(alpha = 0.65f),
+                style = MaterialTheme.typography.displaySmall
             )
         }
     }
@@ -661,7 +691,7 @@ private fun InstructionPanel(
     Surface(
         modifier.fillMaxWidth().animateContentSize(),
         shape = RoundedCornerShape(28.dp),
-        color = TripSurface,
+        color = TukiSurfaceRaised,
         shadowElevation = 8.dp
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -690,7 +720,7 @@ private fun InstructionPanel(
             ) {
                 Box(
                     Modifier.width(42.dp).height(4.dp).background(
-                        TripGray.copy(alpha = 0.45f),
+                        TukiMuted.copy(alpha = 0.45f),
                         RoundedCornerShape(4.dp)
                     )
                 )
@@ -699,17 +729,16 @@ private fun InstructionPanel(
             TripProgressDots(totalLegs, currentLeg)
             Spacer(Modifier.height(if (collapsed) 7.dp else 10.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = TripSoftTeal) {
-                    Box(contentAlignment = Alignment.Center) { Text(icon, fontSize = 21.sp) }
+                Surface(Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = TukiTealSurface) {
+                    Box(contentAlignment = Alignment.Center) { Text(icon, style = MaterialTheme.typography.titleLarge) }
                 }
                 Spacer(Modifier.width(11.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Next Instruction", color = TripGray, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("Next Instruction", color = TukiMuted, style = MaterialTheme.typography.labelSmall)
                     Text(
                         instruction,
-                        color = TripDark,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        color = TukiInk,
+                        style = MaterialTheme.typography.titleMedium,
                         maxLines = if (collapsed) 2 else 3,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -718,24 +747,23 @@ private fun InstructionPanel(
                 Surface(
                     Modifier.size(44.dp).clickable(enabled = canSpeak, onClick = onSpeak),
                     shape = CircleShape,
-                    color = if (canSpeak) TripCream else TripTile
+                    color = if (canSpeak) TukiCream else TukiSky.copy(alpha = 0.3f)
                 ) { Box(contentAlignment = Alignment.Center) { Text("🔊", fontSize = 20.sp) } }
             }
 
             if (!collapsed) {
                 following?.let {
                     Spacer(Modifier.height(7.dp))
-                    Text("Then: $it", color = TripGray, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Then: $it", color = TukiMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (preparingToAlight) {
                     Spacer(Modifier.height(7.dp))
-                    Surface(shape = RoundedCornerShape(10.dp), color = TripOrange.copy(alpha = 0.10f)) {
+                    Surface(shape = RoundedCornerShape(10.dp), color = TukiOrange.copy(alpha = 0.10f)) {
                         Text(
                             "Prepare to alight — your stop is getting close.",
                             Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                            color = TripOrange,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            color = TukiOrange,
+                            style = MaterialTheme.typography.labelSmall
                         )
                     }
                 }
@@ -754,8 +782,8 @@ private fun InstructionPanel(
                             Surface(
                                 Modifier.weight(1f).height(42.dp).clickable(enabled = !working, onClick = onParaPo),
                                 shape = RoundedCornerShape(14.dp),
-                                color = TripOrange.copy(alpha = 0.12f)
-                            ) { Box(contentAlignment = Alignment.Center) { Text("🔔  Para Po", color = TripOrange, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold) } }
+                                color = TukiOrange.copy(alpha = 0.12f)
+                            ) { Box(contentAlignment = Alignment.Center) { Text("🔔  Para Po", color = TukiOrange, style = MaterialTheme.typography.labelLarge) } }
                         }
                         if (requiresBoarding || requiresAlighting) {
                             Button(
@@ -763,13 +791,13 @@ private fun InstructionPanel(
                                 enabled = !working,
                                 modifier = Modifier.weight(if (canParaPo) 1.35f else 1f).height(42.dp),
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = if (requiresBoarding) TripTeal else TripOrange)
+                                colors = ButtonDefaults.buttonColors(containerColor = if (requiresBoarding) TukiTeal else TukiOrange)
                             ) {
                                 if (working) {
                                     CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = Color.White)
                                     Spacer(Modifier.width(6.dp))
                                 }
-                                Text(if (requiresBoarding) "Confirm Board" else "Confirm Alight", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(if (requiresBoarding) "Confirm Board" else "Confirm Alight", style = MaterialTheme.typography.labelLarge)
                             }
                         }
                     }
@@ -777,17 +805,17 @@ private fun InstructionPanel(
 
                 if (!optionError.isNullOrBlank()) {
                     Spacer(Modifier.height(6.dp))
-                    Text(optionError, color = MaterialTheme.colorScheme.error, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(optionError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 } else if (!status.isNullOrBlank()) {
                     Spacer(Modifier.height(6.dp))
-                    Text(status.replace('_', ' '), color = TripGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(status.replace('_', ' '), color = TukiMuted, style = MaterialTheme.typography.labelSmall)
                 }
                 Spacer(Modifier.height(7.dp))
                 LinearProgressIndicator(
                     progress = { progress },
                     modifier = Modifier.fillMaxWidth().height(4.dp),
-                    color = TripTeal,
-                    trackColor = TripTeal.copy(alpha = 0.10f),
+                    color = TukiTeal,
+                    trackColor = TukiTeal.copy(alpha = 0.10f),
                     strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
                 )
             } else {
@@ -806,7 +834,7 @@ private fun TripProgressDots(totalLegs: Int, currentLeg: Int) {
             if (index > 0) {
                 Box(
                     Modifier.width(22.dp).height(2.dp).background(
-                        if (index <= active) TripTeal.copy(alpha = 0.55f) else TripGray.copy(alpha = 0.22f),
+                        if (index <= active) TukiTeal.copy(alpha = 0.55f) else TukiMuted.copy(alpha = 0.22f),
                         RoundedCornerShape(2.dp)
                     )
                 )
@@ -814,9 +842,9 @@ private fun TripProgressDots(totalLegs: Int, currentLeg: Int) {
             Box(
                 Modifier.size(if (index == active) 9.dp else 7.dp).background(
                     when {
-                        index == active -> TripTeal
-                        index < active -> TripTeal.copy(alpha = 0.55f)
-                        else -> TripGray.copy(alpha = 0.28f)
+                        index == active -> TukiTeal
+                        index < active -> TukiTeal.copy(alpha = 0.55f)
+                        else -> TukiMuted.copy(alpha = 0.28f)
                     },
                     CircleShape
                 )
@@ -828,17 +856,15 @@ private fun TripProgressDots(totalLegs: Int, currentLeg: Int) {
 @Composable
 private fun TripMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
-        modifier.background(TripTile, RoundedCornerShape(14.dp)).padding(horizontal = 8.dp, vertical = 10.dp),
+        modifier.background(TukiSky.copy(alpha = 0.3f), RoundedCornerShape(14.dp)).padding(horizontal = 8.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(label, color = TripGray, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = TukiMuted, style = MaterialTheme.typography.labelSmall)
         Spacer(Modifier.height(2.dp))
         Text(
             value,
-            color = TripDark,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily,
+            color = TukiInk,
+            style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -848,12 +874,11 @@ private fun TripMetric(label: String, value: String, modifier: Modifier = Modifi
 @Composable
 private fun SummaryRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = TripGray, fontWeight = FontWeight.SemiBold)
+        Text(label, color = TukiMuted, style = MaterialTheme.typography.titleMedium)
         Text(
             value,
-            color = TripDark,
-            fontWeight = FontWeight.ExtraBold,
-            fontFamily = com.example.frontend.ui.theme.TukiUtilityFontFamily
+            color = TukiInk,
+            style = MaterialTheme.typography.titleLarge
         )
     }
 }

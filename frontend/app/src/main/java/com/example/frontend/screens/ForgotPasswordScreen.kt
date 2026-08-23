@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -46,12 +47,14 @@ import com.example.frontend.data.TukiDataProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiError = Color(0xFFB00020)
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiDanger
 
 private enum class ForgotPasswordStage {
     EMAIL,
@@ -149,7 +152,8 @@ fun ForgotPasswordScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .background(Color.White)
-            .padding(start = 34.dp, end = 34.dp, top = 35.dp, bottom = 28.dp),
+            .statusBarsPadding()
+            .padding(start = 34.dp, end = 34.dp, top = 12.dp, bottom = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -177,7 +181,7 @@ fun ForgotPasswordScreen(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "‹", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(text = "‹", color = TukiInk, style = MaterialTheme.typography.displaySmall)
             }
         }
 
@@ -188,7 +192,7 @@ fun ForgotPasswordScreen(
             modifier = Modifier.size(72.dp),
             contentScale = ContentScale.Fit
         )
-        Text("TUKI.", color = TukiTeal, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
+        Text("TUKI.", color = TukiDeepTeal, style = MaterialTheme.typography.displaySmall)
 
         Spacer(modifier = Modifier.height(28.dp))
         Text(
@@ -197,9 +201,8 @@ fun ForgotPasswordScreen(
                 ForgotPasswordStage.OTP -> "Check your email"
                 ForgotPasswordStage.PASSWORD -> "Create new password"
             },
-            color = Color.Black,
-            fontSize = 25.sp,
-            fontWeight = FontWeight.ExtraBold
+            color = TukiInk,
+            style = MaterialTheme.typography.displaySmall
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -209,9 +212,8 @@ fun ForgotPasswordScreen(
                 ForgotPasswordStage.OTP -> "We've sent an 8-digit OTP to ${email.trim()}."
                 ForgotPasswordStage.PASSWORD -> "Your code is verified. Choose a new password."
             },
-            color = TukiGray,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
+            color = TukiMuted,
+            style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(horizontal = 8.dp)
         )
 
@@ -272,11 +274,11 @@ fun ForgotPasswordScreen(
 
         error?.let { message ->
             Spacer(modifier = Modifier.height(14.dp))
-            Text(message, color = TukiError, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(message, color = TukiDanger, style = MaterialTheme.typography.labelLarge)
         }
         info?.let { message ->
             Spacer(modifier = Modifier.height(14.dp))
-            Text(message, color = TukiTeal, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(message, color = TukiTeal, style = MaterialTheme.typography.labelLarge)
         }
 
         Spacer(modifier = Modifier.height(26.dp))
@@ -302,8 +304,7 @@ fun ForgotPasswordScreen(
                         ForgotPasswordStage.OTP -> "Verify OTP"
                         ForgotPasswordStage.PASSWORD -> "Reset Password"
                     },
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleLarge
                 )
             }
         }
@@ -319,7 +320,7 @@ private fun ResetTextField(
     onValueChange: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(text = label, color = Color.Black, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Text(text = label, color = TukiInk, style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
         TextField(
             value = value,
@@ -336,9 +337,10 @@ private fun ResetTextField(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
                 disabledIndicatorColor = Color.Transparent,
-                focusedTextColor = TukiDark,
-                unfocusedTextColor = TukiDark
-            )
+                focusedTextColor = TukiInk,
+                unfocusedTextColor = TukiInk
+            ),
+            textStyle = MaterialTheme.typography.bodyLarge
         )
     }
 }

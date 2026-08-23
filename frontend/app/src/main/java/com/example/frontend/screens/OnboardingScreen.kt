@@ -34,9 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
-
-private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
-private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
 
 @Composable
 fun OnboardingScreen(
@@ -88,9 +88,7 @@ fun OnboardingScreen(
             Text(
                 text = "TUKI.",
                 color = Color.White,
-                fontSize = 46.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                style = MaterialTheme.typography.displayLarge
             )
 
             Spacer(modifier = Modifier.height(38.dp))
@@ -98,13 +96,13 @@ fun OnboardingScreen(
             Text(
                 text = "Commute smarter.",
                 color = Color.White,
-                fontSize = 21.sp
+                style = MaterialTheme.typography.displaySmall
             )
 
             Text(
                 text = "Move easier.",
                 color = Color.White,
-                fontSize = 21.sp
+                style = MaterialTheme.typography.displaySmall
             )
 
             Spacer(modifier = Modifier.height(28.dp))
@@ -156,9 +154,7 @@ fun OnboardingScreen(
             ) {
                 Text(
                     text = "Let's Ride",
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                    style = MaterialTheme.typography.displaySmall
                 )
             }
         }

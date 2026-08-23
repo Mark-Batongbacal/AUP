@@ -2,7 +2,20 @@ package com.example.frontend.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -18,12 +31,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val TukiTeal = Color(0xFF15919B)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiCream2 = Color(0xFFFAEBC7)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiOrange = Color(0xFFFF9318)
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiSky
 
 @Composable
 fun SettingsScreen(
@@ -48,24 +63,24 @@ fun SettingsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 30.dp, vertical = 30.dp),
+                .statusBarsPadding()
+                .padding(start = 30.dp, end = 30.dp, top = 12.dp, bottom = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
                     .size(38.dp)
-                    .background(TukiCream2, RoundedCornerShape(12.dp))
+                    .background(TukiSky.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(text = "\u2039", color = TukiInk, style = MaterialTheme.typography.displaySmall)
             }
             Spacer(modifier = Modifier.width(14.dp))
             Text(
                 text = "Settings",
-                color = TukiDark,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.ExtraBold
+                color = TukiInk,
+                style = MaterialTheme.typography.displaySmall
             )
         }
 
@@ -142,16 +157,15 @@ private fun SettingsSection(
     Column {
         Text(
             text = title,
-            color = TukiGray,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.ExtraBold,
+            color = TukiMuted,
+            style = MaterialTheme.typography.labelSmall,
             letterSpacing = 1.sp
         )
         Spacer(modifier = Modifier.height(12.dp))
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(TukiCream2, RoundedCornerShape(18.dp))
+                .background(TukiCream, RoundedCornerShape(18.dp))
                 .padding(vertical = 4.dp)
         ) {
             content()
@@ -176,23 +190,21 @@ private fun SettingsRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                color = TukiDark,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
+                color = TukiInk,
+                style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
-                color = TukiGray,
-                fontSize = 13.sp
+                color = TukiMuted,
+                style = MaterialTheme.typography.bodySmall
             )
         }
         if (hasChevron) {
             Text(
                 text = "\u203A",
-                color = TukiGray,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
+                color = TukiMuted,
+                style = MaterialTheme.typography.titleLarge
             )
         }
     }
