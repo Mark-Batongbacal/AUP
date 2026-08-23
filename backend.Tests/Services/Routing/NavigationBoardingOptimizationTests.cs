@@ -25,9 +25,12 @@ public sealed class NavigationBoardingOptimizationTests
     [Fact]
     public async Task PlanTripsAsync_DoesNotChaseSameJeepneyDownstreamForTinyGain()
     {
+        // Candidate generation thinks the tricycle is very fast, deliberately
+        // making a downstream board look attractive. Valhalla confirmation is
+        // slower and must be authoritative before the final choice is made.
         var service = CreateStraightRouteService(
             confirmedTrikeSpeedMetersPerSecond: 5.6,
-            provisionalTrikeSpeedMetersPerSecond: 5.6);
+            provisionalTrikeSpeedMetersPerSecond: 30);
 
         var plans = await service.PlanTripsAsync(
             OriginLatitude,
