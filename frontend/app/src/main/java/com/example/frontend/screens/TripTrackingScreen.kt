@@ -39,6 +39,7 @@ import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.navigation.LocalLegProximity
 import com.example.frontend.navigation.LocalNavigationEngine
 import com.example.frontend.navigation.LocalNavigationSpeech
+import com.example.frontend.navigation.LocalServerSyncReason
 import com.example.frontend.navigation.TripOptionsCoordinator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
@@ -89,6 +90,7 @@ fun TripTrackingScreen(
     var showEndDialog by remember { mutableStateOf(false) }
     var showArrival by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
+    var showNavigationAi by remember { mutableStateOf(false) }
     var optionSnapshot by remember { mutableStateOf<NavigationSnapshotDto?>(null) }
     var stableLegRoute by remember { mutableStateOf<List<LatLng>>(emptyList()) }
     var stableLegRouteKey by remember { mutableStateOf<String?>(null) }
@@ -124,6 +126,7 @@ fun TripTrackingScreen(
         if (navigationSnapshot?.state.equals("Arrived", true)) {
             showArrival = true
             showOptions = false
+            showNavigationAi = false
         }
     }
 
@@ -215,14 +218,22 @@ fun TripTrackingScreen(
             transportMode = snapshot?.currentLeg?.transportMode,
             route = routeCoordinates,
             instructions = snapshot?.currentLegInstructions.orEmpty(),
-            landmarks = snapshot?.currentLegLandmarks.orEmpty()
+            landmarks = snapshot?.currentLegLandmarks.orEmpty(),
+            elapsedRealtimeNanos = location.elapsedRealtimeNanos.takeIf { it > 0L },
+            speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null
         )
     }
 
     LaunchedEffect(localProgress?.serverSyncReason, currentLegIndex, snapshot?.sessionId) {
         val reason = localProgress?.serverSyncReason ?: return@LaunchedEffect
-        if (snapshot?.sessionId?.startsWith("guest-") == true) return@LaunchedEffect
-        NavigationSyncSignal.requestImmediateSync()
+        val sessionId = snapshot?.sessionId ?: return@LaunchedEffect
+        if (sessionId.startsWith("guest-")) return@LaunchedEffect
+        when (reason) {
+            LocalServerSyncReason.MISSED_LEG_TARGET -> applyOption {
+                options.recoverMissedLegTarget(sessionId)
+            }
+            else -> NavigationSyncSignal.requestImmediateSync()
+        }
     }
 
     LaunchedEffect(localProgress?.landmarkEvent, navigationLanguage) {
@@ -370,6 +381,13 @@ fun TripTrackingScreen(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.End
         ) {
+            if (activeTrip && !guestTrip) {
+                NavigationAiButton(
+                    enabled = !working,
+                    onClick = { showNavigationAi = true },
+                    modifier = Modifier.padding(end = 16.dp, bottom = 8.dp)
+                )
+            }
             Row(
                 modifier = Modifier.padding(end = 14.dp, bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -440,7 +458,15 @@ fun TripTrackingScreen(
         TripOptionsSheet(
             isWorking = working,
             onDismiss = { showOptions = false },
-            onRerouteNow = { applyOption { options.rerouteNow(snapshot.sessionId) } },
+            onRerouteNow = { reason ->
+                applyOption {
+                    options.rerouteNow(
+                        sessionId = snapshot.sessionId,
+                        reason = reason.code,
+                        avoidTransportMode = reason.avoidTransportMode
+                    )
+                }
+            },
             onPreferenceChange = { preference -> applyOption { options.changePreference(snapshot.sessionId, preference) } },
             onLoadPreferencePreviews = {
                 val destinationPoint = activeFinalDestination
@@ -468,6 +494,20 @@ fun TripTrackingScreen(
                 }
             },
             onDestinationChange = { place -> applyOption(place) { options.changeDestination(snapshot.sessionId, place) } }
+        )
+    }
+
+    if (showNavigationAi && snapshot != null && !guestTrip) {
+        NavigationAiSheet(
+            onDismiss = { showNavigationAi = false },
+            ask = { message ->
+                options.askNavigationAssistant(
+                    sessionId = snapshot.sessionId,
+                    message = message,
+                    latitude = currentPosition?.latitude ?: snapshot.currentLatitude,
+                    longitude = currentPosition?.longitude ?: snapshot.currentLongitude
+                )
+            }
         )
     }
 

@@ -56,14 +56,45 @@ private val TripSheetMuted = com.example.frontend.ui.theme.TukiMuted
 private val TripSheetOrange = com.example.frontend.ui.theme.TukiOrange
 private val TripSheetOutline = com.example.frontend.ui.theme.TukiOutline
 
-private enum class TripOptionEditor { Preference, Budget, Destination }
+private enum class TripOptionEditor { Reroute, Preference, Budget, Destination }
+
+data class ManualRerouteReason(
+    val code: String,
+    val title: String,
+    val subtitle: String,
+    val avoidTransportMode: String? = null
+)
+
+private val manualRerouteReasons = listOf(
+    ManualRerouteReason(
+        code = "TRANSPORT_UNAVAILABLE",
+        title = "No tricycle / TODA available",
+        subtitle = "Replan without tricycle so TUKI does not send you back to an unavailable TODA.",
+        avoidTransportMode = "TRICYCLE"
+    ),
+    ManualRerouteReason(
+        code = "ROAD_BLOCKED",
+        title = "Road or route is blocked",
+        subtitle = "Find another route from your current location."
+    ),
+    ManualRerouteReason(
+        code = "MISSED_STOP",
+        title = "I missed my stop or ride",
+        subtitle = "Replan from where you are now."
+    ),
+    ManualRerouteReason(
+        code = "MANUAL",
+        title = "I want another route",
+        subtitle = "Try a different route from your current location."
+    )
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TripOptionsSheet(
     isWorking: Boolean,
     onDismiss: () -> Unit,
-    onRerouteNow: () -> Unit,
+    onRerouteNow: (ManualRerouteReason) -> Unit,
     onPreferenceChange: (String) -> Unit,
     onLoadPreferencePreviews: suspend () -> List<TripPreferencePreview>,
     onBudgetChange: (BigDecimal?, Boolean) -> Unit,
@@ -87,16 +118,40 @@ fun TripOptionsSheet(
                 Text("Trip options", color = TripSheetDark, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
                 Text("Update your active trip without starting over.", color = TripSheetMuted, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(6.dp))
-                TripOptionRow("↻", "Reroute now", "Find a new route from your current location.", isWorking) { onDismiss(); onRerouteNow() }
-                TripOptionRow("☷", "Change route preference", "Choose fastest, cheapest, or balanced.", isWorking) { editor = TripOptionEditor.Preference }
-                TripOptionRow("₱", "Change budget", "Set or remove your maximum fare budget.", isWorking) { editor = TripOptionEditor.Budget }
-                TripOptionRow("⌖", "Change destination", "Search for a new destination and reroute.", isWorking) { editor = TripOptionEditor.Destination }
+                TripOptionRow(
+                    "↻",
+                    "Reroute now",
+                    "Tell TUKI why you need a new route so the backend can replan appropriately.",
+                    isWorking
+                ) { editor = TripOptionEditor.Reroute }
+                TripOptionRow(
+                    "☷",
+                    "Change route preference",
+                    "Recalculates the active route on the backend using fastest, cheapest, or balanced.",
+                    isWorking
+                ) { editor = TripOptionEditor.Preference }
+                TripOptionRow(
+                    "₱",
+                    "Change budget",
+                    "Updates your fare limit and calls the backend to calculate a replacement route.",
+                    isWorking
+                ) { editor = TripOptionEditor.Budget }
+                TripOptionRow(
+                    "⌖",
+                    "Change destination",
+                    "Calls the backend to replan from your current location to the new destination.",
+                    isWorking
+                ) { editor = TripOptionEditor.Destination }
                 Spacer(Modifier.height(10.dp))
             }
         }
     }
 
     when (editor) {
+        TripOptionEditor.Reroute -> RerouteReasonSheet(
+            onDismiss = { editor = null },
+            onConfirm = { reason -> editor = null; onDismiss(); onRerouteNow(reason) }
+        )
         TripOptionEditor.Preference -> PreferenceSheet(
             onDismiss = { editor = null },
             onLoad = onLoadPreferencePreviews,
@@ -141,6 +196,70 @@ private fun TripOptionRow(icon: String, title: String, subtitle: String, disable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun RerouteReasonSheet(
+    onDismiss: () -> Unit,
+    onConfirm: (ManualRerouteReason) -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = TripSheetScreen,
+        contentColor = TripSheetDark,
+        shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+        dragHandle = { TukiSheetHandle() }
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 30.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Text("Why do you need a reroute?", color = TripSheetDark, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                "TUKI sends the reason to the backend so the replacement route can account for what actually changed.",
+                color = TripSheetMuted,
+                fontSize = 13.sp,
+                lineHeight = 17.sp
+            )
+            Spacer(Modifier.height(5.dp))
+            manualRerouteReasons.forEach { reason ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable { onConfirm(reason) },
+                    shape = RoundedCornerShape(16.dp),
+                    color = TripSheetSurface,
+                    border = BorderStroke(1.dp, TripSheetOutline)
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 15.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier.size(38.dp).background(TripSheetCream.copy(alpha = 0.55f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                when (reason.code) {
+                                    "TRANSPORT_UNAVAILABLE" -> "🛺"
+                                    "ROAD_BLOCKED" -> "⛔"
+                                    "MISSED_STOP" -> "↩"
+                                    else -> "↻"
+                                },
+                                fontSize = 18.sp
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(reason.title, color = TripSheetDark, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                            Spacer(Modifier.height(2.dp))
+                            Text(reason.subtitle, color = TripSheetMuted, fontSize = 11.sp, lineHeight = 15.sp)
+                        }
+                        Text("›", color = TripSheetDarkText, fontSize = 24.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun PreferenceSheet(
     onDismiss: () -> Unit,
     onLoad: suspend () -> List<TripPreferencePreview>,
@@ -166,7 +285,7 @@ private fun PreferenceSheet(
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 30.dp)) {
             Text("Choose route preference", color = TripSheetDark, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(4.dp))
-            Text("Pick the route that works best for you.", color = TripSheetMuted, fontSize = 13.sp)
+            Text("Choosing one asks the backend to calculate a replacement route from your current location.", color = TripSheetMuted, fontSize = 13.sp)
             Spacer(Modifier.height(14.dp))
 
             if (loading) {
@@ -300,7 +419,7 @@ private fun BudgetSheet(onDismiss: () -> Unit, onConfirm: (BigDecimal?, Boolean)
         Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 30.dp)) {
             Text("Change budget", color = TripSheetDark, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(5.dp))
-            Text("Set the maximum total fare TUKI should consider for the remaining trip.", color = TripSheetMuted, fontSize = 13.sp)
+            Text("Set the fare limit for the remaining trip. Applying it calls the backend and recalculates your active route.", color = TripSheetMuted, fontSize = 13.sp)
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = text,
@@ -318,7 +437,7 @@ private fun BudgetSheet(onDismiss: () -> Unit, onConfirm: (BigDecimal?, Boolean)
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = TripSheetTeal),
                 shape = RoundedCornerShape(16.dp)
-            ) { Text("Apply budget", fontWeight = FontWeight.Bold) }
+            ) { Text("Apply & recalculate route", fontWeight = FontWeight.Bold) }
             Spacer(Modifier.height(8.dp))
             Surface(
                 modifier = Modifier.fillMaxWidth().clickable { onConfirm(null, true) },
@@ -326,7 +445,7 @@ private fun BudgetSheet(onDismiss: () -> Unit, onConfirm: (BigDecimal?, Boolean)
                 color = TripSheetCream.copy(alpha = 0.38f)
             ) {
                 Box(Modifier.padding(vertical = 13.dp), contentAlignment = Alignment.Center) {
-                    Text("Remove budget limit", color = TripSheetOrange, fontWeight = FontWeight.Bold)
+                    Text("Remove limit & recalculate", color = TripSheetOrange, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -365,7 +484,7 @@ private fun DestinationSheet(
         Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(bottom = 30.dp)) {
             Text("Change destination", color = TripSheetDark, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(5.dp))
-            Text("Search for a new destination and TUKI will reroute from your current location.", color = TripSheetMuted, fontSize = 13.sp)
+            Text("Choose a new destination. TUKI will call the backend and replan the trip from your current location.", color = TripSheetMuted, fontSize = 13.sp)
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(
                 value = query,
