@@ -126,6 +126,12 @@ public sealed class TripSessionRepositoryTests
             await _connection.DisposeAsync();
         }
 
+        // The DDL is hand-written because the EF model carries SQL Server
+        // column types (nvarchar(max) and friends) that SQLite cannot create,
+        // so EnsureCreated is not an option here. AssertMatchesEntityModel
+        // below closes the gap that leaves: it fails loudly and by name when
+        // the entity gains a column this table is missing, instead of letting
+        // the drift surface later as a confusing "no such column" error.
         private async Task CreateSchemaAsync()
         {
             await using var context = CreateContext();
@@ -145,6 +151,7 @@ public sealed class TripSessionRepositoryTests
                     CurrentNavigationState TEXT NOT NULL,
                     CurrentProgressMeters REAL NOT NULL,
                     CurrentRouteProgressMeters REAL NULL,
+                    ApproxFareSpent TEXT NOT NULL,
                     StartedAt TEXT NULL,
                     LastLocationAt TEXT NULL,
                     LastLatitude REAL NULL,
@@ -167,6 +174,42 @@ public sealed class TripSessionRepositoryTests
                     UpdatedAt TEXT NOT NULL
                 );
                 """);
+
+            await AssertMatchesEntityModelAsync(context);
+        }
+
+        /// <summary>
+        /// Compares the columns EF expects to map for TripSession against the
+        /// columns the table above actually declares, so a property added to
+        /// the entity without a matching column fails here by name.
+        /// </summary>
+        private static async Task AssertMatchesEntityModelAsync(TukiDbContext context)
+        {
+            var entityType = context.Model.FindEntityType(typeof(TripSession))
+                ?? throw new InvalidOperationException(
+                    "TripSession is not part of the EF model.");
+
+            var expected = entityType
+                .GetProperties()
+                .Select(property => property.GetColumnName())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var actual = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await using (var command = context.Database.GetDbConnection().CreateCommand())
+            {
+                command.CommandText = "SELECT name FROM pragma_table_info('TripSessions');";
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    actual.Add(reader.GetString(0));
+            }
+
+            var missing = expected.Except(actual).OrderBy(name => name).ToList();
+            if (missing.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    "The TripSessions test table has drifted from the TripSession entity. " +
+                    $"Add these column(s) to CreateSchemaAsync: {string.Join(", ", missing)}.");
+            }
         }
     }
 }
