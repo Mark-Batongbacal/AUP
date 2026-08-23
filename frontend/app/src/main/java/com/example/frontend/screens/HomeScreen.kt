@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,7 +64,9 @@ import com.example.frontend.data.trips.TripRepository
 import com.example.frontend.data.trips.toRecentCommute
 import com.example.frontend.model.RecentCommute
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
+import kotlin.math.abs
 
 private val HomeBg = Color(0xFFF8F5EC)
 private val HomeSurface = Color(0xFFFFFBF0)
@@ -116,15 +119,21 @@ fun HomeScreen(
     var mapSearchText by remember { mutableStateOf("") }
     var mapSearchResults by remember { mutableStateOf<List<DestinationSearchResultDto>>(emptyList()) }
     var mapSearchLoading by remember { mutableStateOf(false) }
+    var mapSearchMoreLoading by remember { mutableStateOf(false) }
+    var mapSearchExpanded by remember { mutableStateOf(false) }
     var mapSearchError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val inPreview = LocalInspectionMode.current
+    val coroutineScope = rememberCoroutineScope()
 
     fun openMapPicker(mode: HomeMapPickMode) {
         mapMode = mode
         mapSearchText = ""
         mapSearchResults = emptyList()
+        mapSearchLoading = false
+        mapSearchMoreLoading = false
+        mapSearchExpanded = false
         mapSearchError = null
         mapSelection = when (mode) {
             HomeMapPickMode.Origin -> {
@@ -228,6 +237,8 @@ fun HomeScreen(
     LaunchedEffect(showMapPicker, mapSearchText, originLatitude, originLongitude) {
         if (!showMapPicker) return@LaunchedEffect
         val query = mapSearchText.trim()
+        mapSearchExpanded = false
+        mapSearchMoreLoading = false
         if (query.length < 2) {
             mapSearchResults = emptyList()
             mapSearchError = null
@@ -363,6 +374,8 @@ fun HomeScreen(
                 searchText = mapSearchText,
                 searchResults = mapSearchResults,
                 isSearching = mapSearchLoading,
+                isSearchingMore = mapSearchMoreLoading,
+                canSearchMore = mapSearchText.trim().length >= 2 && !mapSearchLoading && !mapSearchExpanded,
                 searchError = mapSearchError,
                 originPoint = originLatitude?.let { lat -> originLongitude?.let { lon -> LatLng(lat, lon) } },
                 onSearchTextChange = { mapSearchText = it },
@@ -370,7 +383,41 @@ fun HomeScreen(
                     mapSelection = result
                     mapSearchText = result.name
                     mapSearchResults = emptyList()
+                    mapSearchExpanded = false
                     mapSearchError = null
+                },
+                onSearchMoreClick = {
+                    val query = mapSearchText.trim()
+                    if (query.length < 2 || mapSearchLoading || mapSearchMoreLoading || mapSearchExpanded) {
+                        return@HomeMapPickerOverlay
+                    }
+                    coroutineScope.launch {
+                        mapSearchMoreLoading = true
+                        mapSearchError = null
+                        when (
+                            val result = placesRepository.searchMorePlaces(
+                                query = query,
+                                focusLatitude = originLatitude,
+                                focusLongitude = originLongitude
+                            )
+                        ) {
+                            is ApiResult.Success -> {
+                                if (mapSearchText.trim() == query) {
+                                    mapSearchResults = mergeHomePlaceResults(
+                                        mapSearchResults,
+                                        result.data
+                                    ).take(12)
+                                    mapSearchExpanded = true
+                                }
+                            }
+                            is ApiResult.Failure -> {
+                                if (mapSearchText.trim() == query) {
+                                    mapSearchError = result.message
+                                }
+                            }
+                        }
+                        mapSearchMoreLoading = false
+                    }
                 },
                 onMapClick = { point ->
                     mapSelection = DestinationSearchResultDto(
@@ -741,10 +788,13 @@ private fun HomeMapPickerOverlay(
     searchText: String,
     searchResults: List<DestinationSearchResultDto>,
     isSearching: Boolean,
+    isSearchingMore: Boolean,
+    canSearchMore: Boolean,
     searchError: String?,
     originPoint: LatLng?,
     onSearchTextChange: (String) -> Unit,
     onSearchResultClick: (DestinationSearchResultDto) -> Unit,
+    onSearchMoreClick: () -> Unit,
     onMapClick: (LatLng) -> Unit,
     onBack: () -> Unit,
     onDone: () -> Unit
@@ -809,7 +859,7 @@ private fun HomeMapPickerOverlay(
                 )
             }
 
-            if (isSearching || searchError != null || searchResults.isNotEmpty()) {
+            if (isSearching || isSearchingMore || canSearchMore || searchError != null || searchResults.isNotEmpty()) {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -842,6 +892,34 @@ private fun HomeMapPickerOverlay(
                                 result.address?.takeIf { it.isNotBlank() }?.let { address ->
                                     Text(address, color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
+                            }
+                        }
+                    }
+                    when {
+                        isSearchingMore -> {
+                            Row(
+                                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(Modifier.size(16.dp), color = MapYellow, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(9.dp))
+                                Text("Searching more places...", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
+                            }
+                        }
+                        canSearchMore -> {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable(onClick = onSearchMoreClick)
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "More places...",
+                                    color = MapYellow,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
                             }
                         }
                     }
@@ -901,6 +979,38 @@ private fun HomeMapPickerOverlay(
         }
     }
 }
+
+private fun mergeHomePlaceResults(
+    existing: List<DestinationSearchResultDto>,
+    expanded: List<DestinationSearchResultDto>
+): List<DestinationSearchResultDto> {
+    val merged = mutableListOf<DestinationSearchResultDto>()
+    (existing + expanded).forEach { candidate ->
+        if (merged.none { current -> homePlacesLikelySame(current, candidate) }) {
+            merged += candidate
+        }
+    }
+    return merged
+}
+
+private fun homePlacesLikelySame(
+    first: DestinationSearchResultDto,
+    second: DestinationSearchResultDto
+): Boolean {
+    val firstName = normalizeHomePlaceText(first.name)
+    val secondName = normalizeHomePlaceText(second.name)
+    if (firstName.isEmpty() || firstName != secondName) return false
+
+    val closeCoordinates = abs(first.latitude - second.latitude) <= 0.002 &&
+        abs(first.longitude - second.longitude) <= 0.002
+    val firstAddress = normalizeHomePlaceText(first.address.orEmpty())
+    val secondAddress = normalizeHomePlaceText(second.address.orEmpty())
+    val sameAddress = firstAddress.isNotEmpty() && firstAddress == secondAddress
+    return closeCoordinates || sameAddress
+}
+
+private fun normalizeHomePlaceText(value: String): String =
+    value.lowercase().filter { it.isLetterOrDigit() }
 
 private fun recentIcon(commute: RecentCommute): String = when {
     commute.destination.contains("library", true) -> "▦"
