@@ -785,12 +785,13 @@ public partial class RoutingService
         GeneralizedCostFromTimeAndFare(timeSeconds, 0) +
         distanceMeters / 1_000 * WalkingFatiguePesosPerKilometer;
 
-    // prefix[i] = cheapest access strictly before i.
+    // prefix[i] = cheapest access strictly before i. Null entries are samples
+    // with no usable access at all and are simply skipped.
     private static (
         double[] Cost,
         AccessCandidate?[] Access)
         ComputePrefixMinAccess(
-            AccessCandidate[] access)
+            AccessCandidate?[] access)
     {
         var cost = new double[access.Length];
         var chosen = new AccessCandidate?[access.Length];
@@ -803,12 +804,10 @@ public partial class RoutingService
             cost[i] = bestCost;
             chosen[i] = bestAccess;
 
-            if (access[i].GeneralizedCostPesos < bestCost)
+            if (access[i] is { } option && option.GeneralizedCostPesos < bestCost)
             {
-                bestCost =
-                    access[i].GeneralizedCostPesos;
-
-                bestAccess = access[i];
+                bestCost = option.GeneralizedCostPesos;
+                bestAccess = option;
             }
         }
 
@@ -820,7 +819,7 @@ public partial class RoutingService
         double[] Cost,
         AccessCandidate?[] Access)
         ComputeSuffixMinAccess(
-            AccessCandidate[] access)
+            AccessCandidate?[] access)
     {
         var cost = new double[access.Length];
         var chosen = new AccessCandidate?[access.Length];
@@ -833,12 +832,10 @@ public partial class RoutingService
             cost[i] = bestCost;
             chosen[i] = bestAccess;
 
-            if (access[i].GeneralizedCostPesos < bestCost)
+            if (access[i] is { } option && option.GeneralizedCostPesos < bestCost)
             {
-                bestCost =
-                    access[i].GeneralizedCostPesos;
-
-                bestAccess = access[i];
+                bestCost = option.GeneralizedCostPesos;
+                bestAccess = option;
             }
         }
 

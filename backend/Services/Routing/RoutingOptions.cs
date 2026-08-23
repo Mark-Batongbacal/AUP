@@ -56,10 +56,37 @@ public sealed class RoutingOptions
     /// confirmed feeder distance before the feeder is considered to be chasing
     /// the same jeepney corridor. Once this threshold is crossed the farther
     /// board is a feeder replacing transit, not a network-access optimization,
-    /// so no fastest/cheapest advantage can excuse it (see
-    /// PruneConfirmedFeederShadowing / PruneConfirmedTransferBoardingShadowing).
+    /// so no fastest/cheapest advantage can excuse it. The same ratio governs
+    /// all three boundaries: origin boarding, transfer boarding, and
+    /// destination alighting (see RoutingService.FeederShadowing).
     /// </summary>
     public double FeederShadowingAccessDistanceRatio { get; init; } = 0.60;
+
+    /// <summary>
+    /// How far apart two boarding or alighting positions may sit along a
+    /// route while still counting as the same position when deciding whether
+    /// two journeys are the same journey.
+    ///
+    /// This is a TOLERANCE, not a bucket. Bucketing progress into fixed
+    /// windows split journeys a passenger would call identical whenever two
+    /// positions a few metres apart happened to straddle a window edge, and
+    /// those journeys were then never compared for feeder shadowing at all.
+    /// </summary>
+    public double FeederShadowEquivalentProgressToleranceMeters { get; init; } = 300;
+
+    /// <summary>
+    /// How many times its own jeepney distance a journey's feeder legs may
+    /// cover before the jeepney counts as a token gesture rather than
+    /// transport -- a 30 m jeepney hop wrapped in a 2 km tricycle.
+    ///
+    /// The default of 2 leaves plenty of room for ordinary feeder shapes (a
+    /// 500 m jeepney with a 400 m tricycle, or a 6 km jeepney with a 2 km
+    /// destination tricycle are both comfortably clear of it) and only fires
+    /// on journeys where the feeder modes are plainly making the trip. It is
+    /// applied only when a sensible alternative journey survives; see
+    /// PruneTokenTransitJourneys.
+    /// </summary>
+    public double TokenTransitJeepneyMultiple { get; init; } = 2;
 
     /// <summary>
     /// Jeepney distance a journey must carry before the jeepney counts as the
@@ -139,11 +166,13 @@ public sealed class RoutingOptions
             ValueOfTimePesosPerMinute < 0 || WalkingFatiguePesosPerKilometer < 0 ||
             JeepneyBoardingWaitTimeSeconds < 0 || JeepneyBaseFarePesos < 0 ||
             FeederShadowingMinProgressMeters < 0 ||
+            FeederShadowEquivalentProgressToleranceMeters < 0 ||
+            TokenTransitJeepneyMultiple <= 0 ||
             BoardingDiversityBucketMeters <= 0 ||
             JourneyLegContinuityToleranceMeters <= 0 ||
             string.IsNullOrWhiteSpace(TrikeCostingModel))
         {
-            error = "Routing distances, fares, and time values must be non-negative; speeds, sampling, diversity, and continuity values must be positive.";
+            error = "Routing distances, fares, and time values must be non-negative; speeds, sampling, diversity, token-transit, and continuity values must be positive.";
             return false;
         }
 

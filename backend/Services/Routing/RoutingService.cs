@@ -31,6 +31,10 @@ public partial class RoutingService : IRoutingService
         _options.FeederShadowingMinProgressMeters;
     private double FeederShadowingAccessDistanceRatio =>
         _options.FeederShadowingAccessDistanceRatio;
+    private double ProgressEqualityToleranceMeters =>
+        _options.FeederShadowEquivalentProgressToleranceMeters;
+    private double TokenTransitJeepneyMultiple =>
+        _options.TokenTransitJeepneyMultiple;
     private int MaxBoardingVariantsPerRoute => _options.MaxBoardingVariantsPerRoute;
     private double PrimaryJeepneyMinimumDistanceMeters =>
         _options.PrimaryJeepneyMinimumDistanceMeters;

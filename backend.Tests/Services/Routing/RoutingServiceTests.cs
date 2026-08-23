@@ -113,10 +113,19 @@ public sealed class RoutingServiceTests
             plan.RecommendationType.Split(',').Contains("cheapest"));
         Assert.Contains(plans, plan =>
             plan.RecommendationType.Split(',').Contains("fastest"));
+        // Access-mode diversity must survive pruning. Every boarding point on
+        // this corridor is more than MaxWalkAccessDistanceMeters from this
+        // origin, so the origin side is legitimately tricycle-only here; the
+        // destination side is close enough to walk. (Walking access to a
+        // jeepney used to be able to exceed that cap on transfer journeys
+        // only, because the prefix/suffix access minima skipped the check
+        // FindBestConnections applies -- see ConstrainTransitAccessOptions.)
         Assert.Contains(plans, plan => plan.OriginAccess.Mode ==
             backend.Models.Routing.AccessMode.Trike);
-        Assert.Contains(plans, plan => plan.OriginAccess.Mode ==
+        Assert.Contains(plans, plan => plan.DestinationAccess.Mode ==
             backend.Models.Routing.AccessMode.Walk);
+        Assert.Contains(plans, plan => plan.DestinationAccess.Mode ==
+            backend.Models.Routing.AccessMode.Trike);
     }
 
     [Fact]

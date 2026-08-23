@@ -613,6 +613,14 @@ public partial class RoutingService
         return alternatives[0] with { Alternatives = alternatives };
     }
 
+    /// <summary>
+    /// Applies <see cref="ConstrainTransitAccess"/> across a whole route's
+    /// per-sample access options. Samples left with no usable option become
+    /// null, which the prefix/suffix minima already treat as unavailable.
+    /// </summary>
+    private AccessCandidate?[] ConstrainTransitAccessOptions(AccessCandidate[] options) =>
+        options.Select(ConstrainTransitAccess).ToArray();
+
     private bool IsTransitAccessWithinLimit(JeepneyAccessSegment access) =>
         access.Mode != AccessMode.Walk ||
         access.WalkDistanceMeters <= MaxWalkAccessDistanceMeters;
