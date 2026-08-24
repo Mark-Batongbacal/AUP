@@ -416,6 +416,13 @@ private fun ProfileStatCard(stat: ProfileStat, modifier: Modifier = Modifier) {
 
 @Composable
 private fun AccountRowItem(row: ProfileAccountRow) {
+    val cleanGlyph = when (row.title) {
+        TukiInterfaceText.editProfile -> "♙"
+        TukiInterfaceText.language -> "◎"
+        TukiInterfaceText.settings -> "⚙"
+        else -> null
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -430,11 +437,19 @@ private fun AccountRowItem(row: ProfileAccountRow) {
                 .background(Color(0xFFFFF0D5), RoundedCornerShape(13.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Image(
-                painter = painterResource(row.iconRes),
-                contentDescription = row.title,
-                modifier = Modifier.size(28.dp)
-            )
+            if (cleanGlyph != null) {
+                Text(
+                    text = cleanGlyph,
+                    color = TukiInk,
+                    fontSize = 20.sp
+                )
+            } else {
+                Image(
+                    painter = painterResource(row.iconRes),
+                    contentDescription = row.title,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(14.dp))
