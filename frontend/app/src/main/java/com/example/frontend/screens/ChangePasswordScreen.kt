@@ -46,13 +46,13 @@ import com.example.frontend.data.TukiDataProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiCream2 = Color(0xFFFAEBC7)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiError = Color(0xFFB00020)
+private val TukiCream: Color get() = com.example.frontend.ui.theme.TukiCream
+private val TukiCream2: Color get() = com.example.frontend.ui.theme.TukiSky
+private val TukiDark: Color get() = com.example.frontend.ui.theme.TukiInk
+private val TukiGray: Color get() = com.example.frontend.ui.theme.TukiMuted
+private val TukiTeal: Color get() = com.example.frontend.ui.theme.TukiTeal
+private val TukiOrange: Color get() = com.example.frontend.ui.theme.TukiOrange
+private val TukiError: Color get() = com.example.frontend.ui.theme.TukiDanger
 
 private enum class ChangePasswordStage {
     CURRENT_PASSWORD,
@@ -222,28 +222,18 @@ fun ChangePasswordScreen(
                 value = currentPassword,
                 visible = currentPasswordVisible,
                 enabled = !isWorking && !isSuccess,
-                onValueChange = {
-                    currentPassword = it
-                    errorMessage = null
-                },
+                onValueChange = { currentPassword = it; errorMessage = null },
                 onVisibilityToggle = { currentPasswordVisible = !currentPasswordVisible }
             )
 
             ChangePasswordStage.OTP -> {
                 OtpCodeField(
                     code = otpCode,
-                    onCodeChange = {
-                        otpCode = it
-                        errorMessage = null
-                    },
+                    onCodeChange = { otpCode = it; errorMessage = null },
                     enabled = !isWorking && !isSuccess
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                OtpResendButton(
-                    sendGeneration = otpSendGeneration,
-                    enabled = !isWorking && !isSuccess,
-                    onResend = { requestOtp() }
-                )
+                OtpResendButton(sendGeneration = otpSendGeneration, enabled = !isWorking && !isSuccess, onResend = { requestOtp() })
             }
 
             ChangePasswordStage.NEW_PASSWORD -> {
@@ -252,10 +242,7 @@ fun ChangePasswordScreen(
                     value = newPassword,
                     visible = newPasswordVisible,
                     enabled = !isWorking && !isSuccess,
-                    onValueChange = {
-                        newPassword = it
-                        errorMessage = null
-                    },
+                    onValueChange = { newPassword = it; errorMessage = null },
                     onVisibilityToggle = { newPasswordVisible = !newPasswordVisible }
                 )
                 Spacer(modifier = Modifier.height(18.dp))
@@ -264,10 +251,7 @@ fun ChangePasswordScreen(
                     value = confirmPassword,
                     visible = confirmPasswordVisible,
                     enabled = !isWorking && !isSuccess,
-                    onValueChange = {
-                        confirmPassword = it
-                        errorMessage = null
-                    },
+                    onValueChange = { confirmPassword = it; errorMessage = null },
                     onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
                 )
             }
@@ -340,9 +324,7 @@ private fun PasswordField(
                     color = TukiTeal,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .padding(end = 12.dp)
-                        .clickable(enabled = enabled, onClick = onVisibilityToggle)
+                    modifier = Modifier.padding(end = 12.dp).clickable(enabled = enabled, onClick = onVisibilityToggle)
                 )
             },
             colors = TextFieldDefaults.colors(

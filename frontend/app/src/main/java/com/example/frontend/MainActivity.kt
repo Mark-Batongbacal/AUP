@@ -13,7 +13,9 @@ import androidx.compose.ui.platform.LocalContext
 import com.example.frontend.auth.FacebookSignInClient
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.navigation.AppNavigation
+import com.example.frontend.ui.theme.AppearancePreferences
 import com.example.frontend.ui.theme.FrontendTheme
+import com.example.frontend.ui.theme.TukiThemeRuntime
 
 class MainActivity : ComponentActivity() {
     private val facebookSignInClient = FacebookSignInClient()
@@ -22,8 +24,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        TukiThemeRuntime.darkMode = AppearancePreferences.isDarkMode(this)
+
         setContent {
-            FrontendTheme {
+            FrontendTheme(darkTheme = TukiThemeRuntime.darkMode) {
                 TukiApp(facebookSignInClient)
             }
         }

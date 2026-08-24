@@ -8,6 +8,12 @@ namespace backend.Services.Authentication.ApiKey;
 public interface IApiKeyService
 {
     IssuedApiKey Create(string userName);
+
+    // Guest access needs a fixed lifetime without changing the configured lifetime used by
+    // existing password/social logins. Implementations that only support the legacy method keep
+    // their existing behavior via this default interface implementation.
+    IssuedApiKey Create(string userName, TimeSpan lifetime) => Create(userName);
+
     bool TryGetOwner(string apiKey, out string? userName);
 }
 
@@ -18,9 +24,13 @@ public sealed class InMemoryApiKeyService(IOptions<LoginOptions> options) : IApi
     private readonly ConcurrentDictionary<string, ApiKeyEntry> _keys = new();
     private readonly LoginOptions _options = options.Value;
 
-    public IssuedApiKey Create(string userName)
+    public IssuedApiKey Create(string userName) =>
+        Create(userName, TimeSpan.FromHours(Math.Max(1, _options.ApiKeyLifetimeHours)));
+
+    public IssuedApiKey Create(string userName, TimeSpan lifetime)
     {
-        var expiresAt = DateTimeOffset.UtcNow.AddHours(Math.Max(1, _options.ApiKeyLifetimeHours));
+        var safeLifetime = lifetime > TimeSpan.Zero ? lifetime : TimeSpan.FromHours(1);
+        var expiresAt = DateTimeOffset.UtcNow.Add(safeLifetime);
         var key = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
         _keys[key] = new ApiKeyEntry(userName, expiresAt);

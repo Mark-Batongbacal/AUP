@@ -168,6 +168,7 @@ public sealed class TripSessionRepositoryTests
                     CancelledAt TEXT NULL,
                     OriginalBudget TEXT NULL,
                     OriginalPreference TEXT NULL,
+                    ApproxFareSpent TEXT NOT NULL DEFAULT '0',
                     LastRerouteAt TEXT NULL,
                     RerouteCount INTEGER NOT NULL,
                     CreatedAt TEXT NOT NULL,

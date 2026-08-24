@@ -25,6 +25,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiOrangeSurface
+import com.example.frontend.ui.theme.TukiSky
 
 @Composable
 fun OtpCodeField(
@@ -63,14 +66,14 @@ fun OtpCodeField(
                             modifier = Modifier
                                 .size(width = 34.dp, height = 50.dp)
                                 .background(
-                                    color = if (isCurrent) Color(0xFFFFE9C4) else Color(0xFFFFF3D8),
+                                    color = if (isCurrent) TukiOrangeSurface else TukiSky,
                                     shape = RoundedCornerShape(11.dp)
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = digit,
-                                color = Color(0xFF173B43),
+                                color = TukiInk,
                                 fontSize = 20.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )

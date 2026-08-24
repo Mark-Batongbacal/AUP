@@ -123,7 +123,7 @@ class NavigationRepositoryTest {
     }
 
     @Test
-    fun repository_defaultConfirmationBurstSendsFiveSamplesThenReturnsLocal() = runBlocking {
+    fun repository_defaultConfirmationBurstSendsTwoSamplesThenReturnsLocal() = runBlocking {
         NavigationSyncSignal.reset()
         val api = FakeNavigationApi(snapshot())
         val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
@@ -142,7 +142,7 @@ class NavigationRepositoryTest {
             )
         }
 
-        assertEquals(5, api.locationCalls)
+        assertEquals(2, api.locationCalls)
         NavigationSyncSignal.reset()
     }
 
@@ -210,7 +210,9 @@ class NavigationRepositoryTest {
           "currentLegInstructions":[{"sequence":1,"type":"TurnRight","legIndex":0,"text":"Turn right.","streetName":"Mabini Street","latitude":15.02,"longitude":120.02,"distanceFromLegStartMeters":300.0,"triggerDistanceMeters":30.0,"requiresConfirmation":false}],
           "currentLegLandmarks":[{"name":"Jollibee","category":"fast_food","role":"PROGRESS_REFERENCE","relation":"ALONG_ROUTE","latitude":15.05,"longitude":120.05,"distanceFromTargetMeters":0.0,"triggerBeforeMeters":20.0,"triggerAfterMeters":20.0}],
           "requiresBoardingConfirmation":false,"requiresAlightingConfirmation":true,"rerouteRequired":false,
-          "status":"ApproachingAlightPoint","triggeredEvents":[]
+          "status":"ApproachingAlightPoint","triggeredEvents":[],
+          "currentLatitude":null,"currentLongitude":null,
+          "approxFareSpent":0.0,"estimatedRemainingFare":0.0
         }"""
 
         fun snapshot(): NavigationSnapshotDto = Gson().fromJson(

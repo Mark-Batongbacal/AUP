@@ -8,6 +8,8 @@ namespace backend.Services;
 public sealed class UserProfileService(IUserProfileRepository userProfileRepository) : IUserProfileService
 {
     private const string DefaultRole = "Passenger";
+    private const string GuestRole = "Guest";
+    private const string GuestProvider = "guest";
     private const int MaxCredentialOwnerLength = 255;
     private const int MaxProviderLength = 50;
     private const int MaxExternalAuthIdLength = 255;
@@ -60,6 +62,37 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
                 profile.UserId,
                 profile.Email,
                 Map(profile)));
+    }
+
+    public async Task<UserProfileAuthenticationResult> CreateGuestProfileAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // Every guest receives a unique identity so active navigation, favorites and history are
+        // isolated exactly like registered users. No password or real email is created.
+        var guestSubject = Guid.NewGuid().ToString("N");
+        var credentialOwner = CreateExternalCredentialOwner(GuestProvider, guestSubject);
+        var now = DateTime.UtcNow;
+        var profile = await _userProfileRepository.AddOrUpdateAsync(new UserProfile
+        {
+            UserId = Guid.NewGuid(),
+            ExternalAuthProvider = GuestProvider,
+            ExternalAuthId = guestSubject,
+            Email = credentialOwner,
+            FirstName = "Guest",
+            LastName = null,
+            PhoneNumber = null,
+            Role = GuestRole,
+            PreferredLanguage = TukiLanguage.English,
+            IsActive = true,
+            IsEmailVerified = false,
+            CreatedAt = now,
+            UpdatedAt = now,
+        }, cancellationToken);
+
+        return new UserProfileAuthenticationResult(
+            profile.UserId,
+            credentialOwner,
+            Map(profile));
     }
 
     public async Task<UserProfileAuthenticationResult?> CreateOrUpdateExternalProfileAsync(
@@ -348,7 +381,7 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
 
         provider = credentialOwner[..separatorIndex];
         providerSubject = credentialOwner[(separatorIndex + 1)..];
-        return provider is "facebook" or "google";
+        return provider is "facebook" or "google" or GuestProvider;
     }
 
     private static NameParts SplitDisplayName(string? displayName)

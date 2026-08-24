@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -20,10 +19,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -33,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
@@ -43,15 +43,16 @@ import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.users.UpdateUserProfileRequest
 import com.example.frontend.data.users.UserProfileDto
-import kotlinx.coroutines.launch
-
-import androidx.compose.material3.MaterialTheme
-import com.example.frontend.ui.theme.TukiTeal
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiTeal
+import java.time.Duration
+import java.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 data class ProfileStat(val value: String, val label: String)
 
@@ -91,11 +92,34 @@ fun ProfileScreen(
 
     var page by remember { mutableStateOf(ProfilePage.OVERVIEW) }
     var loadedProfile by remember { mutableStateOf<UserProfileDto?>(null) }
+    var guestClockTick by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
         when (val result = dataProvider.userRepository.getCurrentUser()) {
             is ApiResult.Success -> loadedProfile = result.data
             is ApiResult.Failure -> Unit
+        }
+    }
+
+    val isGuest = loadedProfile?.role.equals("Guest", ignoreCase = true) ||
+        userName.equals("Guest", ignoreCase = true)
+
+    LaunchedEffect(isGuest) {
+        if (!isGuest) return@LaunchedEffect
+        while (true) {
+            delay(60_000)
+            guestClockTick++
+        }
+    }
+
+    LaunchedEffect(isGuest, page) {
+        if (isGuest && page in setOf(
+                ProfilePage.EDIT_PROFILE,
+                ProfilePage.PRIVACY_SECURITY,
+                ProfilePage.CHANGE_PASSWORD
+            )
+        ) {
+            page = ProfilePage.OVERVIEW
         }
     }
 
@@ -106,11 +130,18 @@ fun ProfileScreen(
         ).joinToString(" ")
     }?.takeIf { it.isNotBlank() } ?: userName
 
-    val displayEmail = loadedProfile?.email?.takeIf { it.isNotBlank() } ?: userEmail
+    val displayEmail = if (isGuest) {
+        "Temporary guest account"
+    } else {
+        loadedProfile?.email?.takeIf { it.isNotBlank() } ?: userEmail
+    }
     val displayPhone = loadedProfile?.phoneNumber.orEmpty()
     val currentLanguage = when (loadedProfile?.preferredLanguage?.trim()?.lowercase()) {
         "filipino", "tagalog" -> LanguageOption.FILIPINO
         else -> LanguageOption.ENGLISH
+    }
+    val guestRemaining = remember(isGuest, guestClockTick) {
+        if (isGuest) guestRemainingText(dataProvider.sessionStore.validSession()?.expiresAt) else null
     }
 
     when (page) {
@@ -230,26 +261,42 @@ fun ProfileScreen(
             .joinToString("")
     }
 
-    val accountRows = listOf(
-        ProfileAccountRow(
-            R.drawable.edit_profile,
-            "Edit Profile",
-            "Name, email, phone",
-            { page = ProfilePage.EDIT_PROFILE }
-        ),
-        ProfileAccountRow(
-            R.drawable.privacy,
-            "Privacy & Security",
-            "Password, data settings",
-            { page = ProfilePage.PRIVACY_SECURITY }
-        ),
-        ProfileAccountRow(
-            R.drawable.language,
-            "Language",
-            currentLanguage.title,
-            { page = ProfilePage.LANGUAGE }
+    val accountRows = buildList {
+        if (!isGuest) {
+            add(
+                ProfileAccountRow(
+                    R.drawable.edit_profile,
+                    "Edit Profile",
+                    "Name, email, phone",
+                    { page = ProfilePage.EDIT_PROFILE }
+                )
+            )
+            add(
+                ProfileAccountRow(
+                    R.drawable.privacy,
+                    "Privacy & Security",
+                    "Password, data settings",
+                    { page = ProfilePage.PRIVACY_SECURITY }
+                )
+            )
+        }
+        add(
+            ProfileAccountRow(
+                R.drawable.language,
+                "Language",
+                currentLanguage.title,
+                { page = ProfilePage.LANGUAGE }
+            )
         )
-    )
+        add(
+            ProfileAccountRow(
+                R.drawable.edit_profile,
+                "Settings",
+                "Appearance and app preferences",
+                onEditProfileClick
+            )
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -290,7 +337,31 @@ fun ProfileScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = displayEmail, color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
+                }
+            }
+
+            if (isGuest) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(TukiOrange.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = "Guest Mode · ${guestRemaining ?: "24-hour access"}",
+                            color = TukiInk,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Your guest access is temporary. Sign up for an account if you want to use TUKI without the guest time limit.",
+                            color = TukiMuted,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(18.dp))
                 }
             }
 
@@ -342,6 +413,18 @@ fun ProfileScreen(
             onProfileClick = {}
         )
     }
+}
+
+private fun guestRemainingText(expiresAt: String?): String {
+    val expiration = expiresAt?.let { value -> runCatching { Instant.parse(value) }.getOrNull() }
+        ?: return "24-hour access"
+    val remaining = Duration.between(Instant.now(), expiration)
+    if (remaining.isZero || remaining.isNegative) return "expired"
+
+    val totalMinutes = remaining.toMinutes().coerceAtLeast(1)
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "${hours}h ${minutes}m remaining" else "${minutes}m remaining"
 }
 
 @Composable

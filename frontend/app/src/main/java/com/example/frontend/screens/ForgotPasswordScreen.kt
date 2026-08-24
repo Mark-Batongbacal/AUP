@@ -55,6 +55,7 @@ import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 
 private enum class ForgotPasswordStage {
     EMAIL,
@@ -151,7 +152,7 @@ fun ForgotPasswordScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .background(Color.White)
+            .background(TukiCream)
             .statusBarsPadding()
             .padding(start = 34.dp, end = 34.dp, top = 12.dp, bottom = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -163,7 +164,7 @@ fun ForgotPasswordScreen(
             Box(
                 modifier = Modifier
                     .size(38.dp)
-                    .background(TukiCream, RoundedCornerShape(12.dp))
+                    .background(TukiSurfaceRaised, RoundedCornerShape(12.dp))
                     .clickable(enabled = !isWorking) {
                         when (stage) {
                             ForgotPasswordStage.EMAIL -> onBack()
@@ -331,9 +332,9 @@ private fun ResetTextField(
             shape = RoundedCornerShape(15.dp),
             visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             colors = TextFieldDefaults.colors(
-                focusedContainerColor = TukiCream,
-                unfocusedContainerColor = TukiCream,
-                disabledContainerColor = TukiCream,
+                focusedContainerColor = TukiSurfaceRaised,
+                unfocusedContainerColor = TukiSurfaceRaised,
+                disabledContainerColor = TukiSurfaceRaised.copy(alpha = 0.65f),
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
                 disabledIndicatorColor = Color.Transparent,

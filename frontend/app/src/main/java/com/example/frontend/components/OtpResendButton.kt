@@ -8,8 +8,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiTeal
 import kotlinx.coroutines.delay
 
 private const val OtpResendCooldownSeconds = 180
@@ -45,7 +46,7 @@ fun OtpResendButton(
     ) {
         Text(
             text = label,
-            color = if (enabled && secondsRemaining == 0) Color(0xFF15919B) else Color(0xFF9AA6A9),
+            color = if (enabled && secondsRemaining == 0) TukiTeal else TukiMuted,
             fontWeight = FontWeight.Bold
         )
     }

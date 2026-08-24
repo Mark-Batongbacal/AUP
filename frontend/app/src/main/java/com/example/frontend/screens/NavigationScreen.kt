@@ -39,14 +39,14 @@ import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 import kotlin.math.roundToInt
 
-private val NavBg = com.example.frontend.ui.theme.TukiCream
-private val NavSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
-private val NavDark = com.example.frontend.ui.theme.TukiInk
-private val NavTeal = com.example.frontend.ui.theme.TukiTeal
-private val NavMuted = com.example.frontend.ui.theme.TukiMuted
-private val NavOrange = com.example.frontend.ui.theme.TukiGold
-private val NavIconBlue = com.example.frontend.ui.theme.TukiSky
-private val NavTip = com.example.frontend.ui.theme.TukiForestSurface
+private val NavBg: Color get() = com.example.frontend.ui.theme.TukiCream
+private val NavSurface: Color get() = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val NavDark: Color get() = com.example.frontend.ui.theme.TukiInk
+private val NavTeal: Color get() = com.example.frontend.ui.theme.TukiTeal
+private val NavMuted: Color get() = com.example.frontend.ui.theme.TukiMuted
+private val NavOrange: Color get() = com.example.frontend.ui.theme.TukiGold
+private val NavIconBlue: Color get() = com.example.frontend.ui.theme.TukiSky
+private val NavTip: Color get() = com.example.frontend.ui.theme.TukiForestSurface
 private const val RoutePreviewListIndex = 3
 
 @Composable
@@ -369,7 +369,9 @@ private fun RoutePreviewCard(
                 startPoint = startPoint,
                 selectedDestination = destinationPoint,
                 finalDestination = finalDestination,
-                futureRouteSegments = contextualLegs,
+                futureRouteSegments = if (selectedStep == null) contextualLegs else emptyList(),
+                transitRoutes = emptyList(),
+                todaPoints = emptyList(),
                 visualStyle = MapVisualStyle.LiveTrip,
                 showDeviceLocation = false,
                 fitRouteBounds = true,
