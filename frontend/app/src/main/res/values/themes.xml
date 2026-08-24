@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Frontend" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Frontend" parent="android:Theme.Material.Light.NoActionBar">
+        <!--
+            MapLibre defaults to SurfaceView rendering. SurfaceView owns a separate Android
+            rendering surface, which can leave stale/ghost frames when it is embedded in
+            Compose screens that are clipped, layered, or transitioned. TextureView stays in
+            the normal view hierarchy, so map frames compose and tear down with the screen.
+
+            This changes only the renderer used by MapView; route data, camera behavior,
+            location tracking, gestures, lifecycle callbacks, and map styling remain unchanged.
+        -->
+        <item name="maplibre_renderTextureMode">true</item>
+    </style>
 </resources>
