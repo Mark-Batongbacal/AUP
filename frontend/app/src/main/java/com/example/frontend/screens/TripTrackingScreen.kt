@@ -295,6 +295,9 @@ fun TripTrackingScreen(
         ?: snapshot?.let {
             if (it.currentLatitude != null && it.currentLongitude != null) LatLng(it.currentLatitude, it.currentLongitude) else null
         }
+    val navigationMarkerPosition = localProgress?.matchedLocation
+        ?.let { LatLng(it.latitude, it.longitude) }
+        ?: currentPosition
     val visibleRoute = if (localProgress != null) {
         localProgress!!.remainingRoute.map { LatLng(it.latitude, it.longitude) }
     } else {
@@ -335,7 +338,7 @@ fun TripTrackingScreen(
     ) {
         LiveTripMapScreen(
             routePoints = visibleRoute,
-            currentPosition = currentPosition,
+            currentPosition = navigationMarkerPosition,
             legDestination = if (effectiveRerouted) leg?.let { current ->
                 if (current.endLatitude != null && current.endLongitude != null) LatLng(current.endLatitude, current.endLongitude) else null
             } else legDestination,
