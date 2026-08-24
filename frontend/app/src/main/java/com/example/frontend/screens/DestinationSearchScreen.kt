@@ -6,20 +6,26 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,7 +43,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,15 +59,19 @@ import com.example.frontend.data.places.PlacesRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
+import kotlin.math.abs
 
-private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
-private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
-private val TukiCream = com.example.frontend.ui.theme.TukiCream
-private val TukiCream2 = com.example.frontend.ui.theme.TukiOrangeSurface
-private val TukiSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
-private val TukiSoft = com.example.frontend.ui.theme.TukiTealSurface
-private val TukiDark = com.example.frontend.ui.theme.TukiInk
-private val TukiGray = com.example.frontend.ui.theme.TukiMuted
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiSurfaceRaised
+import com.example.frontend.ui.theme.TukiTealSurface
+import com.example.frontend.ui.theme.TukiOrangeSurface
 
 private enum class MapPickMode {
     Origin,
@@ -80,6 +92,7 @@ fun DestinationSearchScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
 
     var originText by remember { mutableStateOf(origin) }
     var destinationText by remember { mutableStateOf("") }
@@ -95,6 +108,8 @@ fun DestinationSearchScreen(
     var selectedDestination by remember { mutableStateOf<DestinationSearchResultDto?>(null) }
     var searchResults by remember { mutableStateOf<List<DestinationSearchResultDto>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+    var isSearchingMore by remember { mutableStateOf(false) }
+    var hasExpandedSearch by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var showUnsupportedLocationDialog by remember { mutableStateOf(false) }
 
@@ -190,11 +205,15 @@ fun DestinationSearchScreen(
         if (query.length < 2 || selectedDestination?.name == query) {
             searchResults = emptyList()
             searchError = null
+            isSearchingMore = false
+            hasExpandedSearch = false
             return@LaunchedEffect
         }
 
         delay(350)
         isSearching = true
+        isSearchingMore = false
+        hasExpandedSearch = false
         searchError = null
 
         when (
@@ -234,7 +253,7 @@ fun DestinationSearchScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(TukiDark.copy(alpha = 0.35f)),
+                .background(TukiInk.copy(alpha = 0.35f)),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -250,15 +269,13 @@ fun DestinationSearchScreen(
                 ) {
                     Text(
                         text = if (isPickingOrigin) "Pick origin" else "Pick destination",
-                        color = TukiDark,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        color = TukiInk,
+                        style = MaterialTheme.typography.titleLarge
                     )
                     Text(
                         text = "✕",
-                        color = TukiDark,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
+                        color = TukiInk,
+                        style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.clickable { showMap = false }
                     )
                 }
@@ -275,7 +292,7 @@ fun DestinationSearchScreen(
                         routePoints = emptyList(),
                         modifier = Modifier.fillMaxSize(),
                         startPoint = mapOriginPoint,
-                        selectedDestination = if (!isPickingOrigin) selectedDestination?.let {
+                        finalDestination = if (!isPickingOrigin) selectedDestination?.let {
                             LatLng(it.latitude, it.longitude)
                         } else null,
                         onMapClick = { point ->
@@ -318,8 +335,8 @@ fun DestinationSearchScreen(
                             "📍 ${it.name} · %.5f, %.5f".format(it.latitude, it.longitude)
                         } ?: "Tap the map to choose a destination"
                     },
-                    color = TukiGray,
-                    fontSize = 13.sp
+                    color = TukiMuted,
+                    style = MaterialTheme.typography.bodySmall
                 )
 
                 if ((isPickingOrigin && mapOriginPoint != null) ||
@@ -371,25 +388,21 @@ fun DestinationSearchScreen(
                         .clickable(onClick = onBack),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("‹", color = TukiDark, fontSize = 25.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("‹", color = TukiInk, style = MaterialTheme.typography.displaySmall)
                 }
                 Spacer(Modifier.width(12.dp))
                 Text(
                     "Where are you going?",
-                    color = TukiDark,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                    color = TukiInk,
+                    style = MaterialTheme.typography.displaySmall
                 )
             }
 
             Spacer(Modifier.height(8.dp))
             Text(
                 "Set your pickup and destination in one place, then TUKI will find your best commute options.",
-                color = TukiGray,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.Medium
+                color = TukiMuted,
+                style = MaterialTheme.typography.bodySmall
             )
 
             Spacer(Modifier.height(20.dp))
@@ -397,21 +410,35 @@ fun DestinationSearchScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
-                color = TukiSurface,
+                color = TukiSurfaceRaised,
                 shadowElevation = 3.dp
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .width(13.dp)
+                                .fillMaxHeight()
+                                .padding(top = 42.dp, bottom = 42.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             RouteDot(TukiTeal)
-                            Box(Modifier.width(2.dp).height(118.dp).background(TukiTeal.copy(alpha = 0.35f)))
+                            Box(
+                                Modifier
+                                    .width(2.dp)
+                                    .weight(1f)
+                                    .background(TukiTeal.copy(alpha = 0.35f))
+                            )
                             RouteDot(TukiOrange)
                         }
 
                         Spacer(Modifier.width(13.dp))
 
                         Column(Modifier.weight(1f)) {
-                            Text("PICKUP", color = TukiTeal, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("PICKUP", color = TukiTeal, style = MaterialTheme.typography.labelSmall)
                             Spacer(Modifier.height(6.dp))
                             TextField(
                                 value = originText,
@@ -422,10 +449,29 @@ fun DestinationSearchScreen(
                                         currentLongitude = null
                                     }
                                 },
-                                placeholder = { Text("Current location or pickup", color = TukiGray, fontSize = 14.sp) },
+                                placeholder = { Text("Current location or pickup", color = TukiMuted, style = MaterialTheme.typography.bodyMedium) },
                                 singleLine = true,
+                                trailingIcon = {
+                                    if (originText.isNotEmpty()) {
+                                        Text(
+                                            "✕",
+                                            color = TukiMuted,
+                                            fontSize = 18.sp,
+                                            modifier = Modifier
+                                                .padding(end = 8.dp)
+                                                .clickable { 
+                                                    originText = ""
+                                                    currentLatitude = null
+                                                    currentLongitude = null
+                                                }
+                                        )
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                                 colors = tukiTextFieldColors(),
                                 shape = RoundedCornerShape(16.dp),
+                                textStyle = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -434,39 +480,48 @@ fun DestinationSearchScreen(
                                 SmallActionButton("Use current", TukiTeal) {
                                     coroutineScope.launch { useCurrentDeviceLocation() }
                                 }
-                                SmallActionButton("Pick on map", TukiDark) {
+                                SmallActionButton("Pick on map", TukiInk) {
                                     mapPickMode = MapPickMode.Origin
                                     showMap = true
                                 }
                             }
 
                             if (isSearchingOrigin) InlineSearchStatus("Searching pickup...")
-                            originSearchResults.forEach { result ->
-                                SearchResultRow(
-                                    result = result,
-                                    onClick = {
-                                        currentLatitude = result.latitude
-                                        currentLongitude = result.longitude
-                                        currentLocationLabel = result.name
-                                        originText = result.name
-                                        originSearchResults = emptyList()
-                                        locationError = null
-                                        validateSupported(result.latitude, result.longitude)
-                                    }
-                                )
+                            
+                            val originScrollState = rememberScrollState()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = if (originSearchResults.isNotEmpty()) 240.dp else 0.dp)
+                                    .verticalScroll(originScrollState)
+                            ) {
+                                originSearchResults.forEach { result ->
+                                    SearchResultRow(
+                                        result = result,
+                                        onClick = {
+                                            currentLatitude = result.latitude
+                                            currentLongitude = result.longitude
+                                            currentLocationLabel = result.name
+                                            originText = result.name
+                                            originSearchResults = emptyList()
+                                            locationError = null
+                                            validateSupported(result.latitude, result.longitude)
+                                        }
+                                    )
+                                }
                             }
+                            
                             originSearchError?.let { InlineError(it) }
                             locationError?.let { InlineError(it) }
 
                             Spacer(Modifier.height(18.dp))
 
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text("DESTINATION", Modifier.weight(1f), color = TukiOrange, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("DESTINATION", Modifier.weight(1f), color = TukiOrange, style = MaterialTheme.typography.labelSmall)
                                 Text(
                                     "Map",
                                     color = TukiTeal,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.ExtraBold,
+                                    style = MaterialTheme.typography.labelLarge,
                                     modifier = Modifier.clickable {
                                         mapPickMode = MapPickMode.Destination
                                         showMap = true
@@ -480,23 +535,93 @@ fun DestinationSearchScreen(
                                     destinationText = value
                                     if (selectedDestination?.name != value) selectedDestination = null
                                 },
-                                placeholder = { Text("Search or enter a place", color = TukiGray, fontSize = 14.sp) },
+                                placeholder = { Text("Search or enter a place", color = TukiMuted, style = MaterialTheme.typography.bodyMedium) },
                                 singleLine = true,
+                                trailingIcon = {
+                                    if (destinationText.isNotEmpty()) {
+                                        Text(
+                                            "✕",
+                                            color = TukiMuted,
+                                            fontSize = 18.sp,
+                                            modifier = Modifier
+                                                .padding(end = 8.dp)
+                                                .clickable { 
+                                                    destinationText = ""
+                                                    selectedDestination = null
+                                                }
+                                        )
+                                    }
+                                },
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                                 colors = tukiTextFieldColors(),
                                 shape = RoundedCornerShape(16.dp),
+                                textStyle = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.fillMaxWidth()
                             )
 
                             if (isSearching) InlineSearchStatus("Searching places...")
-                            searchResults.forEach { result ->
-                                SearchResultRow(
-                                    result = result,
-                                    onClick = {
-                                        selectedDestination = result
-                                        destinationText = result.name
-                                        searchResults = emptyList()
-                                        validateSupported(result.latitude, result.longitude)
-                                    }
+
+                            val destinationScrollState = rememberScrollState()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = if (searchResults.isNotEmpty()) 280.dp else 0.dp)
+                                    .verticalScroll(destinationScrollState)
+                            ) {
+                                searchResults.forEach { result ->
+                                    SearchResultRow(
+                                        result = result,
+                                        onClick = {
+                                            selectedDestination = result
+                                            destinationText = result.name
+                                            searchResults = emptyList()
+                                            validateSupported(result.latitude, result.longitude)
+                                        }
+                                    )
+                                }
+                            }
+
+                            if (isSearchingMore) {
+                                InlineSearchStatus("Searching more places...")
+                            } else if (!isSearching && !hasExpandedSearch && searchResults.isNotEmpty()) {
+                                Text(
+                                    text = "More places...",
+                                    color = TukiTeal,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier
+                                        .padding(top = 10.dp)
+                                        .clickable {
+                                            val query = destinationText.trim()
+                                            if (query.length < 2) return@clickable
+                                            coroutineScope.launch {
+                                                isSearchingMore = true
+                                                searchError = null
+                                                when (
+                                                    val result = placesRepository.searchMorePlaces(
+                                                        query = query,
+                                                        focusLatitude = currentLatitude,
+                                                        focusLongitude = currentLongitude
+                                                    )
+                                                ) {
+                                                    is ApiResult.Success -> {
+                                                        if (destinationText.trim() == query) {
+                                                            searchResults = mergePlaceResults(
+                                                                searchResults,
+                                                                result.data
+                                                            ).take(12)
+                                                            hasExpandedSearch = true
+                                                        }
+                                                    }
+                                                    is ApiResult.Failure -> {
+                                                        if (destinationText.trim() == query) {
+                                                            searchError = result.message
+                                                        }
+                                                    }
+                                                }
+                                                isSearchingMore = false
+                                            }
+                                        }
                                 )
                             }
                             searchError?.let { InlineError(it) }
@@ -505,8 +630,8 @@ fun DestinationSearchScreen(
                                 Spacer(Modifier.height(8.dp))
                                 Text(
                                     address,
-                                    color = TukiGray,
-                                    fontSize = 12.sp,
+                                    color = TukiMuted,
+                                    style = MaterialTheme.typography.bodySmall,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -517,18 +642,16 @@ fun DestinationSearchScreen(
             }
 
             Spacer(Modifier.height(16.dp))
-            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiSoft) {
+            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiTealSurface) {
                 Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
                     Box(Modifier.size(28.dp).background(TukiTeal, CircleShape), contentAlignment = Alignment.Center) {
-                        Text("i", color = Color.White, fontWeight = FontWeight.Bold)
+                        Text("i", color = Color.White, style = MaterialTheme.typography.labelLarge)
                     }
                     Spacer(Modifier.width(11.dp))
                     Text(
                         "Tip: choose pickup first if you are not starting from your current location.",
-                        color = TukiDark,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        fontWeight = FontWeight.SemiBold
+                        color = TukiInk,
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
@@ -570,12 +693,43 @@ fun DestinationSearchScreen(
                     "Find Routes"
                 },
                 color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.ExtraBold
+                style = MaterialTheme.typography.titleMedium
             )
         }
     }
 }
+
+private fun mergePlaceResults(
+    existing: List<DestinationSearchResultDto>,
+    expanded: List<DestinationSearchResultDto>
+): List<DestinationSearchResultDto> {
+    val merged = mutableListOf<DestinationSearchResultDto>()
+    (existing + expanded).forEach { candidate ->
+        if (merged.none { current -> likelySamePlace(current, candidate) }) {
+            merged += candidate
+        }
+    }
+    return merged
+}
+
+private fun likelySamePlace(
+    first: DestinationSearchResultDto,
+    second: DestinationSearchResultDto
+): Boolean {
+    val firstName = normalizePlaceText(first.name)
+    val secondName = normalizePlaceText(second.name)
+    if (firstName.isEmpty() || firstName != secondName) return false
+
+    val closeCoordinates = abs(first.latitude - second.latitude) <= 0.002 &&
+        abs(first.longitude - second.longitude) <= 0.002
+    val firstAddress = normalizePlaceText(first.address.orEmpty())
+    val secondAddress = normalizePlaceText(second.address.orEmpty())
+    val sameAddress = firstAddress.isNotEmpty() && firstAddress == secondAddress
+    return closeCoordinates || sameAddress
+}
+
+private fun normalizePlaceText(value: String): String =
+    value.lowercase().filter { it.isLetterOrDigit() }
 
 @Composable
 private fun RouteDot(color: Color) {
@@ -601,7 +755,7 @@ private fun SearchResultRow(result: DestinationSearchResultDto, onClick: () -> U
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
-            .background(TukiSoft, RoundedCornerShape(14.dp))
+            .background(TukiTealSurface, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -611,9 +765,9 @@ private fun SearchResultRow(result: DestinationSearchResultDto, onClick: () -> U
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(result.name, color = TukiDark, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(result.name, color = TukiInk, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             result.address?.takeIf { it.isNotBlank() }?.let { address ->
-                Text(address, color = TukiGray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(address, color = TukiMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -627,7 +781,7 @@ private fun InlineSearchStatus(text: String) {
     ) {
         CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp, color = TukiTeal)
         Spacer(Modifier.width(8.dp))
-        Text(text, color = TukiGray, fontSize = 12.sp)
+        Text(text, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -649,6 +803,6 @@ private fun tukiTextFieldColors() = TextFieldDefaults.colors(
     focusedIndicatorColor = Color.Transparent,
     unfocusedIndicatorColor = Color.Transparent,
     disabledIndicatorColor = Color.Transparent,
-    focusedTextColor = TukiDark,
-    unfocusedTextColor = TukiDark
+    focusedTextColor = TukiInk,
+    unfocusedTextColor = TukiInk
 )

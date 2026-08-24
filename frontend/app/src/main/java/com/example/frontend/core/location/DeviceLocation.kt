@@ -12,8 +12,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
-private const val FreshLocationTimeoutMillis = 5_000L
-private const val CachedLocationMaxAgeMillis = 15_000L
+private const val FreshLocationTimeoutMillis = 1_500L
+private const val ImmediateCachedLocationMaxAgeMillis = 2_000L
+private const val CachedLocationMaxAgeMillis = 10_000L
 
 fun Context.hasDeviceLocationPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -31,16 +32,22 @@ suspend fun Context.currentDeviceLocation(): Location? {
         else -> providers.firstOrNull()
     } ?: return null
 
+    val now = System.currentTimeMillis()
+    val cached = providers
+        .mapNotNull { candidate -> runCatching { manager.getLastKnownLocation(candidate) }.getOrNull() }
+        .filter { it.time > 0L }
+        .maxByOrNull { it.time }
+
+    if (cached != null && now - cached.time <= ImmediateCachedLocationMaxAgeMillis) {
+        return cached
+    }
+
     val fresh = withTimeoutOrNull(FreshLocationTimeoutMillis) {
         manager.awaitFreshLocation(provider)
     }
     if (fresh != null) return fresh
 
-    val now = System.currentTimeMillis()
-    return providers
-        .mapNotNull { candidate -> runCatching { manager.getLastKnownLocation(candidate) }.getOrNull() }
-        .filter { it.time > 0L && now - it.time <= CachedLocationMaxAgeMillis }
-        .maxByOrNull { it.time }
+    return cached?.takeIf { now - it.time <= CachedLocationMaxAgeMillis }
 }
 
 @SuppressLint("MissingPermission")

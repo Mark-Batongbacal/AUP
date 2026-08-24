@@ -54,13 +54,24 @@ interface UserRepository {
 class UserRepositoryImpl(
     private val api: UsersApi,
     private val sessionStore: AuthSessionStore,
-    private val errors: ApiErrorParser
+    private val errors: ApiErrorParser,
+    private val onPreferredLanguageChanged: (String) -> Unit = {}
 ) : UserRepository {
-    override suspend fun getCurrentUser() =
-        authenticatedApiCall(sessionStore, errors) { api.getCurrentUser() }
+    override suspend fun getCurrentUser(): ApiResult<UserProfileDto> {
+        val result = authenticatedApiCall(sessionStore, errors) { api.getCurrentUser() }
+        if (result is ApiResult.Success) {
+            onPreferredLanguageChanged(result.data.preferredLanguage)
+        }
+        return result
+    }
 
-    override suspend fun updateCurrentUser(request: UpdateUserProfileRequest) =
-        authenticatedApiCall(sessionStore, errors) { api.updateCurrentUser(request) }
+    override suspend fun updateCurrentUser(request: UpdateUserProfileRequest): ApiResult<UserProfileDto> {
+        val result = authenticatedApiCall(sessionStore, errors) { api.updateCurrentUser(request) }
+        if (result is ApiResult.Success) {
+            onPreferredLanguageChanged(result.data.preferredLanguage)
+        }
+        return result
+    }
 
     override suspend fun deleteCurrentUser(): ApiResult<Unit> =
         authenticatedApiCall(sessionStore, errors, noContentValue = Unit) { api.deleteCurrentUser() }

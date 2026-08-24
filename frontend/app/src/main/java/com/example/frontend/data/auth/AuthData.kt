@@ -73,6 +73,7 @@ data class AuthenticatedUser(val session: AuthSession, val profile: UserProfileD
 
 interface AuthApi {
     @POST("api/auth/login") suspend fun login(@Body request: LoginRequest): Response<LoginResponseDto>
+    @POST("api/auth/guest") suspend fun guest(): Response<LoginResponseDto>
     @POST("api/auth/register/complete") suspend fun register(@Body request: RegisterRequest): Response<RegisterResponseDto>
     @POST("api/auth/register/request-otp") suspend fun requestRegistrationOtp(
         @Body request: RegistrationOtpRequest
@@ -106,6 +107,7 @@ interface AuthApi {
 
 interface AuthRepository {
     suspend fun login(userName: String, password: String): ApiResult<AuthenticatedUser>
+    suspend fun loginAsGuest(): ApiResult<AuthenticatedUser>
     suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser>
     suspend fun requestRegistrationOtp(email: String): ApiResult<Unit>
     suspend fun verifyRegistrationOtp(email: String, code: String): ApiResult<Unit>
@@ -126,10 +128,17 @@ class AuthRepositoryImpl(
     private val authApi: AuthApi,
     private val usersApi: UsersApi,
     private val sessionStore: AuthSessionStore,
-    private val errors: ApiErrorParser
+    private val errors: ApiErrorParser,
+    private val onPreferredLanguageChanged: (String) -> Unit = {}
 ) : AuthRepository {
     override suspend fun login(userName: String, password: String) =
         authenticate { authApi.login(LoginRequest(userName, password)) }
+
+    override suspend fun loginAsGuest(): ApiResult<AuthenticatedUser> =
+        when (val result = authenticate { authApi.guest() }) {
+            is ApiResult.Success -> result
+            is ApiResult.Failure -> result.toGuestLoginFailure()
+        }
 
     override suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser> {
         return when (val response = apiCall(errors) { authApi.register(request) }) {
@@ -204,7 +213,10 @@ class AuthRepositoryImpl(
         authApi.changePassword(ChangePasswordRequest(currentPassword, code.trim(), newPassword))
     })
 
-    override fun logoutLocalSession() = sessionStore.clear()
+    override fun logoutLocalSession() {
+        sessionStore.clear()
+        onPreferredLanguageChanged("English")
+    }
 
     private fun toUnit(result: ApiResult<MessageResponseDto>): ApiResult<Unit> = when (result) {
         is ApiResult.Success -> ApiResult.Success(Unit)
@@ -223,11 +235,20 @@ class AuthRepositoryImpl(
         }
         sessionStore.save(session)
         return when (val profile = authenticatedApiCall(sessionStore, errors) { usersApi.getCurrentUser() }) {
-            is ApiResult.Success -> ApiResult.Success(AuthenticatedUser(session, profile.data))
+            is ApiResult.Success -> {
+                onPreferredLanguageChanged(profile.data.preferredLanguage)
+                ApiResult.Success(AuthenticatedUser(session, profile.data))
+            }
             is ApiResult.Failure -> profile
         }
     }
 
     private fun LoginResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
     private fun RegisterResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
+
+    private fun ApiResult.Failure.toGuestLoginFailure(): ApiResult.Failure = when (statusCode) {
+        404, 405 -> copy(message = "Guest access is not available on this server version.")
+        401 -> copy(message = "Guest access could not be started. Please try again.")
+        else -> this
+    }
 }

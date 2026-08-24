@@ -12,7 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,13 +35,15 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.data.users.UserProfileDto
 import kotlinx.coroutines.launch
 
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiCream2 = Color(0xFFFAEBC7)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiRed = Color(0xFFD64545)
+import androidx.compose.material3.MaterialTheme
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiSky
 
 sealed interface EditProfileResult {
     data class Success(val profile: UserProfileDto) : EditProfileResult
@@ -104,26 +107,25 @@ fun EditProfileScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(TukiCream)
-            .padding(horizontal = 30.dp, vertical = 30.dp)
+            .statusBarsPadding()
+            .padding(start = 30.dp, end = 30.dp, top = 12.dp, bottom = 30.dp)
     ) {
         // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(38.dp)
-                    .background(TukiCream2, RoundedCornerShape(12.dp))
+                    .background(TukiSky.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "\u2039", color = TukiDark, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(text = "\u2039", color = TukiInk, style = MaterialTheme.typography.displaySmall)
             }
             Spacer(modifier = Modifier.width(14.dp))
             Text(
                 text = "Edit profile",
-                color = TukiDark,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.ExtraBold,
-                fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                color = TukiInk,
+                style = MaterialTheme.typography.displaySmall
             )
         }
 
@@ -144,8 +146,7 @@ fun EditProfileScreen(
                     Text(
                         text = initials.ifBlank { "?" },
                         color = Color.White,
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.ExtraBold
+                        style = MaterialTheme.typography.displayMedium
                     )
                 }
                 Box(
@@ -164,8 +165,7 @@ fun EditProfileScreen(
             Text(
                 text = "Change photo",
                 color = TukiTeal,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.clickable(onClick = onChangePhotoClick)
             )
 
@@ -192,8 +192,8 @@ fun EditProfileScreen(
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "Email is tied to your login and can't be changed here yet.",
-            color = TukiGray,
-            fontSize = 11.sp
+            color = TukiMuted,
+            style = MaterialTheme.typography.bodySmall
         )
 
         Spacer(modifier = Modifier.height(18.dp))
@@ -209,11 +209,11 @@ fun EditProfileScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         errorMessage?.let { message ->
-            Text(text = message, color = TukiRed, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(text = message, color = TukiDanger, style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.height(10.dp))
         }
         successMessage?.let { message ->
-            Text(text = message, color = TukiTeal, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(text = message, color = TukiTeal, style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.height(10.dp))
         }
 
@@ -238,7 +238,7 @@ fun EditProfileScreen(
                     color = Color.White
                 )
             } else {
-                Text(text = "Save changes", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(text = "Save changes", color = Color.White, style = MaterialTheme.typography.titleLarge)
             }
         }
     }
@@ -246,7 +246,7 @@ fun EditProfileScreen(
 
 @Composable
 private fun FieldLabel(text: String) {
-    Text(text = text, color = TukiDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+    Text(text = text, color = TukiInk, style = MaterialTheme.typography.titleSmall)
     Spacer(modifier = Modifier.height(8.dp))
 }
 
@@ -262,17 +262,18 @@ private fun EditableField(
         enabled = enabled,
         singleLine = true,
         colors = TextFieldDefaults.colors(
-            focusedContainerColor = TukiCream2,
-            unfocusedContainerColor = TukiCream2,
-            disabledContainerColor = TukiCream2.copy(alpha = 0.6f),
+            focusedContainerColor = TukiSky.copy(alpha = 0.2f),
+            unfocusedContainerColor = TukiSky.copy(alpha = 0.2f),
+            disabledContainerColor = TukiSky.copy(alpha = 0.1f),
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,
-            focusedTextColor = TukiDark,
-            unfocusedTextColor = TukiDark,
-            disabledTextColor = TukiGray
+            focusedTextColor = TukiInk,
+            unfocusedTextColor = TukiInk,
+            disabledTextColor = TukiMuted
         ),
         shape = RoundedCornerShape(14.dp),
+        textStyle = MaterialTheme.typography.bodyLarge,
         modifier = Modifier.fillMaxWidth()
     )
 }

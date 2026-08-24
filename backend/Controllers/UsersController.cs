@@ -16,6 +16,8 @@ public sealed class UsersController(
     ITripSessionRepository? tripSessionRepository = null,
     IFavoriteTripRepository? favoriteTripRepository = null) : ControllerBase
 {
+    private const string GuestRole = "Guest";
+
     [HttpGet("me")]
     [Authorize(AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName)]
     public async Task<ActionResult<UserProfileResponse>> GetCurrent(
@@ -81,6 +83,15 @@ public sealed class UsersController(
             request.PhoneNumber is not null ||
             request.ProfileImageUrl is not null;
 
+        // The authentication handler already resolved the profile and attached its role. This
+        // avoids adding any extra database/service lookup to the normal registered-user path.
+        if (hasEditableProfileFields && User.IsInRole(GuestRole))
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                Error("Guest profiles cannot be edited. Create an account for permanent profile settings."));
+        }
+
         UserProfileMutationResult result;
         if (hasEditableProfileFields)
         {
@@ -131,6 +142,13 @@ public sealed class UsersController(
         if (userId == Guid.Empty)
         {
             return Unauthorized();
+        }
+
+        if (User.IsInRole(GuestRole))
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                Error("Guest access expires automatically and does not have a permanent account to delete."));
         }
 
         if (userProfileRepository is null)

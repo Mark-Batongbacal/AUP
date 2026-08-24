@@ -15,7 +15,7 @@ public sealed class NavigationInstructionServiceTests
     private readonly Mock<IValhallaService> _valhalla = new();
 
     [Fact]
-    public async Task WalkingManeuvers_AreMappedAndUnknownTypesContinueSafely()
+    public async Task WalkingManeuvers_MapValhallaDirectionsCorrectlyAndUnknownTypesContinueSafely()
     {
         SetupLegs(WalkLeg());
         _valhalla.Setup(service => service.GetRouteAsync(
@@ -29,7 +29,12 @@ public sealed class NavigationInstructionServiceTests
                         Points = [[120.5, 15.1], [120.6, 15.2]],
                         Maneuvers =
                         [
-                            new() { Type = 10, Instruction = "Turn left", BeginShapeIndex = 0, Length = .1 },
+                            new() { Type = 9, Instruction = "Bear right", BeginShapeIndex = 0, Length = .1 },
+                            new() { Type = 10, Instruction = "Turn right", BeginShapeIndex = 0, Length = .1 },
+                            new() { Type = 11, Instruction = "Make a sharp right", BeginShapeIndex = 0, Length = .1 },
+                            new() { Type = 14, Instruction = "Make a sharp left", BeginShapeIndex = 0, Length = .1 },
+                            new() { Type = 15, Instruction = "Turn left", BeginShapeIndex = 0, Length = .1 },
+                            new() { Type = 16, Instruction = "Bear left", BeginShapeIndex = 0, Length = .1 },
                             new() { Type = 999, Instruction = "Use the footbridge", BeginShapeIndex = 1, Length = .2 }
                         ]
                     }]
@@ -37,7 +42,13 @@ public sealed class NavigationInstructionServiceTests
             });
 
         var result = await Service().GenerateAsync(Session());
-        Assert.Contains(result, item => item.Type == NavigationInstructionType.TurnLeft);
+
+        Assert.Contains(result, item => item.SourceManeuverType == 9 && item.Type == NavigationInstructionType.TurnRight);
+        Assert.Contains(result, item => item.SourceManeuverType == 10 && item.Type == NavigationInstructionType.TurnRight);
+        Assert.Contains(result, item => item.SourceManeuverType == 11 && item.Type == NavigationInstructionType.TurnRight);
+        Assert.Contains(result, item => item.SourceManeuverType == 14 && item.Type == NavigationInstructionType.TurnLeft);
+        Assert.Contains(result, item => item.SourceManeuverType == 15 && item.Type == NavigationInstructionType.TurnLeft);
+        Assert.Contains(result, item => item.SourceManeuverType == 16 && item.Type == NavigationInstructionType.TurnLeft);
         Assert.Contains(result, item => item.Type == NavigationInstructionType.Continue && item.SourceManeuverType == 999);
     }
 
@@ -93,7 +104,7 @@ public sealed class NavigationInstructionServiceTests
                     Legs = [new ValhallaLeg
                     {
                         Points = [[120.5, 15.1]],
-                        Maneuvers = [new() { Type = 15, Instruction = "Turn right", Length = .2 }]
+                        Maneuvers = [new() { Type = 15, Instruction = "Turn left", Length = .2 }]
                     }]
                 }
             });
@@ -102,7 +113,7 @@ public sealed class NavigationInstructionServiceTests
 
         Assert.Contains(result, item => item.Type == NavigationInstructionType.BoardTricycle &&
                                         item.Audience == NavigationInstructionAudience.Passenger);
-        Assert.Contains(result, item => item.Type == NavigationInstructionType.TurnRight &&
+        Assert.Contains(result, item => item.Type == NavigationInstructionType.TurnLeft &&
                                         item.Audience == NavigationInstructionAudience.Driver);
         Assert.Contains(result, item => item.Type == NavigationInstructionType.AlightTricycle);
     }

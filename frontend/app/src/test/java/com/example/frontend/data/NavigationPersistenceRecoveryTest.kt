@@ -72,6 +72,8 @@ class NavigationPersistenceRecoveryTest {
 
         assertTrue(result is ApiResult.Failure)
         assertEquals(404, (result as ApiResult.Failure).statusCode)
+        assertTrue(repository.restoreActiveNavigation() == null)
+        assertTrue(store.active == null)
     }
 
     @Test
@@ -109,6 +111,28 @@ class NavigationPersistenceRecoveryTest {
         NavigationSyncSignal.reset()
     }
 
+    @Test
+    fun guestActiveTrip_canBeSavedResumedAndEndedLocally() {
+        val guestSnapshot = snapshot().copy(sessionId = "guest-session-1", state = "GuestActive")
+        val store = MemoryNavigationLocalStore()
+        val repository = NavigationRepositoryImpl(
+            FakeNavigationApi(),
+            GuestSessionStore(),
+            ApiErrorParser(),
+            store
+        )
+
+        repository.saveLocalActiveNavigation(guestSnapshot)
+
+        assertEquals("guest-session-1", repository.restoreActiveNavigation()?.sessionId)
+        assertEquals("guest-session-1", store.active?.sessionId)
+
+        repository.clearLocalActiveNavigation("guest-session-1")
+
+        assertTrue(repository.restoreActiveNavigation() == null)
+        assertTrue(store.active == null)
+    }
+
     private class MemoryNavigationLocalStore(
         var active: NavigationSnapshotDto? = null,
         var geometry: NavigationGeometryResponseDto? = null
@@ -133,6 +157,12 @@ class NavigationPersistenceRecoveryTest {
         override fun read(): AuthSession? = session
         override fun save(session: AuthSession) { this.session = session }
         override fun clear() { session = null }
+    }
+
+    private class GuestSessionStore : AuthSessionStore {
+        override fun read(): AuthSession? = null
+        override fun save(session: AuthSession) = Unit
+        override fun clear() = Unit
     }
 
     private class FakeNavigationApi : NavigationApi {

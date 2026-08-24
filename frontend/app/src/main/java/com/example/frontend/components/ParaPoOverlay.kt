@@ -13,9 +13,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val TukiTeal = com.example.frontend.ui.theme.TukiTeal
-private val TukiOrange = com.example.frontend.ui.theme.TukiOrange
-private val TukiDark = com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
 
 @Composable
 fun ParaPoOverlay(
@@ -43,17 +44,16 @@ fun ParaPoOverlay(
             
             Text(
                 text = "You're arriving!",
-                color = TukiDark,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.ExtraBold
+                color = TukiInk,
+                style = MaterialTheme.typography.displaySmall
             )
             
             Spacer(modifier = Modifier.height(12.dp))
             
             Text(
                 text = "Get ready to say \"Para Po\" to the driver. Check your belongings before alighting.",
-                color = Color.Gray,
-                fontSize = 16.sp,
+                color = TukiMuted,
+                style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 lineHeight = 22.sp
             )
@@ -73,8 +73,7 @@ fun ParaPoOverlay(
             ) {
                 Text(
                     text = "I'm ready",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleLarge
                 )
             }
         }

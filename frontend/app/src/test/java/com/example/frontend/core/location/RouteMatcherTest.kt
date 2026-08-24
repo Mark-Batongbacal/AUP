@@ -38,4 +38,27 @@ class RouteMatcherTest {
         assertEquals(route.last(), remaining.last())
         assertTrue(remaining.size <= route.size)
     }
+
+    @Test
+    fun match_doesNotJumpToCloserFutureSegmentPastMaximumProgress() {
+        val route = listOf(
+            RouteCoordinate(15.0, 120.0),
+            RouteCoordinate(15.0, 120.005),
+            RouteCoordinate(15.00005, 120.005),
+            RouteCoordinate(15.00005, 120.0)
+        )
+
+        // This point is almost directly on the later return segment, but the caller has only
+        // allowed progress through the beginning of the first segment.
+        val match = RouteMatcher.match(
+            raw = RouteCoordinate(15.00005, 120.0005),
+            route = route,
+            minimumProgressMeters = 0.0,
+            maximumProgressMeters = 120.0
+        )
+
+        requireNotNull(match)
+        assertEquals(0, match.segmentIndex)
+        assertTrue(match.progressMeters < 120.0)
+    }
 }

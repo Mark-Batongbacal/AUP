@@ -48,13 +48,19 @@ public partial class RoutingService : IJourneyGeometryEnricher
             }
         }
 
-        if (pending.Count == 0)
-            return;
+        if (pending.Count > 0)
+        {
+            await Task.WhenAll(pending.Select(item => item.Task));
 
-        await Task.WhenAll(pending.Select(item => item.Task));
+            foreach (var item in pending)
+                item.Leg.Geometry = await item.Task;
+        }
 
-        foreach (var item in pending)
-            item.Leg.Geometry = await item.Task;
+        // Geometry is presentation/navigation data, but it still has to obey
+        // the physical leg chain returned by the planner. Anchor every shape to
+        // its leg endpoints, then validate the complete chain once more.
+        foreach (var plan in plans)
+            NormalizeAndValidatePlanGeometry(plan);
     }
 
     private List<RouteGeometryPoint> ExtractJeepneyGeometry(JeepneyTripLeg leg)

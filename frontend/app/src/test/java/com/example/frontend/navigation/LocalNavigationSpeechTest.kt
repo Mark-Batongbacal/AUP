@@ -8,15 +8,15 @@ class LocalNavigationSpeechTest {
     @Test
     fun template_usesCurrentLocalDistanceInsteadOfCachedServerNumber() {
         val rendered = LocalNavigationSpeech.renderTemplate(
-            "Sige, lakad pa tayo nang {distance}. Konti na lang!",
+            "Keep walking for {distance}. Almost there!",
             147.0
         )
 
-        assertEquals("Sige, lakad pa tayo nang 150m. Konti na lang!", rendered)
+        assertEquals("Keep walking for 150m. Almost there!", rendered)
     }
 
     @Test
-    fun turnGuidance_usesLocalDistanceAndStreet() {
+    fun englishTurnGuidance_usesLocalDistanceAndStreet() {
         val text = LocalNavigationSpeech.guidanceText(
             LocalNavigationGuidance(
                 sequence = 1,
@@ -26,10 +26,42 @@ class LocalNavigationSpeechTest {
                 anchorProgressMeters = 500.0,
                 distanceMeters = 52.0,
                 stage = LocalGuidanceStage.ADVANCE
-            )
+            ),
+            language = "English"
         )
 
+        assertEquals("In about 50m, turn right onto Mabini Street.", text)
+    }
+
+    @Test
+    fun filipinoTurnGuidance_usesLocalDistanceAndStreet() {
+        val text = LocalNavigationSpeech.guidanceText(
+            LocalNavigationGuidance(
+                sequence = 1,
+                type = "TurnLeft",
+                text = "Turn left onto Mabini Street.",
+                streetName = "Mabini Street",
+                anchorProgressMeters = 500.0,
+                distanceMeters = 52.0,
+                stage = LocalGuidanceStage.ADVANCE
+            ),
+            language = "Filipino"
+        )
+
+        assertTrue(text.contains("kaliwa"))
         assertTrue(text.contains("Mabini Street"))
         assertTrue(text.contains("50m"))
+    }
+
+    @Test
+    fun landmarkSpeech_followsSelectedLanguage() {
+        assertEquals(
+            "We just passed Jollibee.",
+            LocalNavigationSpeech.landmarkPassedText("Jollibee", "English")
+        )
+        assertEquals(
+            "Ayun, nalagpasan natin ang Jollibee.",
+            LocalNavigationSpeech.landmarkPassedText("Jollibee", "Filipino")
+        )
     }
 }

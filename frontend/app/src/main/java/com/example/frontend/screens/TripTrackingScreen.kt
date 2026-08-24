@@ -1,6 +1,10 @@
 package com.example.frontend.screens
 
 import android.location.Location
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
@@ -16,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -27,6 +33,7 @@ import com.example.frontend.LiveTripMapScreen
 import com.example.frontend.TodaPointOverlay
 import com.example.frontend.TransitRouteOverlay
 import com.example.frontend.components.ParaPoOverlay
+import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.RouteCoordinate
 import com.example.frontend.core.location.hasDeviceLocationPermission
@@ -38,6 +45,7 @@ import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.navigation.LocalLegProximity
 import com.example.frontend.navigation.LocalNavigationEngine
 import com.example.frontend.navigation.LocalNavigationSpeech
+import com.example.frontend.navigation.LocalServerSyncReason
 import com.example.frontend.navigation.TripOptionsCoordinator
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
@@ -84,10 +92,10 @@ fun TripTrackingScreen(
     val options = remember(context) { TripOptionsCoordinator(context) }
 
     var showParaPo by remember { mutableStateOf(false) }
-    var showBackDialog by remember { mutableStateOf(false) }
     var showEndDialog by remember { mutableStateOf(false) }
     var showArrival by remember { mutableStateOf(false) }
     var showOptions by remember { mutableStateOf(false) }
+    var showNavigationAi by remember { mutableStateOf(false) }
     var optionSnapshot by remember { mutableStateOf<NavigationSnapshotDto?>(null) }
     var stableLegRoute by remember { mutableStateOf<List<LatLng>>(emptyList()) }
     var stableLegRouteKey by remember { mutableStateOf<String?>(null) }
@@ -99,7 +107,9 @@ fun TripTrackingScreen(
     var ttsReady by remember { mutableStateOf(false) }
     var instructionCollapsed by remember { mutableStateOf(false) }
     var recenterRequestKey by remember { mutableStateOf(0) }
+    var legOverviewRequestKey by remember { mutableStateOf(0) }
     var localLandmarkNotice by remember { mutableStateOf<String?>(null) }
+    var navigationLanguage by remember { mutableStateOf(AppLanguagePreference.current()) }
 
     val tts = remember(context) {
         TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
@@ -113,10 +123,15 @@ fun TripTrackingScreen(
     val serverRerouted = snapshot?.status.equals("REROUTE_SUCCEEDED", true)
     val effectiveRerouted = hasRerouted || serverRerouted
 
+    LaunchedEffect(snapshot?.sessionId) {
+        navigationLanguage = options.refreshPreferredLanguage()
+    }
+
     LaunchedEffect(navigationSnapshot?.state) {
         if (navigationSnapshot?.state.equals("Arrived", true)) {
             showArrival = true
             showOptions = false
+            showNavigationAi = false
         }
     }
 
@@ -130,8 +145,6 @@ fun TripTrackingScreen(
         if (current.sessionId.startsWith("guest-") || current.state.equals("Arrived", true) || current.state.equals("Cancelled", true)) return@LaunchedEffect
         if (stableLegRouteKey == key && stableLegRoute.size >= 2) return@LaunchedEffect
 
-        // Fetch the complete planned leg once. We intentionally do not use the moving GPS position
-        // as the start, because local maneuver/landmark anchors need a stable coordinate system.
         when (val geometry = options.currentLegGeometry(current)) {
             is ApiResult.Success -> {
                 stableLegRoute = geometry.data.points.map { LatLng(it.latitude, it.longitude) }
@@ -177,7 +190,7 @@ fun TripTrackingScreen(
     val liveDeviceLocation by produceState<Location?>(initialValue = null, snapshot?.sessionId) {
         if (!context.hasDeviceLocationPermission()) return@produceState
         context.navigationLocationUpdates()
-            .catch { /* Keep the latest server location as fallback if GPS temporarily fails. */ }
+            .catch { }
             .collect { location ->
                 val ageMillis = if (location.time > 0L) System.currentTimeMillis() - location.time else 0L
                 if (ageMillis <= TripFreshFixMaxAgeMillis) value = location
@@ -208,19 +221,27 @@ fun TripTrackingScreen(
             transportMode = snapshot?.currentLeg?.transportMode,
             route = routeCoordinates,
             instructions = snapshot?.currentLegInstructions.orEmpty(),
-            landmarks = snapshot?.currentLegLandmarks.orEmpty()
+            landmarks = snapshot?.currentLegLandmarks.orEmpty(),
+            elapsedRealtimeNanos = location.elapsedRealtimeNanos.takeIf { it > 0L },
+            speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null
         )
     }
 
     LaunchedEffect(localProgress?.serverSyncReason, currentLegIndex, snapshot?.sessionId) {
         val reason = localProgress?.serverSyncReason ?: return@LaunchedEffect
-        if (snapshot?.sessionId?.startsWith("guest-") == true) return@LaunchedEffect
-        NavigationSyncSignal.requestImmediateSync()
+        val sessionId = snapshot?.sessionId ?: return@LaunchedEffect
+        if (sessionId.startsWith("guest-")) return@LaunchedEffect
+        when (reason) {
+            LocalServerSyncReason.MISSED_LEG_TARGET -> applyOption {
+                options.recoverMissedLegTarget(sessionId)
+            }
+            else -> NavigationSyncSignal.requestImmediateSync()
+        }
     }
 
-    LaunchedEffect(localProgress?.landmarkEvent) {
+    LaunchedEffect(localProgress?.landmarkEvent, navigationLanguage) {
         val event = localProgress?.landmarkEvent ?: return@LaunchedEffect
-        localLandmarkNotice = "Ayun, nalagpasan natin ang ${event.name}."
+        localLandmarkNotice = LocalNavigationSpeech.landmarkPassedText(event.name, navigationLanguage)
         delay(5_000)
         localLandmarkNotice = null
     }
@@ -240,7 +261,7 @@ fun TripTrackingScreen(
         remainingDistance
     )
     val instruction = localLandmarkNotice
-        ?: localGuidance?.let(LocalNavigationSpeech::guidanceText)
+        ?: localGuidance?.let { LocalNavigationSpeech.guidanceText(it, navigationLanguage) }
         ?: renderedTemplate
         ?: snapshot?.displayInstruction()
         ?: snapshot?.nextInstruction?.let { next ->
@@ -253,7 +274,7 @@ fun TripTrackingScreen(
         }
         ?: "Waiting for navigation guidance…"
 
-    val following = localFollowingGuidance?.let(LocalNavigationSpeech::guidanceText)
+    val following = localFollowingGuidance?.let { LocalNavigationSpeech.guidanceText(it, navigationLanguage) }
         ?: snapshot?.followingInstruction?.let { next ->
             next.text?.takeIf { it.isNotBlank() }
                 ?: listOfNotNull(next.type.takeIf { it.isNotBlank() }, next.routeName?.takeIf { it.isNotBlank() }).joinToString(" · ").takeIf { it.isNotBlank() }
@@ -269,8 +290,8 @@ fun TripTrackingScreen(
         } else 0f
     }
 
-    val currentPosition = localProgress?.matchedLocation?.let { LatLng(it.latitude, it.longitude) }
-        ?: liveDeviceLocation?.let { LatLng(it.latitude, it.longitude) }
+    val gpsPosition = liveDeviceLocation?.let { LatLng(it.latitude, it.longitude) }
+    val currentPosition = gpsPosition
         ?: snapshot?.let {
             if (it.currentLatitude != null && it.currentLongitude != null) LatLng(it.currentLatitude, it.currentLongitude) else null
         }
@@ -304,10 +325,14 @@ fun TripTrackingScreen(
         ?: "₱0"
     val totalLegs = max(1, currentLegIndex + 1 + futureRouteSegments.size)
 
-    fun requestBack() { if (activeTrip) showBackDialog = true else onBack() }
-    BackHandler(enabled = activeTrip) { showBackDialog = true }
+    BackHandler(enabled = activeTrip) { onBack() }
 
-    Box(Modifier.fillMaxSize().background(TripScreen)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TripScreen)
+            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    ) {
         LiveTripMapScreen(
             routePoints = visibleRoute,
             currentPosition = currentPosition,
@@ -316,7 +341,14 @@ fun TripTrackingScreen(
             } else legDestination,
             finalDestination = activeFinalDestination,
             futureRouteSegments = if (effectiveRerouted) emptyList() else futureRouteSegments,
+            nearbyJeepneyRoutes = nearbyJeepneyRoutes,
+            todaPoints = todaPoints,
             recenterRequestKey = recenterRequestKey,
+            gpsPosition = gpsPosition,
+            fullLegRoutePoints = baseRoute,
+            legOverviewRequestKey = legOverviewRequestKey,
+            legIdentity = geometryKey ?: "${snapshot?.sessionId}:$currentLegIndex",
+            overviewBottomPaddingDp = if (instructionCollapsed) 166f else 276f,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -331,7 +363,7 @@ fun TripTrackingScreen(
                         showOptions = activeTrip && !guestTrip,
                         activeTrip = activeTrip,
                         working = working,
-                        onBack = ::requestBack,
+                        onBack = onBack,
                         onOptions = { showOptions = true },
                         onEnd = { showEndDialog = true }
                     )
@@ -358,11 +390,27 @@ fun TripTrackingScreen(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.End
         ) {
-            RecenterButton(
-                enabled = currentPosition != null || visibleRoute.isNotEmpty(),
-                onClick = { recenterRequestKey += 1 },
-                modifier = Modifier.padding(end = 14.dp, bottom = 8.dp)
-            )
+            if (activeTrip && !guestTrip) {
+                NavigationAiButton(
+                    enabled = !working,
+                    onClick = { showNavigationAi = true },
+                    modifier = Modifier.padding(end = 16.dp, bottom = 8.dp)
+                )
+            }
+            Row(
+                modifier = Modifier.padding(end = 14.dp, bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                LegOverviewButton(
+                    enabled = baseRoute.size >= 2,
+                    onClick = { legOverviewRequestKey += 1 }
+                )
+                RecenterButton(
+                    enabled = gpsPosition != null,
+                    onClick = { recenterRequestKey += 1 }
+                )
+            }
             InstructionPanel(
                 instruction = instruction,
                 following = following,
@@ -419,7 +467,15 @@ fun TripTrackingScreen(
         TripOptionsSheet(
             isWorking = working,
             onDismiss = { showOptions = false },
-            onRerouteNow = { applyOption { options.rerouteNow(snapshot.sessionId) } },
+            onRerouteNow = { reason ->
+                applyOption {
+                    options.rerouteNow(
+                        sessionId = snapshot.sessionId,
+                        reason = reason.code,
+                        avoidTransportMode = reason.avoidTransportMode
+                    )
+                }
+            },
             onPreferenceChange = { preference -> applyOption { options.changePreference(snapshot.sessionId, preference) } },
             onLoadPreferencePreviews = {
                 val destinationPoint = activeFinalDestination
@@ -450,18 +506,16 @@ fun TripTrackingScreen(
         )
     }
 
-    if (showBackDialog) {
-        AlertDialog(
-            onDismissRequest = { showBackDialog = false },
-            title = { Text("Trip is still active") },
-            text = { Text("Going back will not end your navigation. Continue the trip or end it first?") },
-            confirmButton = {
-                TextButton(onClick = { showBackDialog = false; showEndDialog = true }, enabled = !working) {
-                    Text("End Trip", color = TripDanger)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBackDialog = false }, enabled = !working) { Text("Continue Trip", color = TripTeal) }
+    if (showNavigationAi && snapshot != null && !guestTrip) {
+        NavigationAiSheet(
+            onDismiss = { showNavigationAi = false },
+            ask = { message ->
+                options.askNavigationAssistant(
+                    sessionId = snapshot.sessionId,
+                    message = message,
+                    latitude = currentPosition?.latitude ?: snapshot.currentLatitude,
+                    longitude = currentPosition?.longitude ?: snapshot.currentLongitude
+                )
             }
         )
     }
@@ -581,6 +635,37 @@ private fun CurrentLegCard(icon: String, title: String, eta: String, fare: Strin
                     Text(it, color = TripOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LegOverviewButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .height(43.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        color = if (enabled) TripSurface else TripTile,
+        border = BorderStroke(1.dp, com.example.frontend.ui.theme.TukiOutline),
+        shadowElevation = 7.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("⌖", color = if (enabled) TripTeal else TripGray, fontSize = 17.sp)
+            Text(
+                "View leg",
+                color = if (enabled) TripDark else TripGray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

@@ -13,13 +13,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -45,13 +47,14 @@ import com.example.frontend.components.OtpResendButton
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
 import com.example.frontend.data.auth.RegisterRequest
+import com.example.frontend.ui.theme.TukiTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
+import com.example.frontend.ui.theme.TukiDanger
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 import kotlinx.coroutines.launch
-
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiError = Color(0xFFB00020)
 
 private enum class SignupStage {
     VERIFY_EMAIL,
@@ -169,15 +172,16 @@ fun SignupScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
-            .systemBarsPadding()
+            .background(TukiCream)
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState()),
         contentAlignment = Alignment.Center
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 28.dp, vertical = 20.dp),
+                .padding(start = 28.dp, end = 28.dp, top = 12.dp, bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -204,14 +208,13 @@ fun SignupScreen(
                 modifier = Modifier.size(72.dp),
                 contentScale = ContentScale.Fit
             )
-            Text("TUKI.", color = TukiTeal, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold)
+            Text(text = "TUKI.", color = TukiTeal, style = MaterialTheme.typography.displaySmall)
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = if (stage == SignupStage.VERIFY_EMAIL) "Create an account" else "Create your password",
-                color = Color.Black,
-                fontSize = 25.sp,
-                fontWeight = FontWeight.ExtraBold
+                color = TukiInk,
+                style = MaterialTheme.typography.displaySmall
             )
             Spacer(modifier = Modifier.height(5.dp))
             Text(
@@ -220,88 +223,54 @@ fun SignupScreen(
                 } else {
                     "Email verified. Finish setting up your TUKI account."
                 },
-                color = TukiGray,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
+                color = TukiMuted,
+                style = MaterialTheme.typography.bodyLarge
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
             if (stage == SignupStage.VERIFY_EMAIL) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SignUpTextField(
                         label = "Full Name",
                         value = fullName,
                         enabled = !isWorking && !otpSent,
-                        onValueChange = {
-                            fullName = it
-                            signUpError = null
-                        }
+                        onValueChange = { fullName = it; signUpError = null }
                     )
                     SignUpTextField(
                         label = "Email",
                         value = email,
                         enabled = !isWorking && !otpSent,
-                        onValueChange = {
-                            email = it
-                            signUpError = null
-                        }
+                        onValueChange = { email = it; signUpError = null }
                     )
                     Text(
-                        text = if (otpSent) {
-                            "OTP sent. Enter the 8-digit code below."
-                        } else {
-                            "We'll send a one-time code to confirm this email."
-                        },
-                        color = TukiGray,
-                        fontSize = 12.sp
+                        text = if (otpSent) "OTP sent. Enter the 8-digit code below." else "We'll send a one-time code to confirm this email.",
+                        color = TukiMuted,
+                        style = MaterialTheme.typography.bodySmall
                     )
 
                     if (otpSent) {
                         Spacer(modifier = Modifier.height(4.dp))
-                        OtpCodeField(
-                            code = otpCode,
-                            onCodeChange = {
-                                otpCode = it
-                                signUpError = null
-                            },
-                            enabled = !isWorking
-                        )
-                        OtpResendButton(
-                            sendGeneration = otpSendGeneration,
-                            enabled = !isWorking,
-                            onResend = { requestOtp() }
-                        )
+                        OtpCodeField(code = otpCode, onCodeChange = { otpCode = it; signUpError = null }, enabled = !isWorking)
+                        OtpResendButton(sendGeneration = otpSendGeneration, enabled = !isWorking, onResend = { requestOtp() })
                     }
                 }
             } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    PasswordField(
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SignupPasswordField(
                         label = "Password",
                         value = password,
                         visible = passwordVisible,
                         enabled = !isWorking,
-                        onValueChange = {
-                            password = it
-                            signUpError = null
-                        },
+                        onValueChange = { password = it; signUpError = null },
                         onVisibilityToggle = { passwordVisible = !passwordVisible }
                     )
-                    PasswordField(
+                    SignupPasswordField(
                         label = "Confirm Password",
                         value = confirmPassword,
                         visible = confirmPasswordVisible,
                         enabled = !isWorking,
-                        onValueChange = {
-                            confirmPassword = it
-                            signUpError = null
-                        },
+                        onValueChange = { confirmPassword = it; signUpError = null },
                         onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
                     )
                 }
@@ -309,23 +278,19 @@ fun SignupScreen(
 
             signUpError?.let { message ->
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(message, color = TukiError, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(message, color = TukiDanger, style = MaterialTheme.typography.labelLarge)
             }
             infoMessage?.let { message ->
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(message, color = TukiTeal, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text(message, color = TukiTeal, style = MaterialTheme.typography.labelLarge)
             }
 
             Spacer(modifier = Modifier.height(20.dp))
             Button(
                 onClick = {
-                    if (stage == SignupStage.PASSWORD) {
-                        completeRegistration()
-                    } else if (otpSent) {
-                        verifyOtp()
-                    } else {
-                        requestOtp()
-                    }
+                    if (stage == SignupStage.PASSWORD) completeRegistration()
+                    else if (otpSent) verifyOtp()
+                    else requestOtp()
                 },
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 enabled = !isWorking,
@@ -349,12 +314,11 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Already have an account? ", color = TukiGray, fontSize = 16.sp)
+                Text("Already have an account? ", color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
                 Text(
                     text = "Log in",
                     color = TukiOrange,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.clickable(enabled = !isWorking) { onLoginClick() }
                 )
             }
@@ -370,7 +334,7 @@ private fun SignUpTextField(
     onValueChange: (String) -> Unit
 ) {
     Column {
-        Text(label, color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = TukiInk, style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(4.dp))
         TextField(
             value = value,
@@ -379,13 +343,14 @@ private fun SignUpTextField(
             enabled = enabled,
             singleLine = true,
             shape = RoundedCornerShape(14.dp),
-            colors = signUpFieldColors()
+            colors = signUpFieldColors(),
+            textStyle = MaterialTheme.typography.bodyLarge
         )
     }
 }
 
 @Composable
-private fun PasswordField(
+private fun SignupPasswordField(
     label: String,
     value: String,
     visible: Boolean,
@@ -394,7 +359,7 @@ private fun PasswordField(
     onVisibilityToggle: () -> Unit
 ) {
     Column {
-        Text(label, color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = TukiInk, style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(4.dp))
         TextField(
             value = value,
@@ -408,22 +373,26 @@ private fun PasswordField(
                 Text(
                     text = if (visible) "HIDE" else "SHOW",
                     color = TukiTeal,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(end = 12.dp).clickable(enabled = enabled, onClick = onVisibilityToggle)
                 )
             },
-            colors = signUpFieldColors()
+            colors = signUpFieldColors(),
+            textStyle = MaterialTheme.typography.bodyLarge
         )
     }
 }
 
 @Composable
 private fun signUpFieldColors() = TextFieldDefaults.colors(
-    focusedContainerColor = TukiCream,
-    unfocusedContainerColor = TukiCream,
-    disabledContainerColor = TukiCream,
+    focusedContainerColor = TukiSurfaceRaised,
+    unfocusedContainerColor = TukiSurfaceRaised,
+    disabledContainerColor = TukiSurfaceRaised.copy(alpha = 0.7f),
     focusedIndicatorColor = Color.Transparent,
     unfocusedIndicatorColor = Color.Transparent,
-    disabledIndicatorColor = Color.Transparent
+    disabledIndicatorColor = Color.Transparent,
+    focusedTextColor = TukiInk,
+    unfocusedTextColor = TukiInk,
+    disabledTextColor = TukiMuted,
+    cursorColor = TukiTeal
 )

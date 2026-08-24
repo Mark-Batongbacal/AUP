@@ -785,65 +785,160 @@ public partial class RoutingService
         GeneralizedCostFromTimeAndFare(timeSeconds, 0) +
         distanceMeters / 1_000 * WalkingFatiguePesosPerKilometer;
 
-    // prefix[i] = cheapest access strictly before i.
-    private static (
-        double[] Cost,
-        AccessCandidate?[] Access)
-        ComputePrefixMinAccess(
-            AccessCandidate[] access)
+    /// <summary>
+    /// prefix[i] is a bounded, deterministic set of useful boarding
+    /// occurrences strictly before i. A scalar provisional minimum is not
+    /// sufficient here: straight-line access can make a downstream occurrence
+    /// look cheaper before Valhalla confirms the road route, and replacing the
+    /// prefix with that one occurrence makes transfer search disagree with the
+    /// diverse boarding states retained by direct search.
+    /// </summary>
+    private IReadOnlyList<AccessCandidate>[] ComputePrefixAccessOptions(
+        string routeId,
+        AccessCandidate?[] access,
+        IEnumerable<AccessCandidate>? authoritative = null)
     {
-        var cost = new double[access.Length];
-        var chosen = new AccessCandidate?[access.Length];
-
-        var bestCost = double.PositiveInfinity;
-        AccessCandidate? bestAccess = null;
+        var prefixes = new IReadOnlyList<AccessCandidate>[access.Length];
+        var available = new List<AccessCandidate>();
+        var authoritativeList = DistinctAccessOccurrences(authoritative ?? []);
 
         for (var i = 0; i < access.Length; i++)
         {
-            cost[i] = bestCost;
-            chosen[i] = bestAccess;
-
-            if (access[i].GeneralizedCostPesos < bestCost)
+            var downstreamProgress = _routeSearchAnchors[routeId][i]
+                .DistanceFromRouteStartMeters;
+            var preferred = authoritativeList
+                .Where(candidate => GetAccessProgressMeters(candidate) < downstreamProgress)
+                .ToList();
+            var eligible = available
+                .Where(candidate => GetAccessProgressMeters(candidate) < downstreamProgress)
+                .ToList();
+            prefixes[i] = SelectUsefulAccessStates(eligible, preferred);
+            if (access[i] is { } option)
             {
-                bestCost =
-                    access[i].GeneralizedCostPesos;
-
-                bestAccess = access[i];
+                var duplicateIndex = available.FindIndex(existing =>
+                    IsSameAccessOccurrence(existing, option));
+                if (duplicateIndex < 0)
+                    available.Add(option);
+                else if (option.GeneralizedCostPesos <
+                         available[duplicateIndex].GeneralizedCostPesos)
+                    available[duplicateIndex] = option;
             }
         }
 
-        return (cost, chosen);
+        return prefixes;
     }
 
-    // suffix[i] = cheapest access strictly after i.
-    private static (
-        double[] Cost,
-        AccessCandidate?[] Access)
-        ComputeSuffixMinAccess(
-            AccessCandidate[] access)
+    private IReadOnlyList<AccessCandidate> SelectUsefulAccessStates(
+        IReadOnlyList<AccessCandidate> available,
+        IReadOnlyList<AccessCandidate> authoritative)
     {
-        var cost = new double[access.Length];
-        var chosen = new AccessCandidate?[access.Length];
+        // Search branching multiplies access occurrences by route states, so
+        // both board-prefix and destination-completion callers use the same
+        // configured per-route cap. Objective representatives are
+        // deterministic and remaining capacity is filled by maximum progress
+        // separation, never enumeration order.
+        var prefixLimit = MaxBoardingVariantsPerRoute;
 
-        var bestCost = double.PositiveInfinity;
-        AccessCandidate? bestAccess = null;
+        var distinct = available.OrderBy(GetAccessProgressMeters).ToList();
+        var selected = new List<AccessCandidate>();
 
-        for (var i = access.Length - 1; i >= 0; i--)
+        foreach (var candidate in authoritative)
+            Add(candidate);
+
+        if (selected.Count >= prefixLimit)
+            return selected;
+
+        if (distinct.Count <= prefixLimit - selected.Count)
         {
-            cost[i] = bestCost;
-            chosen[i] = bestAccess;
-
-            if (access[i].GeneralizedCostPesos < bestCost)
-            {
-                bestCost =
-                    access[i].GeneralizedCostPesos;
-
-                bestAccess = access[i];
-            }
+            foreach (var candidate in distinct)
+                Add(candidate);
+            return selected;
         }
 
-        return (cost, chosen);
+        Add(distinct.OrderBy(GetAccessProgressMeters)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+        Add(distinct.OrderBy(candidate => candidate.GeneralizedCostPesos)
+            .ThenBy(GetAccessProgressMeters).First());
+        Add(distinct.OrderBy(candidate => candidate.TotalTimeSeconds)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+        Add(distinct.OrderBy(candidate => candidate.FarePesos)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+        Add(distinct.OrderBy(MinimumAccessWalkMeters)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+        Add(distinct.OrderBy(MinimumAccessTrikeMeters)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+
+        while (selected.Count < prefixLimit && selected.Count < distinct.Count)
+        {
+            var before = selected.Count;
+            Add(distinct
+                .Where(candidate => !selected.Any(existing =>
+                    IsSameAccessOccurrence(existing, candidate)))
+                .OrderByDescending(candidate => selected.Min(chosen =>
+                    Math.Abs(GetAccessProgressMeters(candidate) -
+                        GetAccessProgressMeters(chosen))))
+                .ThenBy(candidate => candidate.GeneralizedCostPesos)
+                .First());
+            if (selected.Count == before)
+                break;
+        }
+
+        return selected;
+
+        void Add(AccessCandidate candidate)
+        {
+            if (selected.Count >= prefixLimit)
+                return;
+            if (!selected.Any(existing => IsSameAccessOccurrence(existing, candidate)))
+                selected.Add(candidate);
+        }
     }
+
+    private static List<AccessCandidate> DistinctAccessOccurrences(
+        IEnumerable<AccessCandidate> candidates)
+    {
+        var distinct = new List<AccessCandidate>();
+        foreach (var candidate in candidates
+                     .OrderBy(candidate => candidate.GeneralizedCostPesos)
+                     .ThenBy(GetAccessProgressMeters)
+                     .ThenBy(candidate => candidate.Anchor.Latitude)
+                     .ThenBy(candidate => candidate.Anchor.Longitude))
+        {
+            if (!distinct.Any(existing => IsSameAccessOccurrence(existing, candidate)))
+                distinct.Add(candidate);
+        }
+
+        return distinct.OrderBy(GetAccessProgressMeters).ToList();
+    }
+
+    private static bool IsSameAccessOccurrence(
+        AccessCandidate left,
+        AccessCandidate right) =>
+        ApproximateDistanceMeters(
+            left.Anchor.Latitude,
+            left.Anchor.Longitude,
+            right.Anchor.Latitude,
+            right.Anchor.Longitude) <= 1.0 &&
+        Math.Abs(GetAccessProgressMeters(left) - GetAccessProgressMeters(right)) <= 1.0;
+
+    private static string AccessOccurrenceKey(AccessCandidate candidate) => string.Join(':',
+        Math.Round(candidate.Anchor.Latitude, 6),
+        Math.Round(candidate.Anchor.Longitude, 6),
+        Math.Round(candidate.FullRouteAnchor?.DistanceFromRouteStartMeters ?? -1, 1));
+
+    private static double GetAccessProgressMeters(AccessCandidate candidate) =>
+        candidate.FullRouteAnchor?.DistanceFromRouteStartMeters ??
+        candidate.RouteSampleIndex ?? double.PositiveInfinity;
+
+    private static double MinimumAccessWalkMeters(AccessCandidate candidate) =>
+        candidate.AllAlternatives.Min(alternative => alternative.WalkDistanceMeters);
+
+    private static double MinimumAccessTrikeMeters(AccessCandidate candidate) =>
+        candidate.AllAlternatives
+            .Where(alternative => alternative.Mode == AccessMode.Trike)
+            .Select(alternative => alternative.TrikeRideDistanceMeters ?? double.PositiveInfinity)
+            .DefaultIfEmpty(double.PositiveInfinity)
+            .Min();
 
     // -------------------------------------------------------------------
     // Interchange graph

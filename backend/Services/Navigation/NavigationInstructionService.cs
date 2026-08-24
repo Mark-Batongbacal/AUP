@@ -146,10 +146,10 @@ public sealed class NavigationInstructionService(
 
     private static NavigationInstructionType MapManeuver(int type) => type switch
     {
-        15 or 16 or 17 or 18 => NavigationInstructionType.TurnRight,
-        8 or 9 or 10 or 11 => NavigationInstructionType.TurnLeft,
+        9 or 10 or 11 or 18 or 20 or 23 => NavigationInstructionType.TurnRight,
+        14 or 15 or 16 or 19 or 21 or 24 => NavigationInstructionType.TurnLeft,
         26 or 27 => NavigationInstructionType.Roundabout,
-        4 or 5 => NavigationInstructionType.Arrived,
+        4 or 5 or 6 => NavigationInstructionType.Arrived,
         _ => NavigationInstructionType.Continue
     };
 

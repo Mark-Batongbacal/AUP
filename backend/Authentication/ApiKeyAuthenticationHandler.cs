@@ -42,7 +42,8 @@ public sealed class ApiKeyAuthenticationHandler(
         var identity = new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, userName!),
-                new Claim(ClaimTypes.NameIdentifier, profile.UserId.ToString())
+                new Claim(ClaimTypes.NameIdentifier, profile.UserId.ToString()),
+                new Claim(ClaimTypes.Role, profile.Profile.Role)
             ],
             SchemeName);
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName);

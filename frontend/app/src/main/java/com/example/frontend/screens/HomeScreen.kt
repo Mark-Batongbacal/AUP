@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,12 +39,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -62,20 +71,33 @@ import com.example.frontend.data.places.PlacesRepository
 import com.example.frontend.data.trips.TripRepository
 import com.example.frontend.data.trips.toRecentCommute
 import com.example.frontend.model.RecentCommute
+import com.example.frontend.ui.theme.TukiThemeRuntime
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
+import kotlin.math.abs
 
-private val HomeBg = Color(0xFFF8F5EC)
-private val HomeSurface = Color(0xFFFFFBF0)
-private val HomeSoft = Color(0xFFEAF1EE)
-private val HomeCurrentSky = Color(0xFFDAF1F7)
-private val HomeWarm = Color(0xFFFFF0D5)
-private val HomeDark = Color(0xFF153E4B)
-private val HomeTeal = Color(0xFF2C8E95)
+private val HomeBg: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF08171D) else Color(0xFFF8F5EC)
+private val HomeSurface: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF10242D) else Color(0xFFFFFBF0)
+private val HomeSoft: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF17333D) else Color(0xFFEAF1EE)
+private val HomeCurrentSky: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF123842) else Color(0xFFDAF1F7)
+private val HomeWarm: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF302A1D) else Color(0xFFFFF0D5)
+private val HomeDark: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFFF1F7F8) else Color(0xFF153E4B)
+private val HomeTeal: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF43B5BD) else Color(0xFF2C8E95)
 private val HomeOrange = Color(0xFFFF8A1D)
-private val HomeMuted = Color(0xFF707A80)
-private val HomeDivider = Color(0xFFD4D6D1)
-private val HomeAiSurface = HomeDark
+private val HomeMuted: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFFA4B5BA) else Color(0xFF707A80)
+private val HomeDivider: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF28434B) else Color(0xFFD4D6D1)
+private val HomeAiSurface: Color
+    get() = if (TukiThemeRuntime.darkMode) Color(0xFF0C303A) else Color(0xFF153E4B)
 private val MapPanel = Color(0xFF173B43)
 private val MapYellow = Color(0xFFFFCA19)
 
@@ -100,9 +122,12 @@ fun HomeScreen(
     onProfileClick: () -> Unit = {},
     onNewHereClick: () -> Unit = {},
     onPinDestinationClick: (origin: String) -> Unit = {},
-    onAskAiClick: () -> Unit = {}
+    onAskAiClick: () -> Unit = {},
+    activeTripDescription: String? = null,
+    onResumeActiveTrip: () -> Unit = {}
 ) {
     var currentLocationLabel by remember { mutableStateOf("Locating you...") }
+    var currentAreaLabel by remember { mutableStateOf("Current area") }
     var originLatitude by remember { mutableStateOf<Double?>(null) }
     var originLongitude by remember { mutableStateOf<Double?>(null) }
     var isLocating by remember { mutableStateOf(true) }
@@ -116,15 +141,21 @@ fun HomeScreen(
     var mapSearchText by remember { mutableStateOf("") }
     var mapSearchResults by remember { mutableStateOf<List<DestinationSearchResultDto>>(emptyList()) }
     var mapSearchLoading by remember { mutableStateOf(false) }
+    var mapSearchMoreLoading by remember { mutableStateOf(false) }
+    var mapSearchExpanded by remember { mutableStateOf(false) }
     var mapSearchError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val inPreview = LocalInspectionMode.current
+    val coroutineScope = rememberCoroutineScope()
 
     fun openMapPicker(mode: HomeMapPickMode) {
         mapMode = mode
         mapSearchText = ""
         mapSearchResults = emptyList()
+        mapSearchLoading = false
+        mapSearchMoreLoading = false
+        mapSearchExpanded = false
         mapSearchError = null
         mapSelection = when (mode) {
             HomeMapPickMode.Origin -> {
@@ -138,7 +169,8 @@ fun HomeScreen(
                         longitude = lon,
                         category = "origin",
                         source = "current",
-                        address = "Pickup point"
+                        address = "Pickup point",
+                        locality = currentAreaLabel
                     )
                 } else {
                     null
@@ -167,12 +199,14 @@ fun HomeScreen(
         } else {
             isLocating = false
             currentLocationLabel = "Location permission denied"
+            currentAreaLabel = "Current area"
         }
     }
 
     LaunchedEffect(locateRequest) {
         if (inPreview) {
             currentLocationLabel = "Sun Street"
+            currentAreaLabel = "Current area"
             originLatitude = 15.2193
             originLongitude = 120.5816
             isLocating = false
@@ -193,6 +227,7 @@ fun HomeScreen(
         val location = context.currentDeviceLocation()
         if (location == null) {
             currentLocationLabel = "Unable to detect location"
+            currentAreaLabel = "Current area"
             isLocating = false
             return@LaunchedEffect
         }
@@ -200,8 +235,12 @@ fun HomeScreen(
         originLatitude = location.latitude
         originLongitude = location.longitude
         currentLocationLabel = "Current location"
+        currentAreaLabel = "Current area"
         when (val place = placesRepository.reverseGeocode(location.latitude, location.longitude)) {
-            is ApiResult.Success -> currentLocationLabel = place.data.name
+            is ApiResult.Success -> {
+                currentLocationLabel = place.data.name
+                currentAreaLabel = place.data.locality?.takeIf { it.isNotBlank() } ?: "Current area"
+            }
             is ApiResult.Failure -> Unit
         }
         isLocating = false
@@ -228,6 +267,8 @@ fun HomeScreen(
     LaunchedEffect(showMapPicker, mapSearchText, originLatitude, originLongitude) {
         if (!showMapPicker) return@LaunchedEffect
         val query = mapSearchText.trim()
+        mapSearchExpanded = false
+        mapSearchMoreLoading = false
         if (query.length < 2) {
             mapSearchResults = emptyList()
             mapSearchError = null
@@ -264,12 +305,18 @@ fun HomeScreen(
                     name = resolved.name,
                     address = resolved.address,
                     category = resolved.category,
-                    source = "map-resolved"
+                    source = "map-resolved",
+                    locality = resolved.locality
                 )
+                if (mapMode == HomeMapPickMode.Origin) {
+                    currentAreaLabel = resolved.locality?.takeIf { it.isNotBlank() } ?: currentAreaLabel
+                }
             }
             is ApiResult.Failure -> Unit
         }
     }
+
+    val focusManager = LocalFocusManager.current
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -282,6 +329,7 @@ fun HomeScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .statusBarsPadding()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 18.dp)
             ) {
                 Spacer(Modifier.height(10.dp))
@@ -316,20 +364,28 @@ fun HomeScreen(
 
                 Spacer(Modifier.height(14.dp))
 
-                CurrentLocationCard(
-                    currentLocationLabel = currentLocationLabel,
-                    isLocating = isLocating,
-                    onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
-                )
+                if (activeTripDescription.isNullOrBlank()) {
+                    CurrentLocationCard(
+                        currentLocationLabel = currentLocationLabel,
+                        areaLabel = currentAreaLabel,
+                        isLocating = isLocating,
+                        onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
+                    )
 
-                Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(12.dp))
 
-                DestinationCard(
-                    selectedDestination = selectedDestination,
-                    canFindRoutes = selectedDestination != null && originLatitude != null && originLongitude != null,
-                    onClick = { openMapPicker(HomeMapPickMode.Destination) },
-                    onFindRoutesClick = ::submitRoute
-                )
+                    DestinationCard(
+                        selectedDestination = selectedDestination,
+                        canFindRoutes = selectedDestination != null && originLatitude != null && originLongitude != null,
+                        onClick = { openMapPicker(HomeMapPickMode.Destination) },
+                        onFindRoutesClick = ::submitRoute
+                    )
+                } else {
+                    ActiveTripCard(
+                        description = activeTripDescription,
+                        onResumeClick = onResumeActiveTrip
+                    )
+                }
 
                 Spacer(Modifier.height(14.dp))
 
@@ -359,10 +415,13 @@ fun HomeScreen(
             BackHandler { showMapPicker = false }
             HomeMapPickerOverlay(
                 mode = mapMode,
+                areaLabel = currentAreaLabel,
                 selection = mapSelection,
                 searchText = mapSearchText,
                 searchResults = mapSearchResults,
                 isSearching = mapSearchLoading,
+                isSearchingMore = mapSearchMoreLoading,
+                canSearchMore = mapSearchText.trim().length >= 2 && !mapSearchLoading && !mapSearchExpanded,
                 searchError = mapSearchError,
                 originPoint = originLatitude?.let { lat -> originLongitude?.let { lon -> LatLng(lat, lon) } },
                 onSearchTextChange = { mapSearchText = it },
@@ -370,7 +429,41 @@ fun HomeScreen(
                     mapSelection = result
                     mapSearchText = result.name
                     mapSearchResults = emptyList()
+                    mapSearchExpanded = false
                     mapSearchError = null
+                },
+                onSearchMoreClick = {
+                    val query = mapSearchText.trim()
+                    if (query.length < 2 || mapSearchLoading || mapSearchMoreLoading || mapSearchExpanded) {
+                        return@HomeMapPickerOverlay
+                    }
+                    coroutineScope.launch {
+                        mapSearchMoreLoading = true
+                        mapSearchError = null
+                        when (
+                            val result = placesRepository.searchMorePlaces(
+                                query = query,
+                                focusLatitude = originLatitude,
+                                focusLongitude = originLongitude
+                            )
+                        ) {
+                            is ApiResult.Success -> {
+                                if (mapSearchText.trim() == query) {
+                                    mapSearchResults = mergeHomePlaceResults(
+                                        mapSearchResults,
+                                        result.data
+                                    ).take(12)
+                                    mapSearchExpanded = true
+                                }
+                            }
+                            is ApiResult.Failure -> {
+                                if (mapSearchText.trim() == query) {
+                                    mapSearchError = result.message
+                                }
+                            }
+                        }
+                        mapSearchMoreLoading = false
+                    }
                 },
                 onMapClick = { point ->
                     mapSelection = DestinationSearchResultDto(
@@ -391,6 +484,7 @@ fun HomeScreen(
                             originLatitude = selection.latitude
                             originLongitude = selection.longitude
                             currentLocationLabel = selection.name
+                            currentAreaLabel = selection.locality?.takeIf { it.isNotBlank() } ?: currentAreaLabel
                         } else {
                             selectedDestination = selection
                         }
@@ -425,8 +519,58 @@ private fun HomeHeader() {
 }
 
 @Composable
+private fun ActiveTripCard(
+    description: String,
+    onResumeClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onResumeClick),
+        shape = RoundedCornerShape(22.dp),
+        color = HomeAiSurface,
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(HomeOrange.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("▶", color = HomeOrange, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "TRIP IN PROGRESS",
+                    color = HomeOrange,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    description,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("Resume  →", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+        }
+    }
+}
+
+@Composable
 private fun CurrentLocationCard(
     currentLocationLabel: String,
+    areaLabel: String,
     isLocating: Boolean,
     onChangeClick: () -> Unit
 ) {
@@ -440,7 +584,7 @@ private fun CurrentLocationCard(
             Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = Color.White.copy(alpha = 0.42f)) {
+            Surface(Modifier.size(52.dp), shape = RoundedCornerShape(18.dp), color = Color.White.copy(alpha = if (TukiThemeRuntime.darkMode) 0.08f else 0.42f)) {
                 Box(contentAlignment = Alignment.Center) {
                     Text("⊙", color = HomeTeal, fontSize = 35.sp, fontWeight = FontWeight.Bold)
                 }
@@ -465,7 +609,7 @@ private fun CurrentLocationCard(
                         fontWeight = FontWeight.ExtraBold
                     )
                 }
-                Text("Mabalacat City", color = HomeMuted, fontSize = 14.sp)
+                Text(areaLabel.ifBlank { "Current area" }, color = HomeMuted, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Box(Modifier.width(1.dp).height(55.dp).background(HomeTeal.copy(alpha = 0.18f)))
             Column(
@@ -527,7 +671,10 @@ private fun DestinationCard(
                         .fillMaxWidth(0.82f)
                         .height(40.dp)
                         .widthIn(min = 190.dp, max = 250.dp)
-                        .background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(16.dp))
+                        .background(
+                            if (TukiThemeRuntime.darkMode) HomeSoft else Color.White.copy(alpha = 0.92f),
+                            RoundedCornerShape(16.dp)
+                        )
                         .padding(horizontal = 13.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -737,18 +884,23 @@ private fun AskTukiAiCard(onClick: () -> Unit) {
 @Composable
 private fun HomeMapPickerOverlay(
     mode: HomeMapPickMode,
+    areaLabel: String,
     selection: DestinationSearchResultDto?,
     searchText: String,
     searchResults: List<DestinationSearchResultDto>,
     isSearching: Boolean,
+    isSearchingMore: Boolean,
+    canSearchMore: Boolean,
     searchError: String?,
     originPoint: LatLng?,
     onSearchTextChange: (String) -> Unit,
     onSearchResultClick: (DestinationSearchResultDto) -> Unit,
+    onSearchMoreClick: () -> Unit,
     onMapClick: (LatLng) -> Unit,
     onBack: () -> Unit,
     onDone: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     val selectedPoint = selection?.let { LatLng(it.latitude, it.longitude) }
 
     val markerColor = HomeTeal
@@ -760,6 +912,8 @@ private fun HomeMapPickerOverlay(
             modifier = Modifier.fillMaxSize(),
             startPoint = if (mode == HomeMapPickMode.Origin) selectedPoint ?: originPoint else originPoint,
             selectedDestination = null,
+            finalDestination = if (mode == HomeMapPickMode.Destination) selectedPoint else null,
+            cameraFocusPoint = if (mode == HomeMapPickMode.Destination) selectedPoint else null,
             onMapClick = onMapClick,
             visualStyle = MapVisualStyle.LiveTrip,
             showDeviceLocation = false
@@ -784,17 +938,39 @@ private fun HomeMapPickerOverlay(
                 }
                 Box(
                     Modifier
+                        .widthIn(max = 120.dp)
                         .background(MapYellow, RoundedCornerShape(10.dp))
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
-                    Text("Mabalacat", color = HomeDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        areaLabel.ifBlank { "Current area" },
+                        color = Color(0xFF153E4B),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 Spacer(Modifier.width(8.dp))
                 TextField(
                     value = searchText,
                     onValueChange = onSearchTextChange,
-                    placeholder = { Text("Enter address to search", color = Color.White.copy(alpha = 0.55f), fontSize = 16.sp) },
+                    placeholder = { Text("Search location...", color = Color.White.copy(alpha = 0.55f), fontSize = 16.sp) },
                     singleLine = true,
+                    trailingIcon = {
+                        if (searchText.isNotEmpty()) {
+                            Text(
+                                "✕",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 18.sp,
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .clickable { onSearchTextChange("") }
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
@@ -809,12 +985,15 @@ private fun HomeMapPickerOverlay(
                 )
             }
 
-            if (isSearching || searchError != null || searchResults.isNotEmpty()) {
+            if (isSearching || isSearchingMore || canSearchMore || searchError != null || searchResults.isNotEmpty()) {
+                val scrollState = rememberScrollState()
                 Column(
-                    Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 300.dp)
                         .padding(top = 8.dp)
                         .background(MapPanel.copy(alpha = 0.95f), RoundedCornerShape(18.dp))
+                        .verticalScroll(scrollState)
                         .padding(vertical = 7.dp)
                 ) {
                     if (isSearching) {
@@ -838,10 +1017,38 @@ private fun HomeMapPickerOverlay(
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(result.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(result.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 result.address?.takeIf { it.isNotBlank() }?.let { address ->
-                                    Text(address, color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(address, color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
+                            }
+                        }
+                    }
+                    when {
+                        isSearchingMore -> {
+                            Row(
+                                Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(Modifier.size(16.dp), color = MapYellow, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(9.dp))
+                                Text("Searching more places...", color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
+                            }
+                        }
+                        canSearchMore -> {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable(onClick = onSearchMoreClick)
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "More places...",
+                                    color = MapYellow,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
                             }
                         }
                     }
@@ -896,11 +1103,43 @@ private fun HomeMapPickerOverlay(
                     .padding(vertical = 17.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Done", color = HomeDark, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Done", color = Color(0xFF153E4B), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
     }
 }
+
+private fun mergeHomePlaceResults(
+    existing: List<DestinationSearchResultDto>,
+    expanded: List<DestinationSearchResultDto>
+): List<DestinationSearchResultDto> {
+    val merged = mutableListOf<DestinationSearchResultDto>()
+    (existing + expanded).forEach { candidate ->
+        if (merged.none { current -> homePlacesLikelySame(current, candidate) }) {
+            merged += candidate
+        }
+    }
+    return merged
+}
+
+private fun homePlacesLikelySame(
+    first: DestinationSearchResultDto,
+    second: DestinationSearchResultDto
+): Boolean {
+    val firstName = normalizeHomePlaceText(first.name)
+    val secondName = normalizeHomePlaceText(second.name)
+    if (firstName.isEmpty() || firstName != secondName) return false
+
+    val closeCoordinates = abs(first.latitude - second.latitude) <= 0.002 &&
+        abs(first.longitude - second.longitude) <= 0.002
+    val firstAddress = normalizeHomePlaceText(first.address.orEmpty())
+    val secondAddress = normalizeHomePlaceText(second.address.orEmpty())
+    val sameAddress = firstAddress.isNotEmpty() && firstAddress == secondAddress
+    return closeCoordinates || sameAddress
+}
+
+private fun normalizeHomePlaceText(value: String): String =
+    value.lowercase().filter { it.isLetterOrDigit() }
 
 private fun recentIcon(commute: RecentCommute): String = when {
     commute.destination.contains("library", true) -> "▦"

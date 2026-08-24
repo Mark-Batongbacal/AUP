@@ -111,7 +111,7 @@ builder.Services.AddScoped<ITripLandmarkCandidateRepository, TripLandmarkCandida
 builder.Services.AddScoped<ITransferConnectionRepository, TransferConnectionRepository>();
 builder.Services.AddScoped<ITricyclePointRepository, TricyclePointRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
-builder.Services.AddSingleton<IApiKeyService, InMemoryApiKeyService>();
+builder.Services.AddScoped<IApiKeyService, SqlServerApiKeyService>();
 builder.Services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
 builder.Services.AddSingleton<IFacebookAccessTokenValidator>(serviceProvider =>
 {

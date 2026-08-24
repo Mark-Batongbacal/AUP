@@ -26,6 +26,7 @@ import com.example.frontend.data.favorites.withoutDuplicateFavorites
 import com.example.frontend.data.navigation.NavigationInstructionSnapshotDto
 import com.example.frontend.data.navigation.NavigationLegDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
+import com.example.frontend.data.navigation.NavigationRepository
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.trips.toRecentCommute
@@ -58,6 +59,7 @@ fun AppNavigation(
 
     val navController = rememberNavController()
     val coroutineScope = rememberCoroutineScope()
+    val activeTripLifecycleCoordinator = remember { ActiveTripLifecycleCoordinator() }
     val authRepository = dataProvider.authRepository
     val userRepository = dataProvider.userRepository
     val placesRepository = dataProvider.placesRepository
@@ -235,8 +237,22 @@ fun AppNavigation(
         liveCurrentLegGeometry = emptyList()
     }
 
+    fun clearActiveSessionPreservingSelectedRoute() {
+        activeNavigationSessionId = null
+        activeNavigationSnapshot = null
+        navigationTrackingError = null
+        liveCurrentLegGeometry = emptyList()
+    }
+
     fun returnHomeAfterTripEnded() {
         clearActiveNavigationState()
+        navController.navigate(AppScreen.HOME.name) {
+            popUpTo(AppScreen.HOME.name) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
+
+    fun returnHomeKeepingTripActive() {
         navController.navigate(AppScreen.HOME.name) {
             popUpTo(AppScreen.HOME.name) { inclusive = false }
             launchSingleTop = true
@@ -396,6 +412,30 @@ fun AppNavigation(
                                 }
                             }
                         }
+
+                        when (val active = navigationRepository.getActiveNavigation()) {
+                            is ApiResult.Success -> {
+                                if (active.data.isActiveNavigation()) {
+                                    activeNavigationSessionId = active.data.sessionId
+                                    activeNavigationSnapshot = active.data
+                                    navigationTrackingError = null
+                                }
+                            }
+                            is ApiResult.Failure -> {
+                                if (active.statusCode == 404) {
+                                    clearActiveNavigationState()
+                                }
+                            }
+                        }
+                    } else if (activeNavigationSnapshot == null) {
+                        navigationRepository.restoreActiveNavigation()
+                            ?.takeIf {
+                                it.sessionId.startsWith("guest-") && it.isActiveNavigation()
+                            }
+                            ?.let { active ->
+                                activeNavigationSessionId = active.sessionId
+                                activeNavigationSnapshot = active
+                            }
                     }
                 }
 
@@ -441,6 +481,16 @@ fun AppNavigation(
                     },
                     onAskAiClick = {
                         showAskAI = true
+                    },
+                    activeTripDescription = activeNavigationSnapshot
+                        ?.takeIf { it.isActiveNavigation() }
+                        ?.activeTripDescription(),
+                    onResumeActiveTrip = {
+                        activeNavigationSnapshot?.let { active ->
+                            navController.navigate(
+                                trackingRoute("Current location", active.activeTripDestination())
+                            )
+                        }
                     }
                 )
             }
@@ -722,6 +772,70 @@ fun AppNavigation(
                 var navigationStartError by remember { mutableStateOf<String?>(null) }
                 var hasExistingActiveTrip by remember { mutableStateOf(false) }
 
+                LaunchedEffect(Unit) {
+                    val retained = activeNavigationSnapshot?.takeIf { it.isActiveNavigation() }
+                    if (retained != null) {
+                        activeNavigationSessionId = retained.sessionId
+                        hasExistingActiveTrip = true
+                    }
+
+                    if (isAuthenticated()) {
+                        when (val active = navigationRepository.getActiveNavigation()) {
+                            is ApiResult.Success -> {
+                                activeNavigationSessionId = active.data.sessionId
+                                activeNavigationSnapshot = active.data
+                                navigationTrackingError = null
+                                hasExistingActiveTrip = active.data.isActiveNavigation()
+                            }
+                            is ApiResult.Failure -> {
+                                if (active.statusCode == 404) {
+                                    clearActiveSessionPreservingSelectedRoute()
+                                    hasExistingActiveTrip = false
+                                } else if (retained == null) {
+                                    navigationStartError = active.message
+                                }
+                            }
+                        }
+                    } else if (retained == null) {
+                        navigationRepository.restoreActiveNavigation()
+                            ?.takeIf {
+                                it.sessionId.startsWith("guest-") && it.isActiveNavigation()
+                            }
+                            ?.let { active ->
+                                activeNavigationSessionId = active.sessionId
+                                activeNavigationSnapshot = active
+                                hasExistingActiveTrip = true
+                            }
+                    }
+                }
+
+                LaunchedEffect(
+                    selectedRouteOption?.id,
+                    selectedRoutingOriginLatitude,
+                    selectedRoutingOriginLongitude
+                ) {
+                    val option = selectedRouteOption ?: return@LaunchedEffect
+                    val originPoint = if (
+                        selectedRoutingOriginLatitude != null &&
+                        selectedRoutingOriginLongitude != null
+                    ) {
+                        LatLng(selectedRoutingOriginLatitude!!, selectedRoutingOriginLongitude!!)
+                    } else {
+                        context.currentDeviceLocation()?.let { location ->
+                            LatLng(location.latitude, location.longitude)
+                        }
+                    }
+                    val geometries = resolveNavigationLegGeometries(
+                        option = option,
+                        navigationRepository = navigationRepository,
+                        origin = originPoint,
+                        existing = resolvedLegGeometries
+                    )
+                    if (selectedRouteOption?.id == option.id) {
+                        resolvedLegGeometries = geometries
+                    }
+                }
+
                 NavigationScreen(
                     origin = origin,
                     destination = destination,
@@ -729,9 +843,25 @@ fun AppNavigation(
                     totalMinutes = selectedRouteOption?.totalMinutes,
                     totalFare = selectedRouteOption?.totalFare,
                     legCount = selectedRouteOption?.steps?.size,
+                    legRoutePoints = resolvedLegGeometries,
+                    routeStartPoint = if (
+                        selectedRoutingOriginLatitude != null &&
+                        selectedRoutingOriginLongitude != null
+                    ) {
+                        LatLng(selectedRoutingOriginLatitude!!, selectedRoutingOriginLongitude!!)
+                    } else {
+                        null
+                    },
+                    routeFinalDestination = selectedRouteOption?.legEndPoints?.lastOrNull()?.let { point ->
+                        LatLng(point.latitude, point.longitude)
+                    },
                     isStartingNavigation = isStartingNavigation,
                     navigationStartError = navigationStartError,
-                    hasActiveTrip = hasExistingActiveTrip,
+                    hasActiveTrip = hasExistingActiveTrip ||
+                        activeNavigationSnapshot?.isActiveNavigation() == true,
+                    activeTripDescription = activeNavigationSnapshot
+                        ?.takeIf { it.isActiveNavigation() }
+                        ?.activeTripDescription(),
                     onBack = { navController.popBackStack() },
                     onStartTracking = {
                         val recommendationId = selectedRouteOption?.id
@@ -743,15 +873,33 @@ fun AppNavigation(
                                 navigationStartError = null
 
                                 if (!isAuthenticated()) {
-                                    val guestSnapshot = selectedRouteOption?.toGuestNavigationSnapshot(destination)
-                                    if (guestSnapshot == null) {
-                                        navigationStartError = "No route is selected. Please go back and choose a route again."
+                                    val existingGuest = (
+                                        activeNavigationSnapshot
+                                            ?: navigationRepository.restoreActiveNavigation()
+                                        )
+                                        ?.takeIf {
+                                            it.sessionId.startsWith("guest-") &&
+                                                it.isActiveNavigation()
+                                        }
+                                    if (existingGuest != null) {
+                                        activeNavigationSessionId = existingGuest.sessionId
+                                        activeNavigationSnapshot = existingGuest
+                                        hasExistingActiveTrip = true
+                                        navigationStartError =
+                                            "You already have an active trip. Resume it or replace it with this route."
                                     } else {
-                                        activeNavigationSessionId = guestSnapshot.sessionId
-                                        activeNavigationSnapshot = guestSnapshot
-                                        navigationTrackingError = null
-                                        hasExistingActiveTrip = false
-                                        navController.navigate(trackingRoute(origin, destination))
+                                        val guestSnapshot = selectedRouteOption
+                                            ?.toGuestNavigationSnapshot(destination)
+                                        if (guestSnapshot == null) {
+                                            navigationStartError = "No route is selected. Please go back and choose a route again."
+                                        } else {
+                                            activeNavigationSessionId = guestSnapshot.sessionId
+                                            activeNavigationSnapshot = guestSnapshot
+                                            navigationRepository.saveLocalActiveNavigation(guestSnapshot)
+                                            navigationTrackingError = null
+                                            hasExistingActiveTrip = false
+                                            navController.navigate(trackingRoute(origin, destination))
+                                        }
                                     }
                                 } else {
                                     when (val result = navigationRepository.startNavigation(recommendationId)) {
@@ -775,7 +923,7 @@ fun AppNavigation(
                                                         navigationTrackingError = null
                                                         hasExistingActiveTrip = true
                                                         navigationStartError =
-                                                            "You already have an active trip. Resume it or end it before starting this route."
+                                                            "You already have an active trip. Resume it or replace it with this route."
                                                     }
                                                     is ApiResult.Failure -> {
                                                         navigationStartError = active.message
@@ -796,23 +944,100 @@ fun AppNavigation(
                         selectedRouteOption = null
                         resolvedLegGeometries = emptyList()
                         liveCurrentLegGeometry = emptyList()
-                        navController.navigate(trackingRoute("Current location", "Active trip"))
+                        val activeDestination = activeNavigationSnapshot?.activeTripDestination()
+                            ?: "Active trip"
+                        navController.navigate(
+                            trackingRoute("Current location", activeDestination)
+                        )
                     },
-                    onEndActiveTrip = {
+                    onReplaceActiveTrip = {
                         val sessionId = activeNavigationSessionId
-                        if (sessionId != null && !isStartingNavigation) {
+                        val replacementOption = selectedRouteOption
+                        val recommendationId = replacementOption?.id
+                        if (
+                            sessionId != null &&
+                            recommendationId != null &&
+                            replacementOption != null &&
+                            !isStartingNavigation
+                        ) {
                             coroutineScope.launch {
-                                isStartingNavigation = true
-                                when (val result = navigationRepository.cancel(sessionId)) {
-                                    is ApiResult.Success -> {
+                                navigationStartError = null
+                                val replacement = activeTripLifecycleCoordinator.replaceActiveTrip(
+                                    cancelCurrentTrip = {
+                                        if (sessionId.startsWith("guest-")) {
+                                            ActiveTripLifecycleStep.Success(Unit)
+                                        } else {
+                                            when (val result = navigationRepository.cancel(sessionId)) {
+                                                is ApiResult.Success ->
+                                                    ActiveTripLifecycleStep.Success(Unit)
+                                                is ApiResult.Failure -> {
+                                                    if (result.statusCode == 404) {
+                                                        navigationRepository
+                                                            .clearLocalActiveNavigation(sessionId)
+                                                        ActiveTripLifecycleStep.Success(Unit)
+                                                    } else {
+                                                        ActiveTripLifecycleStep.Failure(result.message)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    startReplacementTrip = {
+                                        clearActiveSessionPreservingSelectedRoute()
+                                        if (!isAuthenticated()) {
+                                            navigationRepository.clearLocalActiveNavigation(sessionId)
+                                            val guestSnapshot =
+                                                replacementOption.toGuestNavigationSnapshot(destination)
+                                            if (guestSnapshot == null) {
+                                                ActiveTripLifecycleStep.Failure(
+                                                    "The selected route could not start. Please choose it again."
+                                                )
+                                            } else {
+                                                navigationRepository.saveLocalActiveNavigation(guestSnapshot)
+                                                ActiveTripLifecycleStep.Success(guestSnapshot)
+                                            }
+                                        } else {
+                                            when (
+                                                val result =
+                                                    navigationRepository.startNavigation(recommendationId)
+                                            ) {
+                                                is ApiResult.Success ->
+                                                    ActiveTripLifecycleStep.Success(result.data)
+                                                is ApiResult.Failure ->
+                                                    ActiveTripLifecycleStep.Failure(result.message)
+                                            }
+                                        }
+                                    },
+                                    onOperationChanged = { operation ->
+                                        isStartingNavigation =
+                                            operation != ActiveTripLifecycleOperation.IDLE
+                                    }
+                                )
+
+                                when (replacement) {
+                                    is ActiveTripReplacementResult.Started -> {
+                                        activeNavigationSessionId = replacement.value.sessionId
+                                        activeNavigationSnapshot = replacement.value
+                                        navigationTrackingError = null
                                         hasExistingActiveTrip = false
                                         navigationStartError = null
-                                        returnHomeAfterTripEnded()
+                                        navController.navigate(trackingRoute(origin, destination))
                                     }
-                                    is ApiResult.Failure -> navigationStartError = result.message
+                                    is ActiveTripReplacementResult.CancelFailed -> {
+                                        hasExistingActiveTrip = true
+                                        navigationStartError = replacement.message
+                                    }
+                                    is ActiveTripReplacementResult.StartFailed -> {
+                                        hasExistingActiveTrip = false
+                                        navigationStartError =
+                                            "Your previous trip ended, but the new trip could not start: ${replacement.message} Try again to start this route."
+                                    }
+                                    ActiveTripReplacementResult.Busy -> Unit
                                 }
-                                isStartingNavigation = false
                             }
+                        } else if (recommendationId == null) {
+                            navigationStartError =
+                                "No route is selected. Please go back and choose a route again."
                         }
                     }
                 )
@@ -948,41 +1173,20 @@ fun AppNavigation(
 
                 LaunchedEffect(selectedRouteOption?.id) {
                     val option = selectedRouteOption ?: return@LaunchedEffect
-                    val working = option.legRoutePoints.map { segment ->
-                        segment.map { point -> LatLng(point.latitude, point.longitude) }
-                    }.toMutableList()
-
-                    option.steps.forEachIndexed { index, step ->
-                        if (working.getOrNull(index)?.size ?: 0 >= 2) return@forEachIndexed
-                        if (!step.mode.equals("Walk", true) && !step.mode.equals("Tricycle", true)) {
-                            return@forEachIndexed
-                        }
-                        val end = option.legEndPoints.getOrNull(index) ?: return@forEachIndexed
-                        val start = if (index == 0) {
-                            val lat = selectedRoutingOriginLatitude
-                            val lon = selectedRoutingOriginLongitude
-                            if (lat != null && lon != null) LatLng(lat, lon) else null
-                        } else {
-                            option.legEndPoints.getOrNull(index - 1)?.let { LatLng(it.latitude, it.longitude) }
-                        } ?: return@forEachIndexed
-
-                        when (val result = navigationRepository.getGeometry(
-                            start.latitude,
-                            start.longitude,
-                            end.latitude,
-                            end.longitude,
-                            if (step.mode.equals("Tricycle", true)) "TRICYCLE" else "WALK"
-                        )) {
-                            is ApiResult.Success -> {
-                                while (working.size <= index) working.add(emptyList())
-                                working[index] = result.data.points.map { point ->
-                                    LatLng(point.latitude, point.longitude)
-                                }
-                            }
-                            is ApiResult.Failure -> Unit
-                        }
+                    val originPoint = if (
+                        selectedRoutingOriginLatitude != null &&
+                        selectedRoutingOriginLongitude != null
+                    ) {
+                        LatLng(selectedRoutingOriginLatitude!!, selectedRoutingOriginLongitude!!)
+                    } else {
+                        null
                     }
-                    resolvedLegGeometries = working
+                    resolvedLegGeometries = resolveNavigationLegGeometries(
+                        option = option,
+                        navigationRepository = navigationRepository,
+                        origin = originPoint,
+                        existing = resolvedLegGeometries
+                    )
                 }
 
                 LaunchedEffect(
@@ -1066,11 +1270,12 @@ fun AppNavigation(
                     navigationSnapshot = activeNavigationSnapshot,
                     navigationError = navigationTrackingError,
                     isNavigationActionInProgress = isNavigationActionInProgress,
-                    onBack = { navController.popBackStack() },
+                    onBack = ::returnHomeKeepingTripActive,
                     onEndTrip = {
                         val sessionId = activeNavigationSessionId
                         if (sessionId != null && !isNavigationActionInProgress) {
                             if (!isAuthenticated()) {
+                                navigationRepository.clearLocalActiveNavigation(sessionId)
                                 returnHomeAfterTripEnded()
                             } else {
                                 coroutineScope.launch {
@@ -1145,6 +1350,55 @@ fun AppNavigation(
     }
 }
 
+private suspend fun resolveNavigationLegGeometries(
+    option: RouteOption,
+    navigationRepository: NavigationRepository,
+    origin: LatLng?,
+    existing: List<List<LatLng>>
+): List<List<LatLng>> {
+    val legCount = maxOf(option.steps.size, option.legRoutePoints.size)
+    val working = MutableList(legCount) { index ->
+        existing.getOrNull(index)?.takeIf { it.size >= 2 }
+            ?: option.legRoutePoints.getOrNull(index).orEmpty().map { point ->
+                LatLng(point.latitude, point.longitude)
+            }
+    }
+
+    option.steps.forEachIndexed { index, step ->
+        if (working.getOrNull(index)?.size ?: 0 >= 2) return@forEachIndexed
+        if (!step.mode.equals("Walk", true) && !step.mode.equals("Tricycle", true)) {
+            return@forEachIndexed
+        }
+        val end = option.legEndPoints.getOrNull(index) ?: return@forEachIndexed
+        val start = if (index == 0) {
+            origin
+        } else {
+            option.legEndPoints.getOrNull(index - 1)?.let { point ->
+                LatLng(point.latitude, point.longitude)
+            }
+        } ?: return@forEachIndexed
+
+        when (
+            val result = navigationRepository.getGeometry(
+                start.latitude,
+                start.longitude,
+                end.latitude,
+                end.longitude,
+                if (step.mode.equals("Tricycle", true)) "TRICYCLE" else "WALK"
+            )
+        ) {
+            is ApiResult.Success -> {
+                working[index] = result.data.points.map { point ->
+                    LatLng(point.latitude, point.longitude)
+                }
+            }
+            is ApiResult.Failure -> Unit
+        }
+    }
+
+    return working
+}
+
 private fun String.isGenericLocationLabel(): Boolean {
     val value = trim().lowercase()
     return value.isBlank() ||
@@ -1200,4 +1454,24 @@ private fun RouteOption.toGuestNavigationSnapshot(destination: String): Navigati
         status = "Guest navigation",
         triggeredEvents = emptyList()
     )
+}
+
+private fun NavigationSnapshotDto.activeTripDestination(): String =
+    tripSummary?.destinationName
+        ?.takeIf { it.isNotBlank() }
+        ?: currentLeg?.toName?.takeIf { it.isNotBlank() }
+        ?: "Active trip"
+
+private fun NavigationSnapshotDto.activeTripDescription(): String {
+    val destination = activeTripDestination()
+    val mode = currentLeg?.transportMode
+        ?.replace('_', ' ')
+        ?.lowercase()
+        ?.replaceFirstChar { it.titlecase() }
+        ?.takeIf { it.isNotBlank() }
+    return listOfNotNull(
+        "Toward $destination",
+        mode,
+        state.replace('_', ' ').takeIf { it.isNotBlank() }
+    ).joinToString(" • ")
 }

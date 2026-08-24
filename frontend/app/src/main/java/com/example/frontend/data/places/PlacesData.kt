@@ -15,12 +15,20 @@ data class DestinationSearchResultDto(
     val longitude: Double,
     val category: String,
     val source: String,
-    val address: String?
+    val address: String?,
+    val locality: String? = null
 )
 
 interface PlacesApi {
     @GET("api/places/search")
     suspend fun search(
+        @Query("q") query: String,
+        @Query("focusLat") focusLatitude: Double? = null,
+        @Query("focusLon") focusLongitude: Double? = null
+    ): Response<List<DestinationSearchResultDto>>
+
+    @GET("api/places/search/more")
+    suspend fun searchMore(
         @Query("q") query: String,
         @Query("focusLat") focusLatitude: Double? = null,
         @Query("focusLon") focusLongitude: Double? = null
@@ -34,7 +42,18 @@ interface PlacesApi {
 }
 
 interface PlacesRepository {
-    suspend fun searchPlaces(query: String, focusLatitude: Double? = null, focusLongitude: Double? = null): ApiResult<List<DestinationSearchResultDto>>
+    suspend fun searchPlaces(
+        query: String,
+        focusLatitude: Double? = null,
+        focusLongitude: Double? = null
+    ): ApiResult<List<DestinationSearchResultDto>>
+
+    suspend fun searchMorePlaces(
+        query: String,
+        focusLatitude: Double? = null,
+        focusLongitude: Double? = null
+    ): ApiResult<List<DestinationSearchResultDto>>
+
     suspend fun reverseGeocode(latitude: Double, longitude: Double): ApiResult<DestinationSearchResultDto>
 }
 
@@ -45,6 +64,9 @@ class PlacesRepositoryImpl(
 ) : PlacesRepository {
     override suspend fun searchPlaces(query: String, focusLatitude: Double?, focusLongitude: Double?) =
         apiCall(errors) { api.search(query, focusLatitude, focusLongitude) }
+
+    override suspend fun searchMorePlaces(query: String, focusLatitude: Double?, focusLongitude: Double?) =
+        apiCall(errors) { api.searchMore(query, focusLatitude, focusLongitude) }
 
     override suspend fun reverseGeocode(latitude: Double, longitude: Double) =
         apiCall(errors) { api.reverse(latitude, longitude) }

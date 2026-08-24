@@ -18,6 +18,8 @@ import com.example.frontend.screens.ForgotPasswordScreen
 import com.example.frontend.screens.NavigationScreen
 import com.example.frontend.screens.TripTrackingScreen
 import com.example.frontend.TemporaryMapSamples
+import com.example.frontend.screens.AskAiChatScreen
+import com.example.frontend.screens.DestinationSearchScreen
 
 @Preview(
     showBackground = true,
@@ -203,6 +205,37 @@ fun TripTrackingPreview() {
             origin = "Sta. Rita",
             destination = "Guagua Town",
             routePoints = TemporaryMapSamples.routePoints
+        )
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Ask AI Chat"
+)
+@Composable
+fun AskAiChatPreview() {
+    FrontendTheme {
+        AskAiChatScreen(
+            userName = "Juan",
+            onBack = {}
+        )
+    }
+}
+
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    name = "Destination Search"
+)
+@Composable
+fun DestinationSearchPreview() {
+    FrontendTheme {
+        DestinationSearchScreen(
+            origin = "Current location",
+            placesRepository = PreviewMocks.placesRepository,
+            onBack = {}
         )
     }
 }
