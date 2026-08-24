@@ -187,7 +187,7 @@ fun SendFeedbackScreen(onBack: () -> Unit) {
     var selectedCategory by remember { mutableStateOf(categories.first()) }
     var message by remember { mutableStateOf("") }
     var shareError by remember { mutableStateOf<String?>(null) }
-    val canSend = message.trim().length >= 10
+    val canSend = message.isNotBlank()
 
     Column(
         modifier = Modifier
