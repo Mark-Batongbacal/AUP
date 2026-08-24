@@ -1,6 +1,5 @@
 package com.example.frontend.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
@@ -72,6 +70,9 @@ private enum class ProfilePage {
     CHANGE_PASSWORD,
     LANGUAGE
 }
+
+private val ProfileIconInk = Color(0xFF153E4B)
+private val ProfileIconSurface = Color(0xFFFFF0D5)
 
 @Composable
 fun ProfileScreen(
@@ -301,7 +302,6 @@ fun ProfileScreen(
                     ) {
                         Text(text = initials, color = Color.White, style = MaterialTheme.typography.displaySmall)
                     }
-
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(text = displayName, color = TukiInk, style = MaterialTheme.typography.displaySmall)
                     Spacer(modifier = Modifier.height(3.dp))
@@ -416,11 +416,12 @@ private fun ProfileStatCard(stat: ProfileStat, modifier: Modifier = Modifier) {
 
 @Composable
 private fun AccountRowItem(row: ProfileAccountRow) {
-    val cleanGlyph = when (row.title) {
+    val glyph = when (row.title) {
         TukiInterfaceText.editProfile -> "♙"
-        TukiInterfaceText.language -> "◎"
+        TukiInterfaceText.privacySecurity -> "⛨"
+        TukiInterfaceText.language -> "🌐"
         TukiInterfaceText.settings -> "⚙"
-        else -> null
+        else -> "•"
     }
 
     Row(
@@ -434,22 +435,14 @@ private fun AccountRowItem(row: ProfileAccountRow) {
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .background(Color(0xFFFFF0D5), RoundedCornerShape(13.dp)),
+                .background(ProfileIconSurface, RoundedCornerShape(13.dp)),
             contentAlignment = Alignment.Center
         ) {
-            if (cleanGlyph != null) {
-                Text(
-                    text = cleanGlyph,
-                    color = TukiInk,
-                    fontSize = 20.sp
-                )
-            } else {
-                Image(
-                    painter = painterResource(row.iconRes),
-                    contentDescription = row.title,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+            Text(
+                text = glyph,
+                color = ProfileIconInk,
+                fontSize = if (row.title == TukiInterfaceText.language) 18.sp else 20.sp
+            )
         }
 
         Spacer(modifier = Modifier.width(14.dp))
@@ -458,6 +451,6 @@ private fun AccountRowItem(row: ProfileAccountRow) {
             Spacer(modifier = Modifier.height(2.dp))
             Text(text = row.subtitle, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
         }
-        Text(text = "\u203A", color = TukiMuted, style = MaterialTheme.typography.titleLarge)
+        Text(text = "›", color = TukiMuted, style = MaterialTheme.typography.titleLarge)
     }
 }
