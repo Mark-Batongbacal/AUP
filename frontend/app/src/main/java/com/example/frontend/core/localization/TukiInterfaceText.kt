@@ -22,10 +22,13 @@ object TukiInterfaceText {
     val currentLocationUpper: String get() = pick("CURRENT LOCATION", "KASALUKUYANG LOKASYON")
     val currentArea: String get() = pick("Current area", "Kasalukuyang lugar")
     val locatingYou: String get() = pick("Locating you...", "Hinahanap ang lokasyon mo...")
+    val locationPermissionDenied: String get() = pick("Location permission denied", "Hindi pinayagan ang access sa lokasyon")
+    val unableToDetectLocation: String get() = pick("Unable to detect location", "Hindi matukoy ang lokasyon")
     val tapToChange: String get() = pick("Tap to change", "I-tap para baguhin")
     val tapToChangeMultiline: String get() = pick("Tap to\nchange", "I-tap para\nbaguhin")
     val destination: String get() = pick("Destination", "Destinasyon")
     val destinationUpper: String get() = pick("DESTINATION", "DESTINASYON")
+    val pickupUpper: String get() = pick("PICKUP", "PICKUP")
     val whereAreYouGoing: String get() = pick("Where are you going?", "Saan ka pupunta?")
     val searchOrEnterPlace: String get() = pick("Search or enter a place", "Maghanap o maglagay ng lugar")
     val tapToChangeDestination: String get() = pick("Tap to change destination", "I-tap para baguhin ang destinasyon")
@@ -41,8 +44,42 @@ object TukiInterfaceText {
     )
     val askTukiAi: String get() = pick("Ask TUKI AI", "Magtanong sa TUKI AI")
     val letAiFindBestWay: String get() = pick("Let AI find the best way to go.", "Hayaan ang AI na hanapin ang pinakamainam na ruta.")
+    val newLabel: String get() = pick("NEW", "BAGO")
     val tripInProgress: String get() = pick("TRIP IN PROGRESS", "MAY BIYAHENG KASALUKUYAN")
     val resume: String get() = pick("Resume", "Ipagpatuloy")
+
+    val searchLocation: String get() = pick("Search location...", "Maghanap ng lokasyon...")
+    val searchingNearbyPlaces: String get() = pick("Searching nearby places...", "Naghahanap ng malalapit na lugar...")
+    val searchingMorePlaces: String get() = pick("Searching more places...", "Naghahanap pa ng mga lugar...")
+    val morePlaces: String get() = pick("More places...", "Iba pang lugar...")
+    val pickupPoint: String get() = pick("Pick-up point", "Pickup point")
+    val tapMapOrSearchPlace: String get() = pick("Tap the map or search for a place", "I-tap ang mapa o maghanap ng lugar")
+    val moveMapThenDone: String get() = pick("Move around the map, then press Done.", "Igalaw ang mapa, pagkatapos ay pindutin ang Done.")
+    val done: String get() = "Done"
+
+    val pickOrigin: String get() = pick("Pick origin", "Pumili ng pinanggalingan")
+    val pickDestination: String get() = pick("Pick destination", "Pumili ng destinasyon")
+    val pinnedOrigin: String get() = pick("Pinned origin", "Napiling pinanggalingan")
+    val pinnedDestination: String get() = pick("Pinned destination", "Napiling destinasyon")
+    val tapMapChooseOrigin: String get() = pick("Tap the map to choose your origin", "I-tap ang mapa para pumili ng pinanggalingan")
+    val tapMapChooseDestination: String get() = pick("Tap the map to choose a destination", "I-tap ang mapa para pumili ng destinasyon")
+    val useThisOrigin: String get() = pick("Use This Origin", "Gamitin ang Pinanggalingang Ito")
+    val useThisDestination: String get() = pick("Use This Destination", "Gamitin ang Destinasyong Ito")
+    val setPickupDestinationSubtitle: String get() = pick(
+        "Set your pickup and destination in one place, then TUKI will find your best commute options.",
+        "Itakda ang pickup at destinasyon mo, pagkatapos ay hahanapin ng TUKI ang pinakamainam na commute options."
+    )
+    val currentLocationOrPickup: String get() = pick("Current location or pickup", "Kasalukuyang lokasyon o pickup")
+    val useCurrent: String get() = pick("Use current", "Gamitin ang kasalukuyan")
+    val pickOnMap: String get() = pick("Pick on map", "Pumili sa mapa")
+    val searchingPickup: String get() = pick("Searching pickup...", "Naghahanap ng pickup...")
+    val map: String get() = "Map"
+    val searchingPlaces: String get() = pick("Searching places...", "Naghahanap ng mga lugar...")
+    val destinationPickupTip: String get() = pick(
+        "Tip: choose pickup first if you are not starting from your current location.",
+        "Tip: piliin muna ang pickup kung hindi ka magsisimula sa kasalukuyan mong lokasyon."
+    )
+    val waitingForPickup: String get() = pick("Waiting for pickup...", "Naghihintay ng pickup...")
 
     val recentTrips: String get() = pick("Recent Trips", "Mga Kamakailang Biyahe")
     val all: String get() = pick("All", "Lahat")
