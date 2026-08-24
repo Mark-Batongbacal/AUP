@@ -56,6 +56,7 @@ public partial class RoutingService : IRoutingService
     private string TrikeCostingModel => _options.TrikeCostingModel;
     private int MaxCandidatesToConfirm => _options.MaxCandidatesToConfirm;
     private int MaxTransfers => _options.MaxTransfers;
+    private int MinTransferCandidatesPerRoute => _options.MinTransferCandidatesPerRoute;
 
     private const double EarthRadiusMeters = 6_371_000;
 

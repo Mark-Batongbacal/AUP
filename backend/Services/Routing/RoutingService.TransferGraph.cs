@@ -2,64 +2,69 @@ namespace backend.Services.Routing;
 
 public partial class RoutingService
 {
+    /// <summary>
+    /// Enumerates transfer journeys level by level: every interchange a route
+    /// offers contributes its one-transfer journey before any two-transfer
+    /// journey is built, and every depth gets its own share of the budget.
+    ///
+    /// The previous implementation walked each starting route's interchange
+    /// list depth-first and stopped the whole route once a per-route quota was
+    /// spent. A single edge's subtree could therefore consume the entire
+    /// budget, leaving every later interchange on that route unexplored -- and
+    /// which edge comes first is an accident of route ordering in the
+    /// database, not a statement about usefulness. A route with fifty-five
+    /// interchanges would explore one of them.
+    ///
+    /// Level-synchronous expansion removes that: fairness across interchange
+    /// regions and fairness across transfer depth both fall out of the
+    /// traversal order instead of depending on quota accounting.
+    /// </summary>
     private IEnumerable<JourneyCandidate> FindTransferCandidates(
         IReadOnlyDictionary<string, (double[] Cost, AccessCandidate?[] Access)> boardPrefixes,
         IReadOnlyDictionary<string, (double[] Cost, AccessCandidate?[] Access)> alightSuffixes,
         CancellationToken cancellationToken)
     {
         if (MaxTransfers == 0) yield break;
+
         var routeNames = _routes.ToDictionary(route => route.RouteId, route => route.RouteName);
         var emitted = 0;
-        // Candidate diversity is applied later. Generate a wider transfer pool
-        // first so route iteration order cannot consume the entire confirmation
-        // budget before other transfer regions are even considered.
-        var generationLimit = MaxCandidatesToConfirm * Math.Max(1, MaxTransfers + 1);
-
-        // The pool is shared across every possible starting route, so it must
-        // be rationed per route rather than first-come-first-served. A single
-        // dense corridor can otherwise expand hundreds of variants, exhaust
-        // the pool, and leave every route after it in iteration order with no
-        // transfer candidate at all -- including the one nearest the origin.
-        var routeCount = Math.Max(1, _routes.Count);
-        var perRouteLimit = Math.Max(8, generationLimit / routeCount);
-        var globalLimit = Math.Max(generationLimit, perRouteLimit * routeCount);
+        // A safety ceiling only. Per-route and per-level bounds below are what
+        // actually shape the pool; this exists so a pathological network
+        // cannot run away.
+        var globalLimit = MaxCandidatesToConfirm *
+            Math.Max(1, MaxTransfers + 1) *
+            Math.Max(1, _routes.Count);
         var dominance = new Dictionary<string, double>(StringComparer.Ordinal);
 
         foreach (var startRoute in _routes)
         {
-            if (!_interchangesByRoute.TryGetValue(startRoute.RouteId, out var firstEdges) ||
-                !_routeSamples.TryGetValue(startRoute.RouteId, out var startSamples)) continue;
+            if (!_interchangesByRoute.TryGetValue(startRoute.RouteId, out var firstEdges))
+                continue;
 
-            var emittedForRoute = 0;
+            var frontier = BuildInitialFrontier(startRoute.RouteId, firstEdges);
+            if (frontier.Count == 0)
+                continue;
 
-            foreach (var first in firstEdges)
+            // Every interchange region of this route gets a place at the first
+            // level, and each further level gets the same allowance, so a
+            // deeper journey is never crowded out by shallower ones.
+            var perLevelLimit = Math.Max(MinTransferCandidatesPerRoute, frontier.Count);
+
+            for (var depth = 1; depth <= MaxTransfers && frontier.Count > 0; depth++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var firstIsSelfInterchange = string.Equals(
-                    startRoute.RouteId,
-                    first.OtherRouteId,
-                    StringComparison.Ordinal);
-                if (first.OwnIndex <= 0 ||
-                    first.DistanceMeters > MaxTransferWalkMeters ||
-                    (firstIsSelfInterchange && !IsForwardSelfInterchange(first))) continue;
-                var board = boardPrefixes[startRoute.RouteId].Access[first.OwnIndex];
-                if (board is null) continue;
-                var state = new TransferSearchState(
-                    first.OtherRouteId, first.OtherIndex, board,
-                    [new TransferSearchStep(startRoute.RouteId, first)],
-                    new HashSet<string>(StringComparer.Ordinal)
-                        { startRoute.RouteId, first.OtherRouteId },
-                    new HashSet<RouteProgressState>
-                        { new(first.OtherRouteId, first.OtherIndex) },
-                    first.DistanceMeters,
-                    board.GeneralizedCostPesos + GeneralizedCostFromWalking(
-                        first.DistanceMeters / WalkingSpeedMetersPerSecond,
-                        first.DistanceMeters));
-                foreach (var candidate in Expand(state))
+                var emittedAtDepth = 0;
+
+                foreach (var state in frontier)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var candidate = BuildDestinationCandidate(state);
+                    if (candidate is null)
+                        continue;
+
                     yield return candidate;
                     emitted++;
-                    emittedForRoute++;
+                    emittedAtDepth++;
 
                     if (emitted >= globalLimit)
                     {
@@ -69,40 +74,119 @@ public partial class RoutingService
                         yield break;
                     }
 
-                    // Stop expanding THIS route, but let every later route
-                    // still claim its own share of the pool.
-                    if (emittedForRoute >= perRouteLimit)
+                    if (emittedAtDepth >= perLevelLimit)
                         break;
                 }
 
-                if (emittedForRoute >= perRouteLimit)
-                {
-                    _logger.LogDebug(
-                        "Transfer candidate generation reached per-route limit {PerRouteLimit} for {RouteId}",
-                        perRouteLimit,
-                        startRoute.RouteId);
+                _logger.LogDebug(
+                    "Transfer candidates for {RouteId} at depth {Depth}: {Count} from {Frontier} states",
+                    startRoute.RouteId,
+                    depth,
+                    emittedAtDepth,
+                    frontier.Count);
+
+                if (depth >= MaxTransfers)
                     break;
-                }
+
+                frontier = BuildNextFrontier(frontier, perLevelLimit);
             }
         }
 
-        IEnumerable<JourneyCandidate> Expand(TransferSearchState state)
+        yield break;
+
+        List<TransferSearchState> BuildInitialFrontier(
+            string startRouteId,
+            List<RouteInterchange> firstEdges)
+        {
+            var states = new List<TransferSearchState>();
+
+            foreach (var first in firstEdges)
+            {
+                var isSelfInterchange = string.Equals(
+                    startRouteId,
+                    first.OtherRouteId,
+                    StringComparison.Ordinal);
+
+                if (first.OwnIndex <= 0 ||
+                    first.DistanceMeters > MaxTransferWalkMeters ||
+                    (isSelfInterchange && !IsForwardSelfInterchange(first)))
+                {
+                    continue;
+                }
+
+                var board = boardPrefixes[startRouteId].Access[first.OwnIndex];
+                if (board is null)
+                    continue;
+
+
+                states.Add(new TransferSearchState(
+                    first.OtherRouteId,
+                    first.OtherIndex,
+                    board,
+                    [new TransferSearchStep(startRouteId, first)],
+                    new HashSet<string>(StringComparer.Ordinal)
+                        { startRouteId, first.OtherRouteId },
+                    new HashSet<RouteProgressState>
+                        { new(first.OtherRouteId, first.OtherIndex) },
+                    first.DistanceMeters,
+                    board.GeneralizedCostPesos + GeneralizedCostFromWalking(
+                        first.DistanceMeters / WalkingSpeedMetersPerSecond,
+                        first.DistanceMeters)));
+            }
+
+            return states;
+        }
+
+        /// Children are taken round-robin across the whole frontier, so one
+        /// busy interchange cannot fill the next level on its own.
+        List<TransferSearchState> BuildNextFrontier(
+            List<TransferSearchState> current,
+            int maxStates)
+        {
+            var enumerators = current
+                .Select(state => NextStates(state).GetEnumerator())
+                .ToList();
+
+            try
+            {
+                var next = new List<TransferSearchState>();
+
+                while (next.Count < maxStates)
+                {
+                    var addedAny = false;
+
+                    foreach (var enumerator in enumerators)
+                    {
+                        if (!enumerator.MoveNext())
+                            continue;
+
+                        next.Add(enumerator.Current);
+                        addedAny = true;
+
+                        if (next.Count >= maxStates)
+                            break;
+                    }
+
+                    if (!addedAny)
+                        break;
+                }
+
+                return next;
+            }
+            finally
+            {
+                foreach (var enumerator in enumerators)
+                    enumerator.Dispose();
+            }
+        }
+
+        IEnumerable<TransferSearchState> NextStates(TransferSearchState state)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var key = $"{state.CurrentRouteId}:{state.EntryIndex}:{state.Steps.Count}:" +
-                string.Join(',', state.VisitedRoutes.OrderBy(value => value)) + ':' +
-                string.Join(',', state.VisitedProgressStates
-                    .OrderBy(value => value.RouteId)
-                    .ThenBy(value => value.EntryIndex)
-                    .Select(value => $"{value.RouteId}@{value.EntryIndex}"));
-            if (dominance.TryGetValue(key, out var best) && best <= state.AccumulatedCost)
-                yield break;
-            dominance[key] = state.AccumulatedCost;
 
-            var destination = BuildDestinationCandidate(state);
-            if (destination is not null) yield return destination;
-            if (state.Steps.Count >= MaxTransfers) yield break;
-            if (!_interchangesByRoute.TryGetValue(state.CurrentRouteId, out var edges)) yield break;
+            if (!_interchangesByRoute.TryGetValue(state.CurrentRouteId, out var edges))
+                yield break;
+
             foreach (var edge in edges)
             {
                 var isSelfInterchange = string.Equals(
@@ -111,27 +195,42 @@ public partial class RoutingService
                     StringComparison.Ordinal);
                 var nextProgressState = new RouteProgressState(
                     edge.OtherRouteId, edge.OtherIndex);
+
                 if (edge.OwnIndex <= state.EntryIndex ||
                     edge.DistanceMeters > MaxTransferWalkMeters ||
-                    (!isSelfInterchange &&
-                        state.VisitedRoutes.Contains(edge.OtherRouteId)) ||
+                    (!isSelfInterchange && state.VisitedRoutes.Contains(edge.OtherRouteId)) ||
                     (isSelfInterchange && !IsForwardSelfInterchange(edge)) ||
                     state.VisitedProgressStates.Contains(nextProgressState) ||
-                    edge.OtherIndex >= _routeSamples[edge.OtherRouteId].Count - 1) continue;
+                    edge.OtherIndex >= _routeSamples[edge.OtherRouteId].Count - 1)
+                {
+                    continue;
+                }
+
                 var totalWalking = state.TransferWalkingMeters + edge.DistanceMeters;
-                if (totalWalking > MaxTotalWalkingMetersPerJourney) continue;
-                var visited = new HashSet<string>(state.VisitedRoutes, StringComparer.Ordinal)
-                    { edge.OtherRouteId };
-                var visitedProgressStates = new HashSet<RouteProgressState>(
-                    state.VisitedProgressStates) { nextProgressState };
-                var next = new TransferSearchState(
-                    edge.OtherRouteId, edge.OtherIndex, state.BoardAccess,
+                if (totalWalking > MaxTotalWalkingMetersPerJourney)
+                    continue;
+
+                var accumulatedCost = state.AccumulatedCost + GeneralizedCostFromWalking(
+                    edge.DistanceMeters / WalkingSpeedMetersPerSecond,
+                    edge.DistanceMeters);
+
+                var key = $"{edge.OtherRouteId}:{edge.OtherIndex}:{state.Steps.Count + 1}:" +
+                    string.Join(',', state.VisitedRoutes.OrderBy(value => value));
+                if (dominance.TryGetValue(key, out var best) && best <= accumulatedCost)
+                    continue;
+                dominance[key] = accumulatedCost;
+
+                yield return new TransferSearchState(
+                    edge.OtherRouteId,
+                    edge.OtherIndex,
+                    state.BoardAccess,
                     [.. state.Steps, new TransferSearchStep(state.CurrentRouteId, edge)],
-                    visited, visitedProgressStates, totalWalking,
-                    state.AccumulatedCost + GeneralizedCostFromWalking(
-                        edge.DistanceMeters / WalkingSpeedMetersPerSecond,
-                        edge.DistanceMeters));
-                foreach (var candidate in Expand(next)) yield return candidate;
+                    new HashSet<string>(state.VisitedRoutes, StringComparer.Ordinal)
+                        { edge.OtherRouteId },
+                    new HashSet<RouteProgressState>(state.VisitedProgressStates)
+                        { nextProgressState },
+                    totalWalking,
+                    accumulatedCost);
             }
         }
 

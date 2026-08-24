@@ -142,12 +142,20 @@ public sealed class RoutingOptions
     public int MaxCandidatesToConfirm { get; init; } = 100;
     public int MaxTransfers { get; init; } = 2;
 
+    /// <summary>
+    /// Floor on how many transfer journeys one starting route may contribute
+    /// at each transfer depth. The real allowance is the number of interchange
+    /// regions the route actually has, so every one of them can offer a
+    /// journey; this floor only matters for routes with very few interchanges.
+    /// </summary>
+    public int MinTransferCandidatesPerRoute { get; init; } = 8;
+
     public bool IsValid(out string error)
     {
         if (MaxNearbyRoutes <= 0 || MaxTripOptions <= 0 || MaxRouteSamples < 2 ||
             MatrixMaxTargets <= 0 || MaxInterchangesPerRoutePair <= 0 ||
             MaxNearbyTrikeCandidates < 0 || MaxCandidatesToConfirm <= 0 ||
-            MaxBoardingVariantsPerRoute <= 0 ||
+            MaxBoardingVariantsPerRoute <= 0 || MinTransferCandidatesPerRoute <= 0 ||
             MaxTransfers is < 0 or > 5)
         {
             error = "Routing count limits must be positive (except MaxNearbyTrikeCandidates, which may be zero).";
