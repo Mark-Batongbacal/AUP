@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import com.example.frontend.components.BottomBar
 import com.example.frontend.components.TukiTab
+import com.example.frontend.core.localization.AppLanguagePreference
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.users.UpdateUserProfileRequest
@@ -101,8 +103,7 @@ fun ProfileScreen(
         }
     }
 
-    val isGuest = loadedProfile?.role.equals("Guest", ignoreCase = true) ||
-        userName.equals("Guest", ignoreCase = true)
+    val isGuest = loadedProfile?.role.equals("Guest", ignoreCase = true) || userName.equals("Guest", ignoreCase = true)
 
     LaunchedEffect(isGuest) {
         if (!isGuest) return@LaunchedEffect
@@ -113,12 +114,7 @@ fun ProfileScreen(
     }
 
     LaunchedEffect(isGuest, page) {
-        if (isGuest && page in setOf(
-                ProfilePage.EDIT_PROFILE,
-                ProfilePage.PRIVACY_SECURITY,
-                ProfilePage.CHANGE_PASSWORD
-            )
-        ) {
+        if (isGuest && page in setOf(ProfilePage.EDIT_PROFILE, ProfilePage.PRIVACY_SECURITY, ProfilePage.CHANGE_PASSWORD)) {
             page = ProfilePage.OVERVIEW
         }
     }
@@ -131,14 +127,14 @@ fun ProfileScreen(
     }?.takeIf { it.isNotBlank() } ?: userName
 
     val displayEmail = if (isGuest) {
-        "Temporary guest account"
+        if (TukiInterfaceText.isFilipino) "Pansamantalang guest account" else "Temporary guest account"
     } else {
         loadedProfile?.email?.takeIf { it.isNotBlank() } ?: userEmail
     }
     val displayPhone = loadedProfile?.phoneNumber.orEmpty()
     val currentLanguage = when (loadedProfile?.preferredLanguage?.trim()?.lowercase()) {
         "filipino", "tagalog" -> LanguageOption.FILIPINO
-        else -> LanguageOption.ENGLISH
+        else -> if (AppLanguagePreference.isFilipino()) LanguageOption.FILIPINO else LanguageOption.ENGLISH
     }
     val guestRemaining = remember(isGuest, guestClockTick) {
         if (isGuest) guestRemainingText(dataProvider.sessionStore.validSession()?.expiresAt) else null
@@ -208,13 +204,7 @@ fun ProfileScreen(
                     }
                 },
                 onChangePassword = { currentPassword, code, newPassword ->
-                    when (
-                        val result = dataProvider.authRepository.changePassword(
-                            currentPassword,
-                            code,
-                            newPassword
-                        )
-                    ) {
+                    when (val result = dataProvider.authRepository.changePassword(currentPassword, code, newPassword)) {
                         is ApiResult.Success -> ChangePasswordResult.Success
                         is ApiResult.Failure -> ChangePasswordResult.Error(
                             result.message.ifBlank { "The password or OTP is invalid." }
@@ -234,12 +224,11 @@ fun ProfileScreen(
                     scope.launch {
                         when (
                             val result = dataProvider.userRepository.updateCurrentUser(
-                                UpdateUserProfileRequest(
-                                    preferredLanguage = selectedLanguage.title
-                                )
+                                UpdateUserProfileRequest(preferredLanguage = selectedLanguage.title)
                             )
                         ) {
                             is ApiResult.Success -> {
+                                AppLanguagePreference.update(context.applicationContext, selectedLanguage.title)
                                 loadedProfile = result.data
                                 page = ProfilePage.OVERVIEW
                             }
@@ -255,10 +244,7 @@ fun ProfileScreen(
     }
 
     val initials = remember(displayName) {
-        displayName.split(" ")
-            .mapNotNull { it.firstOrNull()?.uppercaseChar() }
-            .take(2)
-            .joinToString("")
+        displayName.split(" ").mapNotNull { it.firstOrNull()?.uppercaseChar() }.take(2).joinToString("")
     }
 
     val accountRows = buildList {
@@ -266,16 +252,16 @@ fun ProfileScreen(
             add(
                 ProfileAccountRow(
                     R.drawable.edit_profile,
-                    "Edit Profile",
-                    "Name, email, phone",
+                    TukiInterfaceText.editProfile,
+                    if (TukiInterfaceText.isFilipino) "Pangalan, email, phone" else "Name, email, phone",
                     { page = ProfilePage.EDIT_PROFILE }
                 )
             )
             add(
                 ProfileAccountRow(
                     R.drawable.privacy,
-                    "Privacy & Security",
-                    "Password, data settings",
+                    TukiInterfaceText.privacySecurity,
+                    if (TukiInterfaceText.isFilipino) "Password at data settings" else "Password, data settings",
                     { page = ProfilePage.PRIVACY_SECURITY }
                 )
             )
@@ -283,7 +269,7 @@ fun ProfileScreen(
         add(
             ProfileAccountRow(
                 R.drawable.language,
-                "Language",
+                TukiInterfaceText.language,
                 currentLanguage.title,
                 { page = ProfilePage.LANGUAGE }
             )
@@ -291,18 +277,14 @@ fun ProfileScreen(
         add(
             ProfileAccountRow(
                 R.drawable.edit_profile,
-                "Settings",
-                "Appearance and app preferences",
+                TukiInterfaceText.settings,
+                TukiInterfaceText.appearancePreferences,
                 onEditProfileClick
             )
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TukiCream)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(TukiCream)) {
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
@@ -312,29 +294,16 @@ fun ProfileScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 20.dp)
         ) {
             item {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
+                Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
-                        modifier = Modifier
-                            .size(90.dp)
-                            .background(TukiTeal, CircleShape),
+                        modifier = Modifier.size(90.dp).background(TukiTeal, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = initials,
-                            color = Color.White,
-                            style = MaterialTheme.typography.displayMedium
-                        )
+                        Text(text = initials, color = Color.White, style = MaterialTheme.typography.displayMedium)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = displayName,
-                        color = TukiInk,
-                        style = MaterialTheme.typography.displaySmall
-                    )
+                    Text(text = displayName, color = TukiInk, style = MaterialTheme.typography.displaySmall)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(text = displayEmail, color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(18.dp))
@@ -356,7 +325,11 @@ fun ProfileScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Your guest access is temporary. Sign up for an account if you want to use TUKI without the guest time limit.",
+                            text = if (TukiInterfaceText.isFilipino) {
+                                "Pansamantala ang guest access mo. Gumawa ng account para magamit ang TUKI nang walang guest time limit."
+                            } else {
+                                "Your guest access is temporary. Sign up for an account if you want to use TUKI without the guest time limit."
+                            },
                             color = TukiMuted,
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -366,11 +339,11 @@ fun ProfileScreen(
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    ProfileStatCard(ProfileStat(tripsTaken.toString(), "TRIPS TAKEN"), Modifier.weight(1f))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ProfileStatCard(
+                        ProfileStat(tripsTaken.toString(), if (TukiInterfaceText.isFilipino) "MGA BIYAHE" else "TRIPS TAKEN"),
+                        Modifier.weight(1f)
+                    )
                     ProfileStatCard(ProfileStat(favoritesCount.toString(), "FAVORITES"), Modifier.weight(1f))
                 }
                 Spacer(modifier = Modifier.height(28.dp))
@@ -378,7 +351,7 @@ fun ProfileScreen(
 
             item {
                 Text(
-                    text = "ACCOUNT",
+                    text = TukiInterfaceText.account,
                     color = TukiInk,
                     style = MaterialTheme.typography.labelSmall,
                     letterSpacing = 1.sp
@@ -393,7 +366,7 @@ fun ProfileScreen(
 
             item {
                 Text(
-                    text = "Log out",
+                    text = TukiInterfaceText.logOut,
                     color = Color(0xFFB00020),
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier
@@ -435,17 +408,9 @@ private fun ProfileStatCard(stat: ProfileStat, modifier: Modifier = Modifier) {
             .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = stat.value,
-            color = TukiInk,
-            style = MaterialTheme.typography.titleLarge
-        )
+        Text(text = stat.value, color = TukiInk, style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = stat.label,
-            color = TukiMuted,
-            style = MaterialTheme.typography.labelSmall
-        )
+        Text(text = stat.label, color = TukiMuted, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -459,10 +424,7 @@ private fun AccountRowItem(row: ProfileAccountRow) {
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier.size(40.dp),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
             Image(
                 painter = painterResource(row.iconRes),
                 contentDescription = row.title,
@@ -471,21 +433,11 @@ private fun AccountRowItem(row: ProfileAccountRow) {
         }
 
         Spacer(modifier = Modifier.width(14.dp))
-
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = row.title,
-                color = TukiInk,
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text(text = row.title, color = TukiInk, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(2.dp))
             Text(text = row.subtitle, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
         }
-
-        Text(
-            text = "\u203A",
-            color = TukiMuted,
-            style = MaterialTheme.typography.titleLarge
-        )
+        Text(text = "\u203A", color = TukiMuted, style = MaterialTheme.typography.titleLarge)
     }
 }
