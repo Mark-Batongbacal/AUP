@@ -121,6 +121,34 @@ public sealed class ProductionNetworkRegressionTests
     }
 
     // -----------------------------------------------------------------
+    // A jeepney ridden only to reach another jeepney the passenger could
+    // already board where they started. On the real network this journey
+    // walked 660 m to board VILLA-PAMPANG(SUPER-8), rode it 159 m, walked 8 m,
+    // and boarded VILLA-PAMPANG(SM-TELEBASTAGAN) -- which passes 12 m from
+    // that first boarding point, at a progress it can still be ridden from.
+    // It cost twice the fare and four minutes more than simply boarding the
+    // second route, and Pareto pruning kept it because it walked two metres
+    // less.
+    // -----------------------------------------------------------------
+    [Fact]
+    public async Task PlanTripsAsync_DoesNotRideOneJeepneyJustToReachAnother()
+    {
+        var plans = await PlanAsync(15.12, 120.595, 15.135, 120.58);
+
+        Assert.NotEmpty(plans);
+
+        // The journey that simply boards the through route must be there.
+        Assert.Contains(plans, plan =>
+            JeepneyLegs(plan).Count == 1 &&
+            JeepneyLegs(plan)[0].RouteId == "VILLA-PAMPANG(SM-TELEBASTAGAN)");
+
+        // The redundant prefix must not.
+        Assert.DoesNotContain(plans, plan => JeepneyLegs(plan)
+            .Select(leg => leg.RouteId)
+            .SequenceEqual(["VILLA-PAMPANG(SUPER-8)", "VILLA-PAMPANG(SM-TELEBASTAGAN)"]));
+    }
+
+    // -----------------------------------------------------------------
     // Whatever else changes, a returned plan has to be a journey: physically
     // connected legs, forward progress on every jeepney, and totals that match
     // the legs they are made of.

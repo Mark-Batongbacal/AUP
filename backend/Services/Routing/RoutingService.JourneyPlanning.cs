@@ -166,7 +166,13 @@ public partial class RoutingService
         var transferPruned = PruneConfirmedTransferBoardingShadowing(originPruned);
         var destinationPruned = PruneConfirmedDestinationFeederShadowing(transferPruned);
 
-        var paretoPruned = PruneDominatedConfirmedCandidates(destinationPruned);
+        // A jeepney used only to reach another jeepney the passenger could
+        // already board where they started is not a transfer, it is a wasted
+        // fare. Decided on full-route progress, so a loop's return leg at the
+        // same coordinates does not qualify.
+        var prefixPruned = PruneRedundantTransitPrefix(destinationPruned);
+
+        var paretoPruned = PruneDominatedConfirmedCandidates(prefixPruned);
         var confirmed = paretoPruned
             .Select(result => result.Plan)
             .ToList();
