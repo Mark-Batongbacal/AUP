@@ -1,6 +1,8 @@
 package com.example.frontend.screens
 
 import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,7 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.foundation.Image
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,6 +52,9 @@ import com.example.frontend.ui.theme.TukiTeal
 
 private val SupportIconInk = Color(0xFF153E4B)
 private val SupportIconSurface = Color(0xFFFFF0D5)
+
+private const val FeedbackEmailStephen = "pinacate.stephen@gmail.com"
+private const val FeedbackEmailMark = "batongbacalmark@gmail.com"
 
 private fun supportCopy(english: String, filipino: String): String =
     if (TukiInterfaceText.isFilipino) filipino else english
@@ -275,8 +278,8 @@ fun SendFeedbackScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text(
                 supportCopy(
-                    "Sending opens your device's share menu so you can choose a mail or messaging app.",
-                    "Bubuksan ng Send ang share menu ng device para makapili ka ng mail o messaging app."
+                    "Send Feedback opens your email app with both TUKI feedback recipients already filled in.",
+                    "Bubuksan ng Send Feedback ang email app na nakalagay na ang dalawang TUKI feedback recipients."
                 ),
                 color = TukiMuted,
                 style = MaterialTheme.typography.bodySmall
@@ -297,11 +300,14 @@ fun SendFeedbackScreen(onBack: () -> Unit) {
                         appendLine()
                         append(message.trim())
                     }
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_SUBJECT, "TUKI Feedback - $selectedCategory")
-                        putExtra(Intent.EXTRA_TEXT, feedbackText)
-                    }
+                    val subject = "TUKI Feedback - $selectedCategory"
+                    val mailToUri = Uri.parse(
+                        "mailto:$FeedbackEmailStephen,$FeedbackEmailMark" +
+                            "?subject=${Uri.encode(subject)}" +
+                            "&body=${Uri.encode(feedbackText)}"
+                    )
+                    val intent = Intent(Intent.ACTION_SENDTO, mailToUri)
+
                     runCatching {
                         context.startActivity(
                             Intent.createChooser(
@@ -311,8 +317,8 @@ fun SendFeedbackScreen(onBack: () -> Unit) {
                         )
                     }.onFailure {
                         shareError = supportCopy(
-                            "No compatible sharing app was found on this device.",
-                            "Walang compatible na sharing app na nakita sa device na ito."
+                            "No compatible email app was found on this device.",
+                            "Walang compatible na email app na nakita sa device na ito."
                         )
                     }
                 },
