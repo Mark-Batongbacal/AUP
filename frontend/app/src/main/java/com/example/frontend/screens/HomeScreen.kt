@@ -99,8 +99,9 @@ private val HomeDivider: Color
     get() = if (TukiThemeRuntime.darkMode) Color(0xFF28434B) else Color(0xFFD4D6D1)
 private val HomeAiSurface: Color
     get() = if (TukiThemeRuntime.darkMode) Color(0xFF0C303A) else Color(0xFF153E4B)
-private val MapPanel = Color(0xFF173B43)
-private val MapYellow = Color(0xFFFFCA19)
+private val MapPanel = Color(0xFF0C303A)
+private val MapSelector = Color(0xFFF8F5EC)
+private val MapAction = Color(0xFFFF8A1D)
 
 private enum class HomeMapPickMode { Origin, Destination }
 
@@ -940,7 +941,7 @@ private fun HomeMapPickerOverlay(
                 Box(
                     Modifier
                         .widthIn(max = 120.dp)
-                        .background(MapYellow, RoundedCornerShape(10.dp))
+                        .background(MapSelector, RoundedCornerShape(10.dp))
                         .padding(horizontal = 10.dp, vertical = 8.dp)
                 ) {
                     Text(
@@ -999,7 +1000,7 @@ private fun HomeMapPickerOverlay(
                 ) {
                     if (isSearching) {
                         Row(Modifier.padding(horizontal = 14.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.size(16.dp), color = MapYellow, strokeWidth = 2.dp)
+                            CircularProgressIndicator(Modifier.size(16.dp), color = HomeTeal, strokeWidth = 2.dp)
                             Spacer(Modifier.width(9.dp))
                             Text(TukiInterfaceText.searchingNearbyPlaces, color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
                         }
@@ -1014,7 +1015,7 @@ private fun HomeMapPickerOverlay(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(Modifier.size(30.dp).background(Color.White.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
-                                Text("⌖", color = MapYellow, fontSize = 17.sp)
+                                Text("⌖", color = HomeTeal, fontSize = 17.sp)
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
@@ -1031,7 +1032,7 @@ private fun HomeMapPickerOverlay(
                                 Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                CircularProgressIndicator(Modifier.size(16.dp), color = MapYellow, strokeWidth = 2.dp)
+                                CircularProgressIndicator(Modifier.size(16.dp), color = HomeTeal, strokeWidth = 2.dp)
                                 Spacer(Modifier.width(9.dp))
                                 Text(TukiInterfaceText.searchingMorePlaces, color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp)
                             }
@@ -1046,7 +1047,7 @@ private fun HomeMapPickerOverlay(
                             ) {
                                 Text(
                                     TukiInterfaceText.morePlaces,
-                                    color = MapYellow,
+                                    color = HomeTeal,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 )
@@ -1099,12 +1100,12 @@ private fun HomeMapPickerOverlay(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .background(if (selection != null) MapYellow else MapYellow.copy(alpha = 0.45f), RoundedCornerShape(28.dp))
+                    .background(if (selection != null) MapAction else MapAction.copy(alpha = 0.45f), RoundedCornerShape(28.dp))
                     .clickable(enabled = selection != null, onClick = onDone)
                     .padding(vertical = 17.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(TukiInterfaceText.done, color = Color(0xFF153E4B), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                Text(TukiInterfaceText.done, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
     }
