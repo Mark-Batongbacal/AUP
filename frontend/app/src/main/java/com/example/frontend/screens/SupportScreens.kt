@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -187,110 +189,150 @@ fun SendFeedbackScreen(onBack: () -> Unit) {
     var shareError by remember { mutableStateOf<String?>(null) }
     val canSend = message.trim().length >= 10
 
-    SupportPageScaffold(
-        title = TukiInterfaceText.sendFeedback,
-        onBack = onBack
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TukiCream)
+            .statusBarsPadding()
+            .imePadding()
     ) {
-        item {
+        Row(
+            modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(TukiSurfaceRaised, RoundedCornerShape(12.dp))
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("‹", color = TukiInk, style = MaterialTheme.typography.displaySmall)
+            }
+            Spacer(Modifier.width(14.dp))
             Text(
-                supportCopy(
-                    "Tell us what worked, what went wrong, or what you would like TUKI to improve.",
-                    "Ibahagi kung ano ang gumana, ano ang naging problema, o ano ang gusto mong mapahusay sa TUKI."
-                ),
-                color = TukiMuted,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Spacer(Modifier.height(20.dp))
-
-            Text(
-                supportCopy("CATEGORY", "KATEGORYA"),
+                TukiInterfaceText.sendFeedback,
                 color = TukiInk,
-                style = MaterialTheme.typography.labelSmall,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.displaySmall
             )
-            Spacer(Modifier.height(10.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                categories.chunked(2).forEach { rowItems ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        rowItems.forEach { category ->
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable { selectedCategory = category },
-                                shape = RoundedCornerShape(14.dp),
-                                color = if (selectedCategory == category) TukiTeal else TukiSurfaceRaised
-                            ) {
-                                Text(
-                                    category,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-                                    color = if (selectedCategory == category) Color.White else TukiInk,
-                                    style = MaterialTheme.typography.labelLarge
-                                )
+        }
+
+        Spacer(Modifier.height(22.dp))
+
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 16.dp)
+        ) {
+            item {
+                Text(
+                    supportCopy(
+                        "Tell us what worked, what went wrong, or what you would like TUKI to improve.",
+                        "Ibahagi kung ano ang gumana, ano ang naging problema, o ano ang gusto mong mapahusay sa TUKI."
+                    ),
+                    color = TukiMuted,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(20.dp))
+
+                Text(
+                    supportCopy("CATEGORY", "KATEGORYA"),
+                    color = TukiInk,
+                    style = MaterialTheme.typography.labelSmall,
+                    letterSpacing = 1.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(10.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    categories.chunked(2).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            rowItems.forEach { category ->
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { selectedCategory = category },
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (selectedCategory == category) TukiTeal else TukiSurfaceRaised
+                                ) {
+                                    Text(
+                                        category,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                                        color = if (selectedCategory == category) Color.White else TukiInk,
+                                        style = MaterialTheme.typography.labelLarge
+                                    )
+                                }
                             }
+                            if (rowItems.size == 1) Spacer(Modifier.weight(1f))
                         }
-                        if (rowItems.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
-            }
 
-            Spacer(Modifier.height(20.dp))
-            Text(
-                supportCopy("YOUR FEEDBACK", "IYONG FEEDBACK"),
-                color = TukiInk,
-                style = MaterialTheme.typography.labelSmall,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(10.dp))
-            TextField(
-                value = message,
-                onValueChange = {
-                    message = it
-                    shareError = null
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                placeholder = {
-                    Text(
-                        supportCopy(
-                            "Describe your experience or suggestion...",
-                            "Ilarawan ang iyong karanasan o mungkahi..."
-                        ),
-                        color = TukiMuted
-                    )
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = TukiSurfaceRaised,
-                    unfocusedContainerColor = TukiSurfaceRaised,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = TukiInk,
-                    unfocusedTextColor = TukiInk
-                ),
-                shape = RoundedCornerShape(16.dp)
-            )
-
-            Spacer(Modifier.height(8.dp))
-            Text(
-                supportCopy(
-                    "Send Feedback opens your email app with both TUKI feedback recipients already filled in.",
-                    "Bubuksan ng Send Feedback ang email app na nakalagay na ang dalawang TUKI feedback recipients."
-                ),
-                color = TukiMuted,
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            shareError?.let { error ->
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    supportCopy("YOUR FEEDBACK", "IYONG FEEDBACK"),
+                    color = TukiInk,
+                    style = MaterialTheme.typography.labelSmall,
+                    letterSpacing = 1.sp,
+                    fontWeight = FontWeight.Bold
+                )
                 Spacer(Modifier.height(10.dp))
-                Text(error, color = TukiDanger, style = MaterialTheme.typography.bodySmall)
-            }
+                TextField(
+                    value = message,
+                    onValueChange = {
+                        message = it
+                        shareError = null
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp),
+                    placeholder = {
+                        Text(
+                            supportCopy(
+                                "Describe your experience or suggestion...",
+                                "Ilarawan ang iyong karanasan o mungkahi..."
+                            ),
+                            color = TukiMuted
+                        )
+                    },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = TukiSurfaceRaised,
+                        unfocusedContainerColor = TukiSurfaceRaised,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = TukiInk,
+                        unfocusedTextColor = TukiInk
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                )
 
-            Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    supportCopy(
+                        "Send Feedback opens your email app with both TUKI feedback recipients already filled in.",
+                        "Bubuksan ng Send Feedback ang email app na nakalagay na ang dalawang TUKI feedback recipients."
+                    ),
+                    color = TukiMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                shareError?.let { error ->
+                    Spacer(Modifier.height(10.dp))
+                    Text(error, color = TukiDanger, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(TukiCream)
+                .navigationBarsPadding()
+                .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 16.dp)
+        ) {
             Button(
                 enabled = canSend,
                 onClick = {
