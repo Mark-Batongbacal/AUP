@@ -9,10 +9,16 @@ namespace backend.Services.Routing;
 public class ValhallaService : IValhallaService
 {
     private const int DefaultMaxConcurrentRequests = 5;
+    private const double DefaultWalkingSpeedMetersPerSecond = 1.2;
+    private const double DefaultTrikeSpeedMetersPerSecond = 5.6;
+    private const string DefaultTrikeCostingModel = "auto";
 
     private readonly HttpClient _httpClient;
     private readonly SemaphoreSlim _semaphore;
     private readonly ITukiTelemetry _telemetry;
+    private readonly double _walkingSpeedMetersPerSecond;
+    private readonly double _trikeSpeedMetersPerSecond;
+    private readonly string _trikeCostingModel;
 
     public ValhallaService(
         HttpClient httpClient,
@@ -27,6 +33,19 @@ public class ValhallaService : IValhallaService
         var maxConcurrentRequests = configuredConcurrency is > 0
             ? configuredConcurrency.Value
             : DefaultMaxConcurrentRequests;
+
+        _walkingSpeedMetersPerSecond = PositiveOrDefault(
+            configuration.GetValue<double?>(
+                "Routing:WalkingSpeedMetersPerSecond"),
+            DefaultWalkingSpeedMetersPerSecond);
+        _trikeSpeedMetersPerSecond = PositiveOrDefault(
+            configuration.GetValue<double?>(
+                "Routing:TrikeSpeedMetersPerSecond"),
+            DefaultTrikeSpeedMetersPerSecond);
+        _trikeCostingModel = configuration["Routing:TrikeCostingModel"]
+            ?.Trim() is { Length: > 0 } configuredTrikeCosting
+                ? configuredTrikeCosting
+                : DefaultTrikeCostingModel;
 
         _semaphore = new SemaphoreSlim(
             maxConcurrentRequests,
@@ -86,6 +105,8 @@ public class ValhallaService : IValhallaService
                     })
                     .ToList();
             }
+
+            NormalizeRouteSummaryTime(route.Trip.Summary, costing);
         }
 
         return route;
@@ -119,12 +140,73 @@ public class ValhallaService : IValhallaService
         var result = await response.Content
             .ReadFromJsonAsync<ValhallaMatrixResponse>(cancellationToken);
 
-        return result?.SourcesToTargets
+        var matrix = result?.SourcesToTargets
             .SelectMany(row => row)
             .ToList()
             ?? throw new InvalidOperationException(
                 "Valhalla returned an empty matrix response.");
+
+        NormalizeMatrixTimes(matrix, costing);
+        return matrix;
     }
+
+    /// <summary>
+    /// Valhalla remains authoritative for the traversable road/path and its
+    /// distance. Tuki owns passenger-facing ETA assumptions so provisional
+    /// candidate scoring and confirmed journeys use the same per-mode speeds
+    /// instead of switching to Valhalla's pedestrian/car timing model after
+    /// confirmation.
+    /// </summary>
+    private void NormalizeMatrixTimes(
+        IEnumerable<ValhallaMatrixResult> results,
+        string costing)
+    {
+        var speed = GetConfiguredModeSpeed(costing);
+        if (speed is null)
+            return;
+
+        foreach (var result in results)
+        {
+            if (result.Distance is not { } distanceKilometers ||
+                !double.IsFinite(distanceKilometers) ||
+                distanceKilometers < 0)
+            {
+                continue;
+            }
+
+            result.Time = distanceKilometers * 1_000 / speed.Value;
+        }
+    }
+
+    private void NormalizeRouteSummaryTime(
+        ValhallaSummary? summary,
+        string costing)
+    {
+        var speed = GetConfiguredModeSpeed(costing);
+        if (summary is null || speed is null ||
+            !double.IsFinite(summary.Length) || summary.Length < 0)
+        {
+            return;
+        }
+
+        summary.Time = summary.Length * 1_000 / speed.Value;
+    }
+
+    private double? GetConfiguredModeSpeed(string costing)
+    {
+        if (string.Equals(costing, "pedestrian", StringComparison.OrdinalIgnoreCase))
+            return _walkingSpeedMetersPerSecond;
+
+        if (string.Equals(costing, _trikeCostingModel, StringComparison.OrdinalIgnoreCase))
+            return _trikeSpeedMetersPerSecond;
+
+        return null;
+    }
+
+    private static double PositiveOrDefault(double? configured, double fallback) =>
+        configured is > 0 && double.IsFinite(configured.Value)
+            ? configured.Value
+            : fallback;
 
     private async Task<HttpResponseMessage> PostToValhallaAsync<T>(
         string endpoint,
