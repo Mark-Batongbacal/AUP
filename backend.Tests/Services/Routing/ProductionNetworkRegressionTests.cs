@@ -122,13 +122,24 @@ public sealed class ProductionNetworkRegressionTests
 
     // -----------------------------------------------------------------
     // A jeepney ridden only to reach another jeepney the passenger could
-    // already board where they started. On the real network this journey
-    // walked 660 m to board VILLA-PAMPANG(SUPER-8), rode it 159 m, walked 8 m,
-    // and boarded VILLA-PAMPANG(SM-TELEBASTAGAN) -- which passes 12 m from
-    // that first boarding point, at a progress it can still be ridden from.
-    // It cost twice the fare and four minutes more than simply boarding the
-    // second route, and Pareto pruning kept it because it walked two metres
-    // less.
+    // already board where they started.
+    //
+    // This is a GUARD, not a witness. The shape is real -- the deployed API
+    // returns it, for instance
+    //
+    //     walk 1152 m -> trike 3101 m -> CPOINT-HENSONVILLE-HOLY 520 m
+    //                 -> walk 16 m -> VILLA-PAMPANG(SM-TELEBASTAGAN) 2440 m
+    //
+    // where the second route passes the first boarding point at zero metres,
+    // at progress 2866 m, and is ridden from 2542 m to 4972 m.
+    //
+    // But it is not reproducible here. Tests substitute a straight-line
+    // stand-in for Valhalla, and whether the redundant journey escapes Pareto
+    // pruning turns on a few metres of access distance, which the stand-in
+    // gets wrong. Checked against the real Valhalla instance: this trip does
+    // not produce the redundant prefix either way. The rule's logic is
+    // witnessed by RedundantTransitPrefixRegressionTests instead, on a
+    // deterministic fixture where the margin is built in.
     // -----------------------------------------------------------------
     [Fact]
     public async Task PlanTripsAsync_DoesNotRideOneJeepneyJustToReachAnother()
