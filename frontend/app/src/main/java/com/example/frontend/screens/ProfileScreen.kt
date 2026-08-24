@@ -1,6 +1,5 @@
 package com.example.frontend.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -33,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.R
@@ -49,7 +47,7 @@ import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiOrange
-import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 import com.example.frontend.ui.theme.TukiTeal
 import java.time.Duration
 import java.time.Instant
@@ -72,6 +70,9 @@ private enum class ProfilePage {
     CHANGE_PASSWORD,
     LANGUAGE
 }
+
+private val ProfileIconInk = Color(0xFF153E4B)
+private val ProfileIconSurface = Color(0xFFFFF0D5)
 
 @Composable
 fun ProfileScreen(
@@ -290,22 +291,21 @@ fun ProfileScreen(
                 .weight(1f)
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 30.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 20.dp)
+                .padding(horizontal = 24.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 16.dp, bottom = 20.dp)
         ) {
             item {
                 Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
-                        modifier = Modifier.size(90.dp).background(TukiTeal, CircleShape),
+                        modifier = Modifier.size(76.dp).background(TukiTeal, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(text = initials, color = Color.White, style = MaterialTheme.typography.displayMedium)
+                        Text(text = initials, color = Color.White, style = MaterialTheme.typography.displaySmall)
                     }
-
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(text = displayName, color = TukiInk, style = MaterialTheme.typography.displaySmall)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = displayEmail, color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(text = displayEmail, color = TukiMuted, style = MaterialTheme.typography.bodyMedium)
                     Spacer(modifier = Modifier.height(18.dp))
                 }
             }
@@ -346,7 +346,7 @@ fun ProfileScreen(
                     )
                     ProfileStatCard(ProfileStat(favoritesCount.toString(), "FAVORITES"), Modifier.weight(1f))
                 }
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(22.dp))
             }
 
             item {
@@ -356,24 +356,24 @@ fun ProfileScreen(
                     style = MaterialTheme.typography.labelSmall,
                     letterSpacing = 1.sp
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             items(accountRows) { row ->
                 AccountRowItem(row)
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             item {
                 Text(
                     text = TukiInterfaceText.logOut,
-                    color = Color(0xFFB00020),
+                    color = Color(0xFFD73030),
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(TukiSky.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+                        .background(TukiSurfaceRaised, RoundedCornerShape(16.dp))
                         .clickable(onClick = onLogoutClick)
-                        .padding(16.dp)
+                        .padding(horizontal = 16.dp, vertical = 17.dp)
                 )
             }
         }
@@ -404,7 +404,7 @@ private fun guestRemainingText(expiresAt: String?): String {
 private fun ProfileStatCard(stat: ProfileStat, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .background(TukiSky.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+            .background(TukiSurfaceRaised, RoundedCornerShape(16.dp))
             .padding(vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -416,19 +416,32 @@ private fun ProfileStatCard(stat: ProfileStat, modifier: Modifier = Modifier) {
 
 @Composable
 private fun AccountRowItem(row: ProfileAccountRow) {
+    val glyph = when (row.title) {
+        TukiInterfaceText.editProfile -> "♙"
+        TukiInterfaceText.privacySecurity -> "⛨"
+        TukiInterfaceText.language -> "🌐"
+        TukiInterfaceText.settings -> "⚙"
+        else -> "•"
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(TukiSky.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+            .background(TukiSurfaceRaised, RoundedCornerShape(16.dp))
             .clickable(onClick = row.onClick)
-            .padding(14.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
-            Image(
-                painter = painterResource(row.iconRes),
-                contentDescription = row.title,
-                modifier = Modifier.size(40.dp)
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .background(ProfileIconSurface, RoundedCornerShape(13.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = glyph,
+                color = ProfileIconInk,
+                fontSize = if (row.title == TukiInterfaceText.language) 18.sp else 20.sp
             )
         }
 
@@ -438,6 +451,6 @@ private fun AccountRowItem(row: ProfileAccountRow) {
             Spacer(modifier = Modifier.height(2.dp))
             Text(text = row.subtitle, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
         }
-        Text(text = "\u203A", color = TukiMuted, style = MaterialTheme.typography.titleLarge)
+        Text(text = "›", color = TukiMuted, style = MaterialTheme.typography.titleLarge)
     }
 }

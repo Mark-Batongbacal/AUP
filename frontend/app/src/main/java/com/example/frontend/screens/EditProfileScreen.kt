@@ -12,11 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -33,28 +34,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.data.users.UserProfileDto
-import kotlinx.coroutines.launch
-
-import androidx.compose.material3.MaterialTheme
-import com.example.frontend.ui.theme.TukiTeal
-import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiDanger
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
-import com.example.frontend.ui.theme.TukiDanger
-import com.example.frontend.ui.theme.TukiSky
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiSurfaceRaised
+import com.example.frontend.ui.theme.TukiTeal
+import kotlinx.coroutines.launch
 
 sealed interface EditProfileResult {
     data class Success(val profile: UserProfileDto) : EditProfileResult
     data class Error(val message: String) : EditProfileResult
 }
 
-/**
- * Reached by tapping "Edit Profile" in the Profile screen's account list.
- * Full name + phone are sent to the backend on Save; see the note at the
- * top of this file re: why Email is disabled.
- */
 @Composable
 fun EditProfileScreen(
     initialFullName: String,
@@ -72,7 +65,6 @@ fun EditProfileScreen(
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var successMessage by remember { mutableStateOf<String?>(null) }
-
     val coroutineScope = rememberCoroutineScope()
 
     val initials = remember(fullName) {
@@ -95,9 +87,7 @@ fun EditProfileScreen(
                     successMessage = "Profile updated."
                     onSaved(result.profile)
                 }
-                is EditProfileResult.Error -> {
-                    errorMessage = result.message
-                }
+                is EditProfileResult.Error -> errorMessage = result.message
             }
             isSaving = false
         }
@@ -110,41 +100,33 @@ fun EditProfileScreen(
             .statusBarsPadding()
             .padding(start = 30.dp, end = 30.dp, top = 12.dp, bottom = 30.dp)
     ) {
-        // Header
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .size(38.dp)
-                    .background(TukiSky.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                    .background(TukiSurfaceRaised, RoundedCornerShape(12.dp))
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = "\u2039", color = TukiInk, style = MaterialTheme.typography.displaySmall)
+                Text("‹", color = TukiInk, style = MaterialTheme.typography.displaySmall)
             }
             Spacer(modifier = Modifier.width(14.dp))
-            Text(
-                text = "Edit profile",
-                color = TukiInk,
-                style = MaterialTheme.typography.displaySmall
-            )
+            Text("Edit profile", color = TukiInk, style = MaterialTheme.typography.displaySmall)
         }
 
         Spacer(modifier = Modifier.height(28.dp))
 
-        // Avatar + change photo
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(contentAlignment = Alignment.BottomEnd) {
                 Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .background(TukiTeal, CircleShape),
+                    modifier = Modifier.size(100.dp).background(TukiTeal, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = initials.ifBlank { "?" },
+                        initials.ifBlank { "?" },
                         color = Color.White,
                         style = MaterialTheme.typography.displayMedium
                     )
@@ -156,64 +138,44 @@ fun EditProfileScreen(
                         .clickable(onClick = onChangePhotoClick),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "\uD83D\uDCF7", fontSize = 14.sp) // 📷
+                    Text("📷", fontSize = 14.sp)
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-
             Text(
-                text = "Change photo",
+                "Change photo",
                 color = TukiTeal,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.clickable(onClick = onChangePhotoClick)
             )
-
             Spacer(modifier = Modifier.height(28.dp))
         }
 
-        // Full name
-        FieldLabel(text = "Full name")
-        EditableField(
-            value = fullName,
-            onValueChange = { fullName = it },
-            enabled = !isSaving
-        )
-
+        FieldLabel("Full name")
+        EditableField(fullName, { fullName = it }, !isSaving)
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Email (disabled — see note at top of file)
-        FieldLabel(text = "Email")
-        EditableField(
-            value = initialEmail,
-            onValueChange = {},
-            enabled = false
-        )
+        FieldLabel("Email")
+        EditableField(initialEmail, {}, false)
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Email is tied to your login and can't be changed here yet.",
+            "Email is tied to your login and can't be changed here yet.",
             color = TukiMuted,
             style = MaterialTheme.typography.bodySmall
         )
 
         Spacer(modifier = Modifier.height(18.dp))
-
-        // Phone
-        FieldLabel(text = "Phone")
-        EditableField(
-            value = phone,
-            onValueChange = { phone = it },
-            enabled = !isSaving
-        )
-
+        FieldLabel("Phone")
+        EditableField(phone, { phone = it }, !isSaving)
         Spacer(modifier = Modifier.height(20.dp))
 
         errorMessage?.let { message ->
-            Text(text = message, color = TukiDanger, style = MaterialTheme.typography.labelLarge)
+            Text(message, color = TukiDanger, style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.height(10.dp))
         }
         successMessage?.let { message ->
-            Text(text = message, color = TukiTeal, style = MaterialTheme.typography.labelLarge)
+            Text(message, color = TukiTeal, style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.height(10.dp))
         }
 
@@ -238,7 +200,7 @@ fun EditProfileScreen(
                     color = Color.White
                 )
             } else {
-                Text(text = "Save changes", color = Color.White, style = MaterialTheme.typography.titleLarge)
+                Text("Save changes", color = Color.White, style = MaterialTheme.typography.titleLarge)
             }
         }
     }
@@ -246,7 +208,7 @@ fun EditProfileScreen(
 
 @Composable
 private fun FieldLabel(text: String) {
-    Text(text = text, color = TukiInk, style = MaterialTheme.typography.titleSmall)
+    Text(text, color = TukiInk, style = MaterialTheme.typography.titleSmall)
     Spacer(modifier = Modifier.height(8.dp))
 }
 
@@ -262,9 +224,9 @@ private fun EditableField(
         enabled = enabled,
         singleLine = true,
         colors = TextFieldDefaults.colors(
-            focusedContainerColor = TukiSky.copy(alpha = 0.2f),
-            unfocusedContainerColor = TukiSky.copy(alpha = 0.2f),
-            disabledContainerColor = TukiSky.copy(alpha = 0.1f),
+            focusedContainerColor = TukiSurfaceRaised,
+            unfocusedContainerColor = TukiSurfaceRaised,
+            disabledContainerColor = TukiSurfaceRaised,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent,
             disabledIndicatorColor = Color.Transparent,
