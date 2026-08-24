@@ -15,13 +15,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import androidx.compose.material3.MaterialTheme
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.ui.theme.TukiTeal
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiSurfaceRaised
@@ -45,10 +43,10 @@ fun BottomBar(
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 13.dp)
         ) {
-            BottomBarItem(R.drawable.home, "Home", selectedTab == TukiTab.HOME, onHomeClick, Modifier.weight(1f))
-            BottomBarItem(R.drawable.recent, "Recent", selectedTab == TukiTab.RECENT, onRecentClick, Modifier.weight(1f))
-            BottomBarItem(R.drawable.favorite, "Favorites", selectedTab == TukiTab.FAVORITES, onFavoritesClick, Modifier.weight(1f))
-            BottomBarItem(R.drawable.profile, "Profile", selectedTab == TukiTab.PROFILE, onProfileClick, Modifier.weight(1f))
+            BottomBarItem(R.drawable.home, TukiInterfaceText.home, selectedTab == TukiTab.HOME, onHomeClick, Modifier.weight(1f))
+            BottomBarItem(R.drawable.recent, TukiInterfaceText.recent, selectedTab == TukiTab.RECENT, onRecentClick, Modifier.weight(1f))
+            BottomBarItem(R.drawable.favorite, TukiInterfaceText.favorites, selectedTab == TukiTab.FAVORITES, onFavoritesClick, Modifier.weight(1f))
+            BottomBarItem(R.drawable.profile, TukiInterfaceText.profile, selectedTab == TukiTab.PROFILE, onProfileClick, Modifier.weight(1f))
         }
     }
 }
