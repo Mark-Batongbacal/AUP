@@ -1,6 +1,10 @@
 package com.example.frontend.screens
 
 import android.location.Location
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
@@ -16,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -321,7 +327,12 @@ fun TripTrackingScreen(
 
     BackHandler(enabled = activeTrip) { onBack() }
 
-    Box(Modifier.fillMaxSize().background(TripScreen)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(TripScreen)
+            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    ) {
         LiveTripMapScreen(
             routePoints = visibleRoute,
             currentPosition = currentPosition,
