@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,7 +45,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -308,6 +316,8 @@ fun HomeScreen(
         }
     }
 
+    val focusManager = LocalFocusManager.current
+
     Box(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -319,6 +329,7 @@ fun HomeScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .statusBarsPadding()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 18.dp)
             ) {
                 Spacer(Modifier.height(10.dp))
@@ -353,29 +364,28 @@ fun HomeScreen(
 
                 Spacer(Modifier.height(14.dp))
 
-                CurrentLocationCard(
-                    currentLocationLabel = currentLocationLabel,
-                    areaLabel = currentAreaLabel,
-                    isLocating = isLocating,
-                    onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
-                )
+                if (activeTripDescription.isNullOrBlank()) {
+                    CurrentLocationCard(
+                        currentLocationLabel = currentLocationLabel,
+                        areaLabel = currentAreaLabel,
+                        isLocating = isLocating,
+                        onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
+                    )
 
-                activeTripDescription?.takeIf { it.isNotBlank() }?.let { description ->
                     Spacer(Modifier.height(12.dp))
+
+                    DestinationCard(
+                        selectedDestination = selectedDestination,
+                        canFindRoutes = selectedDestination != null && originLatitude != null && originLongitude != null,
+                        onClick = { openMapPicker(HomeMapPickMode.Destination) },
+                        onFindRoutesClick = ::submitRoute
+                    )
+                } else {
                     ActiveTripCard(
-                        description = description,
+                        description = activeTripDescription,
                         onResumeClick = onResumeActiveTrip
                     )
                 }
-
-                Spacer(Modifier.height(12.dp))
-
-                DestinationCard(
-                    selectedDestination = selectedDestination,
-                    canFindRoutes = selectedDestination != null && originLatitude != null && originLongitude != null,
-                    onClick = { openMapPicker(HomeMapPickMode.Destination) },
-                    onFindRoutesClick = ::submitRoute
-                )
 
                 Spacer(Modifier.height(14.dp))
 
@@ -890,6 +900,7 @@ private fun HomeMapPickerOverlay(
     onBack: () -> Unit,
     onDone: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     val selectedPoint = selection?.let { LatLng(it.latitude, it.longitude) }
 
     val markerColor = HomeTeal
@@ -944,8 +955,22 @@ private fun HomeMapPickerOverlay(
                 TextField(
                     value = searchText,
                     onValueChange = onSearchTextChange,
-                    placeholder = { Text("Enter address to search", color = Color.White.copy(alpha = 0.55f), fontSize = 16.sp) },
+                    placeholder = { Text("Search location...", color = Color.White.copy(alpha = 0.55f), fontSize = 16.sp) },
                     singleLine = true,
+                    trailingIcon = {
+                        if (searchText.isNotEmpty()) {
+                            Text(
+                                "✕",
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 18.sp,
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .clickable { onSearchTextChange("") }
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
@@ -961,11 +986,14 @@ private fun HomeMapPickerOverlay(
             }
 
             if (isSearching || isSearchingMore || canSearchMore || searchError != null || searchResults.isNotEmpty()) {
+                val scrollState = rememberScrollState()
                 Column(
-                    Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(max = 300.dp)
                         .padding(top = 8.dp)
                         .background(MapPanel.copy(alpha = 0.95f), RoundedCornerShape(18.dp))
+                        .verticalScroll(scrollState)
                         .padding(vertical = 7.dp)
                 ) {
                     if (isSearching) {
@@ -989,9 +1017,9 @@ private fun HomeMapPickerOverlay(
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(result.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(result.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 result.address?.takeIf { it.isNotBlank() }?.let { address ->
-                                    Text(address, color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(address, color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
