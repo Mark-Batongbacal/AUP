@@ -28,6 +28,46 @@ public sealed class ProductionNetworkRegressionTests
     private const double ReportedDestinationLat = 15.150765;
     private const double ReportedDestinationLon = 120.592846;
 
+    [Fact]
+    public async Task SmCpoint_DirectBoardingOccurrenceAlsoSurvivesTransferPrefix()
+    {
+        var service = ProductionNetworkFixture.CreateService();
+        var snapshot = await service.InspectBoardingSelectionAsync(
+            ProductionNetworkFixture.LinkCorridor,
+            downstreamSampleIndex: 18,
+            SampleBOriginLat,
+            SampleBOriginLon,
+            SharedDestinationLat,
+            SharedDestinationLon);
+
+        // This physically distinct early occurrence is selected by the direct
+        // route's progress diversity. The former scalar prefix had already
+        // replaced it with the provisionally cheaper board at ~4.63 km.
+        var early = Assert.Single(snapshot.Direct,
+            state => Math.Abs(state.ProgressMeters - 2_474.4) < 5);
+        var formerScalar = Assert.IsType<BoardingStateSnapshot>(
+            snapshot.PreviousScalarPrefix);
+
+        Assert.Equal(4_630.8, formerScalar.ProgressMeters, precision: 0);
+        Assert.NotEqual(early.OccurrenceKey, formerScalar.OccurrenceKey);
+        Assert.Contains(snapshot.TransferPrefix,
+            state => state.OccurrenceKey == early.OccurrenceKey);
+        Assert.Equal(8, snapshot.TransferPrefix.Count);
+        Assert.NotNull(early.ConfirmedTrikeMeters);
+    }
+
+    [Fact]
+    public async Task SmCpoint_UsefulJeepneyTransferStillWorksWithMultiplePrefixStates()
+    {
+        var plans = await PlanAsync(
+            SampleBOriginLat, SampleBOriginLon,
+            SharedDestinationLat, SharedDestinationLon);
+
+        Assert.Contains(plans, plan => JeepneyLegs(plan)
+            .Select(leg => leg.RouteId)
+            .SequenceEqual(["JEEP-SAMPLE-02", ProductionNetworkFixture.LinkCorridor]));
+    }
+
     // -----------------------------------------------------------------
     // The reported symptom: whenever SM-CPOINT-HOLY-HIWAY was the useful
     // corridor the planner avoided it, staying on another jeepney or walking

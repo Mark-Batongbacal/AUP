@@ -47,7 +47,9 @@ internal static class TransferChainTopologyFixture
     /// files their edges. Pass <paramref name="chainRoutesFirst"/> to put them
     /// at the front instead: the planner's answer must not depend on it.
     /// </summary>
-    public static List<TransportRoute> BuildRoutes(bool chainRoutesFirst = false)
+    public static List<TransportRoute> BuildRoutes(
+        bool chainRoutesFirst = false,
+        bool crowdedSecondTransfer = false)
     {
         var routes = new List<TransportRoute>
         {
@@ -83,6 +85,33 @@ internal static class TransferChainTopologyFixture
             (15.0700, 120.5600),
             (15.0890, 120.5765)
         ]));
+
+        if (crowdedSecondTransfer)
+        {
+            // These routes cross LINK-NORTHEAST after its LOCAL-WEST entry and
+            // are deliberately filed before FINAL-NORTH. Each is a distinct,
+            // valid downstream interchange occurrence, but none approaches the
+            // destination. With several retained LOCAL-WEST boarding
+            // occurrences, the old per-state round robin spent the whole next
+            // frontier on these early children before it ever enumerated the
+            // later FINAL-NORTH edge.
+            for (var index = 0; index < 12; index++)
+            {
+                var fraction = 0.16 + index * 0.05;
+                var crossingLatitude = 15.0527 + (15.0890 - 15.0527) * fraction;
+                var crossingLongitude = 120.5395 + (120.5765 - 120.5395) * fraction;
+
+                routes.Add(Route(
+                    100 + index,
+                    $"R-FANOUT-{index:D2}",
+                    $"Second-transfer decoy {index}",
+                    [
+                        (crossingLatitude - 0.0030, crossingLongitude + 0.0015),
+                        (crossingLatitude, crossingLongitude),
+                        (crossingLatitude - 0.0250, crossingLongitude - 0.0200)
+                    ]));
+            }
+        }
 
         routes.Add(Route(16, FinalNorth, "Final north corridor",
         [
@@ -151,21 +180,24 @@ internal static class TransferChainTopologyFixture
 
     public static RoutingService CreateService(
         RoutingOptions? options = null,
-        bool chainRoutesFirst = false)
+        bool chainRoutesFirst = false,
+        bool crowdedSecondTransfer = false,
+        List<TricyclePoint>? trikePoints = null,
+        IValhallaService? valhalla = null)
     {
         var routeRepository = new Mock<ITransportRouteRepository>();
         routeRepository
             .Setup(repository => repository.GetAllActiveWithOrderedPointsAsync(
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildRoutes(chainRoutesFirst));
+            .ReturnsAsync(BuildRoutes(chainRoutesFirst, crowdedSecondTransfer));
 
         var tricycleRepository = new Mock<ITricyclePointRepository>();
         tricycleRepository
             .Setup(repository => repository.GetAllActiveAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(BuildTrikePoints());
+            .ReturnsAsync(trikePoints ?? BuildTrikePoints());
 
         return new RoutingService(
-            new RoadNetworkValhallaService(),
+            valhalla ?? new RoadNetworkValhallaService(),
             routeRepository.Object,
             tricycleRepository.Object,
             NullLogger<RoutingService>.Instance,

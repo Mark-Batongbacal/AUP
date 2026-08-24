@@ -616,7 +616,8 @@ public partial class RoutingService
     /// <summary>
     /// Applies <see cref="ConstrainTransitAccess"/> across a whole route's
     /// per-sample access options. Samples left with no usable option become
-    /// null, which the prefix/suffix minima already treat as unavailable.
+    /// null, which the bounded boarding and destination-access representations
+    /// already treat as unavailable.
     /// </summary>
     private AccessCandidate?[] ConstrainTransitAccessOptions(AccessCandidate[] options) =>
         options.Select(ConstrainTransitAccess).ToArray();

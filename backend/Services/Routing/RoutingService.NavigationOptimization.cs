@@ -11,7 +11,7 @@ public partial class RoutingService
     /// Dense samples from one corridor therefore cannot crowd every other
     /// useful route out before Valhalla confirmation.
     /// </summary>
-    private List<JourneyCandidate> SelectCandidatesToConfirmWithDiversity(
+    internal List<JourneyCandidate> SelectCandidatesToConfirmWithDiversity(
         List<JourneyCandidate> candidates)
     {
         if (candidates.Count <= MaxCandidatesToConfirm)
@@ -19,20 +19,25 @@ public partial class RoutingService
 
         var selected = new List<JourneyCandidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var diversityQuota = Math.Max(1, MaxCandidatesToConfirm / 4);
+        var physicalDiversityQuota = Math.Max(1, MaxCandidatesToConfirm / 4);
         var objectiveQuota = Math.Max(
             1,
-            (MaxCandidatesToConfirm - diversityQuota) / 4);
+            (MaxCandidatesToConfirm - physicalDiversityQuota) / 4);
 
-        AddDiverse(diversityQuota);
+        // Physical route occurrences and access profiles solve different
+        // pre-confirmation failure modes. A cheap straight-line walk can be
+        // the best provisional candidate in every boarding bucket, yet fail
+        // once Valhalla measures the real network walk. Preserve the complete
+        // physical-region reservation, and use the former low-origin-access
+        // objective slice for bounded origin/destination mode + TODA
+        // fallbacks. The total confirmation budget is unchanged.
+        AddDiverse(physicalDiversityQuota, GetBoardingDiversityKey);
         Add(candidates.OrderBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
         Add(candidates.OrderBy(EstimateCandidateFarePesos)
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
         Add(candidates.OrderBy(EstimateCandidateTimeSeconds)
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
-        Add(candidates.OrderBy(EstimateCandidateOriginAccessDistanceMeters)
-            .ThenBy(candidate => candidate.OriginAccess.TotalTimeSeconds)
-            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
+        AddAccessProfileDiverse(objectiveQuota);
 
         if (selected.Count < MaxCandidatesToConfirm)
         {
@@ -64,14 +69,18 @@ public partial class RoutingService
             }
         }
 
-        void AddDiverse(int limit)
+        void AddDiverse(
+            int limit,
+            Func<JourneyCandidate, string> diversityKey)
         {
             var buckets = candidates
-                .GroupBy(GetBoardingDiversityKey, StringComparer.Ordinal)
+                .GroupBy(diversityKey, StringComparer.Ordinal)
                 .Select(group => new Queue<JourneyCandidate>(group
                     .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-                    .ThenBy(EstimateCandidateTimeSeconds)))
+                    .ThenBy(EstimateCandidateTimeSeconds)
+                    .ThenBy(GetJourneyCandidateKey, StringComparer.Ordinal)))
                 .OrderBy(queue => queue.Peek().TotalGeneralizedCostPesos)
+                .ThenBy(queue => diversityKey(queue.Peek()), StringComparer.Ordinal)
                 .ToList();
 
             var added = 0;
@@ -80,6 +89,71 @@ public partial class RoutingService
                    buckets.Any(queue => queue.Count > 0))
             {
                 foreach (var queue in buckets)
+                {
+                    while (queue.Count > 0)
+                    {
+                        var candidate = queue.Dequeue();
+                        if (!seen.Add(GetJourneyCandidateKey(candidate)))
+                            continue;
+
+                        selected.Add(candidate);
+                        added++;
+                        break;
+                    }
+
+                    if (added >= limit || selected.Count >= MaxCandidatesToConfirm)
+                        break;
+                }
+            }
+        }
+
+        void AddAccessProfileDiverse(int limit)
+        {
+            if (limit <= 0)
+                return;
+
+            // First divide by the coarse mode pair so walk/walk cannot consume
+            // the complete access-fallback reservation. Within each pair, one
+            // representative per route sequence + concrete TODA + physical
+            // occurrence keeps the low-origin-access objective this quota
+            // replaces. The occurrence component is essential: boarding and
+            // transfer regions that confirm differently cannot be collapsed
+            // merely because their modes and route IDs match. Choose the
+            // shortest access within each joint bucket, then let bucket
+            // representatives compete by complete provisional journey cost.
+            // Round-robin selection remains deterministic and bounded.
+            var modePairQueues = candidates
+                .GroupBy(GetAccessModePairKey, StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => new Queue<JourneyCandidate>(group
+                    .GroupBy(GetAccessProfileRegionDiversityKey, StringComparer.Ordinal)
+                    .Select(profile => new
+                    {
+                        Representative = profile
+                            .OrderBy(EstimateCandidateOriginAccessDistanceMeters)
+                            .ThenBy(candidate => candidate.OriginAccess.TotalTimeSeconds)
+                            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
+                            .ThenBy(EstimateCandidateTimeSeconds)
+                            .ThenBy(GetJourneyCandidateKey, StringComparer.Ordinal)
+                            .First(),
+                        ProvisionalProfileCost = profile.Min(candidate =>
+                            candidate.TotalGeneralizedCostPesos)
+                    })
+                    .OrderBy(profile => profile.ProvisionalProfileCost)
+                    .ThenBy(profile => profile.Representative.TotalGeneralizedCostPesos)
+                    .ThenBy(profile => EstimateCandidateTimeSeconds(
+                        profile.Representative))
+                    .ThenBy(profile => GetAccessProfileRegionDiversityKey(
+                        profile.Representative), StringComparer.Ordinal)
+                    .Select(profile => profile.Representative)))
+                .ToList();
+
+            var added = 0;
+            while (added < limit &&
+                   selected.Count < MaxCandidatesToConfirm &&
+                   modePairQueues.Any(queue => queue.Count > 0))
+            {
+                foreach (var queue in modePairQueues)
                 {
                     while (queue.Count > 0)
                     {
@@ -109,6 +183,38 @@ public partial class RoutingService
             return $"{leg.RouteId}@{boardBucket}";
         }));
     }
+
+    private static string GetAccessModePairKey(JourneyCandidate candidate) =>
+        $"{candidate.OriginAccess.Mode}>{candidate.DestinationAccess.Mode}";
+
+    private static string GetAccessProfileDiversityKey(
+        JourneyCandidate candidate) =>
+        $"{string.Join('>', candidate.Legs.Select(leg => leg.RouteId))}|" +
+        $"{GetAccessEndpointProfileKey(candidate.OriginAccess)}|" +
+        GetAccessEndpointProfileKey(candidate.DestinationAccess);
+
+    private string GetAccessProfileRegionDiversityKey(
+        JourneyCandidate candidate) =>
+        $"{GetAccessProfileDiversityKey(candidate)}|" +
+        GetTransitOccurrenceDiversityKey(candidate);
+
+    private string GetTransitOccurrenceDiversityKey(JourneyCandidate candidate)
+    {
+        var bucketSize = _options.BoardingDiversityBucketMeters;
+        return string.Join('>', candidate.Legs.Select(leg =>
+        {
+            var boardBucket = (long)Math.Floor(
+                GetBoardProgressMeters(leg) / bucketSize);
+            var alightBucket = (long)Math.Floor(
+                GetAlightProgressMeters(leg) / bucketSize);
+            return $"{leg.RouteId}@{boardBucket}-{alightBucket}";
+        }));
+    }
+
+    private static string GetAccessEndpointProfileKey(AccessCandidate access) =>
+        access.Mode == AccessMode.Trike
+            ? $"Trike:{access.TrikePoint?.Id ?? "unknown"}"
+            : access.Mode.ToString();
 
     /// <summary>
     /// Conservative Pareto pruning over confirmed journeys. A plan is removed

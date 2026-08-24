@@ -78,6 +78,103 @@ public sealed class NavigationPhase2OptimizationTests
         }
     }
 
+    [Fact]
+    public void ConfirmationBudget_ReservesAccessProfileWithoutLosingPhysicalDiversity()
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 20);
+        var routeChain = new[] { "A", "B", "C" };
+        var walkTwin = BuildSelectionCandidate(
+            routeChain,
+            AccessMode.Walk,
+            todaId: null,
+            provisionalCost: 1);
+        var originTrike = BuildSelectionCandidate(
+            routeChain,
+            AccessMode.Trike,
+            todaId: "TODA-ORIGIN",
+            provisionalCost: 10_000);
+
+        // Every ordinary objective prefers these candidates, and the walk
+        // twin is also cheaper in the exact same physical boarding bucket.
+        // Only bounded access-profile diversity can retain originTrike.
+        var distractors = Enumerable.Range(0, 40)
+            .Select(index => BuildSelectionCandidate(
+                [$"DISTRACTOR-{index:D2}"],
+                AccessMode.Walk,
+                todaId: null,
+                provisionalCost: 10 + index))
+            .ToList();
+        List<RoutingService.JourneyCandidate> candidates =
+        [
+            walkTwin,
+            originTrike,
+            .. distractors
+        ];
+
+        var selected = service.SelectCandidatesToConfirmWithDiversity(candidates);
+        var reversed = service.SelectCandidatesToConfirmWithDiversity(
+            candidates.AsEnumerable().Reverse().ToList());
+
+        Assert.Equal(20, selected.Count);
+        Assert.Contains(originTrike, selected);
+        Assert.Contains(walkTwin, selected);
+        Assert.Contains(selected, candidate =>
+            candidate.Legs[0].RouteId.StartsWith("DISTRACTOR-", StringComparison.Ordinal));
+
+        // Repository enumeration cannot determine which profiles survive.
+        Assert.Equal(
+            selected.Select(candidate => candidate.TotalGeneralizedCostPesos).Order(),
+            reversed.Select(candidate => candidate.TotalGeneralizedCostPesos).Order());
+    }
+
+    [Fact]
+    public void ConfirmationBudget_AccessProfileKeepsDistinctTransitOccurrences()
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 20);
+        var routeChain = new[] { "A", "B", "C" };
+        var firstOccurrence = BuildSelectionCandidate(
+            routeChain,
+            AccessMode.Trike,
+            todaId: "TODA-ORIGIN",
+            provisionalCost: 10_000,
+            alightProgressOffsetMeters: 0);
+        var downstreamOccurrence = BuildSelectionCandidate(
+            routeChain,
+            AccessMode.Trike,
+            todaId: "TODA-ORIGIN",
+            provisionalCost: 10_001,
+            alightProgressOffsetMeters: 500);
+
+        // These candidates intentionally share route IDs, access mode/TODA,
+        // and every boarding bucket. Only their authoritative alighting /
+        // transfer occurrences differ. Cheap walk distractors consume every
+        // ordinary objective and the physical-board reservation, so both can
+        // survive only when access-profile diversity retains that occurrence.
+        var distractors = Enumerable.Range(0, 40)
+            .Select(index => BuildSelectionCandidate(
+                [$"DISTRACTOR-{index:D2}"],
+                AccessMode.Walk,
+                todaId: null,
+                provisionalCost: 10 + index))
+            .ToList();
+        List<RoutingService.JourneyCandidate> candidates =
+        [
+            firstOccurrence,
+            downstreamOccurrence,
+            .. distractors
+        ];
+
+        var selected = service.SelectCandidatesToConfirmWithDiversity(candidates);
+        var reversed = service.SelectCandidatesToConfirmWithDiversity(
+            candidates.AsEnumerable().Reverse().ToList());
+
+        Assert.Contains(firstOccurrence, selected);
+        Assert.Contains(downstreamOccurrence, selected);
+        Assert.Equal(
+            selected.Select(candidate => candidate.TotalGeneralizedCostPesos).Order(),
+            reversed.Select(candidate => candidate.TotalGeneralizedCostPesos).Order());
+    }
+
     private static RoutingService CreateTransferService()
     {
         var routes = new List<TransportRoute>
@@ -129,6 +226,84 @@ public sealed class NavigationPhase2OptimizationTests
             tricycleRepository.Object,
             NullLogger<RoutingService>.Instance,
             Options.Create(options));
+    }
+
+    private static RoutingService CreateSelectionService(
+        int maxCandidatesToConfirm)
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var tricycleRepository = new Mock<ITricyclePointRepository>();
+        return new RoutingService(
+            new StraightLineValhallaService(),
+            routeRepository.Object,
+            tricycleRepository.Object,
+            NullLogger<RoutingService>.Instance,
+            Options.Create(new RoutingOptions
+            {
+                MaxCandidatesToConfirm = maxCandidatesToConfirm,
+                BoardingDiversityBucketMeters = 250
+            }));
+    }
+
+    private static RoutingService.JourneyCandidate BuildSelectionCandidate(
+        IReadOnlyList<string> routeIds,
+        AccessMode originMode,
+        string? todaId,
+        double provisionalCost,
+        double alightProgressOffsetMeters = 0)
+    {
+        var legs = routeIds.Select((routeId, index) =>
+        {
+            var boardProgress = 1_000.0 + index * 2_000;
+            var alightProgress = boardProgress + 1_000 + alightProgressOffsetMeters;
+            var board = (Latitude: 15.0 + index * 0.001, Longitude: 120.5);
+            var alight = (Latitude: board.Latitude + 0.0005, Longitude: 120.5);
+            return new RoutingService.JourneyLegCandidate(
+                routeId,
+                routeId,
+                board,
+                alight,
+                BoardFullRouteAnchor: new RoutingService.RouteAnchor(
+                    routeId, 0, 0, board.Latitude, board.Longitude, boardProgress),
+                AlightFullRouteAnchor: new RoutingService.RouteAnchor(
+                    routeId, 0, 1, alight.Latitude, alight.Longitude, alightProgress));
+        }).ToList();
+
+        var firstBoard = legs[0].Board;
+        var lastAlight = legs[^1].Alight;
+        var origin = BuildAccess(originMode, todaId, firstBoard);
+        var destination = BuildAccess(AccessMode.Walk, null, lastAlight);
+        return new RoutingService.JourneyCandidate(
+            legs,
+            origin,
+            destination,
+            [],
+            provisionalCost);
+    }
+
+    private static RoutingService.AccessCandidate BuildAccess(
+        AccessMode mode,
+        string? todaId,
+        (double Latitude, double Longitude) anchor)
+    {
+        var trikePoint = mode == AccessMode.Trike
+            ? new TrikePoint(
+                todaId!,
+                todaId!,
+                anchor.Latitude - 0.01,
+                anchor.Longitude)
+            : null;
+        return new RoutingService.AccessCandidate(
+            mode,
+            anchor,
+            WalkDistanceMeters: mode == AccessMode.Trike ? 1_000 : 1,
+            WalkTimeSeconds: mode == AccessMode.Trike ? 1_000 : 1,
+            trikePoint,
+            TrikeRideDistanceMeters: mode == AccessMode.Trike ? 10_000 : null,
+            TrikeRideTimeSeconds: mode == AccessMode.Trike ? 10_000 : null,
+            TrikeFarePesos: mode == AccessMode.Trike ? 50 : null,
+            ValueOfTimePesosPerMinute: 2,
+            WalkingFatiguePesosPerKilometer: 3);
     }
 
     private static TransportRoute BuildRoute(

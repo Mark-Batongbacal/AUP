@@ -412,6 +412,88 @@ public sealed class FeederShadowingRegressionTests
         });
     }
 
+    // A candidate can be provisionally inside the walk-access cap because
+    // generation only has a straight-line estimate, then confirm to a longer
+    // road walk. That ineligible walk must be removed before pairwise feeder
+    // shadowing: otherwise it can act as an earlier-board reference and erase
+    // the only genuinely reachable tricycle-fed journey before the facade
+    // later removes the walk itself.
+    [Fact]
+    public async Task PlanTripsAsync_OverCapConfirmedWalkCannotShadowValidTrikeAccess()
+    {
+        var route = BuildStraightRoute(120.5000, 120.5500);
+        var origin = (Latitude: 15.0018, Longitude: 120.5000);
+        var toda = new TricyclePoint
+        {
+            TricyclePointId = 1,
+            PointCode = "ONLY-REACHABLE-TODA",
+            PointName = "Only reachable TODA",
+            CenterLatitude = origin.Latitude,
+            CenterLongitude = origin.Longitude,
+            IsActive = true
+        };
+
+        // Early route points look <300m away provisionally, but the legal
+        // pedestrian path is 350m. The TODA cannot drive to those early
+        // points either; its first legal route meeting is about 900m farther
+        // along the corridor. Without pre-pruning access eligibility, the
+        // invalid 350m walk is an apparently shorter reference and shadows
+        // that valid tricycle journey.
+        double? PedestrianOverride(ValhallaLocation target) =>
+            Math.Abs(target.Lat - 15.0000) < 1e-6 && target.Lon < 120.5030
+                ? 350
+                : null;
+        double? MotorizedOverride(ValhallaLocation target) =>
+            Math.Abs(target.Lat - 15.0000) < 1e-6 && target.Lon < 120.5080
+                ? double.PositiveInfinity
+                : null;
+
+        var service = CreateService(
+            route,
+            [toda],
+            new CostingAwareValhallaService(
+                5.6,
+                PedestrianOverride,
+                MotorizedOverride),
+            new RoutingOptions
+            {
+                DefaultSampleIntervalMeters = 100,
+                MaxRouteSamples = 80,
+                MaxTransfers = 0,
+                MaxTripOptions = 10,
+                MaxCandidatesToConfirm = 200,
+                MaxBoardingVariantsPerRoute = 30,
+                MaxWalkAccessDistanceMeters = 300,
+                MaxWalkToTrikePointMeters = 100,
+                MaxNearbyTrikeCandidates = 4,
+                MaxTotalWalkingMetersPerJourney = 1_000,
+                MaxWalkOnlyTripDistanceMeters = 50,
+                MaxWalkTrikeTripDistanceMeters = 50,
+                MaxStaticRouteSegmentJumpMeters = 15_000,
+                FeederShadowingMinProgressMeters = 300,
+                FeederShadowingAccessDistanceRatio = 0.60
+            });
+
+        var plans = await service.PlanTripsAsync(
+            origin.Latitude,
+            origin.Longitude,
+            15.0000,
+            120.5500);
+        var transitPlans = plans
+            .Where(plan => plan.Legs.Any(leg => leg.Mode == AccessMode.Jeepney))
+            .ToList();
+
+        Assert.NotEmpty(transitPlans);
+        Assert.DoesNotContain(
+            transitPlans,
+            plan => plan.OriginAccess.Mode == AccessMode.Walk);
+        Assert.Contains(transitPlans, plan =>
+            plan.OriginAccess.Mode == AccessMode.Trike &&
+            plan.OriginAccess.TrikePointId == "ONLY-REACHABLE-TODA" &&
+            plan.Legs.First(leg => leg.Mode == AccessMode.Jeepney)
+                .BoardLongitude >= 120.5080);
+    }
+
     // -----------------------------------------------------------------
     // Shared scenario builders
     // -----------------------------------------------------------------
@@ -565,7 +647,8 @@ public sealed class FeederShadowingRegressionTests
     /// </summary>
     private sealed class CostingAwareValhallaService(
         double trikeSpeedMetersPerSecond,
-        Func<ValhallaLocation, double?>? pedestrianDistanceOverrideByTarget = null)
+        Func<ValhallaLocation, double?>? pedestrianDistanceOverrideByTarget = null,
+        Func<ValhallaLocation, double?>? motorizedDistanceOverrideByTarget = null)
         : IValhallaService
     {
         public Task<ValhallaRouteResponse> GetRouteAsync(
@@ -593,7 +676,7 @@ public sealed class FeederShadowingRegressionTests
                 {
                     var overrideDistance = isPedestrian
                         ? pedestrianDistanceOverrideByTarget?.Invoke(target)
-                        : null;
+                        : motorizedDistanceOverrideByTarget?.Invoke(target);
 
                     if (overrideDistance is { } distanceMeters)
                     {
@@ -613,7 +696,8 @@ public sealed class FeederShadowingRegressionTests
                             FromIndex = 0,
                             ToIndex = index,
                             Distance = distanceMeters / 1_000,
-                            Time = distanceMeters / 1.2
+                            Time = distanceMeters /
+                                (isPedestrian ? 1.2 : trikeSpeedMetersPerSecond)
                         };
                     }
 

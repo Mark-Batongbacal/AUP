@@ -90,8 +90,10 @@ public sealed class RoutingServiceTests
             Assert.DoesNotContain(plan.Legs, leg => leg.DistanceMeters <= 0);
             Assert.All(
                 plan.Legs.Where(leg => leg.Mode == backend.Models.Routing.AccessMode.Walk),
+                // The tuning experiment changed value-of-time from 3 to 2;
+                // fatigue must still make walking cost exceed that time cost.
                 leg => Assert.True(
-                    leg.GeneralizedCostPesos > leg.DurationSeconds / 60.0 * 3));
+                    leg.GeneralizedCostPesos > leg.DurationSeconds / 60.0 * 2));
         }
     }
 

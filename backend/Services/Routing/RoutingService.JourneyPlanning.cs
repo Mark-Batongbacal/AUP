@@ -26,12 +26,14 @@ public partial class RoutingService
         await EnsureInitializedAsync(cancellationToken);
 
         var boardAccessPrefixByRoute =
-            new Dictionary<string,
-                (double[] Cost, AccessCandidate?[] Access)>();
+            new Dictionary<string, IReadOnlyList<AccessCandidate>[]>();
 
-        var alightAccessSuffixByRoute =
-            new Dictionary<string,
-                (double[] Cost, AccessCandidate?[] Access)>();
+        var destinationAccessByRoute =
+            new Dictionary<string, IReadOnlyList<AccessCandidate>>(
+                StringComparer.Ordinal);
+        var directConnectionsByRoute =
+            new Dictionary<string, List<RouteConnectionCandidate>>(StringComparer.Ordinal);
+        var routesById = _routes.ToDictionary(route => route.RouteId, StringComparer.Ordinal);
 
         foreach (var (routeId, samples) in _routeSamples)
         {
@@ -44,13 +46,24 @@ public partial class RoutingService
                     originLatitude,
                     originLongitude);
 
-            // Transfer journeys take their origin access from these prefix
-            // minima. Applying the same transit-access limit the direct path
-            // applies keeps one configured walking cap for boarding a
-            // jeepney, instead of letting a multi-kilometre walk in as
-            // "access" purely because the journey happened to have transfers.
+            var directConnections = FindBestConnections(
+                routesById[routeId],
+                originLatitude,
+                originLongitude,
+                destinationLatitude,
+                destinationLongitude);
+            directConnectionsByRoute[routeId] = directConnections;
+
+            // Transfer journeys take their origin access from these bounded
+            // prefix sets. Seed them with the same route-occurrence-aware
+            // states selected above for direct search. Applying the same
+            // transit-access limit keeps one configured walking cap instead
+            // of allowing a multi-kilometre transfer-only access walk.
             boardAccessPrefixByRoute[routeId] =
-                ComputePrefixMinAccess(ConstrainTransitAccessOptions(boardOptions));
+                ComputePrefixAccessOptions(
+                    routeId,
+                    ConstrainTransitAccessOptions(boardOptions),
+                    directConnections.Select(candidate => candidate.BoardAccess));
 
             var alightOptions =
                 ComputeAlightAccessOptions(
@@ -58,10 +71,32 @@ public partial class RoutingService
                     samples,
                     destinationLatitude,
                     destinationLongitude);
-
-            alightAccessSuffixByRoute[routeId] =
-                ComputeSuffixMinAccess(ConstrainTransitAccessOptions(alightOptions));
+            var constrainedAlightOptions =
+                ConstrainTransitAccessOptions(alightOptions);
+            destinationAccessByRoute[routeId] = DistinctAccessOccurrences(
+                constrainedAlightOptions
+                    .Where(access => access is not null)
+                    .Select(access => access!)
+                    .Concat(directConnections.Select(candidate =>
+                        candidate.AlightAccess)));
         }
+
+        // Destination-completion edges are discovered from origin/access
+        // states before any transit candidate is confirmed. They run in
+        // parallel with transit confirmation and never depend on a bad suffix
+        // surviving pruning merely to reveal that the trip could have ended.
+        var accessPathCompletionEdges =
+            BuildAccessPathDestinationCompletionEdges(
+                boardAccessPrefixByRoute,
+                directConnectionsByRoute,
+                destinationLatitude,
+                destinationLongitude);
+        var directCompletionEdges =
+            BuildDirectAccessDestinationCompletionEdges(
+                originLatitude,
+                originLongitude,
+                destinationLatitude,
+                destinationLongitude);
 
         var candidates = new List<JourneyCandidate>();
 
@@ -72,12 +107,7 @@ public partial class RoutingService
             if (!_routeSamples.ContainsKey(route.RouteId))
                 continue;
 
-            foreach (var direct in FindBestConnections(
-                         route,
-                         originLatitude,
-                         originLongitude,
-                         destinationLatitude,
-                         destinationLongitude))
+            foreach (var direct in directConnectionsByRoute[route.RouteId])
             {
                 var legs = new List<JourneyLegCandidate>
                 {
@@ -108,10 +138,11 @@ public partial class RoutingService
             }
         }
 
-        candidates.AddRange(FindTransferCandidates(
+        var transferCandidates = FindTransferCandidates(
             boardAccessPrefixByRoute,
-            alightAccessSuffixByRoute,
-            cancellationToken));
+            destinationAccessByRoute,
+            cancellationToken).ToList();
+        candidates.AddRange(transferCandidates);
 
         // Access generation stores walking and tricycle choices together on
         // one route anchor. Expand them before ranking; otherwise confirmation
@@ -136,27 +167,33 @@ public partial class RoutingService
         // crowd out useful alternatives before authoritative validation.
         var ranked = SelectCandidatesToConfirmWithDiversity(distinctCandidates);
 
-        // Preserve the originating candidate while Valhalla confirms access.
-        // That lets post-confirmation pruning use both authoritative network
-        // access metrics and exact full-route board/alight progress.
-        var confirmationTasks = ranked.Select(async candidate =>
-        {
-            var plans = await ConfirmJourneyCandidatesAsync(
-                [candidate],
-                originLatitude,
-                originLongitude,
-                destinationLatitude,
-                destinationLongitude,
-                cancellationToken);
-
-            return plans.FirstOrDefault() is { } plan
-                ? new ConfirmedJourneyCandidate(candidate, plan)
-                : null;
-        });
-
-        var confirmedWithSource = (await Task.WhenAll(confirmationTasks))
-            .Where(result => result is not null)
-            .Select(result => result!)
+        // Preserve transit sources while confirming all terminal-edge kinds
+        // through one boundary. Transit-specific semantic pruning still has
+        // its exact route occurrence; access-only completions join afterward.
+        var completionEdges = ranked
+            .Cast<DestinationCompletionEdge>()
+            .Concat(directCompletionEdges)
+            .Concat(accessPathCompletionEdges)
+            .ToList();
+        var completionResult = await ConfirmDestinationCompletionEdgesAsync(
+            completionEdges,
+            originLatitude,
+            originLongitude,
+            destinationLatitude,
+            destinationLongitude,
+            cancellationToken);
+        // Pairwise pruning must only use journeys that are eligible to reach
+        // the user-facing result set. A provisionally short walk can exceed
+        // the configured transit-access cap once Valhalla confirms the road
+        // path; allowing that journey to remain as a pruning reference can
+        // shadow a valid tricycle-access alternative which the facade would
+        // otherwise keep, before the over-limit walk is itself discarded.
+        // This applies the existing cap to authoritative distances and does
+        // not alter direct walk/tricycle completion limits.
+        var confirmedWithSource = completionResult.Transit
+            .Where(result =>
+                IsTransitAccessWithinLimit(result.Plan.OriginAccess) &&
+                IsTransitAccessWithinLimit(result.Plan.DestinationAccess))
             .ToList();
 
         // Feeder shadowing, on all three boundaries where a feeder can stop
@@ -173,20 +210,14 @@ public partial class RoutingService
         var prefixPruned = PruneRedundantTransitPrefix(destinationPruned);
 
         var paretoPruned = PruneDominatedConfirmedCandidates(prefixPruned);
-        var confirmed = paretoPruned
+        var finalEquivalentPruned =
+            DeduplicateFinalNearEquivalentJourneys(paretoPruned);
+        var confirmed = finalEquivalentPruned
             .Select(result => result.Plan)
             .ToList();
 
-        var directPlans =
-            await ConfirmDirectTripCandidatesAsync(
-                originLatitude,
-                originLongitude,
-                destinationLatitude,
-                destinationLongitude,
-                cancellationToken);
-
         var distinctPlans = confirmed
-            .Concat(directPlans)
+            .Concat(completionResult.AccessOnly)
             .Where(plan => ValidatePlanContinuity(
                 plan,
                 requireGeometry: false,
@@ -198,11 +229,16 @@ public partial class RoutingService
                 .First())
             .ToList();
 
+        // Direct/access-state completions join only after transit candidates
+        // are confirmed. Give them the same conservative Pareto comparison so
+        // a transit suffix cannot survive solely because the better complete
+        // access journey came from a different generation path.
+        var finalParetoPlans = PruneDominatedPlans(distinctPlans);
 
         // Structural sanity is the last gate before objectives, so Cheapest
         // and Fastest choose from sensible commutes rather than from the
         // cheapest arithmetic combination of individually legal legs.
-        var sensiblePlans = PruneTokenTransitJourneys(distinctPlans);
+        var sensiblePlans = PruneTokenTransitJourneys(finalParetoPlans);
 
         var selectedPlans = SelectObjectivePlans(sensiblePlans);
         LogSelectedPlanDiagnostics(selectedPlans);
@@ -476,7 +512,9 @@ public partial class RoutingService
             Math.Round(leg.Board.Latitude, 6),
             Math.Round(leg.Board.Longitude, 6),
             Math.Round(leg.Alight.Latitude, 6),
-            Math.Round(leg.Alight.Longitude, 6)))) +
+            Math.Round(leg.Alight.Longitude, 6),
+            Math.Round(leg.BoardFullRouteAnchor?.DistanceFromRouteStartMeters ?? -1, 1),
+            Math.Round(leg.AlightFullRouteAnchor?.DistanceFromRouteStartMeters ?? -1, 1)))) +
         $"|{candidate.OriginAccess.Mode}:{candidate.OriginAccess.TrikePoint?.Id}" +
         $"|{candidate.DestinationAccess.Mode}:{candidate.DestinationAccess.TrikePoint?.Id}";
 
@@ -496,13 +534,12 @@ public partial class RoutingService
             Math.Round(leg.DistanceMeters, 1),
             leg.TrikePointId ?? string.Empty)));
 
-    private async Task<List<JeepneyTripPlan>>
-        ConfirmDirectTripCandidatesAsync(
+    private List<DirectAccessDestinationCompletionEdge>
+        BuildDirectAccessDestinationCompletionEdges(
             double originLatitude,
             double originLongitude,
             double destinationLatitude,
-            double destinationLongitude,
-            CancellationToken cancellationToken)
+            double destinationLongitude)
     {
         var straightLineDistance = ApproximateDistanceMeters(
             originLatitude,
@@ -510,11 +547,11 @@ public partial class RoutingService
             destinationLatitude,
             destinationLongitude);
 
-        var candidates = new List<DirectTripCandidate>();
+        var candidates = new List<DirectAccessDestinationCompletionEdge>();
 
         if (straightLineDistance <= MaxWalkOnlyTripDistanceMeters)
         {
-            candidates.Add(new DirectTripCandidate(
+            candidates.Add(new DirectAccessDestinationCompletionEdge(
                 WalkAccess(
                     (destinationLatitude, destinationLongitude),
                     straightLineDistance),
@@ -527,7 +564,7 @@ public partial class RoutingService
                          originLatitude,
                          originLongitude))
             {
-                candidates.Add(new DirectTripCandidate(
+                candidates.Add(new DirectAccessDestinationCompletionEdge(
                     TrikeAccess(
                         (destinationLatitude, destinationLongitude),
                         trikePoint,
@@ -545,6 +582,18 @@ public partial class RoutingService
             }
         }
 
+        return candidates;
+    }
+
+    private async Task<List<JeepneyTripPlan>>
+        ConfirmDirectAccessDestinationCompletionsAsync(
+            IReadOnlyList<DirectAccessDestinationCompletionEdge> candidates,
+            double originLatitude,
+            double originLongitude,
+            double destinationLatitude,
+            double destinationLongitude,
+            CancellationToken cancellationToken)
+    {
         var tasks = candidates.Select(async candidate =>
         {
             var access = await ConfirmAccessAsync(
@@ -596,120 +645,6 @@ public partial class RoutingService
             TotalFarePesos = 0,
             GeneralizedCostPesos = 0
         };
-
-    /// <summary>
-    /// A transfer is "useful" when it produces a good complete journey,
-    /// not merely when the two route geometries are closest together.
-    ///
-    /// Route sample ordering is used to enforce direction: after boarding
-    /// the second route, its alighting point must be ahead of the transfer.
-    /// </summary>
-    private JourneyCandidate? BuildOneTransferCandidate(
-        StaticJeepneyRoute firstRoute,
-        List<(double Latitude, double Longitude)> firstSamples,
-        RouteInterchange interchange,
-        AccessCandidate originAccess,
-        (double[] Cost, AccessCandidate?[] Access) secondRouteSuffix)
-    {
-        var secondSamples =
-            _routeSamples[interchange.OtherRouteId];
-
-        if (interchange.OwnIndex <= 0 ||
-            interchange.OtherIndex >= secondSamples.Count - 1)
-        {
-            return null;
-        }
-
-        var destinationAccess =
-            secondRouteSuffix.Access[interchange.OtherIndex];
-
-        if (destinationAccess is null)
-            return null;
-
-        var boardIndex =
-            GetNearestSampleIndex(
-                firstSamples,
-                originAccess.Anchor);
-
-        var alightIndex =
-            GetNearestSampleIndex(
-                secondSamples,
-                destinationAccess.Anchor);
-
-        // Cheap early rejection; HasForwardRouteProgress performs the final
-        // authoritative full-geometry direction check before confirmation.
-        if (alightIndex <= interchange.OtherIndex)
-            return null;
-
-        var firstRideMeters =
-            RouteDistanceBetweenSamples(
-                firstSamples,
-                boardIndex,
-                interchange.OwnIndex);
-
-        var secondRideMeters =
-            RouteDistanceBetweenSamples(
-                secondSamples,
-                interchange.OtherIndex,
-                alightIndex);
-
-        var rideTime =
-            (firstRideMeters + secondRideMeters) /
-            JeepneySpeedMetersPerSecond;
-
-        var transferWalkTime =
-            interchange.DistanceMeters /
-            WalkingSpeedMetersPerSecond;
-
-        var provisionalCost =
-            originAccess.GeneralizedCostPesos +
-            destinationAccess.GeneralizedCostPesos +
-            GeneralizedCostFromWalking(
-                transferWalkTime,
-                interchange.DistanceMeters) +
-            GeneralizedCostFromTimeAndFare(
-                rideTime +
-                2 * JeepneyBoardingWaitTimeSeconds,
-                2 * JeepneyBaseFarePesos);
-
-        return new JourneyCandidate(
-            [
-                new JourneyLegCandidate(
-                    firstRoute.RouteId,
-                    firstRoute.RouteName,
-                    originAccess.Anchor,
-                    firstSamples[interchange.OwnIndex],
-                    originAccess.RouteSampleIndex,
-                    interchange.OwnIndex,
-                    originAccess.FullRouteAnchor,
-                    GetRouteAnchor(
-                        firstRoute.RouteId,
-                        interchange.OwnIndex,
-                        firstSamples[interchange.OwnIndex])),
-
-                new JourneyLegCandidate(
-                    interchange.OtherRouteId,
-                    interchange.OtherRouteName,
-                    secondSamples[interchange.OtherIndex],
-                    destinationAccess.Anchor,
-                    interchange.OtherIndex,
-                    destinationAccess.RouteSampleIndex,
-                    GetRouteAnchor(
-                        interchange.OtherRouteId,
-                        interchange.OtherIndex,
-                        secondSamples[interchange.OtherIndex]),
-                    destinationAccess.FullRouteAnchor)
-            ],
-            originAccess,
-            destinationAccess,
-            [
-                new WalkSegmentCandidate(
-                    firstSamples[interchange.OwnIndex],
-                    secondSamples[interchange.OtherIndex],
-                    interchange.DistanceMeters)
-            ],
-            provisionalCost);
-    }
 
     private static int GetNearestSampleIndex(
         List<(double Latitude, double Longitude)> samples,

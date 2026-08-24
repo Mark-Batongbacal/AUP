@@ -50,6 +50,8 @@ public sealed class TransferChainGenerationRegressionTests
         Assert.All(JeepneyLegs(chain), leg => Assert.Equal(13, leg.FarePesos));
         Assert.DoesNotContain(chain.Legs, leg => leg.Mode == AccessMode.Trike);
         Assert.Equal(39, chain.TotalFarePesos);
+        Assert.Equal(plans.Min(plan => plan.TotalFarePesos), chain.TotalFarePesos);
+        Assert.Contains("cheapest", chain.RecommendationType.Split(','));
     }
 
     // -----------------------------------------------------------------
@@ -69,6 +71,101 @@ public sealed class TransferChainGenerationRegressionTests
             JeepneyRouteIds(plan).SequenceEqual(ExpectedChain));
         Assert.Contains(chainRoutesLast, plan =>
             JeepneyRouteIds(plan).SequenceEqual(ExpectedChain));
+    }
+
+    // -----------------------------------------------------------------
+    // Bounded boarding-prefix diversity means one physical first-route
+    // interchange can legitimately appear once per retained origin boarding
+    // occurrence. Those access variants must not consume the next level before
+    // every distinct downstream interchange occurrence gets considered. The
+    // useful FINAL-NORTH edge is deliberately filed after twelve viable
+    // LINK-NORTHEAST fan-out edges.
+    // -----------------------------------------------------------------
+    [Fact]
+    public async Task PlanTripsAsync_MultipleBoardingOccurrencesDoNotStarveLateSecondTransfer()
+    {
+        var chainRoutesLast = await PlanAsync(
+            chainRoutesFirst: false,
+            crowdedSecondTransfer: true);
+        var chainRoutesFirst = await PlanAsync(
+            chainRoutesFirst: true,
+            crowdedSecondTransfer: true);
+
+        Assert.Contains(chainRoutesFirst, plan =>
+            JeepneyRouteIds(plan).SequenceEqual(ExpectedChain));
+        Assert.Contains(chainRoutesLast, plan =>
+            JeepneyRouteIds(plan).SequenceEqual(ExpectedChain));
+    }
+
+    // -----------------------------------------------------------------
+    // Candidate confirmation has its own bounded budget after transfer
+    // generation. A provisional direct walk can be cheapest for every
+    // boarding bucket even though a tricycle feeder is the useful confirmed
+    // alternative. Preserve both the physical route occurrence and a bounded
+    // set of access profiles; otherwise A > B > C exists in raw search but its
+    // origin-tricycle form is never submitted to Valhalla.
+    //
+    // Route list order is reversed in the second run as a counterexample to
+    // accidental repository-order selection.
+    // -----------------------------------------------------------------
+    [Fact]
+    public async Task PlanTripsAsync_ConfirmationBudgetPreservesOriginTrikeAccessProfile()
+    {
+        var feederOrigin = (Latitude: 15.0430, Longitude: 120.4920);
+        var trikePoints = TransferChainTopologyFixture.BuildTrikePoints();
+        trikePoints.Add(ProductionTopologyFixture.BuildToda(
+            500,
+            "TODA-FEEDER-ORIGIN",
+            feederOrigin.Latitude,
+            feederOrigin.Longitude));
+
+        foreach (var chainRoutesFirst in new[] { false, true })
+        {
+            var service = TransferChainTopologyFixture.CreateService(
+                options: CloneWithConfirmationBudget(
+                    TransferChainTopologyFixture.DefaultOptions(),
+                    20),
+                chainRoutesFirst: chainRoutesFirst,
+                crowdedSecondTransfer: true,
+                trikePoints: trikePoints);
+
+            var plans = await service.PlanTripsAsync(
+                feederOrigin.Latitude,
+                feederOrigin.Longitude,
+                TransferChainTopologyFixture.Destination.Latitude,
+                TransferChainTopologyFixture.Destination.Longitude);
+
+            Assert.Contains(plans, plan =>
+                JeepneyRouteIds(plan).SequenceEqual(ExpectedChain) &&
+                plan.OriginAccess.Mode == AccessMode.Trike &&
+                plan.OriginAccess.TrikePointId == "TODA-FEEDER-ORIGIN");
+
+            // Access diversity supplements rather than replaces physical
+            // diversity: the ordinary walk-boarded chain remains eligible.
+            Assert.Contains(plans, plan =>
+                JeepneyRouteIds(plan).SequenceEqual(ExpectedChain) &&
+                plan.OriginAccess.Mode == AccessMode.Walk);
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // A loop can visit the same physical transfer area more than once. The
+    // fairness bucket must use route occurrences, not coordinates alone, so an
+    // outbound and return-pass transfer cannot collapse before direction and
+    // complete-journey cost are evaluated.
+    // -----------------------------------------------------------------
+    [Fact]
+    public void TransferFrontierBucket_DistinguishesRepeatedRouteOccurrences()
+    {
+        var outbound = new RoutingService.TransferExpansionBucket(
+            "B-LOOP", 12, "C-NORTH", 4);
+        var returnPass = new RoutingService.TransferExpansionBucket(
+            "B-LOOP", 37, "C-NORTH", 19);
+        var sameOutboundOccurrence = new RoutingService.TransferExpansionBucket(
+            "B-LOOP", 12, "C-NORTH", 4);
+
+        Assert.NotEqual(outbound, returnPass);
+        Assert.Equal(outbound, sameOutboundOccurrence);
     }
 
     // -----------------------------------------------------------------
@@ -113,14 +210,16 @@ public sealed class TransferChainGenerationRegressionTests
 
     private static async Task<List<JeepneyTripPlan>> PlanAsync(
         bool chainRoutesFirst = false,
-        int maxTransfers = 2)
+        int maxTransfers = 2,
+        bool crowdedSecondTransfer = false)
     {
         var options = TransferChainTopologyFixture.DefaultOptions();
         var service = TransferChainTopologyFixture.CreateService(
             maxTransfers == 2
                 ? options
                 : CloneWithMaxTransfers(options, maxTransfers),
-            chainRoutesFirst);
+            chainRoutesFirst,
+            crowdedSecondTransfer);
 
         return await service.PlanTripsAsync(
             TransferChainTopologyFixture.Origin.Latitude,
@@ -147,6 +246,27 @@ public sealed class TransferChainGenerationRegressionTests
             MaxWalkTrikeTripDistanceMeters = options.MaxWalkTrikeTripDistanceMeters,
             MaxStaticRouteSegmentJumpMeters = options.MaxStaticRouteSegmentJumpMeters,
             MaxTripOptions = options.MaxTripOptions
+        };
+
+    private static RoutingOptions CloneWithConfirmationBudget(
+        RoutingOptions options,
+        int maxCandidatesToConfirm) => new()
+        {
+            MaxTransfers = options.MaxTransfers,
+            MaxCandidatesToConfirm = maxCandidatesToConfirm,
+            MaxInterchangesPerRoutePair = options.MaxInterchangesPerRoutePair,
+            MaxTransferWalkMeters = options.MaxTransferWalkMeters,
+            DefaultSampleIntervalMeters = options.DefaultSampleIntervalMeters,
+            MaxRouteSamples = options.MaxRouteSamples,
+            MaxWalkAccessDistanceMeters = options.MaxWalkAccessDistanceMeters,
+            MaxWalkToTrikePointMeters = options.MaxWalkToTrikePointMeters,
+            MaxNearbyTrikeCandidates = options.MaxNearbyTrikeCandidates,
+            MaxTotalWalkingMetersPerJourney = options.MaxTotalWalkingMetersPerJourney,
+            MaxWalkOnlyTripDistanceMeters = options.MaxWalkOnlyTripDistanceMeters,
+            MaxWalkTrikeTripDistanceMeters = options.MaxWalkTrikeTripDistanceMeters,
+            MaxStaticRouteSegmentJumpMeters = options.MaxStaticRouteSegmentJumpMeters,
+            MaxTripOptions = options.MaxTripOptions,
+            BoardingDiversityBucketMeters = options.BoardingDiversityBucketMeters
         };
 
     private static List<JeepneyTripLeg> JeepneyLegs(JeepneyTripPlan plan) =>

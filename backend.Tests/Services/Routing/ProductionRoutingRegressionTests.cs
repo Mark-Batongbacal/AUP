@@ -114,7 +114,9 @@ public sealed class ProductionRoutingRegressionTests
                     ProductionTopologyFixture.RouteA,
                     ProductionTopologyFixture.RouteB,
                     ProductionTopologyFixture.RouteC
-                ]));
+                ]) &&
+                plan.RecommendationType.Split(',').Any(
+                    objective => objective is "efficient" or "fastest" or "cheapest"));
 
         Assert.Equal(
             ProductionTopologyFixture.OriginToda,
@@ -133,6 +135,48 @@ public sealed class ProductionRoutingRegressionTests
             objective => objective is "efficient" or "fastest" or "cheapest");
     }
 
+    [Fact]
+    public async Task PlanTripsAsync_CheapestKeepsValidThreeRouteChainBesideFasterCostlierOption()
+    {
+        const string fastDirect = "D-FAST-COSTLY";
+        var routes = ProductionTopologyFixture.BuildRoutes();
+        routes.Add(ProductionTopologyFixture.BuildDenseRoute(
+            99,
+            fastDirect,
+            "Fast direct corridor with costly access",
+            [
+                (15.0700, 120.5900),
+                (15.0800, 120.6200),
+                (15.1368, 120.6162),
+                (15.1420, 120.6160)
+            ]));
+        var service = ProductionTopologyFixture.CreateService(routes: routes);
+
+        var plans = await service.PlanTripsAsync(
+            ProductionTopologyFixture.Origin.Latitude,
+            ProductionTopologyFixture.Origin.Longitude,
+            ProductionTopologyFixture.Destination.Latitude,
+            ProductionTopologyFixture.Destination.Longitude);
+
+        var cheapChain = Assert.Single(plans, plan =>
+            plan.RecommendationType.Split(',').Contains("cheapest") &&
+            JeepneyLegs(plan).Select(leg => leg.RouteId).SequenceEqual(
+            [
+                ProductionTopologyFixture.RouteA,
+                ProductionTopologyFixture.RouteB,
+                ProductionTopologyFixture.RouteC
+            ]));
+        var fastest = Assert.Single(plans, plan =>
+            plan.RecommendationType.Split(',').Contains("fastest"));
+
+        Assert.Equal(plans.Min(plan => plan.TotalFarePesos),
+            cheapChain.TotalFarePesos);
+        Assert.True(fastest.TransferCount < cheapChain.TransferCount);
+        Assert.True(fastest.TotalTimeSeconds < cheapChain.TotalTimeSeconds);
+        Assert.True(fastest.TotalFarePesos > cheapChain.TotalFarePesos);
+        Assert.Contains(JeepneyLegs(fastest), leg => leg.RouteId == fastDirect);
+    }
+
     // -----------------------------------------------------------------
     // REGRESSION D -- a legitimate off-corridor feeder. Rejecting shadowing
     // must never collapse into "always board earliest": corridor A is
@@ -145,20 +189,23 @@ public sealed class ProductionRoutingRegressionTests
     {
         var plans = await PlanProductionTripAsync();
 
-        var journey = Assert.Single(
-            plans,
+        var journeys = plans.Where(
             plan => plan.OriginAccess.Mode == AccessMode.Trike &&
                 plan.OriginAccess.TrikePointId == ProductionTopologyFixture.OriginToda &&
-                JeepneyLegs(plan).Count == 3);
-        var firstJeepney = JeepneyLegs(journey)[0];
+                JeepneyLegs(plan).Count == 3).ToList();
 
-        Assert.True(
-            firstJeepney.BoardLongitude > 120.5550,
-            $"Expected the tricycle's own meeting point with corridor A, not the " +
-            $"earliest reachable boarding; got {firstJeepney.BoardLongitude:F6}.");
-        Assert.True(
-            (journey.OriginAccess.TrikeRideDistanceMeters ?? 0) > 500,
-            "This origin genuinely needs a tricycle feeder.");
+        Assert.NotEmpty(journeys);
+        Assert.All(journeys, journey =>
+        {
+            var firstJeepney = JeepneyLegs(journey)[0];
+            Assert.True(
+                firstJeepney.BoardLongitude > 120.5550,
+                $"Expected the tricycle's own meeting point with corridor A, not the " +
+                $"earliest reachable boarding; got {firstJeepney.BoardLongitude:F6}.");
+            Assert.True(
+                (journey.OriginAccess.TrikeRideDistanceMeters ?? 0) > 500,
+                "This origin genuinely needs a tricycle feeder.");
+        });
     }
 
     // -----------------------------------------------------------------
