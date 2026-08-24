@@ -15,7 +15,7 @@ public sealed class RoutingOptions
     public int MaxRouteSamples { get; init; } = 40;
     // Maximum targets in a one-source matrix call. The source is additional.
     public int MatrixMaxTargets { get; init; } = 99;
-    public int MaxInterchangesPerRoutePair { get; init; } = 4;
+    public int MaxInterchangesPerRoutePair { get; init; } = 6;
     public double MaxTransferWalkMeters { get; init; } = 400;
     /// <summary>
     /// Provisional (pre-Valhalla) boarding variants kept per route before
@@ -24,7 +24,7 @@ public sealed class RoutingOptions
     /// crowded out by cost/time/fare heuristics computed on unconfirmed,
     /// straight-line access estimates.
     /// </summary>
-    public int MaxBoardingVariantsPerRoute { get; init; } = 5;
+    public int MaxBoardingVariantsPerRoute { get; init; } = 8;
     /// <summary>
     /// Minimum forward route progress skipped by a same-route transfer. The
     /// 1 km default is deliberately well above the normal 150 m sample spacing
@@ -97,7 +97,7 @@ public sealed class RoutingOptions
     /// deliberately not a ban on short jeepney legs: it only decides whether a
     /// jeepney journey is strong enough to be PREFERRED as the default.
     /// </summary>
-    public double PrimaryJeepneyMinimumDistanceMeters { get; init; } = 2_000;
+    public double PrimaryJeepneyMinimumDistanceMeters { get; init; } = 1_000;
 
     /// <summary>
     /// Share of a journey's total distance the jeepney legs must cover before
@@ -106,7 +106,7 @@ public sealed class RoutingOptions
     /// legs cover most of the ground is not a jeepney journey, whatever its
     /// generalized cost happens to say.
     /// </summary>
-    public double PrimaryJeepneyMinimumJourneyShare { get; init; } = 0.5;
+    public double PrimaryJeepneyMinimumJourneyShare { get; init; } = 0.35;
 
     /// <summary>
     /// Full-route progress bucket used when reserving confirmation capacity for
@@ -130,7 +130,7 @@ public sealed class RoutingOptions
     public double TrikeBaseFarePesos { get; init; } = 35;
     public double TrikeBaseDistanceMeters { get; init; } = 1_000;
     public double TrikePerAdditionalKmPesos { get; init; } = 15;
-    public double ValueOfTimePesosPerMinute { get; init; } = 3;
+    public double ValueOfTimePesosPerMinute { get; init; } = 2;
     /// <summary>Additional generalized-cost penalty for each kilometre walked.</summary>
     public double WalkingFatiguePesosPerKilometer { get; init; } = 4;
     public double WalkingSpeedMetersPerSecond { get; init; } = 1.2;
@@ -139,8 +139,8 @@ public sealed class RoutingOptions
     public double JeepneyBoardingWaitTimeSeconds { get; init; } = 300;
     public double JeepneyBaseFarePesos { get; init; } = 13;
     public string TrikeCostingModel { get; init; } = "auto";
-    public int MaxCandidatesToConfirm { get; init; } = 100;
-    public int MaxTransfers { get; init; } = 2;
+    public int MaxCandidatesToConfirm { get; init; } = 300;
+    public int MaxTransfers { get; init; } = 3;
 
     /// <summary>
     /// Floor on how many transfer journeys one starting route may contribute
