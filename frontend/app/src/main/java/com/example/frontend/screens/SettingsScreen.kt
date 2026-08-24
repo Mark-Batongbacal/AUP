@@ -24,6 +24,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,6 +45,16 @@ import com.example.frontend.ui.theme.TukiSurfaceRaised
 import com.example.frontend.ui.theme.TukiTeal
 import com.example.frontend.ui.theme.TukiThemeRuntime
 
+private val SettingsIconInk = Color(0xFF153E4B)
+private val SettingsIconSurface = Color(0xFFFFF0D5)
+
+private enum class SettingsPage {
+    OVERVIEW,
+    HELP_CENTER,
+    SEND_FEEDBACK,
+    ABOUT_TUKI
+}
+
 @Composable
 fun SettingsScreen(
     userName: String = "TUKI User",
@@ -52,6 +66,23 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val isDarkMode = TukiThemeRuntime.darkMode
+    var page by remember { mutableStateOf(SettingsPage.OVERVIEW) }
+
+    when (page) {
+        SettingsPage.HELP_CENTER -> {
+            HelpCenterScreen(onBack = { page = SettingsPage.OVERVIEW })
+            return
+        }
+        SettingsPage.SEND_FEEDBACK -> {
+            SendFeedbackScreen(onBack = { page = SettingsPage.OVERVIEW })
+            return
+        }
+        SettingsPage.ABOUT_TUKI -> {
+            AboutTukiScreen(onBack = { page = SettingsPage.OVERVIEW })
+            return
+        }
+        SettingsPage.OVERVIEW -> Unit
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(TukiCream).statusBarsPadding(),
@@ -87,10 +118,14 @@ fun SettingsScreen(
                     Box(
                         modifier = Modifier
                             .size(46.dp)
-                            .background(Color(0xFFFFF0D5), RoundedCornerShape(14.dp)),
+                            .background(SettingsIconSurface, RoundedCornerShape(14.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(if (isDarkMode) "☾" else "☀", color = TukiInk, fontSize = 22.sp)
+                        Text(
+                            if (isDarkMode) "☾" else "☀",
+                            color = SettingsIconInk,
+                            fontSize = 22.sp
+                        )
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
@@ -138,16 +173,23 @@ fun SettingsScreen(
                     SettingsActionRow(
                         TukiInterfaceText.helpCenter,
                         if (TukiInterfaceText.isFilipino) "Mga FAQ at gabay" else "FAQs and guides",
-                        "?"
+                        "?",
+                        onClick = { page = SettingsPage.HELP_CENTER }
                     )
                     SettingsDivider()
                     SettingsActionRow(
                         TukiInterfaceText.sendFeedback,
                         if (TukiInterfaceText.isFilipino) "Tulungan kaming mapahusay ang TUKI" else "Help us improve TUKI",
-                        "✉"
+                        "✉",
+                        onClick = { page = SettingsPage.SEND_FEEDBACK }
                     )
                     SettingsDivider()
-                    SettingsActionRow(TukiInterfaceText.aboutTuki, "Version 1.0.0", "i")
+                    SettingsActionRow(
+                        TukiInterfaceText.aboutTuki,
+                        "Version 1.0.0",
+                        "i",
+                        onClick = { page = SettingsPage.ABOUT_TUKI }
+                    )
                 }
             }
             Spacer(Modifier.height(120.dp))
@@ -198,10 +240,10 @@ private fun SettingsActionRow(
         Box(
             modifier = Modifier
                 .size(44.dp)
-                .background(Color(0xFFFFF0D5), RoundedCornerShape(13.dp)),
+                .background(SettingsIconSurface, RoundedCornerShape(13.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text(icon, color = TukiInk, fontSize = 18.sp)
+            Text(icon, color = SettingsIconInk, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
