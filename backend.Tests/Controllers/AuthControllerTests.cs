@@ -671,6 +671,20 @@ public sealed class AuthControllerTests
 
         public Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_profiles.Any(profile => profile.UserId == userId));
+
+        public Task<bool> DeactivateAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            var profile = _profiles.FirstOrDefault(profile => profile.UserId == userId);
+            if (profile is null)
+            {
+                return Task.FromResult(false);
+            }
+
+            profile.IsActive = false;
+            profile.UpdatedAt = DateTime.UtcNow;
+
+            return Task.FromResult(true);
+        }
     }
 
     private sealed class RecordingApiKeyService : IApiKeyService

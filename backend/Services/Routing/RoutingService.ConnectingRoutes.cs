@@ -5,8 +5,6 @@ namespace backend.Services.Routing;
 
 public partial class RoutingService
 {
-    private const int MaxBoardingVariantsPerRoute = 4;
-
     public async Task<List<JeepneyTripOption>> FindConnectingRoutesAsync(
         double originLatitude,
         double originLongitude,
@@ -138,9 +136,9 @@ public partial class RoutingService
 
     /// <summary>
     /// Keeps a small, deliberately diverse set of boarding variants for one
-    /// jeepney route. The exact nearest full-route projection is always given a
-    /// chance, but it is not forced to win: provisional overall, fastest, and
-    /// cheapest variants are also preserved for authoritative confirmation.
+    /// jeepney route. Exact projections on the full route are injected for both
+    /// boarding and alighting, while sampled anchors remain useful for broader
+    /// candidate search. Exact projections can use walk or tricycle access.
     /// </summary>
     private List<RouteConnectionCandidate> FindBestConnections(
         StaticJeepneyRoute route,
@@ -171,30 +169,32 @@ public partial class RoutingService
             .Select(candidate => candidate!)
             .ToList();
 
-        var nearestBoard = BuildNearestFullRouteBoardAccess(
+        var exactBoard = BuildExactFullRouteBoardAccess(
             route.RouteId,
             samples,
             originLatitude,
             originLongitude);
-        if (nearestBoard is not null &&
-            boardCandidates.All(candidate =>
-                ApproximateDistanceMeters(
-                    candidate.Anchor.Latitude,
-                    candidate.Anchor.Longitude,
-                    nearestBoard.Anchor.Latitude,
-                    nearestBoard.Anchor.Longitude) > 1.0))
-        {
-            boardCandidates.Add(nearestBoard);
-        }
+        AddUniqueAccessCandidate(boardCandidates, exactBoard);
+
+        var alightCandidates = alightAccessOptions
+            .Select(ConstrainTransitAccess)
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .ToList();
+
+        var exactAlight = BuildExactFullRouteAlightAccess(
+            route.RouteId,
+            samples,
+            destinationLatitude,
+            destinationLongitude);
+        AddUniqueAccessCandidate(alightCandidates, exactAlight);
 
         var all = new List<RouteConnectionCandidate>();
 
-        for (var alightIndex = 0; alightIndex < samples.Count; alightIndex++)
+        foreach (var alightAccess in alightCandidates)
         {
-            var alightAccess = ConstrainTransitAccess(alightAccessOptions[alightIndex]);
-            if (alightAccess is null)
-                continue;
-
+            var alightIndex = alightAccess.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, alightAccess.Anchor);
             var alightAnchor = alightAccess.FullRouteAnchor ??
                 GetRouteAnchor(route.RouteId, alightIndex, alightAccess.Anchor);
 
@@ -235,14 +235,30 @@ public partial class RoutingService
         if (all.Count == 0)
             return [];
 
+        // Identity is the physical board/alight position PLUS where each sits
+        // along the route, NOT the sample index that produced it. Many
+        // neighbouring samples clamp onto the same projected point, and
+        // keying by index would let one physical boarding position consume
+        // the entire per-route quota as "different" candidates -- those
+        // duplicates share a projection, so they share progress too and still
+        // collapse here.
+        //
+        // Progress has to be part of the key because a route may legitimately
+        // traverse the same road twice (out and back, or a loop). Those are
+        // the same coordinate but genuinely different boarding opportunities:
+        // collapsing them to whichever is physically nearest can strand the
+        // passenger on the outbound pass when the return pass is the one
+        // heading towards their destination.
+        string PositionKey(RouteConnectionCandidate candidate) => string.Join(':',
+            Math.Round(candidate.BoardAccess.Anchor.Latitude, 6),
+            Math.Round(candidate.BoardAccess.Anchor.Longitude, 6),
+            Math.Round(candidate.AlightAccess.Anchor.Latitude, 6),
+            Math.Round(candidate.AlightAccess.Anchor.Longitude, 6),
+            Math.Round(GetBoardProgressMeters(candidate), 1),
+            Math.Round(GetAlightProgressMeters(candidate), 1));
+
         var distinct = all
-            .GroupBy(candidate => string.Join(':',
-                candidate.BoardIndex,
-                candidate.AlightIndex,
-                Math.Round(candidate.BoardAccess.Anchor.Latitude, 6),
-                Math.Round(candidate.BoardAccess.Anchor.Longitude, 6),
-                Math.Round(candidate.AlightAccess.Anchor.Latitude, 6),
-                Math.Round(candidate.AlightAccess.Anchor.Longitude, 6)))
+            .GroupBy(PositionKey, StringComparer.Ordinal)
             .Select(group => group
                 .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
                 .First())
@@ -256,16 +272,24 @@ public partial class RoutingService
             if (selected.Count >= MaxBoardingVariantsPerRoute)
                 return;
 
-            var key = $"{candidate.BoardIndex}:{candidate.AlightIndex}:" +
-                $"{candidate.BoardAccess.Anchor.Latitude:F6}:" +
-                $"{candidate.BoardAccess.Anchor.Longitude:F6}:" +
-                $"{candidate.AlightAccess.Anchor.Latitude:F6}:" +
-                $"{candidate.AlightAccess.Anchor.Longitude:F6}";
-            if (seen.Add(key))
+            if (seen.Add(PositionKey(candidate)))
                 selected.Add(candidate);
         }
 
-        // 1) Nearest directionally-valid boarding opportunity.
+        // 0) Earliest full-route board progress. Cost/time/fare heuristics
+        // below are computed from cheap, unconfirmed straight-line access
+        // estimates and can rank a downstream board above a perfectly
+        // reasonable early one. Guaranteeing the earliest-progress board a
+        // slot means it always reaches Valhalla confirmation, so later
+        // feeder-shadowing pruning has a real early baseline to compare
+        // against instead of comparing only cost-optimistic downstream
+        // candidates against each other.
+        Add(distinct
+            .OrderBy(GetBoardProgressMeters)
+            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
+            .First());
+
+        // 1) Nearest directionally-valid boarding opportunity on full geometry.
         Add(distinct
             .OrderBy(candidate =>
                 StraightLineBoardAccessMeters(
@@ -297,15 +321,40 @@ public partial class RoutingService
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
             .First());
 
+        // 5) Fill the remaining quota with boards spread along the route
+        // rather than more of the same cluster. All the objectives above
+        // rank on straight-line access, so they crowd around whichever part
+        // of the corridor happens to be geometrically closest -- which is
+        // exactly the part real road access may turn out to be poor at.
+        // Taking the cheapest candidate from each distinct progress bucket
+        // keeps a genuinely different boarding region available for
+        // Valhalla to confirm.
+        // 5) Fill the remaining quota with boards spread along the route
+        // rather than more of the same cluster. All the objectives above
+        // rank on straight-line access, so they crowd around whichever part
+        // of the corridor happens to be geometrically closest -- which is
+        // exactly the part real road access may turn out to be poor at.
+        //
+        // The buckets are sampled ACROSS the whole progress range rather
+        // than taken lowest-first: taking the lowest buckets would just
+        // rebuild a cluster at the route start and would never surface the
+        // only reachable board when a near obstacle blocks the early
+        // corridor.
         if (selected.Count < MaxBoardingVariantsPerRoute)
         {
-            foreach (var candidate in distinct
-                         .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-                         .ThenBy(candidate =>
-                             StraightLineBoardAccessMeters(
-                                 candidate,
-                                 originLatitude,
-                                 originLongitude)))
+            var bucketSize = Math.Max(1, _options.BoardingDiversityBucketMeters);
+            var bucketRepresentatives = distinct
+                .GroupBy(candidate =>
+                    (long)Math.Floor(GetBoardProgressMeters(candidate) / bucketSize))
+                .OrderBy(group => group.Key)
+                .Select(group => group
+                    .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
+                    .First())
+                .ToList();
+
+            foreach (var candidate in SpreadEvenly(
+                         bucketRepresentatives,
+                         MaxBoardingVariantsPerRoute - selected.Count))
             {
                 Add(candidate);
                 if (selected.Count >= MaxBoardingVariantsPerRoute)
@@ -315,6 +364,81 @@ public partial class RoutingService
 
         return selected;
     }
+
+    /// <summary>
+    /// Samples up to <paramref name="count"/> items spread evenly across the
+    /// ordered source, always including both ends. Used so boarding-variant
+    /// diversity covers the whole route instead of clustering at one end.
+    /// </summary>
+    private static IEnumerable<T> SpreadEvenly<T>(IReadOnlyList<T> source, int count)
+    {
+        if (source.Count == 0 || count <= 0)
+            yield break;
+
+        if (count >= source.Count)
+        {
+            foreach (var item in source)
+                yield return item;
+            yield break;
+        }
+
+        if (count == 1)
+        {
+            yield return source[0];
+            yield break;
+        }
+
+        var emitted = new HashSet<int>();
+        for (var i = 0; i < count; i++)
+        {
+            var index = (int)Math.Round(
+                (double)i * (source.Count - 1) / (count - 1));
+
+            if (emitted.Add(index))
+                yield return source[index];
+        }
+    }
+
+    /// <summary>
+    /// Adds an access candidate unless the list already holds the same
+    /// boarding/alighting opportunity. Two candidates are the same only when
+    /// they sit at the same physical point AND at the same place along the
+    /// route: a route that traverses one road twice offers two genuinely
+    /// different opportunities at identical coordinates, and discarding the
+    /// second would hide whichever pass actually heads for the destination.
+    /// </summary>
+    private static void AddUniqueAccessCandidate(
+        List<AccessCandidate> candidates,
+        AccessCandidate? candidate)
+    {
+        if (candidate is null)
+            return;
+
+        var duplicate = candidates.Any(existing =>
+            ApproximateDistanceMeters(
+                existing.Anchor.Latitude,
+                existing.Anchor.Longitude,
+                candidate.Anchor.Latitude,
+                candidate.Anchor.Longitude) <= 1.0 &&
+            IsSameRouteOccurrence(existing.FullRouteAnchor, candidate.FullRouteAnchor));
+
+        if (!duplicate)
+            candidates.Add(candidate);
+    }
+
+    /// <summary>
+    /// Occurrences match when both anchors report effectively the same
+    /// distance travelled from the route start. Unknown progress on either
+    /// side falls back to treating them as the same, preserving the previous
+    /// coordinate-only behaviour.
+    /// </summary>
+    private static bool IsSameRouteOccurrence(
+        RouteAnchor? left,
+        RouteAnchor? right) =>
+        left is null || right is null ||
+        Math.Abs(
+            left.DistanceFromRouteStartMeters -
+            right.DistanceFromRouteStartMeters) <= 1.0;
 
     private double EstimateConnectionTimeSeconds(RouteConnectionCandidate candidate) =>
         candidate.BoardAccess.TotalTimeSeconds +
@@ -341,7 +465,23 @@ public partial class RoutingService
             candidate.BoardAccess.Anchor.Latitude,
             candidate.BoardAccess.Anchor.Longitude);
 
-    private AccessCandidate? BuildNearestFullRouteBoardAccess(
+    private double GetBoardProgressMeters(RouteConnectionCandidate candidate) =>
+        (candidate.BoardAccess.FullRouteAnchor ??
+            GetRouteAnchor(
+                candidate.RouteId,
+                candidate.BoardIndex,
+                candidate.BoardAccess.Anchor))
+        .DistanceFromRouteStartMeters;
+
+    private double GetAlightProgressMeters(RouteConnectionCandidate candidate) =>
+        (candidate.AlightAccess.FullRouteAnchor ??
+            GetRouteAnchor(
+                candidate.RouteId,
+                candidate.AlightIndex,
+                candidate.AlightAccess.Anchor))
+        .DistanceFromRouteStartMeters;
+
+    private AccessCandidate? BuildExactFullRouteBoardAccess(
         string routeId,
         List<(double Latitude, double Longitude)> samples,
         double originLatitude,
@@ -351,21 +491,110 @@ public partial class RoutingService
             routeId,
             (originLatitude, originLongitude),
             0);
-        var distance = ApproximateDistanceMeters(
+        var point = (anchor.Latitude, anchor.Longitude);
+        var sampleIndex = GetNearestSampleIndex(samples, point);
+        var alternatives = new List<AccessCandidate>();
+
+        var walkDistance = ApproximateDistanceMeters(
             originLatitude,
             originLongitude,
             anchor.Latitude,
             anchor.Longitude);
+        if (walkDistance <= MaxWalkAccessDistanceMeters)
+        {
+            alternatives.Add(WalkAccess(
+                point,
+                walkDistance,
+                sampleIndex,
+                anchor));
+        }
 
-        // Straight-line distance is only a lower bound. If even that is over
-        // the walking access cap, this exact projection cannot become a valid
-        // direct walk after Valhalla confirmation.
-        if (distance > MaxWalkAccessDistanceMeters)
+        foreach (var trikePoint in FindNearbyTrikePoints(
+                     originLatitude,
+                     originLongitude))
+        {
+            var walkToTrikeMeters = ApproximateDistanceMeters(
+                originLatitude,
+                originLongitude,
+                trikePoint.Latitude,
+                trikePoint.Longitude);
+            var rideDistanceMeters = ApproximateDistanceMeters(
+                trikePoint.Latitude,
+                trikePoint.Longitude,
+                anchor.Latitude,
+                anchor.Longitude);
+
+            alternatives.Add(TrikeAccess(
+                point,
+                trikePoint,
+                walkToTrikeMeters,
+                rideDistanceMeters,
+                sampleIndex,
+                anchor));
+        }
+
+        if (alternatives.Count == 0)
             return null;
 
+        return ConstrainTransitAccess(WithAlternatives(alternatives));
+    }
+
+    private AccessCandidate? BuildExactFullRouteAlightAccess(
+        string routeId,
+        List<(double Latitude, double Longitude)> samples,
+        double destinationLatitude,
+        double destinationLongitude)
+    {
+        var anchor = ProjectOntoFullRoute(
+            routeId,
+            (destinationLatitude, destinationLongitude),
+            0);
         var point = (anchor.Latitude, anchor.Longitude);
         var sampleIndex = GetNearestSampleIndex(samples, point);
-        return WalkAccess(point, distance, sampleIndex, anchor);
+        var alternatives = new List<AccessCandidate>();
+
+        var walkDistance = ApproximateDistanceMeters(
+            anchor.Latitude,
+            anchor.Longitude,
+            destinationLatitude,
+            destinationLongitude);
+        if (walkDistance <= MaxWalkAccessDistanceMeters)
+        {
+            alternatives.Add(WalkAccess(
+                point,
+                walkDistance,
+                sampleIndex,
+                anchor));
+        }
+
+        foreach (var trikePoint in FindNearbyTrikePoints(
+                     anchor.Latitude,
+                     anchor.Longitude))
+        {
+            var walkToTrikeMeters = ApproximateDistanceMeters(
+                anchor.Latitude,
+                anchor.Longitude,
+                trikePoint.Latitude,
+                trikePoint.Longitude);
+            var rideDistanceMeters = ApproximateDistanceMeters(
+                trikePoint.Latitude,
+                trikePoint.Longitude,
+                destinationLatitude,
+                destinationLongitude);
+
+            alternatives.Add(TrikeAccess(
+                point,
+                trikePoint,
+                walkToTrikeMeters,
+                rideDistanceMeters,
+                sampleIndex,
+                anchor));
+        }
+
+        if (alternatives.Count == 0)
+            return null;
+
+        return ConstrainTransitAccess(WithAlternatives(alternatives));
     }
 
     private AccessCandidate? ConstrainTransitAccess(AccessCandidate candidate)
@@ -383,6 +612,15 @@ public partial class RoutingService
 
         return alternatives[0] with { Alternatives = alternatives };
     }
+
+    /// <summary>
+    /// Applies <see cref="ConstrainTransitAccess"/> across a whole route's
+    /// per-sample access options. Samples left with no usable option become
+    /// null, which the bounded boarding and destination-access representations
+    /// already treat as unavailable.
+    /// </summary>
+    private AccessCandidate?[] ConstrainTransitAccessOptions(AccessCandidate[] options) =>
+        options.Select(ConstrainTransitAccess).ToArray();
 
     private bool IsTransitAccessWithinLimit(JeepneyAccessSegment access) =>
         access.Mode != AccessMode.Walk ||

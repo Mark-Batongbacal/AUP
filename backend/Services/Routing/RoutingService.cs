@@ -31,10 +31,15 @@ public partial class RoutingService : IRoutingService
         _options.FeederShadowingMinProgressMeters;
     private double FeederShadowingAccessDistanceRatio =>
         _options.FeederShadowingAccessDistanceRatio;
-    private double FeederShadowingRequiredTimeSavingsSeconds =>
-        _options.FeederShadowingRequiredTimeSavingsSeconds;
-    private double FeederShadowingRequiredFareSavingsPesos =>
-        _options.FeederShadowingRequiredFareSavingsPesos;
+    private double ProgressEqualityToleranceMeters =>
+        _options.FeederShadowEquivalentProgressToleranceMeters;
+    private double TokenTransitJeepneyMultiple =>
+        _options.TokenTransitJeepneyMultiple;
+    private int MaxBoardingVariantsPerRoute => _options.MaxBoardingVariantsPerRoute;
+    private double PrimaryJeepneyMinimumDistanceMeters =>
+        _options.PrimaryJeepneyMinimumDistanceMeters;
+    private double PrimaryJeepneyMinimumJourneyShare =>
+        _options.PrimaryJeepneyMinimumJourneyShare;
     private double MaxStaticRouteSegmentJumpMeters => _options.MaxStaticRouteSegmentJumpMeters;
     private double TrikeBaseFarePesos => _options.TrikeBaseFarePesos;
     private double TrikeBaseDistanceMeters => _options.TrikeBaseDistanceMeters;
@@ -51,6 +56,7 @@ public partial class RoutingService : IRoutingService
     private string TrikeCostingModel => _options.TrikeCostingModel;
     private int MaxCandidatesToConfirm => _options.MaxCandidatesToConfirm;
     private int MaxTransfers => _options.MaxTransfers;
+    private int MinTransferCandidatesPerRoute => _options.MinTransferCandidatesPerRoute;
 
     private const double EarthRadiusMeters = 6_371_000;
 

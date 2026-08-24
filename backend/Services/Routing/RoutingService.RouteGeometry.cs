@@ -510,7 +510,7 @@ public partial class RoutingService
         List<(double Latitude, double Longitude)> Points,
         double[] CumulativeMeters);
 
-    private sealed record RouteAnchor(
+    internal sealed record RouteAnchor(
         string RouteId,
         int SegmentIndex,
         double SegmentFraction,
@@ -539,7 +539,7 @@ public partial class RoutingService
         int OtherIndex,
         double DistanceMeters);
 
-    private sealed record JourneyLegCandidate(
+    internal sealed record JourneyLegCandidate(
         string RouteId,
         string RouteName,
         (double Latitude, double Longitude) Board,
@@ -549,17 +549,24 @@ public partial class RoutingService
         RouteAnchor? BoardFullRouteAnchor = null,
         RouteAnchor? AlightFullRouteAnchor = null);
 
-    private sealed record WalkSegmentCandidate(
+    internal sealed record WalkSegmentCandidate(
         (double Latitude, double Longitude) From,
         (double Latitude, double Longitude) To,
         double StraightLineMeters);
 
-    private sealed record JourneyCandidate(
+    /// <summary>
+    /// A terminal edge from a viable journey state. Implementations differ in
+    /// how Valhalla confirms the final traversal, but all compete as complete
+    /// plans before final Pareto/objective selection.
+    /// </summary>
+    internal abstract record DestinationCompletionEdge;
+
+    internal sealed record JourneyCandidate(
         List<JourneyLegCandidate> Legs,
         AccessCandidate OriginAccess,
         AccessCandidate DestinationAccess,
         List<WalkSegmentCandidate> TransferWalkSegments,
-        double? ProvisionalJourneyCostPesos = null)
+        double? ProvisionalJourneyCostPesos = null) : DestinationCompletionEdge
     {
         public double TotalGeneralizedCostPesos =>
             ProvisionalJourneyCostPesos ?? double.PositiveInfinity;
@@ -568,11 +575,11 @@ public partial class RoutingService
             Legs.Count - 1;
     }
 
-    private sealed record DirectTripCandidate(
+    private sealed record DirectAccessDestinationCompletionEdge(
         AccessCandidate Access,
-        double MaximumDistanceMeters);
+        double MaximumDistanceMeters) : DestinationCompletionEdge;
 
-    private sealed record AccessCandidate(
+    internal sealed record AccessCandidate(
         AccessMode Mode,
         (double Latitude, double Longitude) Anchor,
         double WalkDistanceMeters,

@@ -11,7 +11,7 @@ public partial class RoutingService
     /// Dense samples from one corridor therefore cannot crowd every other
     /// useful route out before Valhalla confirmation.
     /// </summary>
-    private List<JourneyCandidate> SelectCandidatesToConfirmWithDiversity(
+    internal List<JourneyCandidate> SelectCandidatesToConfirmWithDiversity(
         List<JourneyCandidate> candidates)
     {
         if (candidates.Count <= MaxCandidatesToConfirm)
@@ -19,20 +19,25 @@ public partial class RoutingService
 
         var selected = new List<JourneyCandidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var diversityQuota = Math.Max(1, MaxCandidatesToConfirm / 4);
+        var physicalDiversityQuota = Math.Max(1, MaxCandidatesToConfirm / 4);
         var objectiveQuota = Math.Max(
             1,
-            (MaxCandidatesToConfirm - diversityQuota) / 4);
+            (MaxCandidatesToConfirm - physicalDiversityQuota) / 4);
 
-        AddDiverse(diversityQuota);
+        // Physical route occurrences and access profiles solve different
+        // pre-confirmation failure modes. A cheap straight-line walk can be
+        // the best provisional candidate in every boarding bucket, yet fail
+        // once Valhalla measures the real network walk. Preserve the complete
+        // physical-region reservation, and use the former low-origin-access
+        // objective slice for bounded origin/destination mode + TODA
+        // fallbacks. The total confirmation budget is unchanged.
+        AddDiverse(physicalDiversityQuota, GetBoardingDiversityKey);
         Add(candidates.OrderBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
         Add(candidates.OrderBy(EstimateCandidateFarePesos)
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
         Add(candidates.OrderBy(EstimateCandidateTimeSeconds)
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
-        Add(candidates.OrderBy(EstimateCandidateOriginAccessDistanceMeters)
-            .ThenBy(candidate => candidate.OriginAccess.TotalTimeSeconds)
-            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
+        AddAccessProfileDiverse(objectiveQuota);
 
         if (selected.Count < MaxCandidatesToConfirm)
         {
@@ -64,14 +69,18 @@ public partial class RoutingService
             }
         }
 
-        void AddDiverse(int limit)
+        void AddDiverse(
+            int limit,
+            Func<JourneyCandidate, string> diversityKey)
         {
             var buckets = candidates
-                .GroupBy(GetBoardingDiversityKey, StringComparer.Ordinal)
+                .GroupBy(diversityKey, StringComparer.Ordinal)
                 .Select(group => new Queue<JourneyCandidate>(group
                     .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-                    .ThenBy(EstimateCandidateTimeSeconds)))
+                    .ThenBy(EstimateCandidateTimeSeconds)
+                    .ThenBy(GetJourneyCandidateKey, StringComparer.Ordinal)))
                 .OrderBy(queue => queue.Peek().TotalGeneralizedCostPesos)
+                .ThenBy(queue => diversityKey(queue.Peek()), StringComparer.Ordinal)
                 .ToList();
 
             var added = 0;
@@ -80,6 +89,71 @@ public partial class RoutingService
                    buckets.Any(queue => queue.Count > 0))
             {
                 foreach (var queue in buckets)
+                {
+                    while (queue.Count > 0)
+                    {
+                        var candidate = queue.Dequeue();
+                        if (!seen.Add(GetJourneyCandidateKey(candidate)))
+                            continue;
+
+                        selected.Add(candidate);
+                        added++;
+                        break;
+                    }
+
+                    if (added >= limit || selected.Count >= MaxCandidatesToConfirm)
+                        break;
+                }
+            }
+        }
+
+        void AddAccessProfileDiverse(int limit)
+        {
+            if (limit <= 0)
+                return;
+
+            // First divide by the coarse mode pair so walk/walk cannot consume
+            // the complete access-fallback reservation. Within each pair, one
+            // representative per route sequence + concrete TODA + physical
+            // occurrence keeps the low-origin-access objective this quota
+            // replaces. The occurrence component is essential: boarding and
+            // transfer regions that confirm differently cannot be collapsed
+            // merely because their modes and route IDs match. Choose the
+            // shortest access within each joint bucket, then let bucket
+            // representatives compete by complete provisional journey cost.
+            // Round-robin selection remains deterministic and bounded.
+            var modePairQueues = candidates
+                .GroupBy(GetAccessModePairKey, StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => new Queue<JourneyCandidate>(group
+                    .GroupBy(GetAccessProfileRegionDiversityKey, StringComparer.Ordinal)
+                    .Select(profile => new
+                    {
+                        Representative = profile
+                            .OrderBy(EstimateCandidateOriginAccessDistanceMeters)
+                            .ThenBy(candidate => candidate.OriginAccess.TotalTimeSeconds)
+                            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
+                            .ThenBy(EstimateCandidateTimeSeconds)
+                            .ThenBy(GetJourneyCandidateKey, StringComparer.Ordinal)
+                            .First(),
+                        ProvisionalProfileCost = profile.Min(candidate =>
+                            candidate.TotalGeneralizedCostPesos)
+                    })
+                    .OrderBy(profile => profile.ProvisionalProfileCost)
+                    .ThenBy(profile => profile.Representative.TotalGeneralizedCostPesos)
+                    .ThenBy(profile => EstimateCandidateTimeSeconds(
+                        profile.Representative))
+                    .ThenBy(profile => GetAccessProfileRegionDiversityKey(
+                        profile.Representative), StringComparer.Ordinal)
+                    .Select(profile => profile.Representative)))
+                .ToList();
+
+            var added = 0;
+            while (added < limit &&
+                   selected.Count < MaxCandidatesToConfirm &&
+                   modePairQueues.Any(queue => queue.Count > 0))
+            {
+                foreach (var queue in modePairQueues)
                 {
                     while (queue.Count > 0)
                     {
@@ -110,144 +184,37 @@ public partial class RoutingService
         }));
     }
 
-    /// <summary>
-    /// Applies the Phase 1 feeder-shadowing principle to transfer boarding.
-    /// A passenger should not walk substantially downstream along the next
-    /// jeepney route when an earlier confirmed transfer is already practical,
-    /// unless the farther boarding produces a meaningful fastest/cheapest gain.
-    /// </summary>
-    private List<ConfirmedJourneyCandidate> PruneConfirmedTransferBoardingShadowing(
-        List<ConfirmedJourneyCandidate> candidates)
-    {
-        var kept = candidates;
-        var maxLegCount = candidates.Count == 0
-            ? 0
-            : candidates.Max(candidate => candidate.Candidate.Legs.Count);
+    private static string GetAccessModePairKey(JourneyCandidate candidate) =>
+        $"{candidate.OriginAccess.Mode}>{candidate.DestinationAccess.Mode}";
 
-        for (var legIndex = 1; legIndex < maxLegCount; legIndex++)
-        {
-            var next = new List<ConfirmedJourneyCandidate>();
+    private static string GetAccessProfileDiversityKey(
+        JourneyCandidate candidate) =>
+        $"{string.Join('>', candidate.Legs.Select(leg => leg.RouteId))}|" +
+        $"{GetAccessEndpointProfileKey(candidate.OriginAccess)}|" +
+        GetAccessEndpointProfileKey(candidate.DestinationAccess);
 
-            foreach (var group in kept.GroupBy(
-                         candidate => GetTransferBoardingComparisonKey(candidate, legIndex),
-                         StringComparer.Ordinal))
-            {
-                var variants = group
-                    .Where(candidate => candidate.Candidate.Legs.Count > legIndex)
-                    .ToList();
-                var passthrough = group
-                    .Where(candidate => candidate.Candidate.Legs.Count <= legIndex)
-                    .ToList();
-                next.AddRange(passthrough);
+    private string GetAccessProfileRegionDiversityKey(
+        JourneyCandidate candidate) =>
+        $"{GetAccessProfileDiversityKey(candidate)}|" +
+        GetTransitOccurrenceDiversityKey(candidate);
 
-                if (variants.Count <= 1)
-                {
-                    next.AddRange(variants);
-                    continue;
-                }
-
-                var reference = variants
-                    .Where(candidate => ConfirmedTransferDistanceMeters(candidate, legIndex) is not null)
-                    .OrderBy(candidate => ConfirmedTransferDistanceMeters(candidate, legIndex))
-                    .ThenBy(candidate => GetBoardProgressMeters(candidate.Candidate.Legs[legIndex]))
-                    .ThenBy(candidate => candidate.Plan.GeneralizedCostPesos)
-                    .FirstOrDefault();
-
-                if (reference is null)
-                {
-                    next.AddRange(variants);
-                    continue;
-                }
-
-                var referenceProgress = GetBoardProgressMeters(
-                    reference.Candidate.Legs[legIndex]);
-                var referenceTransferDistance =
-                    ConfirmedTransferDistanceMeters(reference, legIndex)!.Value;
-
-                foreach (var variant in variants)
-                {
-                    if (ReferenceEquals(variant, reference))
-                    {
-                        next.Add(variant);
-                        continue;
-                    }
-
-                    var transferDistance = ConfirmedTransferDistanceMeters(variant, legIndex);
-                    if (transferDistance is null)
-                    {
-                        next.Add(variant);
-                        continue;
-                    }
-
-                    var downstreamProgress =
-                        GetBoardProgressMeters(variant.Candidate.Legs[legIndex]) -
-                        referenceProgress;
-                    var extraTransferDistance = transferDistance.Value -
-                        referenceTransferDistance;
-
-                    var shadowsNextRoute =
-                        downstreamProgress >= FeederShadowingMinProgressMeters &&
-                        extraTransferDistance > 0 &&
-                        extraTransferDistance >=
-                        downstreamProgress * FeederShadowingAccessDistanceRatio;
-
-                    if (!shadowsNextRoute ||
-                        HasMeaningfulFastestOrCheapestAdvantage(
-                            variant.Plan,
-                            reference.Plan))
-                    {
-                        next.Add(variant);
-                        continue;
-                    }
-
-                    _logger.LogDebug(
-                        "Routing candidate rejected: transfer feeder shadows route {RouteId} at leg {LegIndex}; downstream={DownstreamMeters:F0}m extraTransfer={ExtraTransferMeters:F0}m totalTime={TotalTime:F0}s fare={Fare:F2}",
-                        variant.Candidate.Legs[legIndex].RouteId,
-                        legIndex,
-                        downstreamProgress,
-                        extraTransferDistance,
-                        variant.Plan.TotalTimeSeconds,
-                        variant.Plan.TotalFarePesos);
-                }
-            }
-
-            kept = next;
-        }
-
-        return kept;
-    }
-
-    private string GetTransferBoardingComparisonKey(
-        ConfirmedJourneyCandidate candidate,
-        int targetLegIndex)
+    private string GetTransitOccurrenceDiversityKey(JourneyCandidate candidate)
     {
         var bucketSize = _options.BoardingDiversityBucketMeters;
-        var legSignature = string.Join('>', candidate.Candidate.Legs.Select((leg, index) =>
+        return string.Join('>', candidate.Legs.Select(leg =>
         {
+            var boardBucket = (long)Math.Floor(
+                GetBoardProgressMeters(leg) / bucketSize);
             var alightBucket = (long)Math.Floor(
                 GetAlightProgressMeters(leg) / bucketSize);
-            var boardPart = index == targetLegIndex
-                ? "*"
-                : ((long)Math.Floor(GetBoardProgressMeters(leg) / bucketSize)).ToString();
-            return $"{leg.RouteId}:{boardPart}-{alightBucket}";
+            return $"{leg.RouteId}@{boardBucket}-{alightBucket}";
         }));
-
-        return string.Join('|',
-            legSignature,
-            $"origin:{candidate.Plan.OriginAccess.Mode}:{candidate.Plan.OriginAccess.TrikePointId}",
-            $"destination:{candidate.Plan.DestinationAccess.Mode}:{candidate.Plan.DestinationAccess.TrikePointId}");
     }
 
-    private static double? ConfirmedTransferDistanceMeters(
-        ConfirmedJourneyCandidate candidate,
-        int boardingLegIndex)
-    {
-        var transferIndex = boardingLegIndex - 1;
-        return transferIndex >= 0 &&
-               transferIndex < candidate.Plan.TransferWalkDistancesMeters.Count
-            ? candidate.Plan.TransferWalkDistancesMeters[transferIndex]
-            : null;
-    }
+    private static string GetAccessEndpointProfileKey(AccessCandidate access) =>
+        access.Mode == AccessMode.Trike
+            ? $"Trike:{access.TrikePoint?.Id ?? "unknown"}"
+            : access.Mode.ToString();
 
     /// <summary>
     /// Conservative Pareto pruning over confirmed journeys. A plan is removed
@@ -328,29 +295,6 @@ public partial class RoutingService
                 .Where(leg => leg.Mode == AccessMode.Walk)
                 .Sum(leg => leg.DistanceMeters),
             plan.TransferCount);
-    }
-
-    private void LogConfirmedPruningDelta(
-        IReadOnlyCollection<ConfirmedJourneyCandidate> before,
-        IReadOnlyCollection<ConfirmedJourneyCandidate> after,
-        string reason)
-    {
-        if (!_logger.IsEnabled(LogLevel.Debug) || before.Count == after.Count)
-            return;
-
-        var survivors = new HashSet<ConfirmedJourneyCandidate>(after);
-        foreach (var candidate in before.Where(candidate => !survivors.Contains(candidate)))
-        {
-            _logger.LogDebug(
-                "Routing candidate rejected: {Reason}; routes={Routes} board={BoardProgress:F0}m access={AccessDistance:F0}m time={Time:F0}s fare={Fare:F2} cost={Cost:F2}",
-                reason,
-                RouteSequence(candidate),
-                GetBoardProgressMeters(candidate.Candidate.Legs[0]),
-                ConfirmedOriginAccessDistanceMeters(candidate),
-                candidate.Plan.TotalTimeSeconds,
-                candidate.Plan.TotalFarePesos,
-                candidate.Plan.GeneralizedCostPesos);
-        }
     }
 
     private static string RouteSequence(ConfirmedJourneyCandidate candidate) =>

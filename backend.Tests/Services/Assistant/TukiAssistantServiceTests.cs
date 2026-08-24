@@ -128,8 +128,21 @@ public sealed class TukiAssistantServiceTests
         _instructions.Setup(item => item.GetForOwnedSessionAsync(
                 It.IsAny<Guid>(), userId, default)).ReturnsAsync([]);
         var result = await Service().RespondAsync(userId, new("Am I still going right?"));
+
+        // The model reported intent Lost; the status must come from the trip
+        // session's own OFF_ROUTE state instead. Asserting the status rather
+        // than the phrasing keeps this pinned to the deterministic behaviour
+        // -- the wording is presentation copy and may be reworded freely.
         Assert.Equal("OFF_ROUTE", result.Status);
-        Assert.Contains("planned route", result.Message);
+        Assert.False(
+            string.IsNullOrWhiteSpace(result.Message),
+            "An off-route answer must still carry guidance for the passenger.");
+
+        // Evidence that the answer was derived from the session that was read,
+        // not from the model's intent classification.
+        _sessions.Verify(
+            item => item.GetActiveOwnedAsync(userId, default),
+            Times.Once);
     }
 
     [Fact]

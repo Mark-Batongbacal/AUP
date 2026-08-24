@@ -288,6 +288,9 @@ public sealed class AuthController(
         {
             return Unauthorized(new { message = "Invalid Facebook token." });
         }
+        // The OIDC validator raises its own unavailability type; the
+        // access-token one it used to catch is never thrown on this path, so
+        // an outage here escaped as an unhandled exception.
         catch (FacebookOidcTokenValidationUnavailableException)
         {
             return Problem(

@@ -18,16 +18,45 @@ public partial class RoutingService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!_routeSamples.TryGetValue(route.RouteId, out var samples))
+            if (!_routeSamples.TryGetValue(route.RouteId, out var samples) ||
+                !_routeGeometries.ContainsKey(route.RouteId))
+            {
                 continue;
+            }
+
+            // Always include the exact nearest point on the full route. The
+            // sampled points remain as alternatives because a slightly farther
+            // point can have much better real pedestrian access (bridge,
+            // divided road, wall, etc.). This prevents sparse sampling from
+            // making a route endpoint look like the only "nearest" point while
+            // preserving Valhalla as the authority for walkability.
+            var exact = ProjectOntoFullRoute(
+                route.RouteId,
+                (latitude, longitude),
+                0);
+            AddCandidate(exact.Latitude, exact.Longitude);
 
             foreach (var point in samples)
+                AddCandidate(point.Latitude, point.Longitude);
+
+            void AddCandidate(double pointLatitude, double pointLongitude)
             {
+                if (candidates.Any(candidate =>
+                        candidate.RouteId == route.RouteId &&
+                        ApproximateDistanceMeters(
+                            candidate.Response.NearestPointLatitude,
+                            candidate.Response.NearestPointLongitude,
+                            pointLatitude,
+                            pointLongitude) <= 1.0))
+                {
+                    return;
+                }
+
                 var distanceMeters = ApproximateDistanceMeters(
                     latitude,
                     longitude,
-                    point.Latitude,
-                    point.Longitude);
+                    pointLatitude,
+                    pointLongitude);
 
                 candidates.Add(new SampledRoutePoint(
                     route.RouteId,
@@ -36,8 +65,8 @@ public partial class RoutingService
                         RouteId = route.RouteId,
                         RouteName = route.RouteName,
                         RouteDistanceMeters = distanceMeters,
-                        NearestPointLatitude = point.Latitude,
-                        NearestPointLongitude = point.Longitude
+                        NearestPointLatitude = pointLatitude,
+                        NearestPointLongitude = pointLongitude
                     }));
             }
         }
