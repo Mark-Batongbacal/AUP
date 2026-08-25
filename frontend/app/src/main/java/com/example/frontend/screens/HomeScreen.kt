@@ -333,7 +333,7 @@ fun HomeScreen(
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = {
-                if (!isRefreshing) {
+                if (!showMapPicker && !isRefreshing) {
                     isRefreshing = true
                     isLocating = true
                     recentPlacesLoading = !isGuest
@@ -341,8 +341,7 @@ fun HomeScreen(
                     refreshRequest += 1
                 }
             },
-            modifier = Modifier.fillMaxSize(),
-            enabled = !showMapPicker
+            modifier = Modifier.fillMaxSize()
         ) {
             Column(
                 modifier = Modifier
