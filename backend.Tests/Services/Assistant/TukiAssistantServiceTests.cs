@@ -20,7 +20,7 @@ public sealed class TukiAssistantServiceTests
     private readonly Mock<IJourneyPlanPersistenceService> _persistence = new();
 
     [Fact]
-    public async Task AmbiguousDestination_RequestsClarificationWithoutRouting()
+    public async Task Planning_AmbiguousDestination_RequestsClarificationWithoutRouting()
     {
         PlanIntent("SM");
         _destinations.Setup(service => service.SearchAsync("SM",
@@ -29,8 +29,12 @@ public sealed class TukiAssistantServiceTests
             [
                 Place("1", "SM Clark"), Place("2", "SM Pampanga")
             ]));
-        var result = await Service().RespondAsync(Guid.NewGuid(), new("Take me to SM", 15.1, 120.5));
+
+        var result = await Service().RespondPlanningAsync(
+            Guid.NewGuid(), new("Take me to SM", 15.1, 120.5));
+
         Assert.Equal("DESTINATION_AMBIGUOUS", result.Status);
+        Assert.Equal("PLANNING", result.Surface);
         Assert.Equal(2, result.Destinations!.Count);
         _routing.Verify(service => service.PlanTripsAsync(
             It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(),
@@ -38,7 +42,7 @@ public sealed class TukiAssistantServiceTests
     }
 
     [Fact]
-    public async Task UniqueExactDestination_IsSelectedFromRelatedPeliasResults()
+    public async Task Planning_UniqueExactDestination_IsSelectedFromRelatedResults()
     {
         PlanIntent("SM City Clark");
         _destinations.Setup(service => service.SearchAsync("SM City Clark",
@@ -55,15 +59,18 @@ public sealed class TukiAssistantServiceTests
             .ReturnsAsync([new PersistedJourney(
                 new RouteRecommendation { RecommendationId = recommendationId }, Plan(52))]);
 
-        var result = await Service().RespondAsync(Guid.NewGuid(),
-            new("Take me to SM City Clark", 15.1, 120.5));
+        var result = await Service().RespondPlanningAsync(
+            Guid.NewGuid(), new("Take me to SM City Clark", 15.1, 120.5));
 
         Assert.Equal("JOURNEYS_AVAILABLE", result.Status);
+        Assert.Equal("PLANNING", result.Surface);
         Assert.Equal(recommendationId, Assert.Single(result.Journeys!).JourneyId);
+        Assert.Equal("SELECT_ROUTE", result.Action?.Type);
+        Assert.True(result.Action?.RequiresConfirmation);
     }
 
     [Fact]
-    public async Task ExplicitDestinationId_SelectsRequestedPeliasResult()
+    public async Task Planning_ExplicitDestinationId_SelectsRequestedResult()
     {
         PlanIntent("SM Clark");
         _destinations.Setup(service => service.SearchAsync("SM Clark",
@@ -74,15 +81,17 @@ public sealed class TukiAssistantServiceTests
         _routing.Setup(service => service.PlanTripsAsync(15.1, 120.5, 15.2, 120.6, default))
             .ReturnsAsync([]);
 
-        var result = await Service().RespondAsync(Guid.NewGuid(),
+        var result = await Service().RespondPlanningAsync(
+            Guid.NewGuid(),
             new("Take me to SM Clark", 15.1, 120.5, DestinationId: "bus"));
 
         Assert.Equal("NO_JOURNEY_WITHIN_CONSTRAINTS", result.Status);
-        _routing.Verify(service => service.PlanTripsAsync(15.1, 120.5, 15.2, 120.6, default), Times.Once);
+        _routing.Verify(service => service.PlanTripsAsync(
+            15.1, 120.5, 15.2, 120.6, default), Times.Once);
     }
 
     [Fact]
-    public async Task BudgetFiltering_IsDeterministicAndUsesPeliasBackedService()
+    public async Task Planning_BudgetFiltering_IsDeterministic()
     {
         PlanIntent("SM Clark", 80);
         _destinations.Setup(service => service.SearchAsync("SM Clark",
@@ -94,88 +103,124 @@ public sealed class TukiAssistantServiceTests
         var recommendationId = Guid.NewGuid();
         _persistence.Setup(item => item.PersistAsync(
                 userId, 15.1, 120.5, "SM Clark", 15.2, 120.6, 80, null,
-                It.Is<IReadOnlyList<JeepneyTripPlan>>(plans => plans.Count == 1 && plans[0].TotalFarePesos == 52),
+                It.Is<IReadOnlyList<JeepneyTripPlan>>(plans =>
+                    plans.Count == 1 && plans[0].TotalFarePesos == 52),
                 default))
-            .ReturnsAsync([new PersistedJourney(new RouteRecommendation { RecommendationId = recommendationId }, Plan(52))]);
-        var result = await Service().RespondAsync(userId, new("SM Clark under 80", 15.1, 120.5));
+            .ReturnsAsync([new PersistedJourney(
+                new RouteRecommendation { RecommendationId = recommendationId }, Plan(52))]);
+
+        var result = await Service().RespondPlanningAsync(
+            userId, new("SM Clark under 80", 15.1, 120.5));
+
         var journey = Assert.Single(result.Journeys!);
         Assert.Equal(52, journey.FarePesos);
         Assert.Equal(recommendationId, journey.JourneyId);
     }
 
     [Fact]
-    public async Task LostWithoutActiveTrip_IsDeterministic()
-    {
-        _extractor.Setup(item => item.ExtractAsync(It.IsAny<string>(), default))
-            .ReturnsAsync(new AssistantIntent { Intent = AssistantIntentType.Lost });
-        var result = await Service().RespondAsync(Guid.NewGuid(), new("Where am I?"));
-        Assert.Equal("NO_ACTIVE_TRIP", result.Status);
-    }
-
-    [Fact]
-    public async Task LostWhileOffRoute_UsesTripSessionNotModelDecision()
+    public async Task ActiveTrip_OffRouteQuestion_UsesOwnedSessionState()
     {
         var userId = Guid.NewGuid();
-        _extractor.Setup(item => item.ExtractAsync(It.IsAny<string>(), default))
-            .ReturnsAsync(new AssistantIntent { Intent = AssistantIntentType.Lost });
-        _sessions.Setup(item => item.GetActiveOwnedAsync(userId, default)).ReturnsAsync(
-            new TripSession
-            {
-                TripSessionId = Guid.NewGuid(), UserId = userId,
-                CurrentNavigationState = TripNavigationState.OffRoute,
-                LastNavigationStatus = "OFF_ROUTE"
-            });
-        _instructions.Setup(item => item.GetForOwnedSessionAsync(
-                It.IsAny<Guid>(), userId, default)).ReturnsAsync([]);
-        var result = await Service().RespondAsync(userId, new("Am I still going right?"));
+        var sessionId = Guid.NewGuid();
+        _sessions.Setup(item => item.GetOwnedAsync(sessionId, userId, default)).ReturnsAsync(
+            ActiveSession(userId, sessionId, TripNavigationState.OffRoute, "OFF_ROUTE"));
+        _instructions.Setup(item => item.GetForOwnedSessionAsync(sessionId, userId, default))
+            .ReturnsAsync([]);
 
-        // The model reported intent Lost; the status must come from the trip
-        // session's own OFF_ROUTE state instead. Asserting the status rather
-        // than the phrasing keeps this pinned to the deterministic behaviour
-        // -- the wording is presentation copy and may be reworded freely.
+        var result = await Service().RespondActiveTripAsync(
+            userId, sessionId, new("Am I still going the right way?"));
+
         Assert.Equal("OFF_ROUTE", result.Status);
-        Assert.False(
-            string.IsNullOrWhiteSpace(result.Message),
-            "An off-route answer must still carry guidance for the passenger.");
-
-        // Evidence that the answer was derived from the session that was read,
-        // not from the model's intent classification.
-        _sessions.Verify(
-            item => item.GetActiveOwnedAsync(userId, default),
-            Times.Once);
+        Assert.Equal("ACTIVE_TRIP", result.Surface);
+        Assert.Equal(sessionId, result.Navigation?.TripSessionId);
+        _extractor.Verify(
+            item => item.ExtractAsync(It.IsAny<AssistantContext>(), default),
+            Times.Never);
     }
 
     [Fact]
-    public async Task AiOutage_DoesNotCallRoutingOrSessionMutation()
+    public async Task ActiveTrip_NavigationStatus_DoesNotDependOnExternalAi()
     {
-        _extractor.Setup(item => item.ExtractAsync(It.IsAny<string>(), default))
+        var userId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        _extractor.Setup(item => item.ExtractAsync(It.IsAny<AssistantContext>(), default))
             .ThrowsAsync(new HttpRequestException());
-        var result = await Service().RespondAsync(Guid.NewGuid(), new("Take me somewhere"));
+        _sessions.Setup(item => item.GetOwnedAsync(sessionId, userId, default)).ReturnsAsync(
+            ActiveSession(userId, sessionId, TripNavigationState.OnJeepney, "ON_ROUTE"));
+        _instructions.Setup(item => item.GetForOwnedSessionAsync(sessionId, userId, default))
+            .ReturnsAsync([]);
+
+        var result = await Service().RespondActiveTripAsync(
+            userId, sessionId, new("Am I still going the right way?"));
+
+        Assert.Equal("ON_ROUTE", result.Status);
+        _extractor.Verify(
+            item => item.ExtractAsync(It.IsAny<AssistantContext>(), default),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ActiveTrip_ConstraintChange_ProducesProposalWithoutMutatingSession()
+    {
+        var userId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var session = ActiveSession(
+            userId, sessionId, TripNavigationState.OnJeepney, "ON_ROUTE");
+        session.LastLatitude = 15.1;
+        session.LastLongitude = 120.5;
+        session.OriginalBudget = 100;
+        session.ApproxFareSpent = 20;
+
+        _sessions.Setup(item => item.GetOwnedAsync(sessionId, userId, default))
+            .ReturnsAsync(session);
+        _instructions.Setup(item => item.GetForOwnedSessionAsync(sessionId, userId, default))
+            .ReturnsAsync([]);
+        _extractor.Setup(item => item.ExtractAsync(
+                It.Is<AssistantContext>(context =>
+                    context.Surface == AssistantSurface.ActiveTrip &&
+                    context.ActiveTrip != null &&
+                    context.ActiveTrip.TripSessionId == sessionId),
+                default))
+            .ReturnsAsync(new AssistantIntent
+            {
+                Intent = AssistantIntentType.UpdateTripConstraints,
+                BudgetPesos = 30
+            });
+        _routing.Setup(service => service.PlanTripsAsync(
+                15.1, 120.5, 15.2, 120.6, default))
+            .ReturnsAsync([Plan(26)]);
+        var proposedRecommendationId = Guid.NewGuid();
+        _persistence.Setup(item => item.PersistAsync(
+                userId, 15.1, 120.5, "SM Clark", 15.2, 120.6,
+                30, null, It.IsAny<IReadOnlyList<JeepneyTripPlan>>(), default))
+            .ReturnsAsync([new PersistedJourney(
+                new RouteRecommendation { RecommendationId = proposedRecommendationId },
+                Plan(26))]);
+
+        var result = await Service().RespondActiveTripAsync(
+            userId, sessionId, new("I only have 30 pesos left"));
+
+        Assert.Equal("REPLAN_PROPOSAL", result.Status);
+        Assert.Equal("CONFIRM_REPLAN_ROUTE", result.Action?.Type);
+        Assert.True(result.Action?.RequiresConfirmation);
+        Assert.Equal(sessionId, result.Action?.TripSessionId);
+        Assert.Equal(proposedRecommendationId, Assert.Single(result.Journeys!).JourneyId);
+        _sessions.Verify(item => item.UpdateAsync(
+            It.IsAny<TripSession>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Planning_AiOutage_DoesNotCallRoutingOrSessionMutation()
+    {
+        _extractor.Setup(item => item.ExtractAsync(It.IsAny<AssistantContext>(), default))
+            .ThrowsAsync(new HttpRequestException());
+
+        var result = await Service().RespondPlanningAsync(
+            Guid.NewGuid(), new("Take me somewhere"));
+
         Assert.Equal("AI_UNAVAILABLE", result.Status);
         _routing.VerifyNoOtherCalls();
         _sessions.VerifyNoOtherCalls();
-    }
-
-    [Fact]
-    public async Task NavigationStatus_DoesNotDependOnExternalAi()
-    {
-        var userId = Guid.NewGuid();
-        _extractor.Setup(item => item.ExtractAsync(It.IsAny<string>(), default))
-            .ThrowsAsync(new HttpRequestException());
-        _sessions.Setup(item => item.GetActiveOwnedAsync(userId, default)).ReturnsAsync(
-            new TripSession
-            {
-                TripSessionId = Guid.NewGuid(), UserId = userId,
-                CurrentNavigationState = TripNavigationState.OnJeepney,
-                LastNavigationStatus = "ON_ROUTE"
-            });
-        _instructions.Setup(item => item.GetForOwnedSessionAsync(
-                It.IsAny<Guid>(), userId, default)).ReturnsAsync([]);
-
-        var result = await Service().RespondAsync(userId, new("Am I still going the right way?"));
-
-        Assert.Equal("ON_ROUTE", result.Status);
-        _extractor.Verify(item => item.ExtractAsync(It.IsAny<string>(), default), Times.Never);
     }
 
     private TukiAssistantService Service() => new(
@@ -185,12 +230,32 @@ public sealed class TukiAssistantServiceTests
         NullLogger<TukiAssistantService>.Instance);
 
     private void PlanIntent(string destination, decimal? budget = null) =>
-        _extractor.Setup(item => item.ExtractAsync(It.IsAny<string>(), default))
+        _extractor.Setup(item => item.ExtractAsync(
+                It.Is<AssistantContext>(context => context.Surface == AssistantSurface.Planning),
+                default))
             .ReturnsAsync(new AssistantIntent
             {
                 Intent = AssistantIntentType.PlanRoute,
-                DestinationQuery = destination, BudgetPesos = budget
+                DestinationQuery = destination,
+                BudgetPesos = budget
             });
+
+    private static TripSession ActiveSession(
+        Guid userId,
+        Guid sessionId,
+        TripNavigationState state,
+        string status) =>
+        new()
+        {
+            TripSessionId = sessionId,
+            UserId = userId,
+            RecommendationId = Guid.NewGuid(),
+            CurrentNavigationState = state,
+            LastNavigationStatus = status,
+            DestinationName = "SM Clark",
+            DestinationLatitude = 15.2,
+            DestinationLongitude = 120.6
+        };
 
     private static DestinationSearchResult Place(string id, string name) =>
         new(id, name, 15.2, 120.6, "venue", "pelias");
@@ -198,16 +263,27 @@ public sealed class TukiAssistantServiceTests
     private static JeepneyTripPlan Plan(double fare) => new()
     {
         RecommendationType = "cheapest",
-        OriginAccess = Access(), DestinationAccess = Access(),
-        TotalFarePesos = fare, TotalTimeSeconds = 1_200,
+        OriginAccess = Access(),
+        DestinationAccess = Access(),
+        TotalFarePesos = fare,
+        TotalTimeSeconds = 1_200,
         GeneralizedCostPesos = fare + 60,
-        Legs = [new JeepneyTripLeg
-        {
-            Mode = AccessMode.Jeepney, RouteId = "R1", RouteName = "Route 1",
-            BoardLatitude = 15.1, BoardLongitude = 120.5,
-            AlightLatitude = 15.2, AlightLongitude = 120.6,
-            DistanceMeters = 5_000, DurationSeconds = 1_200, FarePesos = fare
-        }]
+        Legs =
+        [
+            new JeepneyTripLeg
+            {
+                Mode = AccessMode.Jeepney,
+                RouteId = "R1",
+                RouteName = "Route 1",
+                BoardLatitude = 15.1,
+                BoardLongitude = 120.5,
+                AlightLatitude = 15.2,
+                AlightLongitude = 120.6,
+                DistanceMeters = 5_000,
+                DurationSeconds = 1_200,
+                FarePesos = fare
+            }
+        ]
     };
 
     private static JeepneyAccessSegment Access() => new()
