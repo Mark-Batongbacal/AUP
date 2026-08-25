@@ -88,6 +88,7 @@ private struct AssistantGeometryDTO: Decodable {
 private struct AssistantJourneyPlanLegDTO: Decodable {
     let mode: Int
     let routeName: String?
+    let routeId: String?
     let destinationLatitude: Double
     let destinationLongitude: Double
     let durationSeconds: Double
@@ -217,7 +218,8 @@ private extension AssistantJourneyDTO {
             },
             legEndPoints: plan.legs.map {
                 TukiCoordinate(latitude: $0.destinationLatitude, longitude: $0.destinationLongitude)
-            }
+            },
+            legRouteIds: plan.legs.map(\.routeId)
         )
 
         return TukiAssistantRoute(

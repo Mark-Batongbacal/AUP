@@ -70,7 +70,7 @@ final class TukiTripOptionsModel: ObservableObject {
     @Published var sheetPresented = false
 
     let location = TukiLocationService()
-    private let platform: TukiPlatformAPI?
+    let platform: TukiPlatformAPI?
     private let client: TukiTripOptionsClient?
 
     init() {
@@ -96,15 +96,6 @@ final class TukiTripOptionsModel: ObservableObject {
         switch await platform.activeNavigation() {
         case .success(let snapshot): activeSnapshot = snapshot
         case .failure: activeSnapshot = nil
-        }
-    }
-
-    func searchDestinations(_ query: String) async -> [TukiPlace] {
-        guard let platform else { return [] }
-        let coordinate = location.currentLocation?.coordinate
-        switch await platform.searchPlaces(query, focusLat: coordinate?.latitude, focusLon: coordinate?.longitude) {
-        case .success(let places): return Array(places.prefix(5))
-        case .failure(let error): errorMessage = error.message; return []
         }
     }
 
@@ -215,7 +206,7 @@ struct TukiTripOptionsOverlay: View {
     }
 }
 
-private enum TukiTripOptionsPage { case menu, preference, budget, destination }
+private enum TukiTripOptionsPage { case menu, preference, budget }
 
 private struct TukiTripOptionsPanel: View {
     @ObservedObject var model: TukiTripOptionsModel
@@ -223,9 +214,7 @@ private struct TukiTripOptionsPanel: View {
     @State private var page: TukiTripOptionsPage = .menu
     @State private var preference = "efficient"
     @State private var budgetText = ""
-    @State private var destinationQuery = ""
-    @State private var destinationResults: [TukiPlace] = []
-    @State private var destinationLoading = false
+    @State private var showDestinationPicker = false
 
     var body: some View {
         NavigationStack {
@@ -234,7 +223,6 @@ private struct TukiTripOptionsPanel: View {
                 case .menu: menu
                 case .preference: preferenceEditor
                 case .budget: budgetEditor
-                case .destination: destinationEditor
                 }
             }
             .padding(22)
@@ -245,6 +233,20 @@ private struct TukiTripOptionsPanel: View {
                     if page == .menu { Button("Close") { dismiss() } }
                     else { Button("Back") { page = .menu } }
                 }
+            }
+            .fullScreenCover(isPresented: $showDestinationPicker) {
+                TukiUnifiedDestinationPickerScreen(
+                    api: model.platform,
+                    mode: .destination,
+                    focusLatitude: model.location.currentLocation?.coordinate.latitude,
+                    focusLongitude: model.location.currentLocation?.coordinate.longitude,
+                    initialSelection: nil,
+                    onBack: { showDestinationPicker = false },
+                    onDone: { place in
+                        showDestinationPicker = false
+                        Task { await model.changeDestination(place) }
+                    }
+                )
             }
             .overlay {
                 if model.isWorking {
@@ -286,7 +288,10 @@ private struct TukiTripOptionsPanel: View {
                 page = .budget
             }
             optionButton("mappin.and.ellipse", "Change destination", "Search for a new destination and reroute.") {
-                page = .destination
+                Task {
+                    _ = await model.location.requestCurrentLocation()
+                    showDestinationPicker = true
+                }
             }
             Spacer(minLength: 6)
             Button(role: .destructive) {
@@ -337,51 +342,6 @@ private struct TukiTripOptionsPanel: View {
             }
             .foregroundStyle(TukiPalette.orange)
             Spacer()
-        }
-    }
-
-    private var destinationEditor: some View {
-        VStack(spacing: 12) {
-            Text("Change destination").font(.title2.bold()).frame(maxWidth: .infinity, alignment: .leading)
-            TextField("New destination", text: $destinationQuery)
-                .textFieldStyle(.roundedBorder)
-            if destinationLoading {
-                ProgressView().frame(maxWidth: .infinity)
-            }
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(destinationResults) { place in
-                        Button {
-                            Task { await model.changeDestination(place) }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(place.name).fontWeight(.bold).foregroundStyle(TukiPalette.dark)
-                                if let address = place.address, !address.isEmpty {
-                                    Text(address).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                            .background(Color.secondary.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            Spacer()
-        }
-        .task(id: destinationQuery) {
-            let query = destinationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard query.count >= 2 else {
-                destinationResults = []
-                return
-            }
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            destinationLoading = true
-            destinationResults = await model.searchDestinations(query)
-            destinationLoading = false
         }
     }
 

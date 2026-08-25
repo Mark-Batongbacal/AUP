@@ -2,7 +2,6 @@ package com.example.frontend.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -26,7 +24,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,19 +35,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.frontend.core.network.ApiResult
-import com.example.frontend.data.TukiDataProvider
-import com.example.frontend.data.users.UserProfileDto
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.ui.theme.AppearancePreferences
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiDanger
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiOrange
-import com.example.frontend.ui.theme.TukiSky
 import com.example.frontend.ui.theme.TukiSurfaceRaised
 import com.example.frontend.ui.theme.TukiTeal
 import com.example.frontend.ui.theme.TukiThemeRuntime
+
+private val SettingsIconInk = Color(0xFF153E4B)
+private val SettingsIconSurface = Color(0xFFFFF0D5)
+
+private enum class SettingsPage {
+    OVERVIEW,
+    HELP_CENTER,
+    SEND_FEEDBACK,
+    ABOUT_TUKI
+}
 
 @Composable
 fun SettingsScreen(
@@ -62,153 +65,79 @@ fun SettingsScreen(
     onLogoutClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val dataProvider = remember { TukiDataProvider(context.applicationContext) }
-    var loadedProfile by remember { mutableStateOf<UserProfileDto?>(null) }
-    var showChangePassword by remember { mutableStateOf(false) }
     val isDarkMode = TukiThemeRuntime.darkMode
+    var page by remember { mutableStateOf(SettingsPage.OVERVIEW) }
 
-    LaunchedEffect(dataProvider) {
-        when (val result = dataProvider.userRepository.getCurrentUser()) {
-            is ApiResult.Success -> loadedProfile = result.data
-            is ApiResult.Failure -> Unit
+    when (page) {
+        SettingsPage.HELP_CENTER -> {
+            HelpCenterScreen(onBack = { page = SettingsPage.OVERVIEW })
+            return
         }
-    }
-
-    val displayName = loadedProfile?.let { profile ->
-        listOfNotNull(
-            profile.firstName?.trim()?.takeIf { it.isNotEmpty() },
-            profile.lastName?.trim()?.takeIf { it.isNotEmpty() }
-        ).joinToString(" ")
-    }?.takeIf { it.isNotBlank() } ?: userName
-    val displayEmail = loadedProfile?.email?.takeIf { it.isNotBlank() } ?: userEmail
-    val displayTrips = loadedProfile?.tripsTaken ?: tripsTaken
-    val displayFavorites = loadedProfile?.favoritesCount ?: favoritesCount
-    val displayLanguage = loadedProfile?.preferredLanguage?.takeIf { it.isNotBlank() } ?: "English"
-
-    if (showChangePassword) {
-        ChangePasswordScreen(
-            onBack = { showChangePassword = false },
-            onPasswordChanged = { showChangePassword = false }
-        )
-        return
+        SettingsPage.SEND_FEEDBACK -> {
+            SendFeedbackScreen(onBack = { page = SettingsPage.OVERVIEW })
+            return
+        }
+        SettingsPage.ABOUT_TUKI -> {
+            AboutTukiScreen(onBack = { page = SettingsPage.OVERVIEW })
+            return
+        }
+        SettingsPage.OVERVIEW -> Unit
     }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TukiCream)
-            .statusBarsPadding(),
-        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = Modifier.fillMaxSize().background(TukiCream).statusBarsPadding(),
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 32.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clickable(onClick = onBack),
+                    modifier = Modifier.size(42.dp).clickable(onClick = onBack),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("←", color = TukiInk, fontSize = 25.sp, fontWeight = FontWeight.Bold)
                 }
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    "Settings",
-                    color = TukiInk,
-                    style = MaterialTheme.typography.displaySmall
-                )
+                Text(TukiInterfaceText.settings, color = TukiInk, style = MaterialTheme.typography.displaySmall)
             }
+            Spacer(Modifier.height(28.dp))
         }
 
         item {
+            SettingsSectionLabel(TukiInterfaceText.appearance)
+            Spacer(Modifier.height(10.dp))
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(18.dp),
                 color = TukiSurfaceRaised,
-                shadowElevation = if (isDarkMode) 0.dp else 1.dp
+                shadowElevation = if (isDarkMode) 0.dp else 2.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(14.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(58.dp)
-                            .background(TukiTeal, CircleShape),
+                            .size(46.dp)
+                            .background(SettingsIconSurface, RoundedCornerShape(14.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = initialsFor(displayName),
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge
+                            if (isDarkMode) "☾" else "☀",
+                            color = SettingsIconInk,
+                            fontSize = 22.sp
                         )
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            displayName,
+                            TukiInterfaceText.darkMode,
                             color = TukiInk,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        if (displayEmail.isNotBlank()) {
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                displayEmail,
-                                color = TukiMuted,
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                    Text("›", color = TukiMuted, fontSize = 25.sp)
-                }
-            }
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                SettingsStatCard(displayTrips.toString(), "TRIPS TAKEN", Modifier.weight(1f))
-                SettingsStatCard(displayFavorites.toString(), "FAVORITES", Modifier.weight(1f))
-            }
-        }
-
-        item {
-            SettingsSectionLabel("APPEARANCE")
-            Spacer(Modifier.height(10.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = TukiSurfaceRaised
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(TukiSky, RoundedCornerShape(14.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(if (isDarkMode) "☾" else "☀", color = TukiInk, fontSize = 22.sp)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
+                        Spacer(Modifier.height(2.dp))
                         Text(
-                            "Dark Mode",
-                            color = TukiInk,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            "Switch between light and dark theme",
+                            TukiInterfaceText.darkModeSubtitle,
                             color = TukiMuted,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -228,55 +157,48 @@ fun SettingsScreen(
                     )
                 }
             }
+            Spacer(Modifier.height(34.dp))
         }
 
         item {
-            SettingsSectionLabel("ACCOUNT")
+            SettingsSectionLabel(TukiInterfaceText.support)
             Spacer(Modifier.height(10.dp))
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
-                color = TukiSurfaceRaised
+                color = TukiSurfaceRaised,
+                shadowElevation = if (isDarkMode) 0.dp else 2.dp
             ) {
                 Column {
-                    SettingsActionRow("Edit Profile", "Name, email, phone", "♙")
-                    SettingsDivider()
                     SettingsActionRow(
-                        "Change password",
-                        "Confirm changes with an email OTP",
-                        "◈",
-                        onClick = { showChangePassword = true }
+                        TukiInterfaceText.helpCenter,
+                        if (TukiInterfaceText.isFilipino) "Mga FAQ at gabay" else "FAQs and guides",
+                        "?",
+                        onClick = { page = SettingsPage.HELP_CENTER }
                     )
                     SettingsDivider()
-                    SettingsActionRow("Language", displayLanguage, "◎")
+                    SettingsActionRow(
+                        TukiInterfaceText.sendFeedback,
+                        if (TukiInterfaceText.isFilipino) "Tulungan kaming mapahusay ang TUKI" else "Help us improve TUKI",
+                        "✉",
+                        onClick = { page = SettingsPage.SEND_FEEDBACK }
+                    )
+                    SettingsDivider()
+                    SettingsActionRow(
+                        TukiInterfaceText.aboutTuki,
+                        "Version 1.0.0",
+                        "i",
+                        onClick = { page = SettingsPage.ABOUT_TUKI }
+                    )
                 }
             }
-        }
-
-        item {
-            SettingsSectionLabel("SUPPORT")
-            Spacer(Modifier.height(10.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = TukiSurfaceRaised
-            ) {
-                Column {
-                    SettingsActionRow("Help Center", "FAQs and guides", "?")
-                    SettingsDivider()
-                    SettingsActionRow("Send Feedback", "Help us improve TUKI", "✉")
-                    SettingsDivider()
-                    SettingsActionRow("About TUKI", "Version 1.0.0", "i")
-                }
-            }
+            Spacer(Modifier.height(120.dp))
         }
 
         item {
             Button(
                 onClick = onLogoutClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp),
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isDarkMode) TukiDanger.copy(alpha = 0.16f) else TukiDanger.copy(alpha = 0.10f),
@@ -284,25 +206,8 @@ fun SettingsScreen(
                 ),
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
             ) {
-                Text("Log Out", fontWeight = FontWeight.Bold)
+                Text(TukiInterfaceText.logOut, fontWeight = FontWeight.Bold)
             }
-        }
-    }
-}
-
-@Composable
-private fun SettingsStatCard(value: String, label: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = TukiSky.copy(alpha = 0.55f)
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(value, color = TukiInk, style = MaterialTheme.typography.titleLarge)
-            Text(label, color = TukiMuted, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
@@ -329,20 +234,21 @@ private fun SettingsActionRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 13.dp),
+            .padding(horizontal = 16.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .background(TukiSky, RoundedCornerShape(13.dp)),
+                .size(44.dp)
+                .background(SettingsIconSurface, RoundedCornerShape(13.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text(icon, color = if (title == "Change password") TukiOrange else TukiInk, fontSize = 18.sp)
+            Text(icon, color = SettingsIconInk, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, color = TukiInk, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(2.dp))
             Text(subtitle, color = TukiMuted, style = MaterialTheme.typography.bodySmall)
         }
         Text("›", color = TukiMuted, fontSize = 22.sp)
@@ -354,16 +260,8 @@ private fun SettingsDivider() {
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(start = 68.dp)
+            .padding(start = 74.dp)
             .height(1.dp)
             .background(TukiMuted.copy(alpha = 0.12f))
     )
 }
-
-private fun initialsFor(name: String): String = name
-    .trim()
-    .split(Regex("\\s+"))
-    .mapNotNull { it.firstOrNull()?.uppercaseChar() }
-    .take(2)
-    .joinToString("")
-    .ifBlank { "TU" }

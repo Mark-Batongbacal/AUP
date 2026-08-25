@@ -469,6 +469,7 @@ BEGIN TRY
             ConversationId uniqueidentifier NOT NULL CONSTRAINT DF_ChatConversations_ConversationId DEFAULT (newsequentialid()),
             UserId uniqueidentifier NOT NULL,
             Title nvarchar(200) NULL,
+            PlanningStateJson nvarchar(max) NULL,
             CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_ChatConversations_CreatedAt DEFAULT (sysutcdatetime()),
             UpdatedAt datetime2(7) NOT NULL CONSTRAINT DF_ChatConversations_UpdatedAt DEFAULT (sysutcdatetime()),
             CONSTRAINT PK_ChatConversations PRIMARY KEY (ConversationId)
@@ -493,6 +494,7 @@ BEGIN TRY
     END;
 
     IF COL_LENGTH(N'dbo.UserProfiles', N'ProfileImageUrl') IS NULL ALTER TABLE dbo.UserProfiles ADD ProfileImageUrl nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.ChatConversations', N'PlanningStateJson') IS NULL ALTER TABLE dbo.ChatConversations ADD PlanningStateJson nvarchar(max) NULL;
     IF COL_LENGTH(N'dbo.UserProfiles', N'UpdatedAt') IS NULL ALTER TABLE dbo.UserProfiles ADD UpdatedAt datetime2(7) NULL CONSTRAINT DF_UserProfiles_UpdatedAt_Add DEFAULT (sysutcdatetime());
 
     IF COL_LENGTH(N'dbo.TransportModes', N'IsMotorized') IS NULL ALTER TABLE dbo.TransportModes ADD IsMotorized bit NOT NULL CONSTRAINT DF_TransportModes_IsMotorized_Add DEFAULT (1) WITH VALUES;

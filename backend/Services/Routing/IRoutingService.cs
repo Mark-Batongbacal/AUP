@@ -14,4 +14,18 @@ public interface IRoutingService
         double destinationLatitude,
         double destinationLongitude,
         CancellationToken cancellationToken = default);
+
+    Task<List<JeepneyTripPlan>> PlanTripsAsync(
+        double originLatitude,
+        double originLongitude,
+        double destinationLatitude,
+        double destinationLongitude,
+        JourneyPlanningPreferences? preferences,
+        CancellationToken cancellationToken = default) =>
+        PlanTripsAsync(
+            originLatitude,
+            originLongitude,
+            destinationLatitude,
+            destinationLongitude,
+            cancellationToken);
 }

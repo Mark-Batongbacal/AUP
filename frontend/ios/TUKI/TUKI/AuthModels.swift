@@ -53,6 +53,31 @@ enum AuthResult: Equatable {
     case failure(String)
 }
 
+/// Renders a guest session's remaining time, matching Android's `guestRemainingText`
+/// (screens/ProfileScreen.kt) — same three states (unknown/"24-hour access",
+/// "expired", "Xh Ym remaining"), same rounding (minutes floored to at least 1
+/// while still positive, so it never shows "0m remaining" for a session that
+/// hasn't actually expired yet).
+func tukiGuestRemainingText(expiresAt: String?, now: Date = Date()) -> String {
+    guard let expiresAt, let expiration = parseISO8601(expiresAt) else {
+        return "24-hour access"
+    }
+    let remaining = expiration.timeIntervalSince(now)
+    if remaining <= 0 { return "expired" }
+
+    let totalMinutes = max(1, Int(remaining / 60))
+    let hours = totalMinutes / 60
+    let minutes = totalMinutes % 60
+    return hours > 0 ? "\(hours)h \(minutes)m remaining" : "\(minutes)m remaining"
+}
+
+private func parseISO8601(_ value: String) -> Date? {
+    let formatter = ISO8601DateFormatter()
+    if let date = formatter.date(from: value) { return date }
+    formatter.formatOptions.insert(.withFractionalSeconds)
+    return formatter.date(from: value)
+}
+
 #if DEBUG
 struct FacebookSDKErrorDiagnostic: Equatable {
     let type: String

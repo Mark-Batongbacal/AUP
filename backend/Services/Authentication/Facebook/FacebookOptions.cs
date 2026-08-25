@@ -4,7 +4,8 @@ public sealed class FacebookOptions
 {
     public const string SectionName = "Facebook";
     public const string DefaultOidcIssuer = "https://www.facebook.com";
-    public const string DefaultOidcJwksUri = "https://www.facebook.com/.well-known/oauth/openid/jwks/";
+    public const string AlternateOidcIssuer = "https://facebook.com";
+    public const string DefaultOidcJwksUri = "https://limited.facebook.com/.well-known/oauth/openid/jwks/";
 
     public string AppId { get; init; } = string.Empty;
 

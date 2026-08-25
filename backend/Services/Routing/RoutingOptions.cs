@@ -41,7 +41,15 @@ public sealed class RoutingOptions
     public double MaxWalkToTrikePointMeters { get; init; } = 1_000;
     public double MaxWalkOnlyTripDistanceMeters { get; init; } = 2_000;
     public double MaxWalkTrikeTripDistanceMeters { get; init; } = 5_000;
+    /// <summary>
+    /// Absolute server ceiling for one walking access leg to or from transit.
+    /// Request-specific walking preferences may choose a lower tier but can
+    /// never exceed this value.
+    /// </summary>
     public double MaxWalkAccessDistanceMeters { get; init; } = 1_500;
+    public double LessWalkingPreferenceAccessMeters { get; init; } = 1_800;
+    public double NormalWalkingPreferenceAccessMeters { get; init; } = 2_150;
+    public double MoreWalkingPreferenceAccessMeters { get; init; } = 2_500;
     public double MaxTotalWalkingMetersPerJourney { get; init; } = 2_500;
 
     /// <summary>
@@ -168,7 +176,13 @@ public sealed class RoutingOptions
             MinimumSelfTransferProgressMeters <= 0 ||
             MinimumSelfTransferRouteToWalkRatio <= 1 ||
             MaxWalkOnlyTripDistanceMeters < 0 || MaxWalkTrikeTripDistanceMeters < 0 ||
-            MaxWalkAccessDistanceMeters < 0 || TrikeBaseFarePesos < 0 ||
+            MaxWalkAccessDistanceMeters < 0 ||
+            LessWalkingPreferenceAccessMeters < 0 ||
+            NormalWalkingPreferenceAccessMeters < 0 ||
+            MoreWalkingPreferenceAccessMeters < 0 ||
+            LessWalkingPreferenceAccessMeters > NormalWalkingPreferenceAccessMeters ||
+            NormalWalkingPreferenceAccessMeters > MoreWalkingPreferenceAccessMeters ||
+            TrikeBaseFarePesos < 0 ||
             MaxSupportedTripStraightLineMeters <= 0 ||
             TrikeBaseDistanceMeters < 0 || TrikePerAdditionalKmPesos < 0 ||
             ValueOfTimePesosPerMinute < 0 || WalkingFatiguePesosPerKilometer < 0 ||

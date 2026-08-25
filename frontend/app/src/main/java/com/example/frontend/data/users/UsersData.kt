@@ -4,11 +4,17 @@ import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.core.network.authenticatedApiCall
 import com.example.frontend.core.storage.AuthSessionStore
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
+import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Part
 
 data class UpdateUserProfileRequest(
     val firstName: String? = null,
@@ -40,6 +46,10 @@ interface UsersApi {
     @PUT("api/users/me")
     suspend fun updateCurrentUser(@Body request: UpdateUserProfileRequest): Response<UserProfileDto>
 
+    @Multipart
+    @POST("api/users/me/profile-image")
+    suspend fun uploadProfileImage(@Part image: MultipartBody.Part): Response<UserProfileDto>
+
     @DELETE("api/users/me")
     suspend fun deleteCurrentUser(): Response<Unit>
 }
@@ -47,7 +57,7 @@ interface UsersApi {
 interface UserRepository {
     suspend fun getCurrentUser(): ApiResult<UserProfileDto>
     suspend fun updateCurrentUser(request: UpdateUserProfileRequest): ApiResult<UserProfileDto>
-
+    suspend fun uploadProfileImage(imageBytes: ByteArray): ApiResult<UserProfileDto>
     suspend fun deleteCurrentUser(): ApiResult<Unit>
 }
 
@@ -71,6 +81,12 @@ class UserRepositoryImpl(
             onPreferredLanguageChanged(result.data.preferredLanguage)
         }
         return result
+    }
+
+    override suspend fun uploadProfileImage(imageBytes: ByteArray): ApiResult<UserProfileDto> {
+        val body = imageBytes.toRequestBody("image/jpeg".toMediaType())
+        val part = MultipartBody.Part.createFormData("image", "profile.jpg", body)
+        return authenticatedApiCall(sessionStore, errors) { api.uploadProfileImage(part) }
     }
 
     override suspend fun deleteCurrentUser(): ApiResult<Unit> =

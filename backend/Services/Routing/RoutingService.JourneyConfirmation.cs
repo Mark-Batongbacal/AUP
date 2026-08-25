@@ -12,8 +12,11 @@ public partial class RoutingService
             double originLongitude,
             double destinationLatitude,
             double destinationLongitude,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var tasks = candidates.Select(async candidate =>
         {
             try
@@ -22,13 +25,15 @@ public partial class RoutingService
                     candidate.OriginAccess,
                     (originLatitude, originLongitude),
                     candidate.OriginAccess.Anchor,
-                    cancellationToken);
+                    cancellationToken,
+                    walkAccessLimit);
 
                 var destinationTask = ConfirmAccessAsync(
                     candidate.DestinationAccess,
                     candidate.DestinationAccess.Anchor,
                     (destinationLatitude, destinationLongitude),
-                    cancellationToken);
+                    cancellationToken,
+                    walkAccessLimit);
 
                 var transferTasks =
                     candidate.TransferWalkSegments
@@ -348,8 +353,11 @@ public partial class RoutingService
         AccessCandidate candidate,
         (double Latitude, double Longitude) walkAnchorPoint,
         (double Latitude, double Longitude) rideTargetPoint,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var alternativeIndex = 0;
         foreach (var alternative in candidate.AllAlternatives)
         {
@@ -359,7 +367,7 @@ public partial class RoutingService
                 walkAnchorPoint,
                 rideTargetPoint,
                 alternativeIndex > 0 && alternative.Mode == AccessMode.Walk
-                    ? MaxWalkAccessDistanceMeters
+                    ? walkAccessLimit
                     : null,
                 cancellationToken);
 
@@ -382,6 +390,20 @@ public partial class RoutingService
     {
         if (candidate.Mode == AccessMode.Walk)
         {
+            if (candidate.IsNetworkWalkConfirmed)
+            {
+                if (fallbackWalkMaximumDistanceMeters is not null &&
+                    candidate.WalkDistanceMeters >
+                    fallbackWalkMaximumDistanceMeters.Value)
+                {
+                    return null;
+                }
+
+                return ConfirmedWalkingAccess(
+                    candidate.WalkDistanceMeters,
+                    candidate.WalkTimeSeconds);
+            }
+
             return await ConfirmWalkingAccessAsync(
                 walkAnchorPoint,
                 rideTargetPoint,
@@ -514,7 +536,13 @@ public partial class RoutingService
 
         var time = result.Time!.Value;
 
-        return new JeepneyAccessSegment
+        return ConfirmedWalkingAccess(distance, time);
+    }
+
+    private JeepneyAccessSegment ConfirmedWalkingAccess(
+        double distance,
+        double time) =>
+        new()
         {
             Mode = AccessMode.Walk,
             WalkDistanceMeters = distance,
@@ -523,7 +551,6 @@ public partial class RoutingService
             TotalFarePesos = 0,
             GeneralizedCostPesos = GeneralizedCostFromWalking(time, distance)
         };
-    }
 
     private AccessCandidate[] ComputeBoardAccessOptions(
         string routeId,
@@ -545,55 +572,204 @@ public partial class RoutingService
                 routeId,
                 i,
                 (originLatitude, originLongitude));
-            var anchor = (fullAnchor.Latitude, fullAnchor.Longitude);
-
-            var directDistance =
-                ApproximateDistanceMeters(
-                    originLatitude,
-                    originLongitude,
-                    anchor.Latitude,
-                    anchor.Longitude);
-
-            var alternatives = new List<AccessCandidate>
-            {
-                WalkAccess(anchor, directDistance, i, fullAnchor)
-            };
-
-            // Trike points are candidates only. The geometric ranking here is
-            // deliberately cheap; the selected option is confirmed through
-            // real Valhalla walking + road routing later.
-            foreach (var candidate in trikeCandidates)
-            {
-                var walkToTrikeMeters =
-                    ApproximateDistanceMeters(
-                        originLatitude,
-                        originLongitude,
-                        candidate.Latitude,
-                        candidate.Longitude);
-
-                var rideDistance =
-                    ApproximateDistanceMeters(
-                        candidate.Latitude,
-                        candidate.Longitude,
-                        anchor.Latitude,
-                        anchor.Longitude);
-
-                var trikeOption =
-                    TrikeAccess(
-                        anchor,
-                        candidate,
-                        walkToTrikeMeters,
-                        rideDistance,
-                        i,
-                        fullAnchor);
-
-                alternatives.Add(trikeOption);
-            }
-
-            options[i] = WithAlternatives(alternatives);
+            options[i] = BuildBoardAccessOption(
+                fullAnchor,
+                i,
+                originLatitude,
+                originLongitude,
+                trikeCandidates);
         }
 
         return options;
+    }
+
+    private AccessCandidate[] ComputeSearchAnchorBoardAccessOptions(
+        string routeId,
+        double originLatitude,
+        double originLongitude)
+    {
+        var trikeCandidates = FindNearbyTrikePoints(
+            originLatitude,
+            originLongitude);
+
+        return _routeSearchAnchors[routeId]
+            .Select((anchor, sampleIndex) => BuildBoardAccessOption(
+                anchor,
+                sampleIndex,
+                originLatitude,
+                originLongitude,
+                trikeCandidates))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Uses geometry only to bound the route corridor worth checking, then
+    /// measures every discovered physical board in that corridor with one
+    /// pedestrian one-to-many matrix. Route anchors and their progress remain
+    /// untouched; only the provisional walk burden is replaced with the
+    /// authoritative network distance/time used for pre-confirmation ranking.
+    /// </summary>
+    private async Task<BoardAccessDiscovery> DiscoverBoardAccessOptionsAsync(
+        string routeId,
+        List<(double Latitude, double Longitude)> samples,
+        double originLatitude,
+        double originLongitude,
+        CancellationToken cancellationToken,
+        double? walkAccessDistanceLimitMeters = null)
+    {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
+        var projected = ComputeBoardAccessOptions(
+            routeId,
+            samples,
+            originLatitude,
+            originLongitude);
+        var searchAnchors = ComputeSearchAnchorBoardAccessOptions(
+            routeId,
+            originLatitude,
+            originLongitude);
+        var exact = BuildExactFullRouteBoardAccess(
+            routeId,
+            samples,
+            originLatitude,
+            originLongitude,
+            walkAccessLimit);
+
+        var all = projected
+            .Concat(searchAnchors)
+            .Concat(exact is null ? [] : [exact])
+            .ToList();
+        var targets = all
+            .Where(candidate => candidate.AllAlternatives.Any(alternative =>
+                alternative.Mode == AccessMode.Walk &&
+                alternative.WalkDistanceMeters <= walkAccessLimit))
+            .GroupBy(candidate => PhysicalAccessPointKey(candidate.Anchor),
+                StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
+
+        if (targets.Count == 0)
+            return new BoardAccessDiscovery(projected, searchAnchors, exact);
+
+        IReadOnlyList<ValhallaMatrixResult> results;
+        try
+        {
+            results = await GetMatrixAsync(
+                new ValhallaLocation
+                {
+                    Lat = originLatitude,
+                    Lon = originLongitude
+                },
+                targets.Select(candidate => new ValhallaLocation
+                {
+                    Lat = candidate.Anchor.Latitude,
+                    Lon = candidate.Anchor.Longitude
+                }).ToList(),
+                "pedestrian",
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed to rank route {RouteId} boarding regions by pedestrian network access; using geometric discovery estimates",
+                routeId);
+            return new BoardAccessDiscovery(projected, searchAnchors, exact);
+        }
+
+        var estimates = results
+            .Where(result =>
+                result.FromIndex == 0 &&
+                result.ToIndex >= 0 &&
+                result.ToIndex < targets.Count &&
+                result.Distance is >= 0 &&
+                result.Time is >= 0 &&
+                double.IsFinite(result.Distance.Value) &&
+                double.IsFinite(result.Time.Value))
+            .GroupBy(result => result.ToIndex)
+            .ToDictionary(
+                group => PhysicalAccessPointKey(targets[group.Key].Anchor),
+                group => (
+                    DistanceMeters: group.First().Distance!.Value * 1_000,
+                    TimeSeconds: group.First().Time!.Value),
+                StringComparer.Ordinal);
+
+        AccessCandidate ApplyNetworkWalk(AccessCandidate candidate)
+        {
+            var hasEstimate = estimates.TryGetValue(
+                PhysicalAccessPointKey(candidate.Anchor),
+                out var estimate);
+            var alternatives = candidate.AllAlternatives
+                .Select(alternative => alternative.Mode != AccessMode.Walk
+                    ? alternative
+                    : alternative with
+                    {
+                        WalkDistanceMeters = hasEstimate
+                            ? estimate.DistanceMeters
+                            : double.PositiveInfinity,
+                        WalkTimeSeconds = hasEstimate
+                            ? estimate.TimeSeconds
+                            : double.PositiveInfinity,
+                        IsNetworkWalkConfirmed = true
+                    })
+                .ToList();
+            return WithAlternatives(alternatives);
+        }
+
+        return new BoardAccessDiscovery(
+            projected.Select(ApplyNetworkWalk).ToArray(),
+            searchAnchors.Select(ApplyNetworkWalk).ToArray(),
+            exact is null ? null : ApplyNetworkWalk(exact));
+    }
+
+    private static string PhysicalAccessPointKey(
+        (double Latitude, double Longitude) point) =>
+        $"{point.Latitude:F7},{point.Longitude:F7}";
+
+    private AccessCandidate BuildBoardAccessOption(
+        RouteAnchor fullAnchor,
+        int sampleIndex,
+        double originLatitude,
+        double originLongitude,
+        IReadOnlyList<TrikePoint> trikeCandidates)
+    {
+        var anchor = (fullAnchor.Latitude, fullAnchor.Longitude);
+        var directDistance = ApproximateDistanceMeters(
+            originLatitude,
+            originLongitude,
+            anchor.Latitude,
+            anchor.Longitude);
+        var alternatives = new List<AccessCandidate>
+        {
+            WalkAccess(anchor, directDistance, sampleIndex, fullAnchor)
+        };
+
+        // Trike points are candidates only. The geometric ranking here is
+        // deliberately cheap; the selected option is confirmed through real
+        // Valhalla walking + road routing later.
+        foreach (var candidate in trikeCandidates)
+        {
+            var walkToTrikeMeters = ApproximateDistanceMeters(
+                originLatitude,
+                originLongitude,
+                candidate.Latitude,
+                candidate.Longitude);
+            var rideDistance = ApproximateDistanceMeters(
+                candidate.Latitude,
+                candidate.Longitude,
+                anchor.Latitude,
+                anchor.Longitude);
+
+            alternatives.Add(TrikeAccess(
+                anchor,
+                candidate,
+                walkToTrikeMeters,
+                rideDistance,
+                sampleIndex,
+                fullAnchor));
+        }
+
+        return WithAlternatives(alternatives);
     }
 
     private AccessCandidate[] ComputeAlightAccessOptions(

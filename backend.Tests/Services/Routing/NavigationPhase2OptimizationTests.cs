@@ -128,6 +128,61 @@ public sealed class NavigationPhase2OptimizationTests
     }
 
     [Fact]
+    public void ConfirmationBudget_WalkingPreferenceChangesPreConfirmationRepresentative()
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 1);
+        var lowWalking = BuildSelectionCandidate(
+            ["A"],
+            AccessMode.Walk,
+            todaId: null,
+            provisionalCost: 10);
+        var walkingFriendly = BuildSelectionCandidate(
+            ["A"],
+            AccessMode.Walk,
+            todaId: null,
+            provisionalCost: 11,
+            alightProgressOffsetMeters: 1) with
+        {
+            OriginAccess = lowWalking.OriginAccess with
+            {
+                WalkDistanceMeters = 1_000
+            }
+        };
+
+        var ordinary = service.SelectCandidatesToConfirmWithDiversity(
+            [lowWalking, walkingFriendly]);
+        var prefersMoreWalking = service.SelectCandidatesToConfirmWithDiversity(
+            [lowWalking, walkingFriendly],
+            new JourneyPlanningPreferences(
+                WalkingPreference: JourneyWalkingPreference.More));
+
+        Assert.Same(lowWalking, Assert.Single(ordinary));
+        Assert.Same(walkingFriendly, Assert.Single(prefersMoreWalking));
+    }
+
+    [Fact]
+    public void BoardingDiversity_KeepsDistinctPhysicalRegionFromSameProgressBucket()
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 20);
+        var wrongFirst = BuildConnectionCandidate(
+            15.118993, 120.569791, 2_834.725, 1);
+        var expectedRegion = BuildConnectionCandidate(
+            15.117495, 120.568805, 3_032.020, 50);
+        var wrongRetraced = BuildConnectionCandidate(
+            15.118993, 120.569791, 3_229.315, 2);
+
+        var representatives = service.SelectPhysicalBoardingRepresentatives(
+            [wrongFirst, expectedRegion, wrongRetraced]);
+
+        Assert.Equal(2, representatives.Count);
+        Assert.Contains(representatives, candidate =>
+            candidate.BoardAccess.Anchor.Latitude ==
+                expectedRegion.BoardAccess.Anchor.Latitude &&
+            candidate.BoardAccess.Anchor.Longitude ==
+                expectedRegion.BoardAccess.Anchor.Longitude);
+    }
+
+    [Fact]
     public void ConfirmationBudget_AccessProfileKeepsDistinctTransitOccurrences()
     {
         var service = CreateSelectionService(maxCandidatesToConfirm: 20);
@@ -280,6 +335,29 @@ public sealed class NavigationPhase2OptimizationTests
             [],
             provisionalCost);
     }
+
+    private static RoutingService.RouteConnectionCandidate
+        BuildConnectionCandidate(
+            double latitude,
+            double longitude,
+            double progress,
+            double cost) =>
+        new(
+            "R",
+            "R",
+            BuildAccess(AccessMode.Walk, null, (latitude, longitude)) with
+            {
+                FullRouteAnchor = new RoutingService.RouteAnchor(
+                    "R", 0, 0, latitude, longitude, progress)
+            },
+            BuildAccess(AccessMode.Walk, null, (15.2, 120.6)) with
+            {
+                FullRouteAnchor = new RoutingService.RouteAnchor(
+                    "R", 1, 0, 15.2, 120.6, progress + 1_000)
+            },
+            0,
+            1,
+            cost);
 
     private static RoutingService.AccessCandidate BuildAccess(
         AccessMode mode,

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.R
 import com.example.frontend.components.OtpCodeField
 import com.example.frontend.components.OtpResendButton
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.auth.AuthRepository
 import com.example.frontend.data.auth.RegisterRequest
@@ -56,10 +57,7 @@ import com.example.frontend.ui.theme.TukiDanger
 import com.example.frontend.ui.theme.TukiSurfaceRaised
 import kotlinx.coroutines.launch
 
-private enum class SignupStage {
-    VERIFY_EMAIL,
-    PASSWORD
-}
+private enum class SignupStage { VERIFY_EMAIL, PASSWORD }
 
 @Composable
 fun SignupScreen(
@@ -93,9 +91,9 @@ fun SignupScreen(
         val normalizedName = fullName.trim()
         val normalizedEmail = email.trim()
         when {
-            normalizedName.isBlank() -> signUpError = "Enter your full name."
-            normalizedName.split(Regex("\\s+")).size < 2 -> signUpError = "Enter both your first and last name."
-            normalizedEmail.isBlank() || !normalizedEmail.contains("@") -> signUpError = "Enter a valid email address."
+            normalizedName.isBlank() -> signUpError = if (TukiInterfaceText.isFilipino) "Ilagay ang buong pangalan mo." else "Enter your full name."
+            normalizedName.split(Regex("\\s+")).size < 2 -> signUpError = if (TukiInterfaceText.isFilipino) "Ilagay ang una at apelyido mo." else "Enter both your first and last name."
+            normalizedEmail.isBlank() || !normalizedEmail.contains("@") -> signUpError = if (TukiInterfaceText.isFilipino) "Maglagay ng valid na email address." else "Enter a valid email address."
             else -> return normalizedName to normalizedEmail
         }
         return null
@@ -113,7 +111,7 @@ fun SignupScreen(
                     otpSent = true
                     otpCode = ""
                     otpSendGeneration += 1
-                    infoMessage = "We've sent an 8-digit OTP to ${details.second}."
+                    infoMessage = if (TukiInterfaceText.isFilipino) "Nagpadala kami ng 8-digit OTP sa ${details.second}." else "We've sent an 8-digit OTP to ${details.second}."
                 }
                 is ApiResult.Failure -> signUpError = result.message
             }
@@ -125,7 +123,7 @@ fun SignupScreen(
         if (isWorking) return
         val details = normalizedDetails() ?: return
         if (!otpSent || otpCode.length != 8) {
-            signUpError = "Enter the complete 8-digit OTP."
+            signUpError = if (TukiInterfaceText.isFilipino) "Ilagay ang kumpletong 8-digit OTP." else "Enter the complete 8-digit OTP."
             return
         }
         coroutineScope.launch {
@@ -144,8 +142,8 @@ fun SignupScreen(
         if (isWorking) return
         val details = normalizedDetails() ?: return
         when {
-            password.length < 8 -> signUpError = "Password must be at least 8 characters."
-            password != confirmPassword -> signUpError = "Passwords do not match."
+            password.length < 8 -> signUpError = if (TukiInterfaceText.isFilipino) "Dapat hindi bababa sa 8 character ang password." else "Password must be at least 8 characters."
+            password != confirmPassword -> signUpError = if (TukiInterfaceText.isFilipino) "Hindi magkapareho ang mga password." else "Passwords do not match."
             else -> {
                 val parts = details.first.split(Regex("\\s+"), limit = 2)
                 coroutineScope.launch {
@@ -170,18 +168,11 @@ fun SignupScreen(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TukiCream)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxSize().background(TukiCream).statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()),
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 28.dp, end = 28.dp, top = 12.dp, bottom = 20.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, top = 12.dp, bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(modifier = Modifier.fillMaxWidth()) {
@@ -194,34 +185,28 @@ fun SignupScreen(
                         if (stage == SignupStage.PASSWORD) {
                             stage = SignupStage.VERIFY_EMAIL
                             signUpError = null
-                            infoMessage = "Email already verified."
-                        } else {
-                            onBack()
-                        }
+                            infoMessage = if (TukiInterfaceText.isFilipino) "Na-verify na ang email." else "Email already verified."
+                        } else onBack()
                     }
                 )
             }
 
-            Image(
-                painter = painterResource(R.drawable.tuki_logo),
-                contentDescription = "TUKI logo",
-                modifier = Modifier.size(72.dp),
-                contentScale = ContentScale.Fit
-            )
+            Image(painter = painterResource(R.drawable.tuki_logo), contentDescription = "TUKI logo", modifier = Modifier.size(72.dp), contentScale = ContentScale.Fit)
             Text(text = "TUKI.", color = TukiTeal, style = MaterialTheme.typography.displaySmall)
 
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = if (stage == SignupStage.VERIFY_EMAIL) "Create an account" else "Create your password",
+                text = if (stage == SignupStage.VERIFY_EMAIL) TukiInterfaceText.createAccount
+                else if (TukiInterfaceText.isFilipino) "Gumawa ng password" else "Create your password",
                 color = TukiInk,
                 style = MaterialTheme.typography.displaySmall
             )
             Spacer(modifier = Modifier.height(5.dp))
             Text(
                 text = if (stage == SignupStage.VERIFY_EMAIL) {
-                    "Verify your email first, then we'll ask you to create a password."
+                    if (TukiInterfaceText.isFilipino) "I-verify muna ang email mo, pagkatapos ay gagawa ka ng password." else "Verify your email first, then we'll ask you to create a password."
                 } else {
-                    "Email verified. Finish setting up your TUKI account."
+                    if (TukiInterfaceText.isFilipino) "Na-verify na ang email. Tapusin ang paggawa ng TUKI account mo." else "Email verified. Finish setting up your TUKI account."
                 },
                 color = TukiMuted,
                 style = MaterialTheme.typography.bodyLarge
@@ -232,19 +217,23 @@ fun SignupScreen(
             if (stage == SignupStage.VERIFY_EMAIL) {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SignUpTextField(
-                        label = "Full Name",
+                        label = TukiInterfaceText.fullName,
                         value = fullName,
                         enabled = !isWorking && !otpSent,
                         onValueChange = { fullName = it; signUpError = null }
                     )
                     SignUpTextField(
-                        label = "Email",
+                        label = TukiInterfaceText.email,
                         value = email,
                         enabled = !isWorking && !otpSent,
                         onValueChange = { email = it; signUpError = null }
                     )
                     Text(
-                        text = if (otpSent) "OTP sent. Enter the 8-digit code below." else "We'll send a one-time code to confirm this email.",
+                        text = if (otpSent) {
+                            if (TukiInterfaceText.isFilipino) "Naipadala ang OTP. Ilagay ang 8-digit code sa ibaba." else "OTP sent. Enter the 8-digit code below."
+                        } else {
+                            if (TukiInterfaceText.isFilipino) "Magpapadala kami ng one-time code para kumpirmahin ang email na ito." else "We'll send a one-time code to confirm this email."
+                        },
                         color = TukiMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -258,7 +247,7 @@ fun SignupScreen(
             } else {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SignupPasswordField(
-                        label = "Password",
+                        label = TukiInterfaceText.password,
                         value = password,
                         visible = passwordVisible,
                         enabled = !isWorking,
@@ -266,7 +255,7 @@ fun SignupScreen(
                         onVisibilityToggle = { passwordVisible = !passwordVisible }
                     )
                     SignupPasswordField(
-                        label = "Confirm Password",
+                        label = if (TukiInterfaceText.isFilipino) "Kumpirmahin ang Password" else "Confirm Password",
                         value = confirmPassword,
                         visible = confirmPasswordVisible,
                         enabled = !isWorking,
@@ -297,14 +286,13 @@ fun SignupScreen(
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = TukiOrange, contentColor = Color.White)
             ) {
-                if (isWorking) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
-                } else {
+                if (isWorking) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(22.dp))
+                else {
                     Text(
                         text = when {
-                            stage == SignupStage.PASSWORD -> "Create account"
-                            otpSent -> "Verify OTP"
-                            else -> "Send OTP"
+                            stage == SignupStage.PASSWORD -> if (TukiInterfaceText.isFilipino) "Gumawa ng account" else "Create account"
+                            otpSent -> TukiInterfaceText.verifyOtp
+                            else -> TukiInterfaceText.sendOtp
                         },
                         fontSize = 19.sp,
                         fontWeight = FontWeight.Bold
@@ -314,9 +302,13 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Already have an account? ", color = TukiMuted, style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    text = "Log in",
+                    if (TukiInterfaceText.isFilipino) "May account ka na? " else "Already have an account? ",
+                    color = TukiMuted,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = TukiInterfaceText.logIn,
                     color = TukiOrange,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.clickable(enabled = !isWorking) { onLoginClick() }
@@ -327,12 +319,7 @@ fun SignupScreen(
 }
 
 @Composable
-private fun SignUpTextField(
-    label: String,
-    value: String,
-    enabled: Boolean,
-    onValueChange: (String) -> Unit
-) {
+private fun SignUpTextField(label: String, value: String, enabled: Boolean, onValueChange: (String) -> Unit) {
     Column {
         Text(label, color = TukiInk, style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(4.dp))

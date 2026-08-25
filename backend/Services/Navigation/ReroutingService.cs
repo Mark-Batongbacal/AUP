@@ -10,7 +10,17 @@ namespace backend.Services.Navigation;
 public sealed record RerouteResult(bool Succeeded, string Status, Guid? RecommendationId = null);
 public interface IReroutingService
 {
-    Task<RerouteResult> RerouteAsync(Guid userId, Guid sessionId, NavigationRerouteRequest request, CancellationToken cancellationToken = default);
+    Task<RerouteResult> RerouteAsync(
+        Guid userId,
+        Guid sessionId,
+        NavigationRerouteRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<RerouteResult> ApplyRecommendationAsync(
+        Guid userId,
+        Guid sessionId,
+        Guid recommendationId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class ReroutingService(
@@ -24,6 +34,9 @@ public sealed class ReroutingService(
     IOptions<RoutingOptions>? routingOptions = null,
     ITukiTelemetry? telemetry = null) : IReroutingService
 {
+    private static readonly TimeSpan AssistantProposalLifetime = TimeSpan.FromMinutes(10);
+    private const double AssistantProposalMaxOriginDriftMeters = 1_500;
+
     private readonly NavigationOptions _options = options.Value;
     private readonly RoutingOptions _routingOptions = routingOptions?.Value ?? new RoutingOptions();
     private readonly ITukiTelemetry _telemetry = telemetry ?? NullTukiTelemetry.Instance;
@@ -154,6 +167,146 @@ public sealed class ReroutingService(
         {
             return await RestoreAfterFailureAsync(session, previousState,
                 "NO_REROUTE_AVAILABLE", "ERROR", cancellationToken);
+        }
+    }
+
+    public async Task<RerouteResult> ApplyRecommendationAsync(
+        Guid userId,
+        Guid sessionId,
+        Guid recommendationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var measurement = _telemetry.Measure("Rerouting.ApplyProposal");
+        var session = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken);
+        if (session is null) return new(false, "TRIP_SESSION_NOT_FOUND");
+        if (session.CurrentNavigationState is TripNavigationState.Planned or
+            TripNavigationState.Arrived or TripNavigationState.Cancelled)
+            return new(false, "TRIP_NOT_ACTIVE");
+        if (session.CurrentNavigationState == TripNavigationState.Rerouting)
+            return new(false, "REROUTE_IN_PROGRESS");
+
+        var recommendation = await recommendations.GetByIdAsync(
+            recommendationId, cancellationToken);
+        if (recommendation is null)
+            return new(false, "REPLAN_PROPOSAL_NOT_FOUND");
+
+        var search = await searches.GetByIdAsync(
+            recommendation.TripSearchId, cancellationToken);
+        if (search?.UserId != userId)
+            return new(false, "REPLAN_PROPOSAL_NOT_FOUND");
+
+        if (search.RequestedAt < DateTime.UtcNow - AssistantProposalLifetime)
+            return new(false, "REPLAN_PROPOSAL_STALE");
+
+        if (session.LastLatitude is not { } currentLatitude ||
+            session.LastLongitude is not { } currentLongitude)
+            return new(false, "NO_RELIABLE_LOCATION");
+
+        var originDrift = Geo.DistanceMeters(
+            currentLatitude,
+            currentLongitude,
+            search.OriginLatitude,
+            search.OriginLongitude);
+        if (originDrift > AssistantProposalMaxOriginDriftMeters)
+            return new(false, "REPLAN_PROPOSAL_STALE");
+
+        var proposedLegs = await recommendations.GetOrderedLegsAsync(
+            recommendationId, cancellationToken);
+        var firstLeg = proposedLegs.OrderBy(item => item.LegOrder).FirstOrDefault();
+        if (firstLeg is null)
+            return new(false, "JOURNEY_HAS_NO_LEGS");
+
+        var previousState = session.CurrentNavigationState;
+        if (!stateMachine.CanTransition(previousState, TripNavigationState.Rerouting) ||
+            !stateMachine.CanTransition(TripNavigationState.Rerouting, TripNavigationState.Starting))
+            return new(false, "INVALID_STATE_TRANSITION");
+
+        var resumedState = IsWalking(firstLeg)
+            ? (proposedLegs.Count == 1
+                ? TripNavigationState.WalkingToDestination
+                : TripNavigationState.WalkingToPickup)
+            : TripNavigationState.WaitingToBoard;
+        if (!stateMachine.CanTransition(TripNavigationState.Starting, resumedState))
+            return new(false, "INVALID_STATE_TRANSITION");
+
+        var previousRecommendationId = session.RecommendationId;
+        var previousDestinationName = session.DestinationName;
+        var previousDestinationLatitude = session.DestinationLatitude;
+        var previousDestinationLongitude = session.DestinationLongitude;
+        var previousBudget = session.OriginalBudget;
+        var previousPreference = session.OriginalPreference;
+        var previousLegIndex = session.CurrentLegIndex;
+        var previousProgress = session.CurrentProgressMeters;
+        var previousRouteProgress = session.CurrentRouteProgressMeters;
+        var previousStatus = session.LastNavigationStatus;
+        var previousRerouteReason = session.LastRerouteReason;
+        var previousRerouteAt = session.LastRerouteAt;
+        var previousRerouteCount = session.RerouteCount;
+
+        try
+        {
+            session.RecommendationId = recommendationId;
+            session.DestinationName = search.DestinationName;
+            session.DestinationLatitude = search.DestinationLatitude;
+            session.DestinationLongitude = search.DestinationLongitude;
+            session.OriginalBudget = search.Budget;
+            session.OriginalPreference = NormalizePreference(search.Preference);
+            session.CurrentLegIndex = 0;
+            session.CurrentProgressMeters = 0;
+            session.CurrentRouteProgressMeters = null;
+            session.ConsecutiveStateConfirmationSamples = 0;
+            session.ConsecutiveOffRouteSamples = 0;
+            session.OffRouteSuspectedAt = null;
+            session.LastRerouteAt = DateTime.UtcNow;
+            session.LastRerouteReason = "AI_CONFIRMED_REPLAN";
+            session.LastNavigationStatus = "REROUTE_SUCCEEDED";
+            session.RerouteCount++;
+            session.CurrentNavigationState = TripNavigationState.Starting;
+            session.UpdatedAt = DateTime.UtcNow;
+
+            await sessions.UpdateAsync(session, cancellationToken);
+            await instructions.GenerateAsync(session, cancellationToken);
+            await landmarkPrefetch.PrefetchAsync(session, cancellationToken);
+
+            session.CurrentNavigationState = resumedState;
+            session.UpdatedAt = DateTime.UtcNow;
+            await sessions.UpdateAsync(session, cancellationToken);
+
+            _telemetry.Event("RerouteSucceeded", sessionId, "AI_CONFIRMED_REPLAN");
+            return new(true, "REROUTE_SUCCEEDED", recommendationId);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            session.RecommendationId = previousRecommendationId;
+            session.DestinationName = previousDestinationName;
+            session.DestinationLatitude = previousDestinationLatitude;
+            session.DestinationLongitude = previousDestinationLongitude;
+            session.OriginalBudget = previousBudget;
+            session.OriginalPreference = previousPreference;
+            session.CurrentLegIndex = previousLegIndex;
+            session.CurrentProgressMeters = previousProgress;
+            session.CurrentRouteProgressMeters = previousRouteProgress;
+            session.LastNavigationStatus = previousStatus;
+            session.LastRerouteReason = previousRerouteReason;
+            session.LastRerouteAt = previousRerouteAt;
+            session.RerouteCount = previousRerouteCount;
+            session.CurrentNavigationState = previousState;
+            session.UpdatedAt = DateTime.UtcNow;
+
+            await sessions.UpdateAsync(session, cancellationToken);
+            try
+            {
+                await instructions.GenerateAsync(session, cancellationToken);
+                await landmarkPrefetch.PrefetchAsync(session, cancellationToken);
+            }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // The original session state is authoritative even if refreshing
+                // its cached guidance also fails.
+            }
+
+            _telemetry.Event("RerouteFailed", sessionId, "AI_REPLAN_APPLY_ERROR");
+            return new(false, "REPLAN_APPLY_FAILED");
         }
     }
 
