@@ -1051,6 +1051,7 @@ public partial class TukiDbContext : DbContext
 
             entity.Property(e => e.ConversationId).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.Title).HasMaxLength(200);
+            entity.Property(e => e.PlanningStateJson).HasColumnType("nvarchar(max)");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())");
 

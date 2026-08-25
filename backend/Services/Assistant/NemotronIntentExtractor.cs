@@ -66,6 +66,7 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
                 BudgetPesos = Decimal(root, "budgetPesos"),
                 Preference = NormalizePreference(Text(root, "preference")),
                 MaxWalkingMeters = Double(root, "maxWalkingMeters"),
+                WalkingPreference = NormalizeWalkingPreference(Text(root, "walkingPreference")),
                 AvoidTransportModes = NormalizeAvoidModes(root),
                 ResponseType = Text(root, "responseType")
             };
@@ -111,7 +112,8 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
             GENERAL RULES:
             - Do not calculate routes, fares, ETA, coordinates, or distances.
             - Do not invent missing values. Vague phrases such as "pagod ako" may imply a soft less-walking preference, but must NOT invent an exact maxWalkingMeters.
-            - A numeric budget is a hard maximum only when the passenger explicitly gives a money amount.
+            - A numeric budget is a hard maximum only when the passenger explicitly gives a money amount. "I'm kinda broke" means preference=cheapest and budgetPesos=null.
+            - An explicit walking distance is a hard maxWalkingMeters. "Okay lang maglakad" and "I don't mind walking farther" mean walkingPreference=MORE with maxWalkingMeters=null. "Pagod ako" and "I don't want to walk much" mean walkingPreference=LESS with maxWalkingMeters=null.
             - Avoid modes may only contain WALK, TRICYCLE, or JEEPNEY.
             - preference may only be fastest, cheapest, or efficient.
             - If the current message depends on prior conversation, use the supplied Conversation.RecentTurns and LastDestinationQuery rather than guessing.
@@ -125,6 +127,7 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
               "budgetPesos":number|null,
               "preference":"fastest|cheapest|efficient"|null,
               "maxWalkingMeters":number|null,
+              "walkingPreference":"LESS|NORMAL|MORE"|null,
               "avoidTransportModes":["WALK"|"TRICYCLE"|"JEEPNEY"],
               "responseType":string|null
             }
@@ -157,6 +160,15 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
         value?.ToLowerInvariant() is "fastest" or "cheapest" or "efficient"
             ? value.ToLowerInvariant()
             : null;
+
+    private static AssistantWalkingPreference? NormalizeWalkingPreference(string? value) =>
+        value?.Trim().ToUpperInvariant() switch
+        {
+            "LESS" => AssistantWalkingPreference.Less,
+            "NORMAL" => AssistantWalkingPreference.Normal,
+            "MORE" => AssistantWalkingPreference.More,
+            _ => null
+        };
 
     private static List<string> NormalizeAvoidModes(JsonElement root)
     {

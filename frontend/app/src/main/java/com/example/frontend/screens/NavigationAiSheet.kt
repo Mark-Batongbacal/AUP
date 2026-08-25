@@ -41,6 +41,7 @@ import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.ai.ActiveTripAssistantRequest
+import com.example.frontend.data.ai.AssistantDestinationCandidateDto
 import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantResponseDto
 import com.example.frontend.data.navigation.NavigationSnapshotDto
@@ -131,8 +132,8 @@ fun NavigationAiSheet(
             fromUser = false,
             requestText = requestText,
             journeys = response.journeys.orEmpty(),
-            destinationChoices = response.destinations.orEmpty(),
-            destination = response.destination,
+            destinationChoices = response.destinations.orEmpty().map { it.toDestinationSearchResult() },
+            destination = response.destination?.toDestinationSearchResult(),
             tripSessionId = response.action?.tripSessionId ?: response.navigation?.tripSessionId,
             conversationId = response.conversationId
         )
@@ -443,6 +444,17 @@ fun NavigationAiSheet(
         }
     }
 }
+
+private fun AssistantDestinationCandidateDto.toDestinationSearchResult() =
+    DestinationSearchResultDto(
+        id = candidateId,
+        name = name,
+        latitude = latitude,
+        longitude = longitude,
+        category = category,
+        source = "assistant",
+        address = address
+    )
 
 // Compatibility overload for the existing TripTrackingScreen call site.
 @Composable

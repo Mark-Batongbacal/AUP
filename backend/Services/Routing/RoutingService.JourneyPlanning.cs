@@ -11,6 +11,21 @@ public partial class RoutingService
         double originLongitude,
         double destinationLatitude,
         double destinationLongitude,
+        CancellationToken cancellationToken = default) =>
+        await PlanTripsAsync(
+            originLatitude,
+            originLongitude,
+            destinationLatitude,
+            destinationLongitude,
+            preferences: null,
+            cancellationToken);
+
+    public async Task<List<JeepneyTripPlan>> PlanTripsAsync(
+        double originLatitude,
+        double originLongitude,
+        double destinationLatitude,
+        double destinationLongitude,
+        JourneyPlanningPreferences? preferences,
         CancellationToken cancellationToken = default)
     {
         using var routingMeasurement = _telemetry.Measure("RoutePlanning");
@@ -24,6 +39,8 @@ public partial class RoutingService
         }
 
         await EnsureInitializedAsync(cancellationToken);
+
+        var planningPreferences = NormalizePlanningPreferences(preferences);
 
         var boardAccessPrefixByRoute =
             new Dictionary<string, IReadOnlyList<AccessCandidate>[]>();
@@ -155,27 +172,38 @@ public partial class RoutingService
             // Full-route progress is authoritative. This catches wrong-way or
             // zero-progress legs even when sparse sample indices look valid.
             .Where(candidate => candidate.Legs.All(HasForwardRouteProgress))
+            .Where(candidate => MeetsProvisionalHardConstraints(
+                candidate, planningPreferences))
             .ToList();
 
         var distinctCandidates = expandedCandidates
             .GroupBy(GetJourneyCandidateKey, StringComparer.Ordinal)
-            .Select(group => group
-                .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-                .First())
+            .Select(group => HasSoftPlanningPreference(planningPreferences)
+                ? group
+                    .OrderBy(candidate => PlanningCandidateScore(
+                        candidate, planningPreferences))
+                    .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
+                    .First()
+                : group
+                    .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
+                    .First())
             .ToList();
 
         // Phase 2 reserves part of the confirmation budget for distinct route
         // and boarding regions so a dense cluster of similar candidates cannot
         // crowd out useful alternatives before authoritative validation.
-        var ranked = SelectCandidatesToConfirmWithDiversity(distinctCandidates);
+        var ranked = SelectCandidatesToConfirmWithDiversity(
+            distinctCandidates, planningPreferences);
 
         // Preserve transit sources while confirming all terminal-edge kinds
         // through one boundary. Transit-specific semantic pruning still has
         // its exact route occurrence; access-only completions join afterward.
         var completionEdges = ranked
             .Cast<DestinationCompletionEdge>()
-            .Concat(directCompletionEdges)
-            .Concat(accessPathCompletionEdges)
+            .Concat(directCompletionEdges.Where(edge =>
+                MeetsProvisionalHardConstraints(edge, planningPreferences)))
+            .Concat(accessPathCompletionEdges.Where(edge =>
+                MeetsProvisionalHardConstraints(edge, planningPreferences)))
             .ToList();
         var completionResult = await ConfirmDestinationCompletionEdgesAsync(
             completionEdges,
@@ -195,7 +223,8 @@ public partial class RoutingService
         var confirmedWithSource = completionResult.Transit
             .Where(result =>
                 IsTransitAccessWithinLimit(result.Plan.OriginAccess) &&
-                IsTransitAccessWithinLimit(result.Plan.DestinationAccess))
+                IsTransitAccessWithinLimit(result.Plan.DestinationAccess) &&
+                MeetsConfirmedHardConstraints(result.Plan, planningPreferences))
             .ToList();
 
         // Feeder shadowing, on all three boundaries where a feeder can stop
@@ -219,7 +248,8 @@ public partial class RoutingService
             .ToList();
 
         var distinctPlans = confirmed
-            .Concat(completionResult.AccessOnly)
+            .Concat(completionResult.AccessOnly.Where(plan =>
+                MeetsConfirmedHardConstraints(plan, planningPreferences)))
             .Where(plan => ValidatePlanContinuity(
                 plan,
                 requireGeometry: false,
@@ -242,7 +272,7 @@ public partial class RoutingService
         // cheapest arithmetic combination of individually legal legs.
         var sensiblePlans = PruneTokenTransitJourneys(finalParetoPlans);
 
-        var selectedPlans = SelectObjectivePlans(sensiblePlans);
+        var selectedPlans = SelectObjectivePlans(sensiblePlans, planningPreferences);
         LogSelectedPlanDiagnostics(selectedPlans);
         _telemetry.Event(selectedPlans.Count == 0 ? "NoRouteFound" : "TripPlanned",
             outcome: selectedPlans.Count.ToString());
@@ -271,6 +301,170 @@ public partial class RoutingService
             };
         }
     }
+
+    private JourneyPlanningPreferences? NormalizePlanningPreferences(
+        JourneyPlanningPreferences? preferences)
+    {
+        if (preferences is null)
+            return null;
+
+        double? maxWalking = preferences.MaxWalkingMeters is { } requestedWalking
+            ? Math.Min(requestedWalking, MaxTotalWalkingMetersPerJourney)
+            : null;
+        var normalized = preferences with
+        {
+            MaxFarePesos = preferences.MaxFarePesos is { } fare
+                ? Math.Max(0, fare)
+                : null,
+            MaxWalkingMeters = maxWalking is { } walking
+                ? Math.Max(0, walking)
+                : null,
+            AvoidTransportModes = preferences.AvoidTransportModes is null
+                ? []
+                : preferences.AvoidTransportModes.ToHashSet()
+        };
+
+        return normalized.MaxFarePesos is null &&
+               normalized.MaxWalkingMeters is null &&
+               normalized.WalkingPreference == JourneyWalkingPreference.Normal &&
+               normalized.OptimizationPreference is null &&
+               normalized.AvoidTransportModes.Count == 0
+            ? null
+            : normalized;
+    }
+
+    private bool MeetsProvisionalHardConstraints(
+        JourneyCandidate candidate,
+        JourneyPlanningPreferences? preferences)
+    {
+        if (preferences is null)
+            return true;
+
+        if (preferences.MaxFarePesos is { } maxFare &&
+            EstimateCandidateFarePesos(candidate) > (double)maxFare)
+            return false;
+
+        if (preferences.MaxWalkingMeters is { } maxWalking &&
+            EstimateCandidateWalkingMeters(candidate) > maxWalking)
+            return false;
+
+        return !UsesAvoidedMode(candidate, preferences.AvoidTransportModes);
+    }
+
+    private bool MeetsProvisionalHardConstraints(
+        DirectAccessDestinationCompletionEdge edge,
+        JourneyPlanningPreferences? preferences) =>
+        MeetsProvisionalHardConstraints(edge.Access, preferences);
+
+    private bool MeetsProvisionalHardConstraints(
+        AccessPathDestinationCompletionEdge edge,
+        JourneyPlanningPreferences? preferences) =>
+        MeetsProvisionalHardConstraints(edge.AccessToBoard, preferences);
+
+    private static bool MeetsProvisionalHardConstraints(
+        AccessCandidate access,
+        JourneyPlanningPreferences? preferences)
+    {
+        if (preferences is null)
+            return true;
+
+        if (preferences.MaxWalkingMeters is { } maxWalking &&
+            access.WalkDistanceMeters > maxWalking)
+            return false;
+
+        if (preferences.MaxFarePesos is { } maxFare &&
+            access.FarePesos > (double)maxFare)
+            return false;
+
+        return !UsesAvoidedMode(access, preferences.AvoidTransportModes);
+    }
+
+    private static bool MeetsConfirmedHardConstraints(
+        JeepneyTripPlan plan,
+        JourneyPlanningPreferences? preferences)
+    {
+        if (preferences is null)
+            return true;
+
+        if (preferences.MaxFarePesos is { } maxFare &&
+            plan.TotalFarePesos > (double)maxFare)
+            return false;
+
+        if (preferences.MaxWalkingMeters is { } maxWalking &&
+            plan.Legs.Where(leg => leg.Mode == AccessMode.Walk)
+                .Sum(leg => leg.DistanceMeters) > maxWalking)
+            return false;
+
+        return !UsesAvoidedMode(plan, preferences.AvoidTransportModes);
+    }
+
+    private static bool UsesAvoidedMode(
+        JourneyCandidate candidate,
+        IReadOnlySet<AccessMode>? avoided) =>
+        (avoided?.Contains(AccessMode.Jeepney) == true && candidate.Legs.Count > 0) ||
+        (avoided?.Contains(AccessMode.Trike) == true &&
+         (candidate.OriginAccess.Mode == AccessMode.Trike ||
+          candidate.DestinationAccess.Mode == AccessMode.Trike)) ||
+        (avoided?.Contains(AccessMode.Walk) == true &&
+         (candidate.OriginAccess.WalkDistanceMeters > 0 ||
+          candidate.DestinationAccess.WalkDistanceMeters > 0 ||
+          candidate.TransferWalkSegments.Count > 0));
+
+    private static bool UsesAvoidedMode(
+        AccessCandidate access,
+        IReadOnlySet<AccessMode>? avoided) =>
+        (avoided?.Contains(AccessMode.Trike) == true && access.Mode == AccessMode.Trike) ||
+        (avoided?.Contains(AccessMode.Walk) == true && access.WalkDistanceMeters > 0);
+
+    private static bool UsesAvoidedMode(
+        JeepneyTripPlan plan,
+        IReadOnlySet<AccessMode>? avoided) =>
+        avoided is not null && plan.Legs.Any(leg => avoided.Contains(leg.Mode));
+
+    private static double EstimateCandidateWalkingMeters(JourneyCandidate candidate) =>
+        candidate.OriginAccess.WalkDistanceMeters +
+        candidate.DestinationAccess.WalkDistanceMeters +
+        candidate.TransferWalkSegments.Sum(segment => segment.StraightLineMeters);
+
+    private double PlanningCandidateScore(
+        JourneyCandidate candidate,
+        JourneyPlanningPreferences? preferences)
+    {
+        if (preferences is null)
+            return candidate.TotalGeneralizedCostPesos;
+
+        var score = candidate.TotalGeneralizedCostPesos;
+        score = preferences.OptimizationPreference switch
+        {
+            JourneyOptimizationPreference.Fastest =>
+                EstimateCandidateTimeSeconds(candidate) + score / 100,
+            JourneyOptimizationPreference.Cheapest =>
+                EstimateCandidateFarePesos(candidate) * 1_000 + score,
+            _ => score
+        };
+
+        var walkingMeters = EstimateCandidateWalkingMeters(candidate);
+        return preferences.WalkingPreference switch
+        {
+            JourneyWalkingPreference.Less => score + walkingMeters / 100,
+            // Relax the normal fatigue term, without rewarding additional
+            // walking in its own right.
+            JourneyWalkingPreference.More => score -
+                WalkingFatiguePesosPerKilometer * walkingMeters / 2_000,
+            _ => score
+        };
+    }
+
+    private static bool HasSoftPlanningPreference(
+        JourneyPlanningPreferences? preferences) =>
+        preferences is
+        {
+            OptimizationPreference: not null
+        } ||
+        preferences is
+        {
+            WalkingPreference: not JourneyWalkingPreference.Normal
+        };
 
     private bool HasForwardRouteProgress(JourneyLegCandidate leg)
     {
@@ -400,8 +594,9 @@ public partial class RoutingService
                jeepneyDistance / totalDistance >= PrimaryJeepneyMinimumJourneyShare;
     }
 
-    private List<JeepneyTripPlan> SelectObjectivePlans(
-        List<JeepneyTripPlan> plans)
+    internal List<JeepneyTripPlan> SelectObjectivePlans(
+        List<JeepneyTripPlan> plans,
+        JourneyPlanningPreferences? preferences = null)
     {
         if (plans.Count == 0)
             return [];
@@ -477,6 +672,37 @@ public partial class RoutingService
             .First();
 
         var selected = new List<JeepneyTripPlan>();
+
+        if (preferences is { } requested &&
+            (requested.OptimizationPreference is not null ||
+             requested.WalkingPreference != JourneyWalkingPreference.Normal))
+        {
+            // An explicit preference gets the lead recommendation and controls
+            // alternative preservation. The generic cheapest/fastest/efficient
+            // trio is intentionally not re-applied afterward, because that
+            // would erase the passenger-specific ordering we preserved during
+            // confirmation.
+            var primary = plans
+                .OrderBy(plan => PlanningPlanScore(plan, requested))
+                .ThenBy(plan => plan.GeneralizedCostPesos)
+                .First();
+            AddObjective(primary, requested.OptimizationPreference?.ToString()
+                .ToLowerInvariant() ?? "efficient");
+
+            foreach (var alternative in plans
+                         .Except(selected)
+                         .OrderBy(plan => PlanningPlanScore(plan, requested))
+                         .ThenBy(plan => plan.GeneralizedCostPesos)
+                         .ThenBy(plan => plan.TotalTimeSeconds))
+            {
+                if (selected.Count >= MaxTripOptions)
+                    break;
+                selected.Add(alternative);
+            }
+
+            return selected;
+        }
+
         AddObjective(efficient, "efficient");
         AddObjective(cheapest, "cheapest");
         AddObjective(fastest, "fastest");
@@ -504,6 +730,29 @@ public partial class RoutingService
             plan.RecommendationType = objective;
             selected.Add(plan);
         }
+    }
+
+    private static double PlanningPlanScore(
+        JeepneyTripPlan plan,
+        JourneyPlanningPreferences preferences)
+    {
+        var score = plan.GeneralizedCostPesos;
+        score = preferences.OptimizationPreference switch
+        {
+            JourneyOptimizationPreference.Fastest => plan.TotalTimeSeconds + score / 100,
+            JourneyOptimizationPreference.Cheapest => plan.TotalFarePesos * 1_000 + score,
+            _ => score
+        };
+
+        var walking = plan.Legs
+            .Where(leg => leg.Mode == AccessMode.Walk)
+            .Sum(leg => leg.DistanceMeters);
+        return preferences.WalkingPreference switch
+        {
+            JourneyWalkingPreference.Less => score + walking / 100,
+            JourneyWalkingPreference.More => score - walking / 2_000,
+            _ => score
+        };
     }
 
     private static string GetJourneyCandidateKey(JourneyCandidate candidate) =>

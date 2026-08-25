@@ -422,12 +422,12 @@ public sealed class FeederShadowingRegressionTests
     {
         var route = BuildStraightRoute(120.5000, 120.5500);
 
-        // Every sample between 120.5100 and 120.5400 -- the middle, and the
-        // provisionally closest/cheapest/fastest cluster to the origin at
-        // (15.0003, 120.5250) -- is unreachable on foot. Only the corridor's
-        // two extremities remain viable.
+        // Every useful interior board between 120.5100 and the destination --
+        // the provisionally closest/cheapest/fastest cluster to the origin at
+        // (15.0003, 120.5250) -- is unreachable on foot. The destination
+        // endpoint remains reachable but cannot start a forward transit leg.
         double? PedestrianOverride(ValhallaLocation target) =>
-            target.Lon is >= 120.5100 and <= 120.5400
+            target.Lon >= 120.5100 && target.Lon < 120.5500
                 ? double.PositiveInfinity
                 : null;
 

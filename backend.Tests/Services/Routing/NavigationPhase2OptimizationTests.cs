@@ -128,6 +128,39 @@ public sealed class NavigationPhase2OptimizationTests
     }
 
     [Fact]
+    public void ConfirmationBudget_WalkingPreferenceChangesPreConfirmationRepresentative()
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 1);
+        var lowWalking = BuildSelectionCandidate(
+            ["A"],
+            AccessMode.Walk,
+            todaId: null,
+            provisionalCost: 10);
+        var walkingFriendly = BuildSelectionCandidate(
+            ["A"],
+            AccessMode.Walk,
+            todaId: null,
+            provisionalCost: 11,
+            alightProgressOffsetMeters: 1) with
+        {
+            OriginAccess = lowWalking.OriginAccess with
+            {
+                WalkDistanceMeters = 1_000
+            }
+        };
+
+        var ordinary = service.SelectCandidatesToConfirmWithDiversity(
+            [lowWalking, walkingFriendly]);
+        var prefersMoreWalking = service.SelectCandidatesToConfirmWithDiversity(
+            [lowWalking, walkingFriendly],
+            new JourneyPlanningPreferences(
+                WalkingPreference: JourneyWalkingPreference.More));
+
+        Assert.Same(lowWalking, Assert.Single(ordinary));
+        Assert.Same(walkingFriendly, Assert.Single(prefersMoreWalking));
+    }
+
+    [Fact]
     public void BoardingDiversity_KeepsDistinctPhysicalRegionFromSameProgressBucket()
     {
         var service = CreateSelectionService(maxCandidatesToConfirm: 20);

@@ -133,30 +133,6 @@ data class JourneyLeg(
 data class JourneyPlan(val legs: List<JourneyLeg>, val source: JeepneyTripPlanDto)
 data class PlannedJourney(val recommendationId: String, val journey: JourneyPlan)
 
-object PendingAiRouteSelection {
-    private var destinationName: String? = null
-    private var journey: PlannedJourney? = null
-
-    @Synchronized
-    fun save(destinationName: String, journey: PlannedJourney) {
-        this.destinationName = destinationName.trim()
-        this.journey = journey
-    }
-
-    @Synchronized
-    fun consume(destinationName: String): PlannedJourney? {
-        val expected = this.destinationName
-        val selected = journey
-        if (expected == null || selected == null || !expected.equals(destinationName.trim(), ignoreCase = true)) {
-            return null
-        }
-
-        this.destinationName = null
-        journey = null
-        return selected
-    }
-}
-
 fun JeepneyTripPlanDto.toDomain() = JourneyPlan(
     legs = legs.map { leg ->
         JourneyLeg(
@@ -217,10 +193,6 @@ class RoutingRepositoryImpl(
             )
         ) {
             return unsupportedLocationFailure()
-        }
-
-        PendingAiRouteSelection.consume(request.destinationName)?.let { selected ->
-            return ApiResult.Success(listOf(selected))
         }
 
         return when (val result = apiCall(errors) { api.planJourneys(request) }) {

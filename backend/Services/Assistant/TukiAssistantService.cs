@@ -8,6 +8,7 @@ using backend.Services.Navigation;
 using backend.Services.Routing;
 using backend.Services.Telemetry;
 using backend.Services;
+using System.Text.Json;
 
 namespace backend.Services.Assistant;
 
@@ -42,13 +43,20 @@ public sealed class TukiAssistantService(
     IConfiguration? configuration = null,
     IUserProfileRepository? userProfiles = null,
     IRouteRecommendationRepository? recommendations = null,
-    IChatService? chat = null)
+    IChatService? chat = null,
+    IAssistantPlaceResolver? assistantPlaces = null)
     : ITukiAssistantService
 {
     private const int RecentConversationTurnLimit = 8;
     private readonly ITukiTelemetry _telemetry = telemetry ?? NullTukiTelemetry.Instance;
     private readonly IRouteRecommendationRepository? _recommendations = recommendations;
     private readonly IChatService? _chat = chat;
+    private readonly IAssistantPlaceResolver? _assistantPlaces = assistantPlaces;
+    private static readonly JsonSerializerOptions PlanningStateJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+    private static readonly TimeSpan PendingDestinationLifetime = TimeSpan.FromMinutes(15);
 
     // Kept for constructor compatibility with the previous implementation.
     private readonly IConfiguration? _configuration = configuration;
@@ -64,7 +72,7 @@ public sealed class TukiAssistantService(
                 userId,
                 tripSessionId,
                 new ActiveTripAssistantRequest(
-                    request.Message,
+                    request.Message ?? string.Empty,
                     request.DestinationId,
                     request.ConversationId,
                     request.OperationId),
@@ -80,9 +88,6 @@ public sealed class TukiAssistantService(
         CancellationToken cancellationToken = default)
     {
         using var measurement = _telemetry.Measure("AI.Planning");
-        if (string.IsNullOrWhiteSpace(request.Message))
-            return new("INVALID_REQUEST", "Message cannot be empty.", Surface: SurfaceName(AssistantSurface.Planning));
-
         var language = await ResolveLanguageAsync(userId, cancellationToken);
         var conversation = await ResolveConversationAsync(
             userId, request.ConversationId, "Tuki trip planning", cancellationToken);
@@ -92,7 +97,20 @@ public sealed class TukiAssistantService(
                 Text(language, "Hindi valid yung conversation na binuksan.", "That conversation is not available."),
                 Surface: SurfaceName(AssistantSurface.Planning));
 
-        var normalizedMessage = request.Message.Trim();
+        if (IsDestinationSelectionRequest(request))
+        {
+            var selection = await ContinuePendingDestinationSelectionAsync(
+                userId, request, language, conversation.Context, cancellationToken);
+            return WithMetadata(
+                selection,
+                conversation.Context.ConversationId,
+                AssistantSurface.Planning);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Message))
+            return new("INVALID_REQUEST", "Message cannot be empty.", Surface: SurfaceName(AssistantSurface.Planning));
+
+        var normalizedMessage = request.Message!.Trim();
         if (IsGreeting(normalizedMessage))
         {
             var greeting = new AssistantResponse(
@@ -138,14 +156,6 @@ public sealed class TukiAssistantService(
                 Surface: SurfaceName(AssistantSurface.Planning));
         }
 
-        if (string.IsNullOrWhiteSpace(intent.DestinationQuery) &&
-            intent.Intent is AssistantIntentType.UpdateTripConstraints or
-                AssistantIntentType.PlanRoute or
-                AssistantIntentType.ChangeDestination)
-        {
-            intent.DestinationQuery = conversation.Context.LastDestinationQuery;
-        }
-
         _telemetry.Event("AIIntentParsed", outcome: $"Planning:{intent.Intent}");
 
         AssistantResponse response = intent.Intent switch
@@ -153,7 +163,8 @@ public sealed class TukiAssistantService(
             AssistantIntentType.PlanRoute or
             AssistantIntentType.UpdateTripConstraints or
             AssistantIntentType.ChangeDestination =>
-                await PlanAsync(userId, intent, request, language, cancellationToken),
+                await PlanAsync(
+                    userId, intent, request, language, conversation.Context, cancellationToken),
 
             AssistantIntentType.SearchPlace =>
                 await SearchPlaceAsync(intent, request, language, cancellationToken),
@@ -378,54 +389,81 @@ public sealed class TukiAssistantService(
         AssistantIntent intent,
         AssistantRequest request,
         string language,
+        AssistantConversationContext conversation,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(intent.DestinationQuery))
+        var state = ApplyPlanningIntent(conversation.PlanningState, intent, request);
+        var destination = state.Destination;
+
+        // A new explicit place phrase supersedes the previously resolved
+        // destination. Follow-up constraints intentionally leave it intact.
+        var shouldResolveNewDestination = !string.IsNullOrWhiteSpace(intent.DestinationQuery) &&
+            (state.Destination is null || intent.Intent == AssistantIntentType.ChangeDestination);
+        if (shouldResolveNewDestination)
+        {
+            if (_assistantPlaces is null)
+                return new(
+                    "DESTINATION_SEARCH_UNAVAILABLE",
+                    Text(language, "Temporary unavailable yung destination search.", "Destination search is temporarily unavailable."));
+
+            IReadOnlyList<DestinationSearchResult> results;
+            try
+            {
+                results = await _assistantPlaces.SearchAsync(
+                    intent.DestinationQuery!,
+                    new(state.OriginLatitude, state.OriginLongitude),
+                    cancellationToken);
+            }
+            catch (DestinationProviderUnavailableException)
+            {
+                return new(
+                    "DESTINATION_SEARCH_UNAVAILABLE",
+                    Text(language, "Temporary unavailable yung destination search.", "Destination search is temporarily unavailable."));
+            }
+
+            if (results.Count == 0)
+                return new(
+                    "DESTINATION_NOT_FOUND",
+                    Text(language, "Hindi ko mahanap yung destination na yun.", "I couldn't find that destination."));
+
+            if (results.Count != 1)
+            {
+                var pending = CreatePendingDestinationResolution(results);
+                state = state with { Destination = null, PendingDestination = pending };
+                if (conversation.ConversationId != Guid.Empty &&
+                    !await SavePlanningStateAsync(conversation.ConversationId, state, cancellationToken))
+                    return ConversationStateUnavailable(language);
+
+                return new(
+                    "DESTINATION_AMBIGUOUS",
+                    Text(
+                        language,
+                        $"May ilang results para sa {intent.DestinationQuery}. Alin dito yung gusto mong puntahan?",
+                        $"I found a few results for {intent.DestinationQuery}. Which one is your destination?"),
+                    Destinations: pending.Candidates.Select(ToCard).ToList(),
+                    DestinationSelectionToken: pending.SelectionToken);
+            }
+
+            destination = ToResolvedDestination(results[0]);
+            state = state with { Destination = destination, PendingDestination = null };
+        }
+
+        // Compatibility for existing conversations created before structured
+        // planning state. New flows never re-search merely to process a card.
+        if (destination is null && !string.IsNullOrWhiteSpace(conversation.LastDestinationQuery))
+        {
+            intent.DestinationQuery = conversation.LastDestinationQuery;
+            return await PlanAsync(userId, intent, request, language,
+                conversation with { PlanningState = state with { Destination = null } }, cancellationToken);
+        }
+
+        if (destination is null)
             return new(
                 "CLARIFICATION_REQUIRED",
                 Text(language, "Saan tayo pupunta?", "Where are we headed?"));
 
-        var resolved = await destinationSearch.SearchAsync(
-            intent.DestinationQuery,
-            new(request.OriginLatitude, request.OriginLongitude),
-            cancellationToken);
-        if (resolved.Error is not null)
-            return new(
-                resolved.Error,
-                resolved.Message ??
-                Text(language, "Hindi nag-work yung destination search.", "Destination search failed."));
-
-        if (resolved.Results.Count == 0)
-            return new(
-                "DESTINATION_NOT_FOUND",
-                Text(language, "Hindi ko mahanap yung destination na yun.", "I couldn't find that destination."));
-
-        var destination = ResolveDestination(
-            resolved.Results,
-            intent.DestinationQuery,
-            request.DestinationId);
-        if (destination is null)
-        {
-            if (!string.IsNullOrWhiteSpace(request.DestinationId))
-                return new(
-                    "DESTINATION_SELECTION_INVALID",
-                    Text(
-                        language,
-                        "Hindi kasama sa current results yung napiling destination.",
-                        "The selected destination is not one of the current search results."),
-                    Destinations: resolved.Results);
-
-            return new(
-                "DESTINATION_AMBIGUOUS",
-                Text(
-                    language,
-                    $"May ilang results para sa {intent.DestinationQuery}. Alin dito yung gusto mong puntahan?",
-                    $"I found a few results for {intent.DestinationQuery}. Which one is your destination?"),
-                Destinations: resolved.Results);
-        }
-
-        if (request.OriginLatitude is not { } originLat ||
-            request.OriginLongitude is not { } originLon)
+        if (state.OriginLatitude is not { } originLat ||
+            state.OriginLongitude is not { } originLon)
         {
             return new(
                 "ORIGIN_REQUIRED",
@@ -435,30 +473,59 @@ public sealed class TukiAssistantService(
                     "I need your current location to calculate the route."));
         }
 
+        if (conversation.ConversationId != Guid.Empty &&
+            !await SavePlanningStateAsync(conversation.ConversationId, state, cancellationToken))
+            return ConversationStateUnavailable(language);
+
+        return await PlanResolvedDestinationAsync(
+            userId, originLat, originLon, destination, state, language, cancellationToken);
+    }
+
+    private async Task<AssistantResponse> PlanResolvedDestinationAsync(
+        Guid userId,
+        double originLat,
+        double originLon,
+        AssistantResolvedDestination destination,
+        AssistantPlanningState state,
+        string language,
+        CancellationToken cancellationToken)
+    {
+        var preferences = ToRoutingPreferences(state);
+
         List<JeepneyTripPlan> plans;
         try
         {
-            plans = await routing.PlanTripsAsync(
-                originLat,
-                originLon,
-                destination.Latitude,
-                destination.Longitude,
-                cancellationToken);
+            plans = preferences is null
+                ? await routing.PlanTripsAsync(
+                    originLat,
+                    originLon,
+                    destination.Latitude,
+                    destination.Longitude,
+                    cancellationToken)
+                : await routing.PlanTripsAsync(
+                    originLat,
+                    originLon,
+                    destination.Latitude,
+                    destination.Longitude,
+                    preferences,
+                    cancellationToken);
         }
         catch (RoutingValidationException exception)
         {
             return new(exception.ErrorCode, exception.Message);
         }
 
-        var eligiblePlans = FilterAndOrderPlans(
+        // Routing receives preferences before candidate confirmation and
+        // objective selection. This final pass is only a defensive hard-limit
+        // check over authoritative totals, not a second recommendation engine.
+        var eligiblePlans = FilterPlansAgainstHardConstraints(
             plans,
-            intent.BudgetPesos,
-            intent.Preference,
-            intent.MaxWalkingMeters,
-            intent.AvoidTransportModes);
+            state.MaxFarePesos,
+            state.MaxWalkingMeters,
+            state.AvoidTransportModes ?? []);
 
         if (eligiblePlans.Count == 0)
-            return NoPlansWithinConstraints(language, intent.BudgetPesos);
+            return NoPlansWithinConstraints(language, state.MaxFarePesos);
 
         if (routing is IJourneyGeometryEnricher geometryEnricher)
             await geometryEnricher.EnrichSelectedPlanGeometryAsync(eligiblePlans, cancellationToken);
@@ -473,8 +540,8 @@ public sealed class TukiAssistantService(
                 destination.Name,
                 destination.Latitude,
                 destination.Longitude,
-                intent.BudgetPesos,
-                intent.Preference,
+                state.MaxFarePesos,
+                state.OptimizationPreference,
                 eligiblePlans,
                 cancellationToken);
         }
@@ -500,15 +567,218 @@ public sealed class TukiAssistantService(
                 $"Ayun! May {journeys.Count} route options tayo papuntang {destination.Name}.",
                 $"Got it! We have {journeys.Count} route options to {destination.Name}."),
             Journeys: journeys,
-            Destination: destination,
+            Destination: ToCard(destination),
             Action: new AssistantAction(
                 "SELECT_ROUTE",
                 true,
-                BudgetPesos: intent.BudgetPesos,
-                Preference: intent.Preference,
-                MaxWalkingMeters: intent.MaxWalkingMeters,
-                AvoidTransportModes: intent.AvoidTransportModes));
+                BudgetPesos: state.MaxFarePesos,
+                Preference: state.OptimizationPreference,
+                MaxWalkingMeters: state.MaxWalkingMeters,
+                AvoidTransportModes: state.AvoidTransportModes));
     }
+
+    private async Task<AssistantResponse> ContinuePendingDestinationSelectionAsync(
+        Guid userId,
+        AssistantRequest request,
+        string language,
+        AssistantConversationContext conversation,
+        CancellationToken cancellationToken)
+    {
+        var pending = conversation.PlanningState?.PendingDestination;
+        if (pending is null ||
+            !string.Equals(pending.SelectionToken, request.DestinationSelectionToken,
+                StringComparison.Ordinal) ||
+            pending.ExpiresAtUtc <= DateTime.UtcNow)
+        {
+            return new(
+                "DESTINATION_SELECTION_EXPIRED",
+                Text(
+                    language,
+                    "Nag-expire na yung destination choices. Hanapin natin ulit yung place.",
+                    "Those destination choices expired. Please search for the place again."));
+        }
+
+        var selected = pending.Candidates.FirstOrDefault(candidate =>
+            string.Equals(candidate.CandidateId, request.SelectedDestinationCandidateId,
+                StringComparison.Ordinal));
+        if (selected is null)
+        {
+            return new(
+                "DESTINATION_SELECTION_INVALID",
+                Text(
+                    language,
+                    "Hindi kasama sa pending choices yung napiling destination.",
+                    "That destination is not one of the pending choices."));
+        }
+
+        var state = conversation.PlanningState! with
+        {
+            Destination = new AssistantResolvedDestination(
+                selected.ProviderId,
+                selected.Name,
+                selected.Latitude,
+                selected.Longitude,
+                selected.Category,
+                selected.Address),
+            PendingDestination = null
+        };
+        if (!await SavePlanningStateAsync(conversation.ConversationId, state, cancellationToken))
+            return ConversationStateUnavailable(language);
+
+        if (state.OriginLatitude is not { } originLatitude ||
+            state.OriginLongitude is not { } originLongitude)
+        {
+            return new(
+                "ORIGIN_REQUIRED",
+                Text(
+                    language,
+                    "Kailangan ko yung current location mo para makapag-compute ng route.",
+                    "I need your current location to calculate the route."));
+        }
+
+        // This path deliberately has no intent extraction and no text search:
+        // the stored candidate is the authoritative routing target.
+        return await PlanResolvedDestinationAsync(
+            userId,
+            originLatitude,
+            originLongitude,
+            state.Destination,
+            state,
+            language,
+            cancellationToken);
+    }
+
+    private static bool IsDestinationSelectionRequest(AssistantRequest request) =>
+        !string.IsNullOrWhiteSpace(request.DestinationSelectionToken) ||
+        !string.IsNullOrWhiteSpace(request.SelectedDestinationCandidateId);
+
+    private static AssistantPlanningState ApplyPlanningIntent(
+        AssistantPlanningState? existing,
+        AssistantIntent intent,
+        AssistantRequest request)
+    {
+        var state = existing ?? new AssistantPlanningState();
+        var hasCompleteOrigin = request.OriginLatitude.HasValue &&
+            request.OriginLongitude.HasValue;
+        var modes = new HashSet<string>(
+            state.AvoidTransportModes ?? [], StringComparer.OrdinalIgnoreCase);
+        foreach (var mode in intent.AvoidTransportModes)
+            modes.Add(mode);
+
+        return state with
+        {
+            MaxFarePesos = intent.BudgetPesos ?? state.MaxFarePesos,
+            OptimizationPreference = intent.Preference ?? state.OptimizationPreference,
+            MaxWalkingMeters = intent.MaxWalkingMeters ?? state.MaxWalkingMeters,
+            WalkingPreference = intent.WalkingPreference ?? state.WalkingPreference,
+            AvoidTransportModes = modes.OrderBy(mode => mode, StringComparer.Ordinal).ToList(),
+            OriginLatitude = hasCompleteOrigin
+                ? request.OriginLatitude
+                : state.OriginLatitude,
+            OriginLongitude = hasCompleteOrigin
+                ? request.OriginLongitude
+                : state.OriginLongitude
+        };
+    }
+
+    private static AssistantPendingDestinationResolution CreatePendingDestinationResolution(
+        IReadOnlyList<DestinationSearchResult> results) =>
+        new(
+            Guid.NewGuid().ToString("N"),
+            DateTime.UtcNow.Add(PendingDestinationLifetime),
+            results.Select(result => new AssistantPendingDestinationCandidate(
+                Guid.NewGuid().ToString("N"),
+                result.Id,
+                result.Name,
+                result.Latitude,
+                result.Longitude,
+                result.Category,
+                result.Address)).ToList());
+
+    private static AssistantResolvedDestination ToResolvedDestination(
+        DestinationSearchResult result) =>
+        new(result.Id, result.Name, result.Latitude, result.Longitude,
+            result.Category, result.Address);
+
+    private static AssistantDestinationCandidate ToCard(
+        AssistantPendingDestinationCandidate candidate) =>
+        new(candidate.CandidateId, candidate.Name, candidate.Latitude,
+            candidate.Longitude, candidate.Category, candidate.Address);
+
+    private static AssistantDestinationCandidate ToCard(
+        AssistantResolvedDestination destination) =>
+        new("resolved", destination.Name, destination.Latitude,
+            destination.Longitude, destination.Category, destination.Address);
+
+    private static AssistantDestinationCandidate ToCard(
+        DestinationSearchResult destination) =>
+        new(Guid.NewGuid().ToString("N"), destination.Name, destination.Latitude,
+            destination.Longitude, destination.Category, destination.Address);
+
+    private static JourneyPlanningPreferences? ToRoutingPreferences(
+        AssistantPlanningState state)
+    {
+        var avoided = (state.AvoidTransportModes ?? [])
+            .Select(ToAccessMode)
+            .Where(mode => mode is not null)
+            .Select(mode => mode!.Value)
+            .ToHashSet();
+        var preferences = new JourneyPlanningPreferences(
+            state.MaxFarePesos,
+            state.MaxWalkingMeters,
+            state.WalkingPreference switch
+            {
+                AssistantWalkingPreference.Less => JourneyWalkingPreference.Less,
+                AssistantWalkingPreference.More => JourneyWalkingPreference.More,
+                _ => JourneyWalkingPreference.Normal
+            },
+            state.OptimizationPreference?.ToLowerInvariant() switch
+            {
+                "fastest" => JourneyOptimizationPreference.Fastest,
+                "cheapest" => JourneyOptimizationPreference.Cheapest,
+                "efficient" => JourneyOptimizationPreference.Efficient,
+                _ => null
+            },
+            avoided);
+        return preferences.MaxFarePesos is null &&
+               preferences.MaxWalkingMeters is null &&
+               preferences.OptimizationPreference is null &&
+               preferences.WalkingPreference == JourneyWalkingPreference.Normal &&
+               (preferences.AvoidTransportModes?.Count ?? 0) == 0
+            ? null
+            : preferences;
+    }
+
+    private static AccessMode? ToAccessMode(string mode) =>
+        mode.ToUpperInvariant() switch
+        {
+            "WALK" => AccessMode.Walk,
+            "TRICYCLE" => AccessMode.Trike,
+            "JEEPNEY" => AccessMode.Jeepney,
+            _ => null
+        };
+
+    private async Task<bool> SavePlanningStateAsync(
+        Guid conversationId,
+        AssistantPlanningState state,
+        CancellationToken cancellationToken)
+    {
+        if (_chat is null || conversationId == Guid.Empty)
+            return false;
+
+        return await _chat.UpdatePlanningStateAsync(
+            conversationId,
+            JsonSerializer.Serialize(state, PlanningStateJsonOptions),
+            cancellationToken);
+    }
+
+    private static AssistantResponse ConversationStateUnavailable(string language) =>
+        new(
+            "CONVERSATION_STATE_UNAVAILABLE",
+            Text(
+                language,
+                "Hindi ko ma-save yung destination choices ngayon. Subukan ulit mamaya.",
+                "I couldn't save the destination choices right now. Please try again."));
 
     private async Task<AssistantResponse> SearchPlaceAsync(
         AssistantIntent intent,
@@ -521,18 +791,27 @@ public sealed class TukiAssistantService(
                 "CLARIFICATION_REQUIRED",
                 Text(language, "Anong lugar yung hinahanap mo?", "What place are you looking for?"));
 
-        var resolved = await destinationSearch.SearchAsync(
-            intent.DestinationQuery,
-            new(request.OriginLatitude, request.OriginLongitude),
-            cancellationToken);
-
-        if (resolved.Error is not null)
+        if (_assistantPlaces is null)
             return new(
-                resolved.Error,
-                resolved.Message ??
-                Text(language, "Hindi nag-work yung place search.", "Place search failed."));
+                "DESTINATION_SEARCH_UNAVAILABLE",
+                Text(language, "Temporary unavailable yung place search.", "Place search is temporarily unavailable."));
 
-        if (resolved.Results.Count == 0)
+        IReadOnlyList<DestinationSearchResult> results;
+        try
+        {
+            results = await _assistantPlaces.SearchAsync(
+                intent.DestinationQuery,
+                new(request.OriginLatitude, request.OriginLongitude),
+                cancellationToken);
+        }
+        catch (DestinationProviderUnavailableException)
+        {
+            return new(
+                "DESTINATION_SEARCH_UNAVAILABLE",
+                Text(language, "Temporary unavailable yung place search.", "Place search is temporarily unavailable."));
+        }
+
+        if (results.Count == 0)
             return new(
                 "DESTINATION_NOT_FOUND",
                 Text(language, "Wala akong mahanap na matching place.", "I couldn't find a matching place."));
@@ -541,9 +820,9 @@ public sealed class TukiAssistantService(
             "PLACE_RESULTS",
             Text(
                 language,
-                $"May {resolved.Results.Count} matching places akong nahanap.",
-                $"I found {resolved.Results.Count} matching places."),
-            Destinations: resolved.Results);
+                $"May {results.Count} matching places akong nahanap.",
+                $"I found {results.Count} matching places."),
+            Destinations: results.Select(ToCard).ToList());
     }
 
     private async Task<AssistantResponse> PreviewDestinationChangeAsync(
@@ -594,7 +873,7 @@ public sealed class TukiAssistantService(
                     language,
                     $"May ilang results para sa {intent.DestinationQuery}. Alin dito yung bagong destination?",
                     $"I found a few results for {intent.DestinationQuery}. Which one is the new destination?"),
-                Destinations: resolved.Results,
+                Destinations: resolved.Results.Select(ToCard).ToList(),
                 Navigation: NavigationState(tripContext));
 
         return await PreviewActiveTripReplanAsync(
@@ -637,6 +916,12 @@ public sealed class TukiAssistantService(
             : (decimal?)null;
         var budget = intent.BudgetPesos ?? remainingOriginalBudget;
         var preference = intent.Preference ?? session.OriginalPreference;
+        var routingPreferences = ToRoutingPreferences(new AssistantPlanningState(
+            MaxFarePesos: budget,
+            OptimizationPreference: preference,
+            MaxWalkingMeters: intent.MaxWalkingMeters,
+            WalkingPreference: intent.WalkingPreference ?? AssistantWalkingPreference.Normal,
+            AvoidTransportModes: intent.AvoidTransportModes));
 
         List<JeepneyTripPlan> plans;
         try
@@ -646,6 +931,7 @@ public sealed class TukiAssistantService(
                 originLon,
                 destinationLatitude,
                 destinationLongitude,
+                routingPreferences,
                 cancellationToken);
         }
         catch (RoutingValidationException exception)
@@ -719,7 +1005,7 @@ public sealed class TukiAssistantService(
                 $"I found {journeys.Count} updated route option{(journeys.Count == 1 ? string.Empty : "s")}. Choose one before we replace the active route."),
             Journeys: journeys,
             Navigation: NavigationState(tripContext),
-            Destination: destinationResult,
+            Destination: ToCard(destinationResult),
             Action: new AssistantAction(
                 "CONFIRM_REPLAN_ROUTE",
                 true,
@@ -888,12 +1174,14 @@ public sealed class TukiAssistantService(
             return (new AssistantConversationContext(Guid.Empty, null, null, []), null);
 
         Guid conversationId;
+        ChatConversation? selectedConversation = null;
         if (requestedConversationId is { } requestedId)
         {
             var conversation = await _chat.GetConversationByIdAsync(requestedId, cancellationToken);
             if (conversation is null || conversation.UserId != userId)
                 return (new AssistantConversationContext(Guid.Empty, null, null, []), "INVALID_CONVERSATION");
             conversationId = requestedId;
+            selectedConversation = conversation;
         }
         else
         {
@@ -904,6 +1192,7 @@ public sealed class TukiAssistantService(
             if (created is null)
                 return (new AssistantConversationContext(Guid.Empty, null, null, []), "CONVERSATION_CREATE_FAILED");
             conversationId = created.ConversationId;
+            selectedConversation = created;
         }
 
         var messages = await _chat.GetMessagesAsync(conversationId, cancellationToken);
@@ -920,14 +1209,34 @@ public sealed class TukiAssistantService(
             .OrderByDescending(item => item.CreatedAt)
             .Select(item => item.ExtractedBudget)
             .FirstOrDefault(value => value.HasValue);
+        var planningState = DeserializePlanningState(selectedConversation?.PlanningStateJson);
 
         return (
             new AssistantConversationContext(
                 conversationId,
                 lastDestination,
                 lastBudget,
-                recent),
+                recent,
+                planningState),
             null);
+    }
+
+    private static AssistantPlanningState? DeserializePlanningState(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<AssistantPlanningState>(
+                json, PlanningStateJsonOptions);
+        }
+        catch (JsonException)
+        {
+            // A malformed legacy value must not crash planning. The next
+            // successful planning turn replaces it with valid state.
+            return null;
+        }
     }
 
     private async Task PersistConversationAsync(
@@ -999,16 +1308,8 @@ public sealed class TukiAssistantService(
         double? maxWalkingMeters,
         IReadOnlyCollection<string> avoidModes)
     {
-        IEnumerable<JeepneyTripPlan> eligible = plans;
-
-        if (budget is { } maxFare)
-            eligible = eligible.Where(plan => (decimal)plan.TotalFarePesos <= maxFare);
-
-        if (maxWalkingMeters is { } maxWalk)
-            eligible = eligible.Where(plan => TotalWalkingMeters(plan) <= maxWalk);
-
-        foreach (var mode in avoidModes)
-            eligible = eligible.Where(plan => !UsesTransportMode(plan, mode));
+        IEnumerable<JeepneyTripPlan> eligible = FilterPlansAgainstHardConstraints(
+            plans, budget, maxWalkingMeters, avoidModes);
 
         if (!string.IsNullOrWhiteSpace(preference))
         {
@@ -1019,6 +1320,26 @@ public sealed class TukiAssistantService(
                         .Contains(preference, StringComparer.OrdinalIgnoreCase))
                 .ThenBy(plan => plan.GeneralizedCostPesos);
         }
+
+        return eligible.ToList();
+    }
+
+    private static List<JeepneyTripPlan> FilterPlansAgainstHardConstraints(
+        IEnumerable<JeepneyTripPlan> plans,
+        decimal? budget,
+        double? maxWalkingMeters,
+        IReadOnlyCollection<string> avoidModes)
+    {
+        IEnumerable<JeepneyTripPlan> eligible = plans;
+
+        if (budget is { } maxFare)
+            eligible = eligible.Where(plan => (decimal)plan.TotalFarePesos <= maxFare);
+
+        if (maxWalkingMeters is { } maxWalk)
+            eligible = eligible.Where(plan => TotalWalkingMeters(plan) <= maxWalk);
+
+        foreach (var mode in avoidModes)
+            eligible = eligible.Where(plan => !UsesTransportMode(plan, mode));
 
         return eligible.ToList();
     }

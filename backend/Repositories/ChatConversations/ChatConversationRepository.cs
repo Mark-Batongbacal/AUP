@@ -45,4 +45,21 @@ public sealed class ChatConversationRepository(TukiDbContext context) : IChatCon
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
+
+    public async Task<bool> UpdatePlanningStateAsync(
+        Guid conversationId,
+        string? planningStateJson,
+        CancellationToken cancellationToken = default)
+    {
+        var conversation = await _context.ChatConversations.FirstOrDefaultAsync(
+            item => item.ConversationId == conversationId,
+            cancellationToken);
+        if (conversation is null)
+            return false;
+
+        conversation.PlanningStateJson = planningStateJson;
+        conversation.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
 }

@@ -14,6 +14,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.frontend.R
 import com.example.frontend.TodaPointOverlay
 import com.example.frontend.TransitRouteOverlay
+import com.example.frontend.TukiMapOverlayState
 import com.example.frontend.auth.*
 import com.example.frontend.core.findActivity
 import com.example.frontend.core.location.LocationDetectionFailureMessage
@@ -1338,12 +1339,31 @@ fun AppNavigation(
                 onBack = {
                     showAskAI = false
                 },
-                onDestinationConfirmed = { destination ->
+                onJourneySelected = { option, destination, planningOrigin ->
                     showAskAI = false
-                    selectedRoutingDestination = null
-                    selectedRoutingOriginLatitude = null
-                    selectedRoutingOriginLongitude = null
-                    navController.navigate(routeResults("Current location", destination))
+                    selectedRoutingDestination = DestinationSearchResultDto(
+                        id = destination.candidateId,
+                        name = destination.name,
+                        latitude = destination.latitude,
+                        longitude = destination.longitude,
+                        category = destination.category,
+                        source = "assistant",
+                        address = destination.address
+                    )
+                    selectedRoutingOriginLatitude = planningOrigin.latitude
+                    selectedRoutingOriginLongitude = planningOrigin.longitude
+                    selectedRouteOption = option
+                    resolvedLegGeometries = option.legRoutePoints.map { segment ->
+                        segment.map { point -> LatLng(point.latitude, point.longitude) }
+                    }
+                    liveCurrentLegGeometry = emptyList()
+                    TukiMapOverlayState.selectJourneyJeepneyRoutes(option.legRouteIds)
+                    navController.navigate(
+                        navigationRoute(
+                            planningOrigin.name ?: "Current location",
+                            destination.name
+                        )
+                    )
                 }
             )
         }

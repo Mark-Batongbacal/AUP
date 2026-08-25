@@ -4,7 +4,6 @@ import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.core.network.authenticatedApiCall
 import com.example.frontend.core.storage.AuthSessionStore
-import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.routing.JeepneyTripPlanDto
 import retrofit2.Response
 import retrofit2.http.Body
@@ -12,13 +11,15 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 
 data class AssistantRequest(
-    val message: String,
+    val message: String? = null,
     val originLatitude: Double? = null,
     val originLongitude: Double? = null,
     val tripSessionId: String? = null,
     val destinationId: String? = null,
     val conversationId: String? = null,
-    val operationId: String? = null
+    val operationId: String? = null,
+    val destinationSelectionToken: String? = null,
+    val selectedDestinationCandidateId: String? = null
 )
 
 data class ActiveTripAssistantRequest(
@@ -37,6 +38,15 @@ data class AssistantJourneyDto(
     val walkingMeters: Double,
     val legs: List<AssistantJourneyLegDto>,
     val plan: JeepneyTripPlanDto
+)
+
+data class AssistantDestinationCandidateDto(
+    val candidateId: String,
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val category: String,
+    val address: String? = null
 )
 
 data class AssistantActionDto(
@@ -66,12 +76,13 @@ data class AssistantResponseDto(
     val status: String,
     val message: String,
     val journeys: List<AssistantJourneyDto>?,
-    val destinations: List<DestinationSearchResultDto>?,
+    val destinations: List<AssistantDestinationCandidateDto>?,
     val navigation: AssistantNavigationStateDto?,
-    val destination: DestinationSearchResultDto?,
+    val destination: AssistantDestinationCandidateDto?,
     val conversationId: String?,
     val surface: String?,
-    val action: AssistantActionDto?
+    val action: AssistantActionDto?,
+    val destinationSelectionToken: String? = null
 )
 
 data class AssistantReplanConfirmationDto(

@@ -158,6 +158,7 @@ builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
 builder.Services.AddScoped<IAssistantIntentExtractor, NemotronIntentExtractor>();
+builder.Services.AddScoped<IAssistantPlaceResolver, GoogleAssistantPlaceResolver>();
 builder.Services.AddScoped<ITukiAssistantService, TukiAssistantService>();
 builder.Services.AddScoped<IJourneyPlanPersistenceService, JourneyPlanPersistenceService>();
 builder.Services.AddSingleton<ITukiTelemetry, TukiTelemetry>();

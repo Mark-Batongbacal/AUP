@@ -43,12 +43,13 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.data.ai.AssistantDestinationCandidateDto
 import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantRequest
-import com.example.frontend.data.places.DestinationSearchResultDto
-import com.example.frontend.data.routing.PendingAiRouteSelection
 import com.example.frontend.data.routing.PlannedJourney
+import com.example.frontend.data.routing.toRouteOption
 import com.example.frontend.data.routing.toDomain
+import com.example.frontend.model.RouteOption
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
@@ -63,10 +64,11 @@ private data class AiChatMessage(
     val id: Long,
     val text: String,
     val isFromUser: Boolean,
-    val requestText: String? = null,
     val journeys: List<AssistantJourneyDto> = emptyList(),
-    val destination: DestinationSearchResultDto? = null,
-    val destinationChoices: List<DestinationSearchResultDto> = emptyList()
+    val destination: AssistantDestinationCandidateDto? = null,
+    val destinationChoices: List<AssistantDestinationCandidateDto> = emptyList(),
+    val conversationId: String? = null,
+    val destinationSelectionToken: String? = null
 )
 
 private val quickPrompts = listOf(
@@ -78,7 +80,11 @@ private val quickPrompts = listOf(
 fun AskAiChatScreen(
     userName: String = "Juan",
     onBack: () -> Unit = {},
-    onDestinationConfirmed: (String) -> Unit = {},
+    onJourneySelected: (
+        RouteOption,
+        AssistantDestinationCandidateDto,
+        PlanningOriginSnapshot
+    ) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -101,18 +107,18 @@ fun AskAiChatScreen(
     }
     var inputText by remember { mutableStateOf("") }
     var isThinking by remember { mutableStateOf(false) }
+    var selectedJourneyId by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size, isThinking) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
-    fun askAssistant(text: String, destinationId: String? = null) {
-        if (text.isBlank() || isThinking) return
-        val trimmed = text.trim()
+    fun submitAssistantTurn(visibleUserText: String, request: AssistantRequest) {
+        if (visibleUserText.isBlank() || isThinking) return
         messages = messages + AiChatMessage(
             id = System.currentTimeMillis(),
-            text = trimmed,
+            text = visibleUserText,
             isFromUser = true
         )
         inputText = ""
@@ -129,25 +135,36 @@ fun AskAiChatScreen(
             }
             val originLatitude = planningOrigin.latitude ?: deviceLocation?.latitude
             val originLongitude = planningOrigin.longitude ?: deviceLocation?.longitude
-
-            when (val result = aiRepository.ask(
-                AssistantRequest(
-                    message = trimmed,
+            val isDestinationSelection = request.selectedDestinationCandidateId != null ||
+                request.destinationSelectionToken != null
+            val effectiveRequest = if (isDestinationSelection) {
+                request
+            } else {
+                request.copy(
                     originLatitude = originLatitude,
-                    originLongitude = originLongitude,
-                    destinationId = destinationId
+                    originLongitude = originLongitude
                 )
-            )) {
+            }
+
+            when (val result = aiRepository.ask(effectiveRequest)) {
                 is ApiResult.Success -> {
                     val response = result.data
+                    val responseText = when (response.status.uppercase()) {
+                        "DESTINATION_SELECTION_EXPIRED" ->
+                            "Those destination choices expired. Please search again."
+                        "DESTINATION_SELECTION_INVALID" ->
+                            "That destination is no longer available. Please choose again."
+                        else -> response.message
+                    }
                     messages = messages + AiChatMessage(
                         id = System.currentTimeMillis() + 1,
-                        text = response.message,
+                        text = responseText,
                         isFromUser = false,
-                        requestText = trimmed,
                         journeys = response.journeys.orEmpty(),
                         destination = response.destination,
-                        destinationChoices = response.destinations.orEmpty()
+                        destinationChoices = response.destinations.orEmpty(),
+                        conversationId = response.conversationId ?: effectiveRequest.conversationId,
+                        destinationSelectionToken = response.destinationSelectionToken
                     )
                 }
 
@@ -161,6 +178,37 @@ fun AskAiChatScreen(
             }
             isThinking = false
         }
+    }
+
+    fun askAssistant(text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isBlank() || isThinking) return
+        submitAssistantTurn(
+            visibleUserText = trimmed,
+            request = AssistantRequest(message = trimmed)
+        )
+    }
+
+    fun selectDestination(message: AiChatMessage, place: AssistantDestinationCandidateDto) {
+        if (isThinking) return
+        val conversationId = message.conversationId
+        val selectionToken = message.destinationSelectionToken
+        if (conversationId.isNullOrBlank() || selectionToken.isNullOrBlank()) {
+            messages = messages + AiChatMessage(
+                id = System.currentTimeMillis(),
+                text = "This destination selection is no longer available. Please search again.",
+                isFromUser = false
+            )
+            return
+        }
+        submitAssistantTurn(
+            visibleUserText = place.name,
+            request = AssistantRequest(
+                conversationId = conversationId,
+                destinationSelectionToken = selectionToken,
+                selectedDestinationCandidateId = place.candidateId
+            )
+        )
     }
 
     Column(modifier = modifier.fillMaxSize().background(TukiCream)) {
@@ -210,15 +258,22 @@ fun AskAiChatScreen(
                 AiMessageBubble(
                     message = message,
                     onRouteSelected = { journey, destination ->
-                        PendingAiRouteSelection.save(
-                            destination.name,
-                            PlannedJourney(journey.journeyId, journey.plan.toDomain())
-                        )
-                        onDestinationConfirmed(destination.name)
+                        if (!isThinking && selectedJourneyId == null) {
+                            selectedJourneyId = journey.journeyId
+                            onJourneySelected(
+                                PlannedJourney(journey.journeyId, journey.plan.toDomain())
+                                    .toRouteOption(
+                                        origin = planningOrigin.name ?: "Current location",
+                                        destination = destination.name
+                                    ),
+                                destination,
+                                planningOrigin
+                            )
+                        }
                     },
-                    onDestinationSelected = { place ->
-                        askAssistant(message.requestText ?: place.name, place.id)
-                    }
+                    onDestinationSelected = { place -> selectDestination(message, place) },
+                    destinationsEnabled = !isThinking,
+                    routesEnabled = !isThinking && selectedJourneyId == null
                 )
                 Spacer(modifier = Modifier.height(12.dp))
             }
@@ -307,8 +362,10 @@ fun AskAiChatScreen(
 @Composable
 private fun AiMessageBubble(
     message: AiChatMessage,
-    onRouteSelected: (AssistantJourneyDto, DestinationSearchResultDto) -> Unit,
-    onDestinationSelected: (DestinationSearchResultDto) -> Unit
+    onRouteSelected: (AssistantJourneyDto, AssistantDestinationCandidateDto) -> Unit,
+    onDestinationSelected: (AssistantDestinationCandidateDto) -> Unit,
+    destinationsEnabled: Boolean,
+    routesEnabled: Boolean
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -338,6 +395,7 @@ private fun AiMessageBubble(
                 message.destinationChoices.forEach { place ->
                     DestinationChoiceCard(
                         place = place,
+                        enabled = destinationsEnabled,
                         onClick = { onDestinationSelected(place) }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -351,6 +409,7 @@ private fun AiMessageBubble(
                     AiRouteCard(
                         journey = journey,
                         fallbackAlternativeNumber = index + 1,
+                        enabled = routesEnabled,
                         onClick = { onRouteSelected(journey, destination) }
                     )
                     Spacer(modifier = Modifier.height(10.dp))
@@ -364,6 +423,7 @@ private fun AiMessageBubble(
 private fun AiRouteCard(
     journey: AssistantJourneyDto,
     fallbackAlternativeNumber: Int,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     val tags = journey.recommendationType
@@ -397,7 +457,7 @@ private fun AiRouteCard(
         modifier = Modifier
             .fillMaxWidth()
             .background(TukiChatBubble, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(16.dp)
     ) {
         Row(
@@ -451,14 +511,15 @@ private fun AiRouteCard(
 
 @Composable
 private fun DestinationChoiceCard(
-    place: DestinationSearchResultDto,
+    place: AssistantDestinationCandidateDto,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(TukiTeal, RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -163,6 +163,15 @@ public sealed class ChatService(
         return _conversationRepository.UpdateTitleAsync(conversationId, normalizedTitle, cancellationToken);
     }
 
+    public Task<bool> UpdatePlanningStateAsync(
+        Guid conversationId,
+        string? planningStateJson,
+        CancellationToken cancellationToken = default) =>
+        conversationId == Guid.Empty
+            ? Task.FromResult(false)
+            : _conversationRepository.UpdatePlanningStateAsync(
+                conversationId, planningStateJson, cancellationToken);
+
     private async Task<bool> TripSearchExistsAsync(Guid tripSearchId, CancellationToken cancellationToken)
     {
         var tripSearch = await _tripSearchRepository.GetByIdAsync(tripSearchId, cancellationToken);

@@ -32,7 +32,7 @@ public sealed class AIController(
                 userId,
                 sessionId,
                 new ActiveTripAssistantRequest(
-                    request.Message,
+                    request.Message ?? string.Empty,
                     request.DestinationId,
                     request.ConversationId,
                     request.OperationId),
