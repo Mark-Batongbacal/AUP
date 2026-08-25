@@ -545,55 +545,80 @@ public partial class RoutingService
                 routeId,
                 i,
                 (originLatitude, originLongitude));
-            var anchor = (fullAnchor.Latitude, fullAnchor.Longitude);
-
-            var directDistance =
-                ApproximateDistanceMeters(
-                    originLatitude,
-                    originLongitude,
-                    anchor.Latitude,
-                    anchor.Longitude);
-
-            var alternatives = new List<AccessCandidate>
-            {
-                WalkAccess(anchor, directDistance, i, fullAnchor)
-            };
-
-            // Trike points are candidates only. The geometric ranking here is
-            // deliberately cheap; the selected option is confirmed through
-            // real Valhalla walking + road routing later.
-            foreach (var candidate in trikeCandidates)
-            {
-                var walkToTrikeMeters =
-                    ApproximateDistanceMeters(
-                        originLatitude,
-                        originLongitude,
-                        candidate.Latitude,
-                        candidate.Longitude);
-
-                var rideDistance =
-                    ApproximateDistanceMeters(
-                        candidate.Latitude,
-                        candidate.Longitude,
-                        anchor.Latitude,
-                        anchor.Longitude);
-
-                var trikeOption =
-                    TrikeAccess(
-                        anchor,
-                        candidate,
-                        walkToTrikeMeters,
-                        rideDistance,
-                        i,
-                        fullAnchor);
-
-                alternatives.Add(trikeOption);
-            }
-
-            options[i] = WithAlternatives(alternatives);
+            options[i] = BuildBoardAccessOption(
+                fullAnchor,
+                i,
+                originLatitude,
+                originLongitude,
+                trikeCandidates);
         }
 
         return options;
+    }
+
+    private AccessCandidate[] ComputeSearchAnchorBoardAccessOptions(
+        string routeId,
+        double originLatitude,
+        double originLongitude)
+    {
+        var trikeCandidates = FindNearbyTrikePoints(
+            originLatitude,
+            originLongitude);
+
+        return _routeSearchAnchors[routeId]
+            .Select((anchor, sampleIndex) => BuildBoardAccessOption(
+                anchor,
+                sampleIndex,
+                originLatitude,
+                originLongitude,
+                trikeCandidates))
+            .ToArray();
+    }
+
+    private AccessCandidate BuildBoardAccessOption(
+        RouteAnchor fullAnchor,
+        int sampleIndex,
+        double originLatitude,
+        double originLongitude,
+        IReadOnlyList<TrikePoint> trikeCandidates)
+    {
+        var anchor = (fullAnchor.Latitude, fullAnchor.Longitude);
+        var directDistance = ApproximateDistanceMeters(
+            originLatitude,
+            originLongitude,
+            anchor.Latitude,
+            anchor.Longitude);
+        var alternatives = new List<AccessCandidate>
+        {
+            WalkAccess(anchor, directDistance, sampleIndex, fullAnchor)
+        };
+
+        // Trike points are candidates only. The geometric ranking here is
+        // deliberately cheap; the selected option is confirmed through real
+        // Valhalla walking + road routing later.
+        foreach (var candidate in trikeCandidates)
+        {
+            var walkToTrikeMeters = ApproximateDistanceMeters(
+                originLatitude,
+                originLongitude,
+                candidate.Latitude,
+                candidate.Longitude);
+            var rideDistance = ApproximateDistanceMeters(
+                candidate.Latitude,
+                candidate.Longitude,
+                anchor.Latitude,
+                anchor.Longitude);
+
+            alternatives.Add(TrikeAccess(
+                anchor,
+                candidate,
+                walkToTrikeMeters,
+                rideDistance,
+                sampleIndex,
+                fullAnchor));
+        }
+
+        return WithAlternatives(alternatives);
     }
 
     private AccessCandidate[] ComputeAlightAccessOptions(

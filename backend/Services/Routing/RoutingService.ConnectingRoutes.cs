@@ -5,6 +5,9 @@ namespace backend.Services.Routing;
 
 public partial class RoutingService
 {
+    private const double PhysicalBoardingRegionToleranceMeters = 120;
+    private const double RouteOccurrenceIdentityToleranceMeters = 1;
+
     public async Task<List<JeepneyTripOption>> FindConnectingRoutesAsync(
         double originLatitude,
         double originLongitude,
@@ -168,6 +171,34 @@ public partial class RoutingService
             .Where(candidate => candidate is not null)
             .Select(candidate => candidate!)
             .ToList();
+
+        // A search sample identifies a viable route occurrence, while the
+        // local projection refines the physical board within that region.
+        // On a tight retrace the previous-to-next search window can overlap a
+        // later pass and project completely out of the sample's physical
+        // region. Keep the authoritative on-route sample anchor in that case
+        // so real access confirmation, rather than the overlapping geometric
+        // projection, decides whether the region is useful.
+        var searchAnchorBoardOptions = ComputeSearchAnchorBoardAccessOptions(
+            route.RouteId,
+            originLatitude,
+            originLongitude);
+        for (var index = 0; index < searchAnchorBoardOptions.Length; index++)
+        {
+            if (ApproximateDistanceMeters(
+                    boardAccessOptions[index].Anchor.Latitude,
+                    boardAccessOptions[index].Anchor.Longitude,
+                    searchAnchorBoardOptions[index].Anchor.Latitude,
+                    searchAnchorBoardOptions[index].Anchor.Longitude) <=
+                PhysicalBoardingRegionToleranceMeters)
+            {
+                continue;
+            }
+
+            AddUniqueAccessCandidate(
+                boardCandidates,
+                ConstrainTransitAccess(searchAnchorBoardOptions[index]));
+        }
 
         var exactBoard = BuildExactFullRouteBoardAccess(
             route.RouteId,
@@ -343,7 +374,11 @@ public partial class RoutingService
         if (selected.Count < MaxBoardingVariantsPerRoute)
         {
             var bucketSize = Math.Max(1, _options.BoardingDiversityBucketMeters);
-            var bucketRepresentatives = distinct
+            var physicalRepresentatives = SelectPhysicalBoardingRepresentatives(
+                distinct);
+            var bucketRepresentatives = physicalRepresentatives
+                .Where(candidate => !selected.Any(existing =>
+                    IsSamePhysicalBoardingRegion(existing, candidate)))
                 .GroupBy(candidate =>
                     (long)Math.Floor(GetBoardProgressMeters(candidate) / bucketSize))
                 .OrderBy(group => group.Key)
@@ -360,9 +395,66 @@ public partial class RoutingService
                 if (selected.Count >= MaxBoardingVariantsPerRoute)
                     break;
             }
+
+            // Once every available physical region has had a chance to
+            // contribute, use remaining capacity for distinct route
+            // occurrences, including retraced occurrences at a coordinate
+            // already represented above. Occurrence identity remains intact,
+            // but it cannot crowd a not-yet-represented physical region out
+            // of the diversity pass.
+            if (selected.Count < MaxBoardingVariantsPerRoute)
+            {
+                foreach (var candidate in distinct
+                             .Where(candidate => !selected.Any(existing =>
+                                 PositionKey(existing) == PositionKey(candidate)))
+                             .OrderByDescending(candidate =>
+                                 selected.Min(existing => Math.Abs(
+                                     GetBoardProgressMeters(candidate) -
+                                     GetBoardProgressMeters(existing))))
+                             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos))
+                {
+                    Add(candidate);
+                    if (selected.Count >= MaxBoardingVariantsPerRoute)
+                        break;
+                }
+            }
         }
 
         return selected;
+    }
+
+    private static bool IsSamePhysicalBoardingRegion(
+        RouteConnectionCandidate left,
+        RouteConnectionCandidate right) =>
+        ApproximateDistanceMeters(
+            left.BoardAccess.Anchor.Latitude,
+            left.BoardAccess.Anchor.Longitude,
+            right.BoardAccess.Anchor.Latitude,
+            right.BoardAccess.Anchor.Longitude) <=
+        PhysicalBoardingRegionToleranceMeters;
+
+    internal List<RouteConnectionCandidate>
+        SelectPhysicalBoardingRepresentatives(
+            IReadOnlyList<RouteConnectionCandidate> candidates)
+    {
+        var regions = new List<List<RouteConnectionCandidate>>();
+
+        foreach (var candidate in candidates
+                     .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
+                     .ThenBy(GetBoardProgressMeters))
+        {
+            var region = regions.FirstOrDefault(existing =>
+                IsSamePhysicalBoardingRegion(existing[0], candidate));
+
+            if (region is null)
+                regions.Add([candidate]);
+            else
+                region.Add(candidate);
+        }
+
+        return regions
+            .Select(region => region[0])
+            .ToList();
     }
 
     /// <summary>
@@ -438,7 +530,8 @@ public partial class RoutingService
         left is null || right is null ||
         Math.Abs(
             left.DistanceFromRouteStartMeters -
-            right.DistanceFromRouteStartMeters) <= 1.0;
+            right.DistanceFromRouteStartMeters) <=
+        RouteOccurrenceIdentityToleranceMeters;
 
     private double EstimateConnectionTimeSeconds(RouteConnectionCandidate candidate) =>
         candidate.BoardAccess.TotalTimeSeconds +

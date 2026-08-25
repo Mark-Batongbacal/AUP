@@ -518,7 +518,7 @@ public partial class RoutingService
         double Longitude,
         double DistanceFromRouteStartMeters);
 
-    private sealed record RouteConnectionCandidate(
+    internal sealed record RouteConnectionCandidate(
         string RouteId,
         string RouteName,
         AccessCandidate BoardAccess,

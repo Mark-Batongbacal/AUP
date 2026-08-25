@@ -44,7 +44,8 @@ public partial class RoutingService
             candidates,
             "origin feeder shadowing",
             TryMeasureTransitReplacedBeforeBoarding,
-            ConfirmedOriginAccessDistanceMeters);
+            ConfirmedOriginAccessDistanceMeters,
+            HasNoConfirmedOriginAccessDistanceAdvantage);
 
     /// <summary>
     /// DESTINATION side: the mirror question -- "did the passenger abandon
@@ -112,15 +113,17 @@ public partial class RoutingService
     /// would call identical whenever a progress value happened to land on
     /// the far side of a bucket edge, and those journeys then never met.
     ///
-    /// The candidate with the smallest feeder distance can never be rejected
-    /// (rejection requires strictly more feeder distance than its
-    /// reference), so a stage can never empty the candidate set.
+    /// A minimum-distance candidate at the earliest comparable progress can
+    /// never be rejected by a later reference, so a stage cannot empty the
+    /// candidate set.
     /// </summary>
     private List<ConfirmedJourneyCandidate> PruneShadowedCandidates(
         List<ConfirmedJourneyCandidate> candidates,
         string reason,
         TransitReplacementMeasure measure,
-        Func<ConfirmedJourneyCandidate, double> getFeederDistanceMeters)
+        Func<ConfirmedJourneyCandidate, double> getFeederDistanceMeters,
+        Func<ConfirmedJourneyCandidate, ConfirmedJourneyCandidate, bool>?
+            confirmedAccessDoesNotImprove = null)
     {
         if (candidates.Count <= 1)
             return candidates;
@@ -141,7 +144,12 @@ public partial class RoutingService
                     continue;
 
                 var extraFeeder = candidateFeeder - getFeederDistanceMeters(reference);
-                if (!IsFeederReplacingTransit(replacedTransit, extraFeeder))
+                var stronglyReplacesTransit =
+                    IsFeederReplacingTransit(replacedTransit, extraFeeder);
+                var losesAtTheAccessBoundary =
+                    replacedTransit > RouteOccurrenceIdentityToleranceMeters &&
+                    confirmedAccessDoesNotImprove?.Invoke(candidate, reference) == true;
+                if (!stronglyReplacesTransit && !losesAtTheAccessBoundary)
                     continue;
 
                 LogFeederShadowRejection(
@@ -159,6 +167,34 @@ public partial class RoutingService
         }
 
         return kept;
+    }
+
+    /// <summary>
+    /// A later, physically different boarding region has no feeder-mode
+    /// justification when its confirmed network access distance is no better
+    /// than an earlier confirmed region on the same useful transit journey. The
+    /// physical-region check deliberately excludes identical-coordinate
+    /// retraced occurrences: those remain distinct transit choices even when
+    /// their access edges happen to be identical.
+    /// </summary>
+    private static bool HasNoConfirmedOriginAccessDistanceAdvantage(
+        ConfirmedJourneyCandidate candidate,
+        ConfirmedJourneyCandidate reference)
+    {
+        var candidateBoard = candidate.Candidate.Legs[0].Board;
+        var referenceBoard = reference.Candidate.Legs[0].Board;
+        if (ApproximateDistanceMeters(
+                candidateBoard.Latitude,
+                candidateBoard.Longitude,
+                referenceBoard.Latitude,
+                referenceBoard.Longitude) <=
+            PhysicalBoardingRegionToleranceMeters)
+        {
+            return false;
+        }
+
+        return ConfirmedOriginAccessDistanceMeters(candidate) >=
+               ConfirmedOriginAccessDistanceMeters(reference);
     }
 
     /// <summary>
