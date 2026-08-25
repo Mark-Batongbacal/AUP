@@ -37,8 +37,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantResponseDto
+import com.example.frontend.data.navigation.NavigationSnapshotDto
+import com.example.frontend.data.places.DestinationSearchResultDto
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val NavigationAiSurface = com.example.frontend.ui.theme.TukiCream
 private val NavigationAiDark = com.example.frontend.ui.theme.TukiInk
@@ -50,7 +54,11 @@ private val NavigationAiBubble = com.example.frontend.ui.theme.TukiSurfaceRaised
 private data class NavigationAiMessage(
     val id: Long,
     val text: String,
-    val fromUser: Boolean
+    val fromUser: Boolean,
+    val requestText: String? = null,
+    val journeys: List<AssistantJourneyDto> = emptyList(),
+    val destinationChoices: List<DestinationSearchResultDto> = emptyList(),
+    val destination: DestinationSearchResultDto? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,33 +66,38 @@ private data class NavigationAiMessage(
 fun NavigationAiSheet(
     language: String = com.example.frontend.core.localization.AppLanguagePreference.current(),
     onDismiss: () -> Unit,
-    ask: suspend (String) -> ApiResult<AssistantResponseDto>
+    ask: suspend (String, String?) -> ApiResult<AssistantResponseDto>,
+    confirmReplan: suspend (String) -> ApiResult<NavigationSnapshotDto>,
+    onReplanApplied: (NavigationSnapshotDto) -> Unit = {}
 ) {
     val filipino = language.equals("Filipino", ignoreCase = true)
     val quickPrompts = if (filipino) {
         listOf(
             "Tama pa ba yung route natin?",
             "Saan ako bababa?",
-            "Ano yung next instruction?",
-            "Lumagpas ba ako sa babaan?"
+            "₱30 na lang pera ko",
+            "Ayoko mag-trike",
+            "Pagod na ako, less walking sana"
         )
     } else {
         listOf(
             "Am I still on the right route?",
             "Where do I get off?",
-            "What's my next instruction?",
-            "Did I miss my stop?"
+            "I only have ₱30 left",
+            "I don't want to take a tricycle",
+            "I'm tired, less walking please"
         )
     }
     val intro = if (filipino) {
-        "Magtanong ka lang tungkol sa active trip natin. Gagamitin ko yung current navigation state natin, hindi ako manghuhula."
+        "Magtanong ka lang tungkol sa active trip natin. Kung may gusto kang baguhin, ipapakita ko muna yung bagong route bago natin palitan yung current trip."
     } else {
-        "Ask me anything about your active trip. I’ll use the current navigation state instead of guessing."
+        "Ask me anything about this active trip. If you want to change something, I’ll show the replacement route first before changing the current trip."
     }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var input by remember { mutableStateOf("") }
     var thinking by remember { mutableStateOf(false) }
+    var applyingRecommendationId by remember { mutableStateOf<String?>(null) }
     var messages by remember(language) {
         mutableStateOf(
             listOf(
@@ -97,27 +110,32 @@ fun NavigationAiSheet(
         )
     }
 
-    LaunchedEffect(messages.size, thinking) {
+    LaunchedEffect(messages.size, thinking, applyingRecommendationId) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
-    fun send(text: String) {
+    fun send(text: String, destinationId: String? = null) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || thinking) return
+        if (trimmed.isEmpty() || thinking || applyingRecommendationId != null) return
         messages = messages + NavigationAiMessage(
             id = System.currentTimeMillis(),
-            text = trimmed,
+            text = if (destinationId == null) trimmed else trimmed,
             fromUser = true
         )
         input = ""
         thinking = true
         scope.launch {
-            when (val result = ask(trimmed)) {
+            when (val result = ask(trimmed, destinationId)) {
                 is ApiResult.Success -> {
+                    val response = result.data
                     messages = messages + NavigationAiMessage(
                         id = System.currentTimeMillis() + 1,
-                        text = result.data.message,
-                        fromUser = false
+                        text = response.message,
+                        fromUser = false,
+                        requestText = trimmed,
+                        journeys = response.journeys.orEmpty(),
+                        destinationChoices = response.destinations.orEmpty(),
+                        destination = response.destination
                     )
                 }
                 is ApiResult.Failure -> {
@@ -129,6 +147,35 @@ fun NavigationAiSheet(
                 }
             }
             thinking = false
+        }
+    }
+
+    fun applyReplan(journey: AssistantJourneyDto) {
+        if (thinking || applyingRecommendationId != null) return
+        applyingRecommendationId = journey.journeyId
+        scope.launch {
+            when (val result = confirmReplan(journey.journeyId)) {
+                is ApiResult.Success -> {
+                    onReplanApplied(result.data)
+                    messages = messages + NavigationAiMessage(
+                        id = System.currentTimeMillis() + 2,
+                        text = if (filipino) {
+                            "Okay, applied na yung pinili mong route. Yung bagong navigation state na ang susundan natin."
+                        } else {
+                            "Done. I applied the route you selected, and navigation is now following the updated trip."
+                        },
+                        fromUser = false
+                    )
+                }
+                is ApiResult.Failure -> {
+                    messages = messages + NavigationAiMessage(
+                        id = System.currentTimeMillis() + 2,
+                        text = result.message,
+                        fromUser = false
+                    )
+                }
+            }
+            applyingRecommendationId = null
         }
     }
 
@@ -155,7 +202,7 @@ fun NavigationAiSheet(
                 Column {
                     Text("Ask TUKI", color = NavigationAiDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                     Text(
-                        if (filipino) "Mga tanong tungkol sa active trip natin" else "Questions about this active trip",
+                        if (filipino) "Tanong at fine-tuning para sa active trip" else "Questions and fine-tuning for this active trip",
                         color = NavigationAiMuted,
                         fontSize = 12.sp
                     )
@@ -166,29 +213,63 @@ fun NavigationAiSheet(
 
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().height(300.dp),
+                modifier = Modifier.fillMaxWidth().height(360.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 items(messages, key = { it.id }) { message ->
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = if (message.fromUser) Alignment.End else Alignment.Start
                     ) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth(0.88f)
-                                .background(
-                                    if (message.fromUser) NavigationAiOrange else NavigationAiBubble,
-                                    RoundedCornerShape(16.dp)
-                                )
-                                .padding(horizontal = 13.dp, vertical = 10.dp)
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
                         ) {
-                            Text(
-                                message.text,
-                                color = if (message.fromUser) Color.White else NavigationAiDark,
-                                fontSize = 13.sp,
-                                lineHeight = 18.sp
-                            )
+                            Box(
+                                Modifier
+                                    .fillMaxWidth(0.88f)
+                                    .background(
+                                        if (message.fromUser) NavigationAiOrange else NavigationAiBubble,
+                                        RoundedCornerShape(16.dp)
+                                    )
+                                    .padding(horizontal = 13.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    message.text,
+                                    color = if (message.fromUser) Color.White else NavigationAiDark,
+                                    fontSize = 13.sp,
+                                    lineHeight = 18.sp
+                                )
+                            }
+                        }
+
+                        if (!message.fromUser && message.destinationChoices.isNotEmpty()) {
+                            Spacer(Modifier.height(7.dp))
+                            message.destinationChoices.forEach { place ->
+                                NavigationDestinationChoiceCard(
+                                    place = place,
+                                    enabled = !thinking && applyingRecommendationId == null,
+                                    onClick = {
+                                        send(message.requestText ?: place.name, place.id)
+                                    }
+                                )
+                                Spacer(Modifier.height(7.dp))
+                            }
+                        }
+
+                        if (!message.fromUser && message.journeys.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            message.journeys.forEachIndexed { index, journey ->
+                                NavigationReplanCard(
+                                    journey = journey,
+                                    alternativeNumber = index + 1,
+                                    applying = applyingRecommendationId == journey.journeyId,
+                                    enabled = !thinking &&
+                                        (applyingRecommendationId == null || applyingRecommendationId == journey.journeyId),
+                                    onApply = { applyReplan(journey) }
+                                )
+                                Spacer(Modifier.height(8.dp))
+                            }
                         }
                     }
                 }
@@ -216,7 +297,7 @@ fun NavigationAiSheet(
                             Modifier
                                 .fillMaxWidth()
                                 .background(NavigationAiTeal.copy(alpha = 0.09f), RoundedCornerShape(14.dp))
-                                .clickable(enabled = !thinking) { send(prompt) }
+                                .clickable(enabled = !thinking && applyingRecommendationId == null) { send(prompt) }
                                 .padding(horizontal = 12.dp, vertical = 9.dp)
                         ) {
                             Text(prompt, color = NavigationAiDark, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -228,9 +309,9 @@ fun NavigationAiSheet(
             Spacer(Modifier.height(12.dp))
             Text(
                 if (filipino) {
-                    "May babaguhin sa route? Gamitin yung Trip options para malinaw na ipa-recalculate kay TUKI sa backend."
+                    "Hindi awtomatikong papalitan ni TUKI ang active route. Kapag meaningful yung pagbabago, pipili ka muna ng exact route proposal."
                 } else {
-                    "Need to change the route? Use Trip options so TUKI can explicitly recalculate it on the backend."
+                    "TUKI will not silently replace your active route. For meaningful changes, you choose the exact route proposal first."
                 },
                 color = NavigationAiMuted,
                 fontSize = 11.sp,
@@ -244,9 +325,10 @@ fun NavigationAiSheet(
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
+                    enabled = !thinking && applyingRecommendationId == null,
                     placeholder = {
                         Text(
-                            if (filipino) "Magtanong tungkol sa trip…" else "Ask about your trip…",
+                            if (filipino) "Magtanong o mag-fine-tune…" else "Ask or fine-tune the trip…",
                             color = NavigationAiMuted,
                             fontSize = 13.sp
                         )
@@ -266,14 +348,117 @@ fun NavigationAiSheet(
                     Modifier
                         .size(44.dp)
                         .background(
-                            if (input.isNotBlank() && !thinking) NavigationAiOrange else NavigationAiOrange.copy(alpha = 0.4f),
+                            if (input.isNotBlank() && !thinking && applyingRecommendationId == null) {
+                                NavigationAiOrange
+                            } else {
+                                NavigationAiOrange.copy(alpha = 0.4f)
+                            },
                             CircleShape
                         )
-                        .clickable(enabled = input.isNotBlank() && !thinking) { send(input) },
+                        .clickable(
+                            enabled = input.isNotBlank() && !thinking && applyingRecommendationId == null
+                        ) { send(input) },
                     contentAlignment = Alignment.Center
                 ) {
                     Text("➤", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavigationDestinationChoiceCard(
+    place: DestinationSearchResultDto,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth(0.92f)
+            .background(NavigationAiTeal, RoundedCornerShape(14.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("📍", fontSize = 16.sp)
+        Spacer(Modifier.width(9.dp))
+        Column(Modifier.weight(1f)) {
+            Text(place.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            place.address?.takeIf { it.isNotBlank() }?.let {
+                Text(it, color = Color.White.copy(alpha = 0.75f), fontSize = 10.sp)
+            }
+        }
+        Text("Select", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun NavigationReplanCard(
+    journey: AssistantJourneyDto,
+    alternativeNumber: Int,
+    applying: Boolean,
+    enabled: Boolean,
+    onApply: () -> Unit
+) {
+    val tags = journey.recommendationType
+        .split(',')
+        .map { it.trim().lowercase() }
+        .filter { it.isNotBlank() }
+    val label = buildList {
+        if ("efficient" in tags) add("Balanced")
+        if ("cheapest" in tags) add("Cheapest")
+        if ("fastest" in tags) add("Fastest")
+    }.joinToString(" · ").ifBlank { "Alternative $alternativeNumber" }
+    val modes = journey.legs.joinToString(" → ") { leg ->
+        when (leg.mode.uppercase()) {
+            "TRIKE", "TRICYCLE" -> "Tricycle"
+            "WALK" -> "Walk"
+            "JEEPNEY" -> leg.routeName?.takeIf { it.isNotBlank() } ?: "Jeepney"
+            else -> leg.routeName?.takeIf { it.isNotBlank() } ?: leg.mode
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth(0.94f)
+            .background(NavigationAiDark, RoundedCornerShape(17.dp))
+            .padding(14.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(label, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+            Text("₱${journey.farePesos.roundToInt()}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(
+            "~${(journey.durationSeconds / 60).roundToInt()} min  •  ${journey.walkingMeters.roundToInt()}m walk",
+            color = Color.White.copy(alpha = 0.78f),
+            fontSize = 11.sp
+        )
+        if (modes.isNotBlank()) {
+            Spacer(Modifier.height(5.dp))
+            Text(modes, color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .background(
+                    if (enabled) NavigationAiOrange else NavigationAiMuted.copy(alpha = 0.45f),
+                    RoundedCornerShape(12.dp)
+                )
+                .clickable(enabled = enabled && !applying, onClick = onApply)
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (applying) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(15.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(7.dp))
+                    Text("Applying…", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Text("Apply this route", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
