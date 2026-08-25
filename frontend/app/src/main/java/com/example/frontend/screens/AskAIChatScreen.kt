@@ -86,6 +86,7 @@ fun AskAiChatScreen(
     val aiRepository = remember(context.applicationContext) {
         TukiDataProvider(context.applicationContext).aiRepository
     }
+    val planningOrigin = remember { PlanningOriginContext.snapshot() }
 
     var messages by remember {
         mutableStateOf(
@@ -118,16 +119,22 @@ fun AskAiChatScreen(
         isThinking = true
 
         scope.launch {
-            // Location is useful planning context, but it is not required just to
-            // converse with TUKI. The backend returns ORIGIN_REQUIRED only when a
-            // real route calculation actually needs an origin.
-            val location = context.currentDeviceLocation()
+            // HomeScreen is the source of truth for planning origin. It already
+            // represents either GPS or the passenger's explicit fallback pick.
+            // Only query device GPS here when Home did not have a usable origin.
+            val deviceLocation = if (planningOrigin.hasCoordinates) {
+                null
+            } else {
+                context.currentDeviceLocation()
+            }
+            val originLatitude = planningOrigin.latitude ?: deviceLocation?.latitude
+            val originLongitude = planningOrigin.longitude ?: deviceLocation?.longitude
 
             when (val result = aiRepository.ask(
                 AssistantRequest(
                     message = trimmed,
-                    originLatitude = location?.latitude,
-                    originLongitude = location?.longitude,
+                    originLatitude = originLatitude,
+                    originLongitude = originLongitude,
                     destinationId = destinationId
                 )
             )) {
