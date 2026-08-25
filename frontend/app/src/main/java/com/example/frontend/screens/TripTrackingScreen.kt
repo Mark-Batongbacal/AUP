@@ -123,6 +123,10 @@ fun TripTrackingScreen(
     val serverRerouted = snapshot?.status.equals("REROUTE_SUCCEEDED", true)
     val effectiveRerouted = hasRerouted || serverRerouted
 
+    LaunchedEffect(snapshot?.sessionId, serverRerouted) {
+        if (serverRerouted) hasRerouted = true
+    }
+
     LaunchedEffect(snapshot?.sessionId) {
         navigationLanguage = options.refreshPreferredLanguage()
     }
@@ -166,6 +170,10 @@ fun TripTrackingScreen(
             when (val result = request()) {
                 is ApiResult.Success -> {
                     hasRerouted = true
+                    // Do not let progress from the previous route survive while the replacement
+                    // geometry is loading. Until then the reroute snapshot's server distance wins.
+                    stableLegRoute = emptyList()
+                    stableLegRouteKey = null
                     optionSnapshot = result.data
                     destinationUpdate?.let {
                         activeDestinationName = it.name
@@ -199,7 +207,7 @@ fun TripTrackingScreen(
 
     val baseRoute = stableLegRoute
         .takeIf { stableLegRouteKey == geometryKey && it.size >= 2 }
-        ?: routePoints
+        ?: if (effectiveRerouted) emptyList() else routePoints
     val routeCoordinates = remember(baseRoute) {
         baseRoute.map { RouteCoordinate(it.latitude, it.longitude) }
     }
@@ -213,6 +221,10 @@ fun TripTrackingScreen(
         snapshot?.currentLegInstructions,
         snapshot?.currentLegLandmarks
     ) {
+        // produceState retains its previous value while keyed work restarts. Clear it explicitly so
+        // an old route cannot temporarily (or, on an empty replacement route, indefinitely)
+        // override the new reroute snapshot's remaining distance.
+        value = null
         val location = liveDeviceLocation ?: return@produceState
         value = localEngine.update(
             raw = RouteCoordinate(location.latitude, location.longitude),
@@ -931,13 +943,15 @@ private fun SummaryRow(label: String, value: String) {
 private fun navigationGeometryKey(snapshot: NavigationSnapshotDto): String? {
     val leg = snapshot.currentLeg ?: return null
     return listOf(
+        snapshot.sessionId,
         leg.legIndex.toString(),
         leg.routeId?.toString().orEmpty(),
         leg.transportMode.uppercase(),
         leg.startLatitude?.toString().orEmpty(),
         leg.startLongitude?.toString().orEmpty(),
         leg.endLatitude?.toString().orEmpty(),
-        leg.endLongitude?.toString().orEmpty()
+        leg.endLongitude?.toString().orEmpty(),
+        snapshot.status.uppercase()
     ).joinToString(":")
 }
 
