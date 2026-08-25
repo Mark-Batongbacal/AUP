@@ -40,6 +40,11 @@ public interface IChatService
         Guid conversationId,
         string? title,
         CancellationToken cancellationToken = default);
+
+    Task<bool> UpdatePlanningStateAsync(
+        Guid conversationId,
+        string? planningStateJson,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record ConversationDetailsDto(

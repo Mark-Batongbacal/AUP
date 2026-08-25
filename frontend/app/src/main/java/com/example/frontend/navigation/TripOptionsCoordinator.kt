@@ -7,7 +7,7 @@ import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
-import com.example.frontend.data.ai.AssistantRequest
+import com.example.frontend.data.ai.ActiveTripAssistantRequest
 import com.example.frontend.data.ai.AssistantResponseDto
 import com.example.frontend.data.navigation.NavigationGeometryResponseDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
@@ -36,6 +36,7 @@ class TripOptionsCoordinator(context: Context) {
     private val routing = provider.routingRepository
     private val users = provider.userRepository
     private val ai = provider.aiRepository
+    private val navigationAssistantConversations = mutableMapOf<String, String>()
 
     suspend fun refreshPreferredLanguage(): String =
         when (val result = users.getCurrentUser()) {
@@ -82,25 +83,33 @@ class TripOptionsCoordinator(context: Context) {
     suspend fun askNavigationAssistant(
         sessionId: String,
         message: String,
-        latitude: Double?,
-        longitude: Double?
+        destinationId: String? = null
     ): ApiResult<AssistantResponseDto> {
-        var originLatitude = latitude
-        var originLongitude = longitude
-        if (originLatitude == null || originLongitude == null) {
-            val location = appContext.currentDeviceLocation()
-                ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
-            originLatitude = location.latitude
-            originLongitude = location.longitude
-        }
-        return ai.ask(
-            AssistantRequest(
+        val result = ai.askTrip(
+            sessionId,
+            ActiveTripAssistantRequest(
                 message = message,
-                originLatitude = originLatitude,
-                originLongitude = originLongitude,
-                tripSessionId = sessionId
+                destinationId = destinationId,
+                conversationId = navigationAssistantConversations[sessionId]
             )
         )
+        if (result is ApiResult.Success) {
+            result.data.conversationId?.let { navigationAssistantConversations[sessionId] = it }
+        }
+        return result
+    }
+
+    suspend fun confirmAssistantReplan(
+        sessionId: String,
+        recommendationId: String
+    ): ApiResult<NavigationSnapshotDto> {
+        return when (val confirmation = ai.confirmTripReplan(sessionId, recommendationId)) {
+            is ApiResult.Failure -> confirmation
+            is ApiResult.Success -> {
+                NavigationSyncSignal.requestImmediateSync(samples = 1)
+                navigation.getActiveNavigation()
+            }
+        }
     }
 
     suspend fun refreshActiveNavigation(): ApiResult<NavigationSnapshotDto> =

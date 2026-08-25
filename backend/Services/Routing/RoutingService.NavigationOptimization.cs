@@ -12,7 +12,8 @@ public partial class RoutingService
     /// useful route out before Valhalla confirmation.
     /// </summary>
     internal List<JourneyCandidate> SelectCandidatesToConfirmWithDiversity(
-        List<JourneyCandidate> candidates)
+        List<JourneyCandidate> candidates,
+        JourneyPlanningPreferences? preferences = null)
     {
         if (candidates.Count <= MaxCandidatesToConfirm)
             return candidates;
@@ -32,7 +33,7 @@ public partial class RoutingService
         // objective slice for bounded origin/destination mode + TODA
         // fallbacks. The total confirmation budget is unchanged.
         AddDiverse(physicalDiversityQuota, GetBoardingDiversityKey);
-        Add(candidates.OrderBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
+        Add(OrderByPlanningPreference(candidates, preferences), objectiveQuota);
         Add(candidates.OrderBy(EstimateCandidateFarePesos)
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos), objectiveQuota);
         Add(candidates.OrderBy(EstimateCandidateTimeSeconds)
@@ -42,7 +43,7 @@ public partial class RoutingService
         if (selected.Count < MaxCandidatesToConfirm)
         {
             Add(
-                candidates.OrderBy(candidate => candidate.TotalGeneralizedCostPesos),
+                OrderByPlanningPreference(candidates, preferences),
                 MaxCandidatesToConfirm - selected.Count);
         }
 
@@ -75,8 +76,7 @@ public partial class RoutingService
         {
             var buckets = candidates
                 .GroupBy(diversityKey, StringComparer.Ordinal)
-                .Select(group => new Queue<JourneyCandidate>(group
-                    .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
+                .Select(group => new Queue<JourneyCandidate>(OrderByPlanningPreference(group, preferences)
                     .ThenBy(EstimateCandidateTimeSeconds)
                     .ThenBy(GetJourneyCandidateKey, StringComparer.Ordinal)))
                 .OrderBy(queue => queue.Peek().TotalGeneralizedCostPesos)
@@ -171,6 +171,26 @@ public partial class RoutingService
                 }
             }
         }
+    }
+
+    private IOrderedEnumerable<JourneyCandidate> OrderByPlanningPreference(
+        IEnumerable<JourneyCandidate> candidates,
+        JourneyPlanningPreferences? preferences)
+    {
+        // Preserve the pre-preference stable ordering exactly for ordinary
+        // requests and hard-constraint-only requests. Adding even a harmless
+        // deterministic key here can change which equal-cost candidate uses a
+        // bounded confirmation slot.
+        if (!HasSoftPlanningPreference(preferences))
+        {
+            return candidates.OrderBy(candidate =>
+                candidate.TotalGeneralizedCostPesos);
+        }
+
+        return candidates
+            .OrderBy(candidate => PlanningCandidateScore(candidate, preferences))
+            .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
+            .ThenBy(GetJourneyCandidateKey, StringComparer.Ordinal);
     }
 
     private string GetBoardingDiversityKey(JourneyCandidate candidate)

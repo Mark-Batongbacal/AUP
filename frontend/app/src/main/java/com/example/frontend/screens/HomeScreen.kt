@@ -401,7 +401,16 @@ fun HomeScreen(
 
                 Spacer(Modifier.height(12.dp))
 
-                AskTukiAiCard(onClick = onAskAiClick)
+                AskTukiAiCard(
+                    onClick = {
+                        PlanningOriginContext.update(
+                            currentLocationLabel.routeOriginLabel(),
+                            originLatitude,
+                            originLongitude
+                        )
+                        onAskAiClick()
+                    }
+                )
             }
 
             BottomBar(
