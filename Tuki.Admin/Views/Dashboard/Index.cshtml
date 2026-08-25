@@ -1,0 +1,28 @@
+@model Tuki.Admin.ViewModels.DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">ADMIN DASHBOARD</p>
+        <h1>Transport data control center</h1>
+        <p>Signed in as <strong>@Model.AdminUserName</strong>.</p>
+    </div>
+</section>
+
+<div class="dashboard-grid">
+    <article class="dashboard-card">
+        <span class="card-kicker">NEXT MODULE</span>
+        <h2>Tricycle point submissions</h2>
+        <p>Review user-submitted locations and proof before publishing them to TUKI.</p>
+        <span class="status-pill">Not implemented yet</span>
+    </article>
+
+    <article class="dashboard-card">
+        <span class="card-kicker">DATA MANAGEMENT</span>
+        <h2>Official tricycle points</h2>
+        <p>Approved points will eventually be managed from this portal without changing the passenger app.</p>
+        <span class="status-pill">Not implemented yet</span>
+    </article>
+</div>
