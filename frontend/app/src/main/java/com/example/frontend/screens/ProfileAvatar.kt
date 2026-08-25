@@ -73,7 +73,7 @@ private suspend fun loadProfileBitmap(url: String): Bitmap? = withContext(Dispat
             connection.connectTimeout = 8_000
             connection.readTimeout = 8_000
             connection.instanceFollowRedirects = true
-            connection.inputStream.use(BitmapFactory::decodeStream)
+            connection.inputStream.use { input -> BitmapFactory.decodeStream(input) }
         } finally {
             connection.disconnect()
         }
