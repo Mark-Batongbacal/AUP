@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
+import com.example.frontend.data.ai.ActiveTripAssistantRequest
 import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantResponseDto
 import com.example.frontend.data.navigation.NavigationSnapshotDto
@@ -62,7 +63,8 @@ private data class NavigationAiMessage(
     val journeys: List<AssistantJourneyDto> = emptyList(),
     val destinationChoices: List<DestinationSearchResultDto> = emptyList(),
     val destination: DestinationSearchResultDto? = null,
-    val tripSessionId: String? = null
+    val tripSessionId: String? = null,
+    val conversationId: String? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -122,6 +124,20 @@ fun NavigationAiSheet(
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
+    fun appendAssistantResponse(response: AssistantResponseDto, requestText: String) {
+        messages = messages + NavigationAiMessage(
+            id = System.currentTimeMillis() + 1,
+            text = response.message,
+            fromUser = false,
+            requestText = requestText,
+            journeys = response.journeys.orEmpty(),
+            destinationChoices = response.destinations.orEmpty(),
+            destination = response.destination,
+            tripSessionId = response.action?.tripSessionId ?: response.navigation?.tripSessionId,
+            conversationId = response.conversationId
+        )
+    }
+
     fun send(text: String, destinationId: String? = null) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || thinking || applyingRecommendationId != null) return
@@ -134,19 +150,44 @@ fun NavigationAiSheet(
         thinking = true
         scope.launch {
             when (val result = ask(trimmed, destinationId)) {
-                is ApiResult.Success -> {
-                    val response = result.data
+                is ApiResult.Success -> appendAssistantResponse(result.data, trimmed)
+                is ApiResult.Failure -> {
                     messages = messages + NavigationAiMessage(
                         id = System.currentTimeMillis() + 1,
-                        text = response.message,
-                        fromUser = false,
-                        requestText = trimmed,
-                        journeys = response.journeys.orEmpty(),
-                        destinationChoices = response.destinations.orEmpty(),
-                        destination = response.destination,
-                        tripSessionId = response.action?.tripSessionId
+                        text = result.message,
+                        fromUser = false
                     )
                 }
+            }
+            thinking = false
+        }
+    }
+
+    fun selectDestination(message: NavigationAiMessage, place: DestinationSearchResultDto) {
+        val requestText = message.requestText ?: place.name
+        val sessionId = message.tripSessionId
+        if (sessionId == null) {
+            send(requestText, place.id)
+            return
+        }
+        if (thinking || applyingRecommendationId != null) return
+
+        messages = messages + NavigationAiMessage(
+            id = System.currentTimeMillis(),
+            text = place.name,
+            fromUser = true
+        )
+        thinking = true
+        scope.launch {
+            when (val result = provider.aiRepository.askTrip(
+                sessionId,
+                ActiveTripAssistantRequest(
+                    message = requestText,
+                    destinationId = place.id,
+                    conversationId = message.conversationId
+                )
+            )) {
+                is ApiResult.Success -> appendAssistantResponse(result.data, requestText)
                 is ApiResult.Failure -> {
                     messages = messages + NavigationAiMessage(
                         id = System.currentTimeMillis() + 1,
@@ -166,7 +207,10 @@ fun NavigationAiSheet(
             val result = if (confirmReplan != null) {
                 confirmReplan(journey.journeyId)
             } else if (tripSessionId != null) {
-                when (val confirmation = provider.aiRepository.confirmTripReplan(tripSessionId, journey.journeyId)) {
+                when (val confirmation = provider.aiRepository.confirmTripReplan(
+                    tripSessionId,
+                    journey.journeyId
+                )) {
                     is ApiResult.Failure -> confirmation
                     is ApiResult.Success -> {
                         NavigationSyncSignal.requestImmediateSync(samples = 1)
@@ -272,9 +316,7 @@ fun NavigationAiSheet(
                                 NavigationDestinationChoiceCard(
                                     place = place,
                                     enabled = !thinking && applyingRecommendationId == null,
-                                    onClick = {
-                                        send(message.requestText ?: place.name, place.id)
-                                    }
+                                    onClick = { selectDestination(message, place) }
                                 )
                                 Spacer(Modifier.height(7.dp))
                             }
@@ -288,7 +330,8 @@ fun NavigationAiSheet(
                                     alternativeNumber = index + 1,
                                     applying = applyingRecommendationId == journey.journeyId,
                                     enabled = !thinking &&
-                                        (applyingRecommendationId == null || applyingRecommendationId == journey.journeyId),
+                                        (applyingRecommendationId == null ||
+                                            applyingRecommendationId == journey.journeyId),
                                     onApply = { applyReplan(journey, message.tripSessionId) }
                                 )
                                 Spacer(Modifier.height(8.dp))
@@ -300,7 +343,11 @@ fun NavigationAiSheet(
                 if (thinking) {
                     item {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(Modifier.size(16.dp), color = NavigationAiTeal, strokeWidth = 2.dp)
+                            CircularProgressIndicator(
+                                Modifier.size(16.dp),
+                                color = NavigationAiTeal,
+                                strokeWidth = 2.dp
+                            )
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 if (filipino) "Tinitingnan ni TUKI yung trip natin…" else "TUKI is checking your trip…",
@@ -320,10 +367,17 @@ fun NavigationAiSheet(
                             Modifier
                                 .fillMaxWidth()
                                 .background(NavigationAiTeal.copy(alpha = 0.09f), RoundedCornerShape(14.dp))
-                                .clickable(enabled = !thinking && applyingRecommendationId == null) { send(prompt) }
+                                .clickable(enabled = !thinking && applyingRecommendationId == null) {
+                                    send(prompt)
+                                }
                                 .padding(horizontal = 12.dp, vertical = 9.dp)
                         ) {
-                            Text(prompt, color = NavigationAiDark, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                prompt,
+                                color = NavigationAiDark,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
@@ -390,8 +444,7 @@ fun NavigationAiSheet(
     }
 }
 
-// Compatibility overload for the existing TripTrackingScreen call site. New callers
-// can use the two-argument ask callback to resolve destination candidates in-sheet.
+// Compatibility overload for the existing TripTrackingScreen call site.
 @Composable
 fun NavigationAiSheet(
     language: String = com.example.frontend.core.localization.AppLanguagePreference.current(),
@@ -463,7 +516,12 @@ private fun NavigationReplanCard(
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(label, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-            Text("₱${journey.farePesos.roundToInt()}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "₱${journey.farePesos.roundToInt()}",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
         Spacer(Modifier.height(5.dp))
         Text(
@@ -489,12 +547,21 @@ private fun NavigationReplanCard(
         ) {
             if (applying) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(15.dp), color = Color.White, strokeWidth = 2.dp)
+                    CircularProgressIndicator(
+                        Modifier.size(15.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
                     Spacer(Modifier.width(7.dp))
                     Text("Applying…", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             } else {
-                Text("Apply this route", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "Apply this route",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
