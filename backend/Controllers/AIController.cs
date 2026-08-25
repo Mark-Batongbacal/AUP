@@ -1,3 +1,4 @@
+using backend.Repositories;
 using backend.Services.Assistant;
 using backend.Services.Navigation;
 using Microsoft.AspNetCore.Mvc;
@@ -9,7 +10,8 @@ namespace backend.Controllers;
 [Route("api/[controller]")]
 public sealed class AIController(
     ITukiAssistantService assistant,
-    IReroutingService rerouting) : ControllerBase
+    IReroutingService rerouting,
+    IRouteRecommendationRepository recommendations) : ControllerBase
 {
     // Planning / booking surface. The optional TripSessionId branch is kept only
     // for backwards compatibility with older mobile builds; current clients use
@@ -22,8 +24,11 @@ public sealed class AIController(
         if (!TryUserId(out var userId))
             return Unauthorized();
 
-        var response = request.TripSessionId is { } sessionId
-            ? await assistant.RespondActiveTripAsync(
+        AssistantResponse response;
+        if (request.TripSessionId is { } sessionId)
+        {
+            using var proposalScope = AssistantProposalScope.Begin(sessionId);
+            response = await assistant.RespondActiveTripAsync(
                 userId,
                 sessionId,
                 new ActiveTripAssistantRequest(
@@ -31,14 +36,21 @@ public sealed class AIController(
                     request.DestinationId,
                     request.ConversationId,
                     request.OperationId),
-                cancellationToken)
-            : await assistant.RespondPlanningAsync(userId, request, cancellationToken);
+                cancellationToken);
+        }
+        else
+        {
+            response = await assistant.RespondPlanningAsync(
+                userId,
+                request,
+                cancellationToken);
+        }
 
         return AssistantResult(response);
     }
 
-    // Active-trip conversational surface. This endpoint always anchors the
-    // model context to the owned TripSession and never accepts a model-supplied ID.
+    // Active-trip conversational surface. The model never chooses the session ID;
+    // the owned TripSession comes from this route and server-side state.
     [HttpPost("trip/{sessionId:guid}/ask")]
     public async Task<IActionResult> AskActiveTrip(
         Guid sessionId,
@@ -48,6 +60,7 @@ public sealed class AIController(
         if (!TryUserId(out var userId))
             return Unauthorized();
 
+        using var proposalScope = AssistantProposalScope.Begin(sessionId);
         var response = await assistant.RespondActiveTripAsync(
             userId,
             sessionId,
@@ -57,7 +70,8 @@ public sealed class AIController(
     }
 
     // A route proposed by the active-trip assistant is inert until the passenger
-    // selects that exact recommendation card and calls this confirmation endpoint.
+    // selects that exact recommendation card. The metadata stamp prevents a recent
+    // planning-screen recommendation from being applied to an unrelated live trip.
     [HttpPost("trip/{sessionId:guid}/replan/{recommendationId:guid}/confirm")]
     public async Task<IActionResult> ConfirmActiveTripReplan(
         Guid sessionId,
@@ -66,6 +80,15 @@ public sealed class AIController(
     {
         if (!TryUserId(out var userId))
             return Unauthorized();
+
+        var recommendation = await recommendations.GetByIdAsync(
+            recommendationId,
+            cancellationToken);
+        if (recommendation is null ||
+            !AssistantProposalMetadata.IsForTrip(recommendation.Explanation, sessionId))
+        {
+            return NotFound(new { error = "REPLAN_PROPOSAL_NOT_FOUND" });
+        }
 
         var result = await rerouting.ApplyRecommendationAsync(
             userId,
