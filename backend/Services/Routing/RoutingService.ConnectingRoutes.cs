@@ -26,12 +26,19 @@ public partial class RoutingService
             if (!_routeSamples.ContainsKey(route.RouteId))
                 continue;
 
+            var boardDiscovery = await DiscoverBoardAccessOptionsAsync(
+                route.RouteId,
+                _routeSamples[route.RouteId],
+                originLatitude,
+                originLongitude,
+                cancellationToken);
             candidates.AddRange(FindBestConnections(
                 route,
                 originLatitude,
                 originLongitude,
                 destinationLatitude,
-                destinationLongitude));
+                destinationLongitude,
+                boardDiscovery));
         }
 
         var ranked = candidates
@@ -121,22 +128,6 @@ public partial class RoutingService
             .ToList();
     }
 
-    private RouteConnectionCandidate? FindBestConnection(
-        StaticJeepneyRoute route,
-        double originLatitude,
-        double originLongitude,
-        double destinationLatitude,
-        double destinationLongitude) =>
-        FindBestConnections(
-            route,
-            originLatitude,
-            originLongitude,
-            destinationLatitude,
-            destinationLongitude)
-        .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-        .ThenBy(candidate => candidate.BoardAccess.TotalTimeSeconds)
-        .FirstOrDefault();
-
     /// <summary>
     /// Keeps a small, deliberately diverse set of boarding variants for one
     /// jeepney route. Exact projections on the full route are injected for both
@@ -148,18 +139,15 @@ public partial class RoutingService
         double originLatitude,
         double originLongitude,
         double destinationLatitude,
-        double destinationLongitude)
+        double destinationLongitude,
+        BoardAccessDiscovery boardDiscovery)
     {
         var samples = _routeSamples[route.RouteId];
 
         if (samples.Count < 2)
             return [];
 
-        var boardAccessOptions = ComputeBoardAccessOptions(
-            route.RouteId,
-            samples,
-            originLatitude,
-            originLongitude);
+        var boardAccessOptions = boardDiscovery.Projected;
         var alightAccessOptions = ComputeAlightAccessOptions(
             route.RouteId,
             samples,
@@ -176,21 +164,22 @@ public partial class RoutingService
         // local projection refines the physical board within that region.
         // On a tight retrace the previous-to-next search window can overlap a
         // later pass and project completely out of the sample's physical
-        // region. Keep the authoritative on-route sample anchor in that case
-        // so real access confirmation, rather than the overlapping geometric
-        // projection, decides whether the region is useful.
-        var searchAnchorBoardOptions = ComputeSearchAnchorBoardAccessOptions(
-            route.RouteId,
-            originLatitude,
-            originLongitude);
+        // region. Keep the authoritative on-route sample anchor in that case,
+        // or when its confirmed pedestrian access is better even within the
+        // same coarse physical region, so the overlapping geometric
+        // projection cannot make that decision.
+        var searchAnchorBoardOptions = boardDiscovery.SearchAnchors;
         for (var index = 0; index < searchAnchorBoardOptions.Length; index++)
         {
-            if (ApproximateDistanceMeters(
+            var samePhysicalRegion = ApproximateDistanceMeters(
                     boardAccessOptions[index].Anchor.Latitude,
                     boardAccessOptions[index].Anchor.Longitude,
                     searchAnchorBoardOptions[index].Anchor.Latitude,
                     searchAnchorBoardOptions[index].Anchor.Longitude) <=
-                PhysicalBoardingRegionToleranceMeters)
+                PhysicalBoardingRegionToleranceMeters;
+            if (samePhysicalRegion &&
+                BestNetworkWalkAccessCost(searchAnchorBoardOptions[index]) >=
+                BestNetworkWalkAccessCost(boardAccessOptions[index]))
             {
                 continue;
             }
@@ -200,11 +189,7 @@ public partial class RoutingService
                 ConstrainTransitAccess(searchAnchorBoardOptions[index]));
         }
 
-        var exactBoard = BuildExactFullRouteBoardAccess(
-            route.RouteId,
-            samples,
-            originLatitude,
-            originLongitude);
+        var exactBoard = boardDiscovery.Exact;
         AddUniqueAccessCandidate(boardCandidates, exactBoard);
 
         var alightCandidates = alightAccessOptions
@@ -320,9 +305,12 @@ public partial class RoutingService
             .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
             .First());
 
-        // 1) Nearest directionally-valid boarding opportunity on full geometry.
+        // 1) Best confirmed pedestrian-network access within the geometrically
+        // discovered corridor. Straight-line distance only breaks ties or is
+        // used when the discovery matrix was temporarily unavailable.
         Add(distinct
-            .OrderBy(candidate =>
+            .OrderBy(BestNetworkWalkAccessCost)
+            .ThenBy(candidate =>
                 StraightLineBoardAccessMeters(
                     candidate,
                     originLatitude,
@@ -557,6 +545,20 @@ public partial class RoutingService
             originLongitude,
             candidate.BoardAccess.Anchor.Latitude,
             candidate.BoardAccess.Anchor.Longitude);
+
+    private static double BestNetworkWalkAccessCost(
+        RouteConnectionCandidate candidate) =>
+        BestNetworkWalkAccessCost(candidate.BoardAccess);
+
+    private static double BestNetworkWalkAccessCost(
+        AccessCandidate candidate) =>
+        candidate.AllAlternatives
+            .Where(alternative =>
+                alternative.Mode == AccessMode.Walk &&
+                alternative.IsNetworkWalkConfirmed)
+            .Select(alternative => alternative.GeneralizedCostPesos)
+            .DefaultIfEmpty(double.PositiveInfinity)
+            .Min();
 
     private double GetBoardProgressMeters(RouteConnectionCandidate candidate) =>
         (candidate.BoardAccess.FullRouteAnchor ??

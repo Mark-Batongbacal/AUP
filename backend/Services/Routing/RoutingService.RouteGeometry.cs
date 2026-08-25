@@ -527,6 +527,11 @@ public partial class RoutingService
         int AlightIndex,
         double TotalGeneralizedCostPesos);
 
+    private sealed record BoardAccessDiscovery(
+        AccessCandidate[] Projected,
+        AccessCandidate[] SearchAnchors,
+        AccessCandidate? Exact);
+
     private sealed record InterchangePairCandidate(
         int IndexA,
         int IndexB,
@@ -592,7 +597,8 @@ public partial class RoutingService
         double WalkingFatiguePesosPerKilometer,
         int? RouteSampleIndex = null,
         RouteAnchor? FullRouteAnchor = null,
-        IReadOnlyList<AccessCandidate>? Alternatives = null)
+        IReadOnlyList<AccessCandidate>? Alternatives = null,
+        bool IsNetworkWalkConfirmed = false)
     {
         public IReadOnlyList<AccessCandidate> AllAlternatives =>
             Alternatives ?? [this];
