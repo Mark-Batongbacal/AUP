@@ -115,8 +115,20 @@ class AiRepositoryImpl(
     private val sessions: AuthSessionStore,
     private val errors: ApiErrorParser
 ) : AiRepository {
-    override suspend fun ask(request: AssistantRequest) =
-        authenticatedApiCall(sessions, errors) { api.askPlanning(request) }
+    private var planningConversationId: String? = null
+
+    override suspend fun ask(request: AssistantRequest): ApiResult<AssistantResponseDto> {
+        val effectiveRequest = request.copy(
+            conversationId = request.conversationId ?: planningConversationId
+        )
+        val result = authenticatedApiCall(sessions, errors) {
+            api.askPlanning(effectiveRequest)
+        }
+        if (result is ApiResult.Success) {
+            result.data.conversationId?.let { planningConversationId = it }
+        }
+        return result
+    }
 
     override suspend fun askTrip(
         sessionId: String,
