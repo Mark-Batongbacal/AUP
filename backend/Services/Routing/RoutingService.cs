@@ -26,6 +26,12 @@ public partial class RoutingService : IRoutingService
     private double MaxWalkOnlyTripDistanceMeters => _options.MaxWalkOnlyTripDistanceMeters;
     private double MaxWalkTrikeTripDistanceMeters => _options.MaxWalkTrikeTripDistanceMeters;
     private double MaxWalkAccessDistanceMeters => _options.MaxWalkAccessDistanceMeters;
+    private double LessWalkingPreferenceAccessMeters =>
+        _options.LessWalkingPreferenceAccessMeters;
+    private double NormalWalkingPreferenceAccessMeters =>
+        _options.NormalWalkingPreferenceAccessMeters;
+    private double MoreWalkingPreferenceAccessMeters =>
+        _options.MoreWalkingPreferenceAccessMeters;
     private double MaxTotalWalkingMetersPerJourney => _options.MaxTotalWalkingMetersPerJourney;
     private double FeederShadowingMinProgressMeters =>
         _options.FeederShadowingMinProgressMeters;

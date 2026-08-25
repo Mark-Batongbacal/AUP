@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.ClientModel;
+using System.ClientModel.Primitives;
 using System.Text.Json;
 using OpenAI;
 using OpenAI.Chat;
@@ -10,9 +13,14 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
 {
     private static readonly TimeSpan ModelTimeout = TimeSpan.FromSeconds(15);
     private readonly ChatClient _client;
+    private readonly ILogger<NemotronIntentExtractor> _logger;
+    private readonly string _model;
 
-    public NemotronIntentExtractor(IConfiguration configuration)
+    public NemotronIntentExtractor(
+        IConfiguration configuration,
+        ILogger<NemotronIntentExtractor> logger)
     {
+        _logger = logger;
         var apiKey = Environment.GetEnvironmentVariable(
             configuration["Qwen:ApiKeyEnvironmentVariable"] ?? "GEMINI_API_KEY");
 
@@ -20,14 +28,22 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
             throw new InvalidOperationException(
                 "The configured assistant model API key is unavailable.");
 
+        _model = configuration["Qwen:Model"] ?? "gemini-3.5-flash-lite";
         _client = new ChatClient(
-            configuration["Qwen:Model"] ?? "gemini-3.5-flash-lite",
+            _model,
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
                 Endpoint = new Uri(
                     configuration["Qwen:BaseUrl"] ??
-                    "https://generativelanguage.googleapis.com/v1beta/openai/")
+                    "https://generativelanguage.googleapis.com/v1beta/openai/"),
+                // Intent extraction has its own bounded request timeout. The SDK's
+                // default Retry-After handling can otherwise spend that entire
+                // budget waiting between attempts after a 429 response.
+                RetryPolicy = new ClientRetryPolicy(0),
+                // Make the SDK's process-wide reusable HttpClient transport
+                // explicit even though it is also the System.ClientModel default.
+                Transport = HttpClientPipelineTransport.Shared
             });
     }
 
@@ -37,15 +53,53 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ModelTimeout);
+        var started = Stopwatch.GetTimestamp();
+        var stage = "ContextReady";
 
         try
         {
-            var response = await _client.CompleteChatAsync(
-            [
-                new SystemChatMessage(Prompt(context.Surface)),
-                new UserChatMessage(JsonSerializer.Serialize(context))
-            ], cancellationToken: timeout.Token);
+            var contextJson = JsonSerializer.Serialize(context);
+            var systemPrompt = Prompt(context.Surface);
+            _logger.LogDebug(
+                "AI.Intent.ContextReady ElapsedMs={ElapsedMs} Model={Model} Surface={Surface} RecentTurns={RecentTurns} ContextChars={ContextChars}",
+                ElapsedMilliseconds(started),
+                _model,
+                context.Surface,
+                context.Conversation.RecentTurns.Count,
+                contextJson.Length);
 
+            List<ChatMessage> messages =
+            [
+                new SystemChatMessage(systemPrompt),
+                new UserChatMessage(contextJson)
+            ];
+            stage = "RequestBuilt";
+            _logger.LogDebug(
+                "AI.Intent.RequestBuilt ElapsedMs={ElapsedMs} Model={Model} MessageCount={MessageCount} RequestChars={RequestChars} TimeoutSeconds={TimeoutSeconds}",
+                ElapsedMilliseconds(started),
+                _model,
+                messages.Count,
+                systemPrompt.Length + contextJson.Length,
+                ModelTimeout.TotalSeconds);
+
+            stage = "ApiCall";
+            _logger.LogDebug(
+                "AI.Intent.ApiCall.Start ElapsedMs={ElapsedMs} Model={Model}",
+                ElapsedMilliseconds(started),
+                _model);
+            var response = await _client.CompleteChatAsync(
+                messages,
+                cancellationToken: timeout.Token);
+            _logger.LogDebug(
+                "AI.Intent.ApiCall.Completed ElapsedMs={ElapsedMs} Model={Model}",
+                ElapsedMilliseconds(started),
+                _model);
+
+            stage = "ResponseParse";
+            _logger.LogDebug(
+                "AI.Intent.ResponseParse.Start ElapsedMs={ElapsedMs} Model={Model}",
+                ElapsedMilliseconds(started),
+                _model);
             var json = response.Value.Content.FirstOrDefault()?.Text?.Trim() ?? string.Empty;
             if (json.StartsWith("```", StringComparison.Ordinal))
                 json = json.Replace("```json", "", StringComparison.OrdinalIgnoreCase)
@@ -55,12 +109,12 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             var actionText = Text(root, "action") ?? Text(root, "intent");
-            if (!Enum.TryParse<AssistantIntentType>(actionText, true, out var intent))
-                intent = AssistantIntentType.Unknown;
+            if (!Enum.TryParse<AssistantIntentType>(actionText, true, out var intentType))
+                intentType = AssistantIntentType.Unknown;
 
-            return new AssistantIntent
+            var result = new AssistantIntent
             {
-                Intent = intent,
+                Intent = intentType,
                 DestinationQuery = Text(root, "destinationQuery"),
                 OriginQuery = Text(root, "originQuery"),
                 BudgetPesos = Decimal(root, "budgetPesos"),
@@ -70,12 +124,53 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
                 AvoidTransportModes = NormalizeAvoidModes(root),
                 ResponseType = Text(root, "responseType")
             };
+            _logger.LogDebug(
+                "AI.Intent.ResponseParse.Completed ElapsedMs={ElapsedMs} Model={Model} ResponseChars={ResponseChars} Intent={Intent}",
+                ElapsedMilliseconds(started),
+                _model,
+                json.Length,
+                result.Intent);
+            return result;
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
+            _logger.LogWarning(
+                "AI.Intent.Timeout Stage={Stage} ElapsedMs={ElapsedMs} Model={Model} TimeoutSeconds={TimeoutSeconds} ExtractorTimeoutFired={ExtractorTimeoutFired} CallerCancellationRequested={CallerCancellationRequested} ExceptionChain={ExceptionChain}",
+                stage,
+                ElapsedMilliseconds(started),
+                _model,
+                ModelTimeout.TotalSeconds,
+                timeout.IsCancellationRequested,
+                cancellationToken.IsCancellationRequested,
+                ExceptionChain(exception));
             throw new TimeoutException(
-                $"Assistant intent extraction exceeded {ModelTimeout.TotalSeconds:0} seconds.");
+                $"Assistant intent extraction exceeded {ModelTimeout.TotalSeconds:0} seconds.",
+                exception);
         }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                "AI.Intent.Failed Stage={Stage} ElapsedMs={ElapsedMs} Model={Model} HttpStatus={HttpStatus} ExtractorTimeoutFired={ExtractorTimeoutFired} CallerCancellationRequested={CallerCancellationRequested} ExceptionChain={ExceptionChain}",
+                stage,
+                ElapsedMilliseconds(started),
+                _model,
+                exception is ClientResultException clientResult ? clientResult.Status : null,
+                timeout.IsCancellationRequested,
+                cancellationToken.IsCancellationRequested,
+                ExceptionChain(exception));
+            throw;
+        }
+    }
+
+    private static double ElapsedMilliseconds(long started) =>
+        Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+    private static string ExceptionChain(Exception exception)
+    {
+        var names = new List<string>();
+        for (var current = exception; current is not null; current = current.InnerException)
+            names.Add(current.GetType().Name);
+        return string.Join(" -> ", names);
     }
 
     private static string Prompt(AssistantSurface surface)

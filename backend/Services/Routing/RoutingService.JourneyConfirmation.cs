@@ -12,8 +12,11 @@ public partial class RoutingService
             double originLongitude,
             double destinationLatitude,
             double destinationLongitude,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var tasks = candidates.Select(async candidate =>
         {
             try
@@ -22,13 +25,15 @@ public partial class RoutingService
                     candidate.OriginAccess,
                     (originLatitude, originLongitude),
                     candidate.OriginAccess.Anchor,
-                    cancellationToken);
+                    cancellationToken,
+                    walkAccessLimit);
 
                 var destinationTask = ConfirmAccessAsync(
                     candidate.DestinationAccess,
                     candidate.DestinationAccess.Anchor,
                     (destinationLatitude, destinationLongitude),
-                    cancellationToken);
+                    cancellationToken,
+                    walkAccessLimit);
 
                 var transferTasks =
                     candidate.TransferWalkSegments
@@ -348,8 +353,11 @@ public partial class RoutingService
         AccessCandidate candidate,
         (double Latitude, double Longitude) walkAnchorPoint,
         (double Latitude, double Longitude) rideTargetPoint,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var alternativeIndex = 0;
         foreach (var alternative in candidate.AllAlternatives)
         {
@@ -359,7 +367,7 @@ public partial class RoutingService
                 walkAnchorPoint,
                 rideTargetPoint,
                 alternativeIndex > 0 && alternative.Mode == AccessMode.Walk
-                    ? MaxWalkAccessDistanceMeters
+                    ? walkAccessLimit
                     : null,
                 cancellationToken);
 
@@ -606,8 +614,11 @@ public partial class RoutingService
         List<(double Latitude, double Longitude)> samples,
         double originLatitude,
         double originLongitude,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var projected = ComputeBoardAccessOptions(
             routeId,
             samples,
@@ -621,7 +632,8 @@ public partial class RoutingService
             routeId,
             samples,
             originLatitude,
-            originLongitude);
+            originLongitude,
+            walkAccessLimit);
 
         var all = projected
             .Concat(searchAnchors)
@@ -630,7 +642,7 @@ public partial class RoutingService
         var targets = all
             .Where(candidate => candidate.AllAlternatives.Any(alternative =>
                 alternative.Mode == AccessMode.Walk &&
-                alternative.WalkDistanceMeters <= MaxWalkAccessDistanceMeters))
+                alternative.WalkDistanceMeters <= walkAccessLimit))
             .GroupBy(candidate => PhysicalAccessPointKey(candidate.Anchor),
                 StringComparer.Ordinal)
             .Select(group => group.First())
