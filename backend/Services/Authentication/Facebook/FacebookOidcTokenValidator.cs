@@ -14,6 +14,7 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
     private readonly HttpClient _httpClient;
     private readonly string _issuer;
     private readonly Uri _jwksUri;
+    private readonly Uri _limitedJwksUri;
     private readonly TimeProvider _timeProvider;
 
     public FacebookOidcTokenValidator(
@@ -28,9 +29,19 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
             throw new ArgumentException("Facebook OIDC JWKS URI must be an absolute HTTPS URI.", nameof(jwksUri));
         }
 
+        if (!Uri.TryCreate(
+                FacebookOptions.LimitedOidcJwksUri,
+                UriKind.Absolute,
+                out var parsedLimitedJwksUri) ||
+            parsedLimitedJwksUri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidOperationException("Facebook Limited Login JWKS URI is invalid.");
+        }
+
         _httpClient = httpClient;
         _issuer = issuer;
         _jwksUri = parsedJwksUri;
+        _limitedJwksUri = parsedLimitedJwksUri;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -48,7 +59,8 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
         }
 
         var parsedToken = ParseToken(idToken);
-        var jwks = await GetJwksAsync(cancellationToken);
+        var jwksUri = SelectJwksUri(parsedToken.Payload.Issuer);
+        var jwks = await GetJwksAsync(jwksUri, cancellationToken);
         var key = jwks.Keys.FirstOrDefault(candidate =>
             string.Equals(candidate.KeyId, parsedToken.Header.KeyId, StringComparison.Ordinal));
 
@@ -63,6 +75,17 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
             parsedToken.Payload.Subject!,
             parsedToken.Payload.Name,
             parsedToken.Payload.Email);
+    }
+
+    private Uri SelectJwksUri(string? tokenIssuer)
+    {
+        if (string.Equals(_issuer, FacebookOptions.DefaultOidcIssuer, StringComparison.Ordinal) &&
+            string.Equals(tokenIssuer, FacebookOptions.LimitedOidcIssuer, StringComparison.Ordinal))
+        {
+            return _limitedJwksUri;
+        }
+
+        return _jwksUri;
     }
 
     private static ParsedFacebookOidcToken ParseToken(string idToken)
@@ -108,12 +131,34 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
         }
     }
 
-    private async Task<FacebookJwksResponse> GetJwksAsync(CancellationToken cancellationToken)
+    private async Task<FacebookJwksResponse> GetJwksAsync(
+        Uri jwksUri,
+        CancellationToken cancellationToken)
     {
-        HttpResponseMessage response;
         try
         {
-            response = await _httpClient.GetAsync(_jwksUri, cancellationToken);
+            using var response = await _httpClient.GetAsync(jwksUri, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new FacebookOidcTokenValidationUnavailableException();
+            }
+
+            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var jwks = await JsonSerializer.DeserializeAsync<FacebookJwksResponse>(
+                body,
+                JsonOptions,
+                cancellationToken);
+
+            if (jwks?.Keys is null || jwks.Keys.Count == 0)
+            {
+                throw new FacebookOidcTokenValidationUnavailableException();
+            }
+
+            return jwks;
+        }
+        catch (FacebookOidcTokenValidationUnavailableException)
+        {
+            throw;
         }
         catch (HttpRequestException ex)
         {
@@ -123,37 +168,13 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
         {
             throw new FacebookOidcTokenValidationUnavailableException(ex);
         }
-
-        using (response)
+        catch (IOException ex)
         {
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new FacebookOidcTokenValidationUnavailableException();
-            }
-
-            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
-            try
-            {
-                var jwks = await JsonSerializer.DeserializeAsync<FacebookJwksResponse>(
-                    body,
-                    JsonOptions,
-                    cancellationToken);
-
-                if (jwks?.Keys is null || jwks.Keys.Count == 0)
-                {
-                    throw new FacebookOidcTokenValidationUnavailableException();
-                }
-
-                return jwks;
-            }
-            catch (FacebookOidcTokenValidationUnavailableException)
-            {
-                throw;
-            }
-            catch (JsonException ex)
-            {
-                throw new FacebookOidcTokenValidationUnavailableException(ex);
-            }
+            throw new FacebookOidcTokenValidationUnavailableException(ex);
+        }
+        catch (JsonException ex)
+        {
+            throw new FacebookOidcTokenValidationUnavailableException(ex);
         }
     }
 
@@ -200,7 +221,7 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
     {
         var now = _timeProvider.GetUtcNow();
 
-        if (!string.Equals(payload.Issuer, _issuer, StringComparison.Ordinal) ||
+        if (!IsAllowedIssuer(payload.Issuer) ||
             !AudienceContains(payload.Audience, appId) ||
             string.IsNullOrWhiteSpace(payload.Subject) ||
             !string.Equals(payload.Nonce, nonce, StringComparison.Ordinal) ||
@@ -210,6 +231,17 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
         {
             throw new FacebookOidcTokenValidationException();
         }
+    }
+
+    private bool IsAllowedIssuer(string? issuer)
+    {
+        if (string.Equals(issuer, _issuer, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return string.Equals(_issuer, FacebookOptions.DefaultOidcIssuer, StringComparison.Ordinal) &&
+            string.Equals(issuer, FacebookOptions.LimitedOidcIssuer, StringComparison.Ordinal);
     }
 
     private static bool AudienceContains(JsonElement audience, string appId)
