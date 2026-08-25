@@ -10,14 +10,19 @@ import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -406,19 +411,17 @@ fun MapScreen(
 
         if (routeInteractionControlsEnabled) {
             Column(
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 10.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.End
             ) {
-                MapInteractionButton("+") {
-                    mapLibreMap?.animateCamera(CameraUpdateFactory.zoomIn(), 180)
-                }
-                MapInteractionButton("−") {
-                    mapLibreMap?.animateCamera(CameraUpdateFactory.zoomOut(), 180)
-                }
+                MapZoomControls(
+                    onZoomIn = { mapLibreMap?.animateCamera(CameraUpdateFactory.zoomIn(), 180) },
+                    onZoomOut = { mapLibreMap?.animateCamera(CameraUpdateFactory.zoomOut(), 180) }
+                )
                 if (routeBoundsPoints.isNotEmpty()) {
-                    MapInteractionButton("Fit") {
-                        val map = mapLibreMap ?: return@MapInteractionButton
+                    MapFitButton {
+                        val map = mapLibreMap ?: return@MapFitButton
                         fitRoutePreviewCamera(
                             context = context,
                             map = map,
@@ -474,13 +477,50 @@ private fun fitRoutePreviewCamera(
 }
 
 @Composable
-private fun MapInteractionButton(label: String, onClick: () -> Unit) {
+private fun MapZoomControls(onZoomIn: () -> Unit, onZoomOut: () -> Unit) {
+    val controlColor = MaterialTheme.colorScheme.primary
+    val contentColor = MaterialTheme.colorScheme.onPrimary
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = controlColor,
+        shadowElevation = 4.dp
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .size(width = 48.dp, height = 44.dp)
+                    .clickable(onClick = onZoomIn),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("+", color = contentColor, style = MaterialTheme.typography.titleLarge)
+            }
+            Box(
+                modifier = Modifier
+                    .width(32.dp)
+                    .height(1.dp)
+                    .background(contentColor.copy(alpha = 0.32f))
+            )
+            Box(
+                modifier = Modifier
+                    .size(width = 48.dp, height = 44.dp)
+                    .clickable(onClick = onZoomOut),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("−", color = contentColor, style = MaterialTheme.typography.titleLarge)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MapFitButton(onClick: () -> Unit) {
     Button(
         onClick = onClick,
-        modifier = Modifier.widthIn(min = 48.dp),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+        modifier = Modifier.height(40.dp).widthIn(min = 72.dp),
+        shape = RoundedCornerShape(20.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
     ) {
-        Text(label)
+        Text("◎ Fit", style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -493,7 +533,7 @@ private fun updateTransitRouteLayers(style: Style, routes: List<TransitRouteOver
         val source = style.getSourceAs<GeoJsonSource>(sourceId)
         if (source != null) source.setGeoJson(geometry) else style.addSource(GeoJsonSource(sourceId, geometry))
         style.removeLayer(layerId)
-        val selected = route.routeId == selectedRouteId
+        val selected = route.routeId == selectedTransitRouteId
         style.addLayer(
             LineLayer(layerId, sourceId).withProperties(
                 PropertyFactory.lineColor(TransitRouteColors[index % TransitRouteColors.size]),
