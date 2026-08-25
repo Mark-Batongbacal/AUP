@@ -26,8 +26,8 @@ struct TukiUnifiedProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 let profile = auth.currentUserProfile
-                let displayName = auth.isGuest ? "Guest" : (profile?.displayName ?? "User")
-                let email = auth.isGuest ? "Guest mode" : (profile?.email ?? "")
+                let displayName = auth.isGuestAccount ? "Guest" : (profile?.displayName ?? "User")
+                let email = auth.isGuestAccount ? "Guest mode" : (profile?.email ?? "")
 
                 Text(initials(displayName))
                     .font(.system(size: 34, weight: .heavy))
@@ -43,6 +43,23 @@ struct TukiUnifiedProfileView: View {
                     Text(email)
                         .font(.system(size: 13))
                         .foregroundStyle(TukiPalette.gray)
+                }
+
+                if auth.isGuestAccount {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Guest Mode · \(tukiGuestRemainingText(expiresAt: auth.sessionExpiresAt))")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(TukiPalette.orange)
+                            Text("Create an account to keep access without the guest time limit.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(TukiPalette.gray)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(14)
+                    .background(TukiPalette.orange.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
 
                 HStack(spacing: 12) {
@@ -62,10 +79,12 @@ struct TukiUnifiedProfileView: View {
                 .buttonStyle(.plain)
 
                 VStack(spacing: 0) {
-                    accountRow("Edit Profile", subtitle: "Update your personal information", action: onEdit)
-                    divider
-                    accountRow("Privacy & Security", subtitle: "Password, permissions & privacy", action: onPrivacy)
-                    divider
+                    if !auth.isGuestAccount {
+                        accountRow("Edit Profile", subtitle: "Update your personal information", action: onEdit)
+                        divider
+                        accountRow("Privacy & Security", subtitle: "Password, permissions & privacy", action: onPrivacy)
+                        divider
+                    }
                     accountRow(TukiInterfaceText.language, subtitle: TukiLanguagePreference.shared.currentLanguage, action: onLanguage)
                     divider
                     accountRow("About TUKI", subtitle: "App information", action: onAbout)

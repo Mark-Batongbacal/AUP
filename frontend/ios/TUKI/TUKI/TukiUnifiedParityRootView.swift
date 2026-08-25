@@ -27,7 +27,7 @@ struct TukiUnifiedParityRootView: View {
                         auth: auth,
                         onSignUp: { entry = .signup },
                         onForgotPassword: { entry = .forgotPassword },
-                        onGuest: { auth.continueAsGuest() }
+                        onGuest: { Task { await auth.continueAsGuest() } }
                     )
                 case .signup:
                     UnifiedSignup(auth: auth) { entry = .login }
@@ -167,7 +167,7 @@ private struct TukiUnifiedMainView: View {
 
             case .ai:
                 TukiParityAIChat(
-                    userName: auth.currentUserProfile?.greetingName ?? (auth.isGuest ? "Guest" : "User"),
+                    userName: auth.currentUserProfile?.greetingName ?? (auth.isGuestAccount ? "Guest" : "User"),
                     api: assistantAPI,
                     location: location,
                     onBack: { screen = .tabs },
@@ -285,7 +285,7 @@ private struct TukiUnifiedMainView: View {
                 switch tab {
                 case .home:
                     UnifiedHome(
-                        name: auth.currentUserProfile?.greetingName ?? (auth.isGuest ? "Guest" : "User"),
+                        name: auth.currentUserProfile?.greetingName ?? (auth.isGuestAccount ? "Guest" : "User"),
                         currentLabel: currentLabel,
                         areaLabel: originAreaLabel,
                         isLocating: currentLabel == "Locating you...",
@@ -302,18 +302,18 @@ private struct TukiUnifiedMainView: View {
                 case .recent:
                     UnifiedRecent(
                         commutes: recent,
-                        guest: auth.isGuest,
+                        guest: !auth.isAuthenticated,
                         loading: recentLoading,
                         error: recentError,
                         onTap: { screen = .commute($0) }
                     )
                 case .favorites:
-                    UnifiedFavorites(routes: favorites, guest: auth.isGuest)
+                    UnifiedFavorites(routes: favorites, guest: !auth.isAuthenticated)
                 case .profile:
                     TukiUnifiedProfileView(
                         auth: auth,
-                        onEdit: { if !auth.isGuest { screen = .editProfile } },
-                        onPrivacy: { if !auth.isGuest { screen = .privacySecurity } },
+                        onEdit: { if !auth.isGuestAccount { screen = .editProfile } },
+                        onPrivacy: { if !auth.isGuestAccount { screen = .privacySecurity } },
                         onLanguage: { screen = .language },
                         onAbout: { screen = .about },
                         onSettings: { screen = .settings },
@@ -385,14 +385,7 @@ private struct TukiUnifiedMainView: View {
 
     private func refreshTab() async {
         if tab == .profile {
-            if !auth.isGuest { _ = await auth.refreshProfile() }
-            return
-        }
-        guard !auth.isGuest else {
-            recent = []
-            favorites = []
-            recentLoading = false
-            recentError = nil
+            _ = await auth.refreshProfile()
             return
         }
 
@@ -438,6 +431,8 @@ private struct UnifiedLogin: View {
     let onForgotPassword: () -> Void
     let onGuest: () -> Void
 
+    @State private var showGuestConfirmation = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -475,10 +470,16 @@ private struct UnifiedLogin: View {
                     socialButton("Facebook", image: "FacebookLogo", action: auth.loginWithFacebook)
                 }
 
-                Button(action: onGuest) {
+                Button { showGuestConfirmation = true } label: {
                     Text("Continue as Guest").font(.system(size: 16, weight: .bold)).foregroundStyle(TukiPalette.dark).frame(maxWidth: .infinity).frame(height: 56).overlay { RoundedRectangle(cornerRadius: 16).stroke(TukiPalette.border, lineWidth: 2) }
                 }
                 .buttonStyle(.plain).disabled(auth.isAuthenticating).padding(.top, 12)
+                .alert("Continue as Guest?", isPresented: $showGuestConfirmation) {
+                    Button("Continue", action: onGuest)
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("You can use TUKI for 24 hours, including navigation, history, and favorites. Create an account if you want access without the guest time limit.")
+                }
 
                 HStack(spacing: 0) {
                     Text("New to Tuki? ").foregroundStyle(TukiPalette.gray)

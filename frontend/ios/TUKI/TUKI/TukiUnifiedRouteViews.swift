@@ -448,7 +448,10 @@ struct TukiUnifiedRouteDetailView: View {
         guard !working else { return }
         working = true
         defer { working = false }
-        if auth.isGuest {
+        // A local-only snapshot is a last-resort fallback for having no session at all
+        // (e.g. a logout race) — a normal guest session (from `api/auth/guest`) IS
+        // authenticated and takes the real path below, matching Android exactly.
+        if !auth.isAuthenticated {
             onStarted(guestSnapshot(), true)
             return
         }

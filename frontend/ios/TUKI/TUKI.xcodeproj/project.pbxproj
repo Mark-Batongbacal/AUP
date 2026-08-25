@@ -16,6 +16,7 @@
 		999BADAFCC7929FD44C7A1DF /* TukiLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C09BC1CB3E722692A7A536F /* TukiLocalizationTests.swift */; };
 		FF79BE1D24D7B1A03629DE00 /* TukiMapKitSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 738FB81DD8844EC36AB70C2D /* TukiMapKitSupportTests.swift */; };
 		480A51582AB35C48CA8191E7 /* TukiDestinationPickerMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */; };
+		E7E6503338D29BCAEB32583F /* TukiGuestSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */; };
 		DCFB00033033FA0000106143 /* FacebookCore in Frameworks */ = {isa = PBXBuildFile; productRef = DCFB00013033FA0000106143 /* FacebookCore */; };
 		DCFB00043033FA0000106143 /* FacebookLogin in Frameworks */ = {isa = PBXBuildFile; productRef = DCFB00023033FA0000106143 /* FacebookLogin */; };
 /* End PBXBuildFile section */
@@ -41,6 +42,7 @@
 		6C09BC1CB3E722692A7A536F /* TukiLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiLocalizationTests.swift; sourceTree = "<group>"; };
 		738FB81DD8844EC36AB70C2D /* TukiMapKitSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiMapKitSupportTests.swift; sourceTree = "<group>"; };
 		D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiDestinationPickerMergeTests.swift; sourceTree = "<group>"; };
+		815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiGuestSessionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -114,6 +116,7 @@
 				6C09BC1CB3E722692A7A536F /* TukiLocalizationTests.swift */,
 				738FB81DD8844EC36AB70C2D /* TukiMapKitSupportTests.swift */,
 				D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */,
+				815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */,
 			);
 			path = TUKITests;
 			sourceTree = "<group>";
@@ -246,6 +249,7 @@
 				999BADAFCC7929FD44C7A1DF /* TukiLocalizationTests.swift in Sources */,
 				FF79BE1D24D7B1A03629DE00 /* TukiMapKitSupportTests.swift in Sources */,
 				480A51582AB35C48CA8191E7 /* TukiDestinationPickerMergeTests.swift in Sources */,
+				E7E6503338D29BCAEB32583F /* TukiGuestSessionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -10,6 +10,10 @@ protocol AuthAPI {
     func loginWithGoogle(idToken: String) async -> AuthResult
     func loginWithFacebook(accessToken: String) async -> AuthResult
     func loginWithFacebookOidc(idToken: String, nonce: String) async -> AuthResult
+    /// Mirrors Android's `AuthApi.guest()` (`POST api/auth/guest`, no request body):
+    /// returns a real, normal-shaped session (same as any other login) that expires
+    /// after the backend's guest window (~24h) rather than a client-only flag.
+    func loginAsGuest() async -> AuthResult
 }
 
 final class TukiAuthAPI: AuthAPI {
@@ -87,6 +91,56 @@ final class TukiAuthAPI: AuthAPI {
         )
     }
     #endif
+
+    func loginAsGuest() async -> AuthResult {
+        do {
+            var request = URLRequest(url: baseURL.appendingBackendPath("api/auth/guest"))
+            request.httpMethod = "POST"
+            request.timeoutInterval = 30
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return .failure("The server returned an invalid login response.")
+            }
+
+            switch httpResponse.statusCode {
+            case 200..<300:
+                let loginResponse = try jsonDecoder.decode(LoginResponse.self, from: data)
+                guard let credential = TukiCredential(loginResponse: loginResponse) else {
+                    return .failure("The server returned an invalid login response.")
+                }
+                do {
+                    try credentialStore.save(credential)
+                    return .success
+                } catch {
+                    return .failure("TUKI could not securely save your login.")
+                }
+
+            case 404, 405:
+                return .failure("Guest access is not available on this server version.")
+
+            case 401:
+                return .failure("Guest access could not be started. Please try again.")
+
+            default:
+                return .failure("Login is unavailable. Try again later.")
+            }
+        } catch is DecodingError {
+            return .failure("The server returned an invalid login response.")
+        } catch let error as URLError {
+            switch error.code {
+            case .timedOut:
+                return .failure("Network timeout. Check your connection and try again.")
+            case .cancelled:
+                return .failure("Login was canceled.")
+            default:
+                return .failure("Network error. Check your connection and try again.")
+            }
+        } catch {
+            return .failure("Login failed. Try again.")
+        }
+    }
 
     func authenticatedRequest(path: String) -> URLRequest {
         let url = baseURL.appendingBackendPath(path)
