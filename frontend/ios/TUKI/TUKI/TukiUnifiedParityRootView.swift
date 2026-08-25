@@ -3,6 +3,8 @@ import SwiftUI
 
 struct TukiUnifiedParityRootView: View {
     @StateObject private var auth = AuthViewModel()
+    @ObservedObject private var theme = TukiThemeRuntime.shared
+    @ObservedObject private var language = TukiLanguagePreference.shared
     @State private var entry: Entry = .onboarding
 
     private enum Entry {
@@ -34,7 +36,7 @@ struct TukiUnifiedParityRootView: View {
                 }
             }
         }
-        .preferredColorScheme(.light)
+        .preferredColorScheme(theme.isDarkMode ? .dark : .light)
     }
 }
 

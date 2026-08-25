@@ -66,7 +66,7 @@ struct TukiUnifiedProfileView: View {
                     divider
                     accountRow("Privacy & Security", subtitle: "Password, permissions & privacy", action: onPrivacy)
                     divider
-                    accountRow("Language", subtitle: "English", action: onLanguage)
+                    accountRow(TukiInterfaceText.language, subtitle: TukiLanguagePreference.shared.currentLanguage, action: onLanguage)
                     divider
                     accountRow("About TUKI", subtitle: "App information", action: onAbout)
                     divider
@@ -338,14 +338,14 @@ enum TukiParityLanguage: String, CaseIterable, Identifiable {
 
 struct TukiUnifiedLanguageView: View {
     let onBack: () -> Void
-    @AppStorage("tuki.language") private var storedLanguage = TukiParityLanguage.english.rawValue
+    @ObservedObject private var languageStore = TukiLanguagePreference.shared
     @State private var selected = TukiParityLanguage.english
 
     var body: some View {
         VStack(spacing: 0) {
-            pageHeader("Language", onBack: onBack)
+            pageHeader(TukiInterfaceText.language, onBack: onBack)
             VStack(alignment: .leading, spacing: 12) {
-                Text("SELECT LANGUAGE").font(.system(size: 12, weight: .bold)).foregroundStyle(TukiPalette.gray)
+                Text(TukiInterfaceText.selectLanguage).font(.system(size: 12, weight: .bold)).foregroundStyle(TukiPalette.gray)
                 ForEach(TukiParityLanguage.allCases) { option in
                     Button { selected = option } label: {
                         HStack {
@@ -364,8 +364,8 @@ struct TukiUnifiedLanguageView: View {
                     .buttonStyle(.plain)
                 }
                 Spacer()
-                TukiPrimaryButton(title: "Save") {
-                    storedLanguage = selected.rawValue
+                TukiPrimaryButton(title: TukiInterfaceText.save) {
+                    languageStore.update(selected.rawValue)
                     onBack()
                 }
             }
@@ -373,7 +373,7 @@ struct TukiUnifiedLanguageView: View {
             .padding(.bottom, 20)
         }
         .background(TukiPalette.cream.ignoresSafeArea())
-        .onAppear { selected = TukiParityLanguage(rawValue: storedLanguage) ?? .english }
+        .onAppear { selected = TukiParityLanguage(rawValue: languageStore.currentLanguage) ?? .english }
     }
 }
 
@@ -402,7 +402,7 @@ struct TukiUnifiedSettingsView: View {
     let onLanguage: () -> Void
     let onLogout: () -> Void
     @AppStorage("tuki.notifications") private var notifications = true
-    @AppStorage("tuki.darkModePreference") private var darkMode = false
+    @ObservedObject private var theme = TukiThemeRuntime.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -411,8 +411,8 @@ struct TukiUnifiedSettingsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     settingsSection("GENERAL") {
                         Toggle("Notifications", isOn: $notifications)
-                        Toggle("Dark Mode", isOn: $darkMode)
-                        navigationRow("Language", subtitle: "English", action: onLanguage)
+                        Toggle(TukiInterfaceText.darkMode, isOn: $theme.isDarkMode)
+                        navigationRow(TukiInterfaceText.language, subtitle: TukiLanguagePreference.shared.currentLanguage, action: onLanguage)
                     }
                     settingsSection("SUPPORT") {
                         navigationRow("Help Center", subtitle: "FAQs and guides") {}
