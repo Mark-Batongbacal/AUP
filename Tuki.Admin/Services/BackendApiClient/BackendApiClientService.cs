@@ -10,7 +10,7 @@ public sealed class BackendApiClientService(HttpClient httpClient) : IBackendApi
         LoginRequest request,
         CancellationToken cancellationToken = default)
     {
-        using var response = await httpClient.PostAsJsonAsync("api/auth/login", request, cancellationToken);
+        using var response = await httpClient.PostAsJsonAsync("api/auth/admin/login", request, cancellationToken);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {

@@ -3,9 +3,7 @@ using Tuki.Admin.Services.BackendApiClient;
 
 namespace Tuki.Admin.Services.AdminAuth;
 
-public sealed class AdminAuthService(
-    IBackendApiClientService backendApiClient,
-    IConfiguration configuration) : IAdminAuthService
+public sealed class AdminAuthService(IBackendApiClientService backendApiClient) : IAdminAuthService
 {
     public async Task<AdminAuthenticationResult> AuthenticateAsync(
         string userName,
@@ -38,29 +36,7 @@ public sealed class AdminAuthService(
 
         if (login is null)
         {
-            return new AdminAuthenticationResult(false, "Invalid username or password.");
-        }
-
-        var allowedUsers = configuration
-            .GetSection("AdminAccess:AllowedUserNames")
-            .GetChildren()
-            .Select(item => item.Value?.Trim())
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Cast<string>()
-            .ToArray();
-
-        if (allowedUsers.Length == 0)
-        {
-            return new AdminAuthenticationResult(
-                false,
-                "Admin access has not been configured yet.");
-        }
-
-        if (!allowedUsers.Contains(normalizedUserName, StringComparer.OrdinalIgnoreCase))
-        {
-            return new AdminAuthenticationResult(
-                false,
-                "This account is not authorized to access TUKI Admin.");
+            return new AdminAuthenticationResult(false, "Invalid administrator username or password.");
         }
 
         return new AdminAuthenticationResult(true, UserName: normalizedUserName, Login: login);
