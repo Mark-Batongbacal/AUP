@@ -518,7 +518,7 @@ public partial class RoutingService
         double Longitude,
         double DistanceFromRouteStartMeters);
 
-    private sealed record RouteConnectionCandidate(
+    internal sealed record RouteConnectionCandidate(
         string RouteId,
         string RouteName,
         AccessCandidate BoardAccess,
@@ -526,6 +526,11 @@ public partial class RoutingService
         int BoardIndex,
         int AlightIndex,
         double TotalGeneralizedCostPesos);
+
+    private sealed record BoardAccessDiscovery(
+        AccessCandidate[] Projected,
+        AccessCandidate[] SearchAnchors,
+        AccessCandidate? Exact);
 
     private sealed record InterchangePairCandidate(
         int IndexA,
@@ -592,7 +597,8 @@ public partial class RoutingService
         double WalkingFatiguePesosPerKilometer,
         int? RouteSampleIndex = null,
         RouteAnchor? FullRouteAnchor = null,
-        IReadOnlyList<AccessCandidate>? Alternatives = null)
+        IReadOnlyList<AccessCandidate>? Alternatives = null,
+        bool IsNetworkWalkConfirmed = false)
     {
         public IReadOnlyList<AccessCandidate> AllAlternatives =>
             Alternatives ?? [this];

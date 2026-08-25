@@ -26,15 +26,21 @@ public partial class RoutingService
         if (downstreamSampleIndex < 0 || downstreamSampleIndex >= samples.Count)
             throw new ArgumentOutOfRangeException(nameof(downstreamSampleIndex));
 
+        var discovery = await DiscoverBoardAccessOptionsAsync(
+            routeId,
+            samples,
+            originLatitude,
+            originLongitude,
+            cancellationToken);
         var direct = DistinctAccessOccurrences(FindBestConnections(
                 route,
                 originLatitude,
                 originLongitude,
                 destinationLatitude,
-                destinationLongitude)
+                destinationLongitude,
+                discovery)
             .Select(candidate => candidate.BoardAccess));
-        var generated = ConstrainTransitAccessOptions(ComputeBoardAccessOptions(
-            routeId, samples, originLatitude, originLongitude));
+        var generated = ConstrainTransitAccessOptions(discovery.Projected);
         var prefix = ComputePrefixAccessOptions(routeId, generated, direct);
         var previousScalar = generated
             .Take(downstreamSampleIndex)
@@ -117,19 +123,22 @@ public partial class RoutingService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var discovery = await DiscoverBoardAccessOptionsAsync(
+                routeId,
+                samples,
+                originLatitude,
+                originLongitude,
+                cancellationToken);
             var direct = FindBestConnections(
                 routesById[routeId],
                 originLatitude,
                 originLongitude,
                 destinationLatitude,
-                destinationLongitude);
+                destinationLongitude,
+                discovery);
             boardPrefixes[routeId] = ComputePrefixAccessOptions(
                 routeId,
-                ConstrainTransitAccessOptions(ComputeBoardAccessOptions(
-                    routeId,
-                    samples,
-                    originLatitude,
-                    originLongitude)),
+                ConstrainTransitAccessOptions(discovery.Projected),
                 direct.Select(candidate => candidate.BoardAccess));
             destinationAccess[routeId] = DistinctAccessOccurrences(
                 ConstrainTransitAccessOptions(ComputeAlightAccessOptions(

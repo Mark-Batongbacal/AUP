@@ -39,19 +39,21 @@ public partial class RoutingService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var boardOptions =
-                ComputeBoardAccessOptions(
-                    routeId,
-                    samples,
-                    originLatitude,
-                    originLongitude);
+            var boardDiscovery = await DiscoverBoardAccessOptionsAsync(
+                routeId,
+                samples,
+                originLatitude,
+                originLongitude,
+                cancellationToken);
+            var boardOptions = boardDiscovery.Projected;
 
             var directConnections = FindBestConnections(
                 routesById[routeId],
                 originLatitude,
                 originLongitude,
                 destinationLatitude,
-                destinationLongitude);
+                destinationLongitude,
+                boardDiscovery);
             directConnectionsByRoute[routeId] = directConnections;
 
             // Transfer journeys take their origin access from these bounded

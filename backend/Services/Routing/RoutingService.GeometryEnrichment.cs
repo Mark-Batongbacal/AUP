@@ -67,14 +67,7 @@ public partial class RoutingService : IJourneyGeometryEnricher
     {
         var routeId = leg.RouteId!;
         var geometry = _routeGeometries[routeId];
-        var from = ProjectOntoFullRoute(
-            routeId,
-            (leg.OriginLatitude, leg.OriginLongitude),
-            0);
-        var to = ProjectOntoFullRoute(
-            routeId,
-            (leg.DestinationLatitude, leg.DestinationLongitude),
-            from.SegmentIndex);
+        var (from, to) = ResolveJeepneyGeometryAnchors(leg);
 
         if (to.DistanceFromRouteStartMeters < from.DistanceFromRouteStartMeters)
             return EndpointGeometry(leg);
@@ -94,6 +87,103 @@ public partial class RoutingService : IJourneyGeometryEnricher
 
         AddDistinct(points, new RouteGeometryPoint(to.Latitude, to.Longitude));
         return points.Count >= 2 ? points : EndpointGeometry(leg);
+    }
+
+    /// <summary>
+    /// A selected jeepney leg already carries the authoritative ride distance
+    /// computed from its occurrence-aware full-route anchors. Geometry
+    /// enrichment must not throw that information away by re-projecting the
+    /// board coordinate from segment zero: on loops/retraced routes the same
+    /// physical coordinate can occur multiple times. Resolve the physically
+    /// nearby board/alight occurrences whose route-progress span best matches
+    /// the planned jeepney distance, then slice only that occurrence range.
+    /// </summary>
+    private (RouteAnchor From, RouteAnchor To) ResolveJeepneyGeometryAnchors(
+        JeepneyTripLeg leg)
+    {
+        var routeId = leg.RouteId!;
+        var boardPoint = (leg.OriginLatitude, leg.OriginLongitude);
+        var alightPoint = (leg.DestinationLatitude, leg.DestinationLongitude);
+        var expectedDistanceMeters = leg.JeepneyDistanceMeters ?? leg.DistanceMeters;
+
+        if (double.IsFinite(expectedDistanceMeters) && expectedDistanceMeters > 0)
+        {
+            var boardOccurrences = GetNearbyRouteOccurrenceProjections(
+                routeId,
+                boardPoint);
+            var alightOccurrences = GetNearbyRouteOccurrenceProjections(
+                routeId,
+                alightPoint);
+
+            var bestPair = boardOccurrences
+                .SelectMany(board => alightOccurrences
+                    .Where(alight =>
+                        alight.Anchor.DistanceFromRouteStartMeters >=
+                        board.Anchor.DistanceFromRouteStartMeters)
+                    .Select(alight => new
+                    {
+                        From = board.Anchor,
+                        To = alight.Anchor,
+                        DistanceErrorMeters = Math.Abs(
+                            RouteDistanceBetweenAnchors(board.Anchor, alight.Anchor) -
+                            expectedDistanceMeters),
+                        EndpointGapMeters = board.GapMeters + alight.GapMeters
+                    }))
+                .OrderBy(pair => pair.DistanceErrorMeters)
+                .ThenBy(pair => pair.EndpointGapMeters)
+                .ThenBy(pair => pair.From.DistanceFromRouteStartMeters)
+                .FirstOrDefault();
+
+            if (bestPair is not null)
+                return (bestPair.From, bestPair.To);
+        }
+
+        // Backward-compatible fallback for legacy/manually-created legs that
+        // do not carry a usable planned jeepney distance.
+        var from = ProjectOntoFullRoute(routeId, boardPoint, 0);
+        var to = ProjectOntoFullRoute(routeId, alightPoint, from.SegmentIndex);
+        return (from, to);
+    }
+
+    private List<(RouteAnchor Anchor, double GapMeters)>
+        GetNearbyRouteOccurrenceProjections(
+            string routeId,
+            (double Latitude, double Longitude) point)
+    {
+        var geometry = _routeGeometries[routeId];
+        var projections = new List<(RouteAnchor Anchor, double GapMeters)>();
+
+        for (var segmentIndex = 0;
+             segmentIndex < geometry.Points.Count - 1;
+             segmentIndex++)
+        {
+            var anchor = ProjectOntoFullRoute(
+                routeId,
+                point,
+                segmentIndex,
+                segmentIndex + 1);
+            var gapMeters = ApproximateDistanceMeters(
+                point.Latitude,
+                point.Longitude,
+                anchor.Latitude,
+                anchor.Longitude);
+            projections.Add((anchor, gapMeters));
+        }
+
+        if (projections.Count == 0)
+            return [];
+
+        var bestGapMeters = projections.Min(candidate => candidate.GapMeters);
+        var occurrenceToleranceMeters = Math.Max(
+            5.0,
+            _options.JourneyLegContinuityToleranceMeters);
+
+        return projections
+            .Where(candidate =>
+                candidate.GapMeters <= bestGapMeters + occurrenceToleranceMeters)
+            .OrderBy(candidate => candidate.GapMeters)
+            .ThenBy(candidate => candidate.Anchor.DistanceFromRouteStartMeters)
+            .ToList();
     }
 
     private async Task<List<RouteGeometryPoint>> GetRoadGeometryAsync(

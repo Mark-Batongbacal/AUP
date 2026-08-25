@@ -225,6 +225,57 @@ public sealed class FeederShadowingRegressionTests
         });
     }
 
+    [Fact]
+    public async Task PlanTripsAsync_ShortDownstreamBoardWithoutAccessImprovementIsRejected()
+    {
+        var route = BuildStraightRoute(120.5000, 120.5035);
+        var toda = new TricyclePoint
+        {
+            TricyclePointId = 1,
+            PointCode = "START-TODA",
+            PointName = "Start TODA",
+            CenterLatitude = 15.0000,
+            CenterLongitude = 120.5000,
+            IsActive = true
+        };
+        var service = CreateService(
+            route,
+            [toda],
+            new CostingAwareValhallaService(5.6),
+            new RoutingOptions
+            {
+                DefaultSampleIntervalMeters = 50,
+                MaxRouteSamples = 30,
+                MaxTransfers = 0,
+                MaxTripOptions = 10,
+                MaxCandidatesToConfirm = 100,
+                MaxBoardingVariantsPerRoute = 20,
+                MaxWalkAccessDistanceMeters = 20,
+                MaxWalkToTrikePointMeters = 100,
+                MaxNearbyTrikeCandidates = 2,
+                MaxTotalWalkingMetersPerJourney = 500,
+                MaxWalkOnlyTripDistanceMeters = 20,
+                MaxWalkTrikeTripDistanceMeters = 20,
+                MaxStaticRouteSegmentJumpMeters = 15_000,
+                FeederShadowingMinProgressMeters = 300,
+                FeederShadowingAccessDistanceRatio = 0.60
+            });
+
+        var plans = await service.PlanTripsAsync(
+            15.0000, 120.5000,
+            15.0000, 120.5035);
+
+        Assert.NotEmpty(plans);
+        Assert.All(plans, plan =>
+        {
+            var board = plan.Legs.First(leg => leg.Mode == AccessMode.Jeepney);
+            Assert.True(
+                board.BoardLongitude <= 120.5011,
+                $"A feeder with no confirmed distance improvement must not replace " +
+                $"a short section of the same corridor; got {board.BoardLongitude:F6}.");
+        });
+    }
+
     // TEST 6 -- origin genuinely sits near the far end of a route; the only
     // realistically reachable board is a high-progress one, and it must not
     // be rejected merely for having high absolute progress. Shadowing is
