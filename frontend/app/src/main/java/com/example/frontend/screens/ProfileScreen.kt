@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -48,7 +47,6 @@ import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiSurfaceRaised
-import com.example.frontend.ui.theme.TukiTeal
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.delay
@@ -147,6 +145,7 @@ fun ProfileScreen(
                 initialFullName = displayName,
                 initialEmail = displayEmail,
                 initialPhone = displayPhone,
+                initialProfileImageUrl = loadedProfile?.profileImageUrl,
                 onBack = { page = ProfilePage.OVERVIEW },
                 onSaveChanges = { fullName, phone ->
                     val parts = fullName.trim().split(Regex("\\s+"), limit = 2)
@@ -163,6 +162,13 @@ fun ProfileScreen(
                         is ApiResult.Failure -> EditProfileResult.Error(result.message)
                     }
                 },
+                onUploadPhoto = { imageBytes ->
+                    when (val result = dataProvider.userRepository.uploadProfileImage(imageBytes)) {
+                        is ApiResult.Success -> EditProfileResult.Success(result.data)
+                        is ApiResult.Failure -> EditProfileResult.Error(result.message)
+                    }
+                },
+                onProfileChanged = { profile -> loadedProfile = profile },
                 onSaved = { profile ->
                     loadedProfile = profile
                     page = ProfilePage.OVERVIEW
@@ -254,7 +260,7 @@ fun ProfileScreen(
                 ProfileAccountRow(
                     R.drawable.edit_profile,
                     TukiInterfaceText.editProfile,
-                    if (TukiInterfaceText.isFilipino) "Pangalan, email, phone" else "Name, email, phone",
+                    if (TukiInterfaceText.isFilipino) "Pangalan, larawan, email, phone" else "Name, photo, email, phone",
                     { page = ProfilePage.EDIT_PROFILE }
                 )
             )
@@ -296,12 +302,12 @@ fun ProfileScreen(
         ) {
             item {
                 Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier.size(76.dp).background(TukiTeal, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = initials, color = Color.White, style = MaterialTheme.typography.displaySmall)
-                    }
+                    ProfileAvatar(
+                        profileImageUrl = if (isGuest) null else loadedProfile?.profileImageUrl,
+                        initials = initials,
+                        size = 76.dp,
+                        textStyle = MaterialTheme.typography.displaySmall
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(text = displayName, color = TukiInk, style = MaterialTheme.typography.displaySmall)
                     Spacer(modifier = Modifier.height(3.dp))
@@ -341,10 +347,13 @@ fun ProfileScreen(
             item {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ProfileStatCard(
-                        ProfileStat(tripsTaken.toString(), if (TukiInterfaceText.isFilipino) "MGA BIYAHE" else "TRIPS TAKEN"),
+                        ProfileStat((loadedProfile?.tripsTaken ?: tripsTaken).toString(), if (TukiInterfaceText.isFilipino) "MGA BIYAHE" else "TRIPS TAKEN"),
                         Modifier.weight(1f)
                     )
-                    ProfileStatCard(ProfileStat(favoritesCount.toString(), "FAVORITES"), Modifier.weight(1f))
+                    ProfileStatCard(
+                        ProfileStat((loadedProfile?.favoritesCount ?: favoritesCount).toString(), "FAVORITES"),
+                        Modifier.weight(1f)
+                    )
                 }
                 Spacer(modifier = Modifier.height(22.dp))
             }

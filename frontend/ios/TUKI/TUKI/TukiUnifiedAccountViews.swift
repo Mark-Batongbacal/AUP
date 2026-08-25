@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -28,12 +29,11 @@ struct TukiUnifiedProfileView: View {
                 let displayName = auth.isGuestAccount ? "Guest" : (profile?.displayName ?? "User")
                 let email = auth.isGuestAccount ? "Guest mode" : (profile?.email ?? "")
 
-                Text(initials(displayName))
-                    .font(.system(size: 34, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 96, height: 96)
-                    .background(TukiPalette.teal)
-                    .clipShape(Circle())
+                TukiProfileAvatar(
+                    profileImageUrl: auth.isGuestAccount ? nil : profile?.profileImageUrl,
+                    initials: initials(displayName),
+                    size: 96
+                )
 
                 VStack(spacing: 3) {
                     Text(displayName)
@@ -79,7 +79,7 @@ struct TukiUnifiedProfileView: View {
 
                 VStack(spacing: 0) {
                     if !auth.isGuestAccount {
-                        accountRow("Edit Profile", subtitle: "Update your personal information", action: onEdit)
+                        accountRow("Edit Profile", subtitle: "Update your name, photo, and phone", action: onEdit)
                         divider
                         accountRow("Privacy & Security", subtitle: "Password, permissions & privacy", action: onPrivacy)
                         divider
@@ -141,9 +141,10 @@ struct TukiUnifiedEditProfileView: View {
     @State private var fullName = ""
     @State private var phone = ""
     @State private var saving = false
+    @State private var uploadingPhoto = false
     @State private var message: String?
     @State private var error: String?
-    @State private var photoInfo = false
+    @State private var photoItem: PhotosPickerItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -152,22 +153,32 @@ struct TukiUnifiedEditProfileView: View {
                 VStack(spacing: 18) {
                     let name = fullName.isEmpty ? (auth.currentUserProfile?.displayName ?? "User") : fullName
                     ZStack(alignment: .bottomTrailing) {
-                        Text(initials(name))
-                            .font(.system(size: 34, weight: .heavy))
-                            .foregroundStyle(.white)
-                            .frame(width: 100, height: 100)
-                            .background(TukiPalette.teal)
-                            .clipShape(Circle())
-                        Button("📷") { photoInfo = true }
+                        TukiProfileAvatar(
+                            profileImageUrl: auth.currentUserProfile?.profileImageUrl,
+                            initials: initials(name),
+                            size: 100
+                        )
+                        PhotosPicker(selection: $photoItem, matching: .images) {
+                            ZStack {
+                                Circle().fill(TukiPalette.orange)
+                                if uploadingPhoto {
+                                    ProgressView().tint(.white).scaleEffect(0.8)
+                                } else {
+                                    Text("📷")
+                                }
+                            }
                             .frame(width: 34, height: 34)
-                            .background(TukiPalette.orange)
-                            .clipShape(Circle())
-                            .buttonStyle(.plain)
-                    }
-                    Button("Change photo") { photoInfo = true }
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(TukiPalette.teal)
+                        }
                         .buttonStyle(.plain)
+                        .disabled(uploadingPhoto || saving)
+                    }
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Text(uploadingPhoto ? "Uploading photo..." : "Change photo")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(TukiPalette.teal)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(uploadingPhoto || saving)
 
                     parityField("Full name", text: $fullName)
                     VStack(alignment: .leading, spacing: 6) {
@@ -189,7 +200,7 @@ struct TukiUnifiedEditProfileView: View {
                     TukiPrimaryButton(
                         title: saving ? "Saving..." : "Save changes",
                         isLoading: saving,
-                        isEnabled: !saving && !fullName.trimmingCharacters(in: .whitespaces).isEmpty && !phone.trimmingCharacters(in: .whitespaces).isEmpty
+                        isEnabled: !saving && !uploadingPhoto && !fullName.trimmingCharacters(in: .whitespaces).isEmpty && !phone.trimmingCharacters(in: .whitespaces).isEmpty
                     ) {
                         Task { await save() }
                     }
@@ -203,15 +214,50 @@ struct TukiUnifiedEditProfileView: View {
             fullName = auth.currentUserProfile?.displayName ?? ""
             phone = auth.currentUserProfile?.phoneNumber ?? ""
         }
-        .alert("Change photo", isPresented: $photoInfo) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Profile photo upload is not available in the current backend yet.")
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task { await uploadPhoto(item) }
+        }
+    }
+
+    private func uploadPhoto(_ item: PhotosPickerItem) async {
+        guard !auth.isGuestAccount, !uploadingPhoto else { return }
+        uploadingPhoto = true
+        message = nil
+        error = nil
+        defer {
+            uploadingPhoto = false
+            photoItem = nil
+        }
+
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let jpegData = tukiPreparedProfileJPEG(from: data) else {
+                error = "TUKI couldn't read that image. Choose another photo."
+                return
+            }
+            guard let uploader = TukiProfileImageUploader.configured() else {
+                error = "Profile photo upload is not configured."
+                return
+            }
+
+            switch await uploader.upload(jpegData: jpegData) {
+            case .success:
+                if await auth.refreshProfile() {
+                    message = "Profile photo updated."
+                } else {
+                    error = auth.errorMessage ?? "The photo was uploaded, but TUKI couldn't refresh your profile."
+                }
+            case .failure(let value):
+                error = value.message
+            }
+        } catch {
+            self.error = "TUKI couldn't read that image. Choose another photo."
         }
     }
 
     private func save() async {
-        guard !saving else { return }
+        guard !saving, !uploadingPhoto else { return }
         saving = true
         message = nil
         error = nil

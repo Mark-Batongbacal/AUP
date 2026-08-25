@@ -94,6 +94,34 @@ public sealed class GuestAccessControllerTests
     }
 
     [Fact]
+    public async Task UploadProfileImage_WhenGuest_ReturnsForbiddenWithoutMutation()
+    {
+        var userId = Guid.NewGuid();
+        var profiles = new Mock<IUserProfileService>(MockBehavior.Strict);
+        var controller = new UsersController(profiles.Object)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                        [
+                            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+                            new Claim(ClaimTypes.Role, "Guest")
+                        ],
+                        "ApiKey"))
+                }
+            }
+        };
+
+        var response = await controller.UploadProfileImage(null, CancellationToken.None);
+
+        var forbidden = Assert.IsType<ObjectResult>(response.Result);
+        Assert.Equal(StatusCodes.Status403Forbidden, forbidden.StatusCode);
+        profiles.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task CreateGuestProfileAsync_WhenCalledRepeatedly_CreatesUniqueGuestIdentities()
     {
         var savedProfiles = new List<UserProfile>();
