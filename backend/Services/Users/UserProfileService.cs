@@ -220,12 +220,22 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
             return UserProfileMutationResult.ValidationFailed(validation.Errors);
         }
 
+        var existingProfile = await _userProfileRepository.GetActiveByUserIdAsync(userId, cancellationToken);
+        if (existingProfile is null)
+        {
+            return UserProfileMutationResult.NotFound(userId);
+        }
+
+        // PUT requests in both clients intentionally send only the fields being changed.
+        // Preserve omitted values so an image-only update cannot clear name/phone, and a later
+        // name/phone update cannot accidentally remove the saved profile image. Passing an empty
+        // string is still treated as an explicit clear for optional fields.
         var profile = await _userProfileRepository.UpdateEditableFieldsAsync(
             userId,
-            validation.FirstName,
-            validation.LastName,
-            validation.PhoneNumber,
-            validation.ProfileImageUrl,
+            firstName is null ? existingProfile.FirstName : validation.FirstName,
+            lastName is null ? existingProfile.LastName : validation.LastName,
+            phoneNumber is null ? existingProfile.PhoneNumber : validation.PhoneNumber,
+            profileImageUrl is null ? existingProfile.ProfileImageUrl : validation.ProfileImageUrl,
             cancellationToken);
 
         return profile is null
