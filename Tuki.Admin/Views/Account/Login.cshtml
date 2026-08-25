@@ -1,0 +1,43 @@
+@model Tuki.Admin.ViewModels.LoginViewModel
+@{
+    ViewData["Title"] = "Admin Login";
+}
+
+<div class="auth-shell">
+    <section class="auth-card" aria-labelledby="login-title">
+        <div class="brand-mark">T</div>
+        <p class="eyebrow">TUKI ADMIN</p>
+        <h1 id="login-title">Welcome back</h1>
+        <p class="auth-copy">Sign in with an administrator account to manage verified TUKI transport data.</p>
+
+        <form asp-action="Login" asp-controller="Account" method="post" class="auth-form">
+            <input asp-for="ReturnUrl" type="hidden" />
+            <div asp-validation-summary="ModelOnly" class="validation-summary"></div>
+
+            <div class="field-group">
+                <label asp-for="UserName"></label>
+                <input asp-for="UserName" class="form-control" autocomplete="username" placeholder="admin@example.com" />
+                <span asp-validation-for="UserName" class="field-error"></span>
+            </div>
+
+            <div class="field-group">
+                <label asp-for="Password"></label>
+                <input asp-for="Password" class="form-control" autocomplete="current-password" placeholder="Enter your password" />
+                <span asp-validation-for="Password" class="field-error"></span>
+            </div>
+
+            <label class="remember-row">
+                <input asp-for="RememberMe" />
+                <span>@Html.DisplayNameFor(model => model.RememberMe)</span>
+            </label>
+
+            <button type="submit" class="btn btn-tuki w-100">Sign in to Admin</button>
+        </form>
+
+        <p class="security-note">Admin access is restricted separately from normal passenger access.</p>
+    </section>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
