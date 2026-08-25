@@ -205,13 +205,13 @@ private fun HistoryRoutePreview(
             }
 
             if (isLoading && routePoints.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().height(218.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = TukiTeal)
                 }
             } else if (routePoints.size >= 2) {
                 MapScreen(
                     routePoints = routePoints,
-                    modifier = Modifier.fillMaxWidth().height(218.dp).clip(RoundedCornerShape(15.dp)),
+                    modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(15.dp)),
                     startPoint = startPoint,
                     selectedDestination = destinationPoint,
                     finalDestination = finalDestination,
@@ -221,7 +221,8 @@ private fun HistoryRoutePreview(
                     visualStyle = MapVisualStyle.LiveTrip,
                     showDeviceLocation = false,
                     fitRouteBounds = true,
-                    routeBoundsPoints = routeBoundsPoints.ifEmpty { routePoints }
+                    routeBoundsPoints = routeBoundsPoints.ifEmpty { routePoints },
+                    routeInteractionControlsEnabled = true
                 )
             }
         }
