@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -39,7 +40,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.frontend.core.location.LocationDetectionFailureMessage
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
@@ -49,16 +49,13 @@ import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.data.routing.PendingAiRouteSelection
 import com.example.frontend.data.routing.PlannedJourney
 import com.example.frontend.data.routing.toDomain
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
-
-import androidx.compose.material3.MaterialTheme
-import com.example.frontend.ui.theme.TukiTeal
-import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
+import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.ui.theme.TukiTeal
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val TukiChatBubble = Color(0xFF1F4B52)
 
@@ -121,22 +118,16 @@ fun AskAiChatScreen(
         isThinking = true
 
         scope.launch {
+            // Location is useful planning context, but it is not required just to
+            // converse with TUKI. The backend returns ORIGIN_REQUIRED only when a
+            // real route calculation actually needs an origin.
             val location = context.currentDeviceLocation()
-            if (location == null) {
-                messages = messages + AiChatMessage(
-                    id = System.currentTimeMillis() + 1,
-                    text = LocationDetectionFailureMessage,
-                    isFromUser = false
-                )
-                isThinking = false
-                return@launch
-            }
 
             when (val result = aiRepository.ask(
                 AssistantRequest(
                     message = trimmed,
-                    originLatitude = location.latitude,
-                    originLongitude = location.longitude,
+                    originLatitude = location?.latitude,
+                    originLongitude = location?.longitude,
                     destinationId = destinationId
                 )
             )) {
@@ -192,7 +183,11 @@ fun AskAiChatScreen(
                     color = TukiInk,
                     style = MaterialTheme.typography.titleLarge
                 )
-                Text("Get TUKI route recommendations", color = TukiMuted, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "Get TUKI route recommendations",
+                    color = TukiMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
 
@@ -231,7 +226,11 @@ fun AskAiChatScreen(
             if (messages.size <= 1) {
                 item {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        Text("Try asking:", color = TukiMuted, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            "Try asking:",
+                            color = TukiMuted,
+                            style = MaterialTheme.typography.labelSmall
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             quickPrompts.forEach { prompt ->
@@ -254,7 +253,13 @@ fun AskAiChatScreen(
             TextField(
                 value = inputText,
                 onValueChange = { inputText = it },
-                placeholder = { Text("Type your message...", color = TukiMuted, style = MaterialTheme.typography.bodyMedium) },
+                placeholder = {
+                    Text(
+                        "Type your message...",
+                        color = TukiMuted,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                },
                 singleLine = true,
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.White.copy(alpha = 0.08f),
@@ -274,10 +279,16 @@ fun AskAiChatScreen(
                 modifier = Modifier
                     .size(44.dp)
                     .background(
-                        if (inputText.isNotBlank() && !isThinking) TukiOrange else TukiOrange.copy(alpha = 0.45f),
+                        if (inputText.isNotBlank() && !isThinking) {
+                            TukiOrange
+                        } else {
+                            TukiOrange.copy(alpha = 0.45f)
+                        },
                         CircleShape
                     )
-                    .clickable(enabled = inputText.isNotBlank() && !isThinking) { askAssistant(inputText) },
+                    .clickable(enabled = inputText.isNotBlank() && !isThinking) {
+                        askAssistant(inputText)
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Text("➤", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -308,13 +319,20 @@ private fun AiMessageBubble(
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
-                Text(message.text, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    message.text,
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyLarge
+                )
             }
 
             if (!message.isFromUser && message.destinationChoices.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 message.destinationChoices.forEach { place ->
-                    DestinationChoiceCard(place = place, onClick = { onDestinationSelected(place) })
+                    DestinationChoiceCard(
+                        place = place,
+                        onClick = { onDestinationSelected(place) }
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
@@ -350,7 +368,8 @@ private fun AiRouteCard(
         if ("cheapest" in tags) add("Cheapest")
         if ("fastest" in tags) add("Fastest")
     }
-    val label = objectiveLabels.joinToString(" · ").ifBlank { "Alternative $fallbackAlternativeNumber" }
+    val label = objectiveLabels.joinToString(" · ")
+        .ifBlank { "Alternative $fallbackAlternativeNumber" }
     val icon = when {
         "efficient" in tags -> "⚖️"
         "cheapest" in tags -> "₱"
@@ -379,13 +398,32 @@ private fun AiRouteCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("$icon $label", color = Color.White, style = MaterialTheme.typography.titleLarge)
-            Text("View route ›", color = TukiOrange, style = MaterialTheme.typography.labelLarge)
+            Text(
+                "$icon $label",
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge
+            )
+            Text(
+                "View route ›",
+                color = TukiOrange,
+                style = MaterialTheme.typography.labelLarge
+            )
         }
         Spacer(modifier = Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("₱${journey.farePesos.roundToInt()}", color = Color.White, style = MaterialTheme.typography.titleMedium)
-            Text("~${(journey.durationSeconds / 60).roundToInt()} min", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "₱${journey.farePesos.roundToInt()}",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                "~${(journey.durationSeconds / 60).roundToInt()} min",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium
+            )
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -395,13 +433,20 @@ private fun AiRouteCard(
         )
         if (modes.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(modes, color = Color.White.copy(alpha = 0.78f), style = MaterialTheme.typography.bodySmall)
+            Text(
+                modes,
+                color = Color.White.copy(alpha = 0.78f),
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
 
 @Composable
-private fun DestinationChoiceCard(place: DestinationSearchResultDto, onClick: () -> Unit) {
+private fun DestinationChoiceCard(
+    place: DestinationSearchResultDto,
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -413,9 +458,17 @@ private fun DestinationChoiceCard(place: DestinationSearchResultDto, onClick: ()
         Text("📍", fontSize = 17.sp)
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(place.name, color = Color.White, style = MaterialTheme.typography.titleMedium)
+            Text(
+                place.name,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium
+            )
             place.address?.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    it,
+                    color = Color.White.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
         Text("Select", color = Color.White, style = MaterialTheme.typography.labelLarge)
@@ -430,7 +483,12 @@ private fun ThinkingBubble() {
                 .background(TukiChatBubble, RoundedCornerShape(16.dp))
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            Text("•••", color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "•••",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
