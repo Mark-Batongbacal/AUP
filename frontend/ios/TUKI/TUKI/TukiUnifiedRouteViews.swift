@@ -343,7 +343,7 @@ struct TukiUnifiedRouteResultsView: View {
             .buttonStyle(.plain)
         }
         .foregroundStyle(.white)
-        .padding(20).background(TukiPalette.dark).clipShape(RoundedRectangle(cornerRadius: 18))
+        .padding(20).background(TukiPalette.accentSurface).clipShape(RoundedRectangle(cornerRadius: 18))
     }
 
     private func stat(_ value: String, _ title: String) -> some View {

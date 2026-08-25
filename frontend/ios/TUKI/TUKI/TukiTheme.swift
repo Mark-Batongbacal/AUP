@@ -64,6 +64,16 @@ enum TukiPalette {
             ? Color(red: 59 / 255, green: 72 / 255, blue: 78 / 255)
             : Color(red: 232 / 255, green: 232 / 255, blue: 232 / 255)
     }
+
+    /// A dark accent-card surface (white text on top) that stays dark in BOTH themes —
+    /// distinct from `dark`, which is the ink/text token that flips light-on-dark-bg.
+    /// Mirrors Android's `HomeAiSurface` (ui/theme/Color.kt pattern: two dark tones,
+    /// never a light one, so white text on it stays legible in light and dark mode).
+    static var accentSurface: Color {
+        isDark
+            ? Color(red: 0x0C / 255, green: 0x30 / 255, blue: 0x3A / 255)
+            : Color(red: 0x15 / 255, green: 0x3E / 255, blue: 0x4B / 255)
+    }
 }
 
 struct TukiLogoHeader: View {

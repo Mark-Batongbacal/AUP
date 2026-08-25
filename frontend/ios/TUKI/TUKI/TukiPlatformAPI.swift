@@ -35,6 +35,7 @@ struct TukiPlace: Codable, Identifiable, Hashable {
     let category: String
     let source: String
     let address: String?
+    var locality: String? = nil
 }
 
 struct TukiCoordinate: Codable, Hashable {
@@ -341,6 +342,15 @@ final class TukiPlatformAPI {
         if let focusLat { items.append(URLQueryItem(name: "focusLat", value: String(focusLat))) }
         if let focusLon { items.append(URLQueryItem(name: "focusLon", value: String(focusLon))) }
         return await request([TukiPlace].self, path: "api/places/search", query: items, auth: false)
+    }
+
+    /// Expanded results for the destination picker's "More places" affordance, matching
+    /// Android's `PlacesRepository.searchMorePlaces` (`GET api/places/search/more`).
+    func searchMorePlaces(_ query: String, focusLat: Double? = nil, focusLon: Double? = nil) async -> Result<[TukiPlace], TukiPlatformError> {
+        var items = [URLQueryItem(name: "q", value: query)]
+        if let focusLat { items.append(URLQueryItem(name: "focusLat", value: String(focusLat))) }
+        if let focusLon { items.append(URLQueryItem(name: "focusLon", value: String(focusLon))) }
+        return await request([TukiPlace].self, path: "api/places/search/more", query: items, auth: false)
     }
 
     func reverseGeocode(lat: Double, lon: Double) async -> Result<TukiPlace, TukiPlatformError> {

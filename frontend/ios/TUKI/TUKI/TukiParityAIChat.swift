@@ -60,7 +60,7 @@ struct TukiParityAIChat: View {
                                     .foregroundStyle(.white.opacity(0.7))
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
-                                    .background(TukiPalette.dark)
+                                    .background(TukiPalette.accentSurface)
                                     .clipShape(RoundedRectangle(cornerRadius: 16))
                                 Spacer()
                             }
@@ -131,7 +131,7 @@ struct TukiParityAIChat: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
-                    .background(message.isFromUser ? TukiPalette.orange : TukiPalette.dark)
+                    .background(message.isFromUser ? TukiPalette.orange : TukiPalette.accentSurface)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
 
                 if !message.isFromUser {
@@ -224,7 +224,7 @@ struct TukiParityAIChat: View {
             .foregroundStyle(.white)
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(TukiPalette.dark)
+            .background(TukiPalette.accentSurface)
             .clipShape(RoundedRectangle(cornerRadius: 18))
         }
         .buttonStyle(.plain)
@@ -274,7 +274,7 @@ struct TukiParityAIChat: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(TukiPalette.dark)
+        .background(TukiPalette.accentSurface)
     }
 
     private var canSend: Bool {

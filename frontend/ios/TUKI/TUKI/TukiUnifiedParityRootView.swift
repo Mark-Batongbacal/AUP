@@ -67,7 +67,8 @@ private enum UnifiedTab: CaseIterable {
 
 private enum UnifiedScreen {
     case tabs
-    case destination(String, CLLocationCoordinate2D?)
+    case pickOrigin
+    case pickDestination
     case ai
     case routes(String, CLLocationCoordinate2D, TukiPlace, TukiRouteChoice?)
     case detail(String, CLLocationCoordinate2D, TukiPlace, TukiRouteChoice, Bool)
@@ -91,6 +92,9 @@ private struct TukiUnifiedMainView: View {
     @State private var recent: [RecentCommute] = []
     @State private var favorites: [FavoriteRoute] = []
     @State private var currentLabel = "Locating you..."
+    @State private var originCoordinate: CLLocationCoordinate2D?
+    @State private var originAreaLabel = TukiInterfaceText.currentArea
+    @State private var selectedDestination: TukiPlace?
     @State private var recentLoading = false
     @State private var recentError: String?
 
@@ -118,15 +122,46 @@ private struct TukiUnifiedMainView: View {
             case .tabs:
                 tabView
 
-            case .destination(let originName, let coordinate):
-                TukiUnifiedDestinationSearchView(
+            case .pickOrigin:
+                TukiUnifiedDestinationPickerScreen(
                     api: api,
-                    location: location,
-                    initialOriginName: originName,
-                    initialOrigin: coordinate,
+                    mode: .origin,
+                    focusLatitude: originCoordinate?.latitude,
+                    focusLongitude: originCoordinate?.longitude,
+                    initialSelection: originCoordinate.map { coordinate in
+                        TukiPlace(
+                            id: "origin-\(coordinate.latitude)-\(coordinate.longitude)",
+                            name: currentLabel,
+                            latitude: coordinate.latitude,
+                            longitude: coordinate.longitude,
+                            category: "origin",
+                            source: "current",
+                            address: nil,
+                            locality: originAreaLabel
+                        )
+                    },
                     onBack: { screen = .tabs },
-                    onFind: { name, origin, destination in
-                        screen = .routes(name, origin, destination, nil)
+                    onDone: { place in
+                        originCoordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+                        currentLabel = place.name
+                        if let locality = place.locality?.trimmingCharacters(in: .whitespaces), !locality.isEmpty {
+                            originAreaLabel = locality
+                        }
+                        screen = .tabs
+                    }
+                )
+
+            case .pickDestination:
+                TukiUnifiedDestinationPickerScreen(
+                    api: api,
+                    mode: .destination,
+                    focusLatitude: originCoordinate?.latitude,
+                    focusLongitude: originCoordinate?.longitude,
+                    initialSelection: selectedDestination,
+                    onBack: { screen = .tabs },
+                    onDone: { place in
+                        selectedDestination = place
+                        screen = .tabs
                     }
                 )
 
@@ -252,7 +287,16 @@ private struct TukiUnifiedMainView: View {
                     UnifiedHome(
                         name: auth.currentUserProfile?.greetingName ?? (auth.isGuest ? "Guest" : "User"),
                         currentLabel: currentLabel,
-                        onPin: { screen = .destination(currentLabel, location.currentLocation?.coordinate) },
+                        areaLabel: originAreaLabel,
+                        isLocating: currentLabel == "Locating you...",
+                        selectedDestination: selectedDestination,
+                        canFindRoutes: selectedDestination != nil && originCoordinate != nil,
+                        onChangeOrigin: { screen = .pickOrigin },
+                        onPinDestination: { screen = .pickDestination },
+                        onFindRoutes: {
+                            guard let selectedDestination, let originCoordinate else { return }
+                            screen = .routes(currentLabel, originCoordinate, selectedDestination, nil)
+                        },
                         onAI: { screen = .ai }
                     )
                 case .recent:
@@ -324,12 +368,16 @@ private struct TukiUnifiedMainView: View {
             currentLabel = location.errorMessage ?? "Unable to detect location"
             return
         }
+        originCoordinate = current.coordinate
         if let api,
            case .success(let place) = await api.reverseGeocode(
                 lat: current.coordinate.latitude,
                 lon: current.coordinate.longitude
            ) {
             currentLabel = place.name
+            if let locality = place.locality?.trimmingCharacters(in: .whitespaces), !locality.isEmpty {
+                originAreaLabel = locality
+            }
         } else {
             currentLabel = "Current location"
         }
@@ -516,36 +564,129 @@ private struct UnifiedForgotPassword: View {
 private struct UnifiedHome: View {
     let name: String
     let currentLabel: String
-    let onPin: () -> Void
+    let areaLabel: String
+    let isLocating: Bool
+    let selectedDestination: TukiPlace?
+    let canFindRoutes: Bool
+    let onChangeOrigin: () -> Void
+    let onPinDestination: () -> Void
+    let onFindRoutes: () -> Void
     let onAI: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Hello, \(name) 👋").font(.system(size: 15, weight: .semibold)).foregroundStyle(TukiPalette.gray)
-                Text("Where are you going?").font(.system(size: 25, weight: .heavy)).foregroundStyle(TukiPalette.dark)
-                Text("Pick a destination yourself, or tell our AI where you want to go.").font(.system(size: 12)).foregroundStyle(TukiPalette.gray)
-                HStack(spacing: 10) {
-                    Circle().fill(TukiPalette.teal).frame(width: 9, height: 9)
-                    Text("\(currentLabel) (current location)").font(.system(size: 15, weight: .bold)).foregroundStyle(TukiPalette.dark)
-                }
-                .padding(16).frame(maxWidth: .infinity, alignment: .leading).background(TukiPalette.creamCard).clipShape(RoundedRectangle(cornerRadius: 14))
-                actionCard("Pin your destination", "Search or drop a pin on the map if you already know where you're headed.", "🗺️ Open map", onPin)
-                actionCard("Ask our AI", "Describe where you want to go, your budget, or whether you prefer the cheapest or fastest commute.", "✨ Ask AI", onAI)
+                Text("\(TukiInterfaceText.hello), \(name) 👋").font(.system(size: 15, weight: .semibold)).foregroundStyle(TukiPalette.gray)
+                Text(TukiInterfaceText.whereToToday).font(.system(size: 25, weight: .heavy)).foregroundStyle(TukiPalette.dark)
+                Text(TukiInterfaceText.planTripOrAskAi).font(.system(size: 12)).foregroundStyle(TukiPalette.gray)
+
+                currentLocationCard
+                destinationCard
+                aiCard
             }
             .padding(24)
         }
         .background(TukiPalette.cream)
     }
 
-    private func actionCard(_ title: String, _ subtitle: String, _ actionTitle: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(title).font(.system(size: 17, weight: .bold))
-                Text(subtitle).font(.system(size: 13)).opacity(0.75)
-                Text(actionTitle).font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(14).background(TukiPalette.orange).clipShape(RoundedRectangle(cornerRadius: 14))
+    // Ported from Android's `CurrentLocationCard` (screens/HomeScreen.kt).
+    private var currentLocationCard: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 18).fill(Color.white.opacity(0.42)).frame(width: 52, height: 52)
+                Text("⊙").font(.system(size: 30, weight: .bold)).foregroundStyle(TukiPalette.teal)
             }
-            .foregroundStyle(.white).padding(18).frame(maxWidth: .infinity, alignment: .leading).background(TukiPalette.dark).clipShape(RoundedRectangle(cornerRadius: 18))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(TukiInterfaceText.currentLocationUpper).font(.system(size: 11, weight: .heavy)).foregroundStyle(TukiPalette.teal)
+                if isLocating {
+                    HStack(spacing: 7) {
+                        ProgressView().tint(TukiPalette.teal)
+                        Text(TukiInterfaceText.locatingYou).font(.system(size: 16, weight: .heavy)).foregroundStyle(TukiPalette.dark)
+                    }
+                } else {
+                    Text(currentLabel).font(.system(size: 19, weight: .heavy)).foregroundStyle(TukiPalette.dark).lineLimit(1)
+                }
+                Text(areaLabel.isEmpty ? TukiInterfaceText.currentArea : areaLabel)
+                    .font(.system(size: 13)).foregroundStyle(TukiPalette.gray).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Rectangle().fill(TukiPalette.teal.opacity(0.18)).frame(width: 1, height: 50)
+            Button(action: onChangeOrigin) {
+                VStack(spacing: 4) {
+                    Text("✎").font(.system(size: 22, weight: .bold)).foregroundStyle(TukiPalette.teal)
+                    Text(TukiInterfaceText.tapToChangeMultiline)
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(TukiPalette.teal)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(width: 68)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(TukiPalette.creamCard)
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+    }
+
+    // Ported from Android's `DestinationCard` (screens/HomeScreen.kt).
+    private var destinationCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onPinDestination) {
+                HStack(alignment: .top, spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 18).fill(TukiPalette.orange.opacity(0.16)).frame(width: 52, height: 52)
+                        Text("📍").font(.system(size: 24))
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(TukiInterfaceText.destinationUpper).font(.system(size: 11, weight: .heavy)).foregroundStyle(TukiPalette.orange)
+                        Text(selectedDestination?.name ?? TukiInterfaceText.whereAreYouGoing)
+                            .font(.system(size: 18, weight: .heavy)).foregroundStyle(TukiPalette.dark).lineLimit(1)
+                        HStack(spacing: 8) {
+                            Text("⌕").font(.system(size: 16)).foregroundStyle(TukiPalette.dark)
+                            Text(selectedDestination == nil ? TukiInterfaceText.searchOrEnterPlace : TukiInterfaceText.tapToChangeDestination)
+                                .font(.system(size: 13)).foregroundStyle(TukiPalette.gray).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 13)
+                        .frame(height: 40)
+                        .background(Color.white.opacity(0.7))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    Spacer(minLength: 0)
+                    Text("›").font(.system(size: 28, weight: .bold)).foregroundStyle(TukiPalette.dark)
+                }
+                .padding(14)
+            }
+            .buttonStyle(.plain)
+
+            if selectedDestination != nil {
+                Button(action: onFindRoutes) {
+                    Text(TukiInterfaceText.findRoutes)
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(canFindRoutes ? TukiPalette.orange : TukiPalette.orange.opacity(0.45))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canFindRoutes)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+            }
+        }
+        .background(TukiPalette.creamCard)
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+    }
+
+    private var aiCard: some View {
+        Button(action: onAI) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(TukiInterfaceText.askTukiAi).font(.system(size: 17, weight: .bold))
+                Text(TukiInterfaceText.letAiFindBestWay).font(.system(size: 13)).opacity(0.75)
+                Text("✨ Ask AI").font(.system(size: 14, weight: .bold)).frame(maxWidth: .infinity).padding(14).background(TukiPalette.orange).clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+            .foregroundStyle(.white).padding(18).frame(maxWidth: .infinity, alignment: .leading).background(TukiPalette.accentSurface).clipShape(RoundedRectangle(cornerRadius: 18))
         }
         .buttonStyle(.plain)
     }
