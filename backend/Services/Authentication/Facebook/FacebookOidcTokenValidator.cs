@@ -14,7 +14,6 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
     private readonly HttpClient _httpClient;
     private readonly string _issuer;
     private readonly Uri _jwksUri;
-    private readonly Uri _limitedJwksUri;
     private readonly TimeProvider _timeProvider;
 
     public FacebookOidcTokenValidator(
@@ -29,19 +28,9 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
             throw new ArgumentException("Facebook OIDC JWKS URI must be an absolute HTTPS URI.", nameof(jwksUri));
         }
 
-        if (!Uri.TryCreate(
-                FacebookOptions.LimitedOidcJwksUri,
-                UriKind.Absolute,
-                out var parsedLimitedJwksUri) ||
-            parsedLimitedJwksUri.Scheme != Uri.UriSchemeHttps)
-        {
-            throw new InvalidOperationException("Facebook Limited Login JWKS URI is invalid.");
-        }
-
         _httpClient = httpClient;
         _issuer = issuer;
         _jwksUri = parsedJwksUri;
-        _limitedJwksUri = parsedLimitedJwksUri;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -59,8 +48,7 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
         }
 
         var parsedToken = ParseToken(idToken);
-        var jwksUri = SelectJwksUri(parsedToken.Payload.Issuer);
-        var jwks = await GetJwksAsync(jwksUri, cancellationToken);
+        var jwks = await GetJwksAsync(cancellationToken);
         var key = jwks.Keys.FirstOrDefault(candidate =>
             string.Equals(candidate.KeyId, parsedToken.Header.KeyId, StringComparison.Ordinal));
 
@@ -77,22 +65,10 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
             parsedToken.Payload.Email);
     }
 
-    private Uri SelectJwksUri(string? tokenIssuer)
-    {
-        if (string.Equals(_issuer, FacebookOptions.DefaultOidcIssuer, StringComparison.Ordinal) &&
-            string.Equals(tokenIssuer, FacebookOptions.LimitedOidcIssuer, StringComparison.Ordinal))
-        {
-            return _limitedJwksUri;
-        }
-
-        return _jwksUri;
-    }
-
     private static ParsedFacebookOidcToken ParseToken(string idToken)
     {
         var parts = idToken.Trim().Split('.');
-        if (parts.Length != 3 ||
-            parts.Any(part => string.IsNullOrWhiteSpace(part)))
+        if (parts.Length != 3 || parts.Any(part => string.IsNullOrWhiteSpace(part)))
         {
             throw new FacebookOidcTokenValidationException();
         }
@@ -131,13 +107,11 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
         }
     }
 
-    private async Task<FacebookJwksResponse> GetJwksAsync(
-        Uri jwksUri,
-        CancellationToken cancellationToken)
+    private async Task<FacebookJwksResponse> GetJwksAsync(CancellationToken cancellationToken)
     {
         try
         {
-            using var response = await _httpClient.GetAsync(jwksUri, cancellationToken);
+            using var response = await _httpClient.GetAsync(_jwksUri, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 throw new FacebookOidcTokenValidationUnavailableException();
@@ -240,8 +214,10 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
             return true;
         }
 
+        // Meta Limited Login tokens have historically used both canonical
+        // facebook.com issuer forms. Keep custom configured issuers exact.
         return string.Equals(_issuer, FacebookOptions.DefaultOidcIssuer, StringComparison.Ordinal) &&
-            string.Equals(issuer, FacebookOptions.LimitedOidcIssuer, StringComparison.Ordinal);
+            string.Equals(issuer, FacebookOptions.AlternateOidcIssuer, StringComparison.Ordinal);
     }
 
     private static bool AudienceContains(JsonElement audience, string appId)
