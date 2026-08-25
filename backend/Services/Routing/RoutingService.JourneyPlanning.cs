@@ -41,6 +41,8 @@ public partial class RoutingService
         await EnsureInitializedAsync(cancellationToken);
 
         var planningPreferences = NormalizePlanningPreferences(preferences);
+        var maxWalkAccessDistanceMeters =
+            GetWalkAccessDistanceLimit(planningPreferences);
 
         var boardAccessPrefixByRoute =
             new Dictionary<string, IReadOnlyList<AccessCandidate>[]>();
@@ -61,7 +63,8 @@ public partial class RoutingService
                 samples,
                 originLatitude,
                 originLongitude,
-                cancellationToken);
+                cancellationToken,
+                maxWalkAccessDistanceMeters);
             var boardOptions = boardDiscovery.Projected;
 
             var directConnections = FindBestConnections(
@@ -70,7 +73,8 @@ public partial class RoutingService
                 originLongitude,
                 destinationLatitude,
                 destinationLongitude,
-                boardDiscovery);
+                boardDiscovery,
+                maxWalkAccessDistanceMeters);
             directConnectionsByRoute[routeId] = directConnections;
 
             // Transfer journeys take their origin access from these bounded
@@ -81,7 +85,9 @@ public partial class RoutingService
             boardAccessPrefixByRoute[routeId] =
                 ComputePrefixAccessOptions(
                     routeId,
-                    ConstrainTransitAccessOptions(boardOptions),
+                    ConstrainTransitAccessOptions(
+                        boardOptions,
+                        maxWalkAccessDistanceMeters),
                     directConnections.Select(candidate => candidate.BoardAccess));
 
             var alightOptions =
@@ -91,7 +97,9 @@ public partial class RoutingService
                     destinationLatitude,
                     destinationLongitude);
             var constrainedAlightOptions =
-                ConstrainTransitAccessOptions(alightOptions);
+                ConstrainTransitAccessOptions(
+                    alightOptions,
+                    maxWalkAccessDistanceMeters);
             destinationAccessByRoute[routeId] = DistinctAccessOccurrences(
                 constrainedAlightOptions
                     .Where(access => access is not null)
@@ -211,7 +219,8 @@ public partial class RoutingService
             originLongitude,
             destinationLatitude,
             destinationLongitude,
-            cancellationToken);
+            cancellationToken,
+            maxWalkAccessDistanceMeters);
         // Pairwise pruning must only use journeys that are eligible to reach
         // the user-facing result set. A provisionally short walk can exceed
         // the configured transit-access cap once Valhalla confirms the road
@@ -222,8 +231,12 @@ public partial class RoutingService
         // not alter direct walk/tricycle completion limits.
         var confirmedWithSource = completionResult.Transit
             .Where(result =>
-                IsTransitAccessWithinLimit(result.Plan.OriginAccess) &&
-                IsTransitAccessWithinLimit(result.Plan.DestinationAccess) &&
+                IsTransitAccessWithinLimit(
+                    result.Plan.OriginAccess,
+                    maxWalkAccessDistanceMeters) &&
+                IsTransitAccessWithinLimit(
+                    result.Plan.DestinationAccess,
+                    maxWalkAccessDistanceMeters) &&
                 MeetsConfirmedHardConstraints(result.Plan, planningPreferences))
             .ToList();
 
@@ -331,6 +344,27 @@ public partial class RoutingService
                normalized.AvoidTransportModes.Count == 0
             ? null
             : normalized;
+    }
+
+    internal double GetWalkAccessDistanceLimit(
+        JourneyPlanningPreferences? preferences)
+    {
+        var preferenceLimit = preferences?.WalkingPreference switch
+        {
+            JourneyWalkingPreference.Less => LessWalkingPreferenceAccessMeters,
+            JourneyWalkingPreference.More => MoreWalkingPreferenceAccessMeters,
+            _ => NormalWalkingPreferenceAccessMeters
+        };
+        var effectiveLimit = Math.Min(
+            preferenceLimit,
+            Math.Min(
+                MaxWalkAccessDistanceMeters,
+                MaxTotalWalkingMetersPerJourney));
+
+        if (preferences?.MaxWalkingMeters is { } explicitWalkingLimit)
+            effectiveLimit = Math.Min(effectiveLimit, explicitWalkingLimit);
+
+        return Math.Max(0, effectiveLimit);
     }
 
     private bool MeetsProvisionalHardConstraints(

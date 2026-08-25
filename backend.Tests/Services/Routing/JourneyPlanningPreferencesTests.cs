@@ -10,6 +10,36 @@ namespace backend.Tests.Services.Routing;
 public sealed class JourneyPlanningPreferencesTests
 {
     [Fact]
+    public void WalkAccessLimit_UsesPreferenceTierAndHonorsHardCeilings()
+    {
+        var service = new RoutingService(
+            new Mock<IValhallaService>().Object,
+            new Mock<ITransportRouteRepository>().Object,
+            new Mock<ITricyclePointRepository>().Object,
+            NullLogger<RoutingService>.Instance,
+            Options.Create(new RoutingOptions
+            {
+                MaxWalkAccessDistanceMeters = 2_500,
+                MaxTotalWalkingMetersPerJourney = 3_000,
+                LessWalkingPreferenceAccessMeters = 1_800,
+                NormalWalkingPreferenceAccessMeters = 2_150,
+                MoreWalkingPreferenceAccessMeters = 2_500
+            }));
+
+        Assert.Equal(1_800, service.GetWalkAccessDistanceLimit(
+            new JourneyPlanningPreferences(
+                WalkingPreference: JourneyWalkingPreference.Less)));
+        Assert.Equal(2_150, service.GetWalkAccessDistanceLimit(null));
+        Assert.Equal(2_500, service.GetWalkAccessDistanceLimit(
+            new JourneyPlanningPreferences(
+                WalkingPreference: JourneyWalkingPreference.More)));
+        Assert.Equal(2_000, service.GetWalkAccessDistanceLimit(
+            new JourneyPlanningPreferences(
+                MaxWalkingMeters: 2_000,
+                WalkingPreference: JourneyWalkingPreference.More)));
+    }
+
+    [Fact]
     public async Task PlanTripsAsync_ExplicitNeutralPreferencesMatchesOrdinaryPipeline()
     {
         var service = ProductionNetworkFixture.CreateService();

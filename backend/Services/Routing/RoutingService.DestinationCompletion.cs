@@ -18,7 +18,8 @@ public partial class RoutingService
             double originLongitude,
             double destinationLatitude,
             double destinationLongitude,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            double? walkAccessDistanceLimitMeters = null)
     {
         var transitEdges = edges.OfType<JourneyCandidate>().ToList();
         var directEdges = edges
@@ -36,7 +37,8 @@ public partial class RoutingService
                 originLongitude,
                 destinationLatitude,
                 destinationLongitude,
-                cancellationToken);
+                cancellationToken,
+                walkAccessDistanceLimitMeters);
             return plans.FirstOrDefault() is { } plan
                 ? new ConfirmedJourneyCandidate(candidate, plan)
                 : null;

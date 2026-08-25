@@ -140,8 +140,11 @@ public partial class RoutingService
         double originLongitude,
         double destinationLatitude,
         double destinationLongitude,
-        BoardAccessDiscovery boardDiscovery)
+        BoardAccessDiscovery boardDiscovery,
+        double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var samples = _routeSamples[route.RouteId];
 
         if (samples.Count < 2)
@@ -155,7 +158,9 @@ public partial class RoutingService
             destinationLongitude);
 
         var boardCandidates = boardAccessOptions
-            .Select(ConstrainTransitAccess)
+            .Select(candidate => ConstrainTransitAccess(
+                candidate,
+                walkAccessLimit))
             .Where(candidate => candidate is not null)
             .Select(candidate => candidate!)
             .ToList();
@@ -186,14 +191,18 @@ public partial class RoutingService
 
             AddUniqueAccessCandidate(
                 boardCandidates,
-                ConstrainTransitAccess(searchAnchorBoardOptions[index]));
+                ConstrainTransitAccess(
+                    searchAnchorBoardOptions[index],
+                    walkAccessLimit));
         }
 
         var exactBoard = boardDiscovery.Exact;
         AddUniqueAccessCandidate(boardCandidates, exactBoard);
 
         var alightCandidates = alightAccessOptions
-            .Select(ConstrainTransitAccess)
+            .Select(candidate => ConstrainTransitAccess(
+                candidate,
+                walkAccessLimit))
             .Where(candidate => candidate is not null)
             .Select(candidate => candidate!)
             .ToList();
@@ -202,7 +211,8 @@ public partial class RoutingService
             route.RouteId,
             samples,
             destinationLatitude,
-            destinationLongitude);
+            destinationLongitude,
+            walkAccessLimit);
         AddUniqueAccessCandidate(alightCandidates, exactAlight);
 
         var all = new List<RouteConnectionCandidate>();
@@ -580,8 +590,11 @@ public partial class RoutingService
         string routeId,
         List<(double Latitude, double Longitude)> samples,
         double originLatitude,
-        double originLongitude)
+        double originLongitude,
+        double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var anchor = ProjectOntoFullRoute(
             routeId,
             (originLatitude, originLongitude),
@@ -595,7 +608,7 @@ public partial class RoutingService
             originLongitude,
             anchor.Latitude,
             anchor.Longitude);
-        if (walkDistance <= MaxWalkAccessDistanceMeters)
+        if (walkDistance <= walkAccessLimit)
         {
             alternatives.Add(WalkAccess(
                 point,
@@ -631,15 +644,20 @@ public partial class RoutingService
         if (alternatives.Count == 0)
             return null;
 
-        return ConstrainTransitAccess(WithAlternatives(alternatives));
+        return ConstrainTransitAccess(
+            WithAlternatives(alternatives),
+            walkAccessLimit);
     }
 
     private AccessCandidate? BuildExactFullRouteAlightAccess(
         string routeId,
         List<(double Latitude, double Longitude)> samples,
         double destinationLatitude,
-        double destinationLongitude)
+        double destinationLongitude,
+        double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var anchor = ProjectOntoFullRoute(
             routeId,
             (destinationLatitude, destinationLongitude),
@@ -653,7 +671,7 @@ public partial class RoutingService
             anchor.Longitude,
             destinationLatitude,
             destinationLongitude);
-        if (walkDistance <= MaxWalkAccessDistanceMeters)
+        if (walkDistance <= walkAccessLimit)
         {
             alternatives.Add(WalkAccess(
                 point,
@@ -689,15 +707,21 @@ public partial class RoutingService
         if (alternatives.Count == 0)
             return null;
 
-        return ConstrainTransitAccess(WithAlternatives(alternatives));
+        return ConstrainTransitAccess(
+            WithAlternatives(alternatives),
+            walkAccessLimit);
     }
 
-    private AccessCandidate? ConstrainTransitAccess(AccessCandidate candidate)
+    private AccessCandidate? ConstrainTransitAccess(
+        AccessCandidate candidate,
+        double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var alternatives = candidate.AllAlternatives
             .Where(alternative =>
                 alternative.Mode != AccessMode.Walk ||
-                alternative.WalkDistanceMeters <= MaxWalkAccessDistanceMeters)
+                alternative.WalkDistanceMeters <= walkAccessLimit)
             .OrderBy(alternative => alternative.GeneralizedCostPesos)
             .ThenBy(alternative => alternative.Mode)
             .ToList();
@@ -714,12 +738,19 @@ public partial class RoutingService
     /// null, which the bounded boarding and destination-access representations
     /// already treat as unavailable.
     /// </summary>
-    private AccessCandidate?[] ConstrainTransitAccessOptions(AccessCandidate[] options) =>
-        options.Select(ConstrainTransitAccess).ToArray();
+    private AccessCandidate?[] ConstrainTransitAccessOptions(
+        AccessCandidate[] options,
+        double? walkAccessDistanceLimitMeters = null) =>
+        options.Select(candidate => ConstrainTransitAccess(
+            candidate,
+            walkAccessDistanceLimitMeters)).ToArray();
 
-    private bool IsTransitAccessWithinLimit(JeepneyAccessSegment access) =>
+    private bool IsTransitAccessWithinLimit(
+        JeepneyAccessSegment access,
+        double? walkAccessDistanceLimitMeters = null) =>
         access.Mode != AccessMode.Walk ||
-        access.WalkDistanceMeters <= MaxWalkAccessDistanceMeters;
+        access.WalkDistanceMeters <= (walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null));
 
     // -------------------------------------------------------------------
     // Full journey planning

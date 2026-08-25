@@ -646,6 +646,7 @@ public sealed class FeederShadowingRegressionTests
             MaxTripOptions = 10,
             MaxCandidatesToConfirm = 200,
             MaxWalkAccessDistanceMeters = maxWalkAccessDistanceMeters,
+            NormalWalkingPreferenceAccessMeters = maxWalkAccessDistanceMeters,
             MaxWalkToTrikePointMeters = 500,
             MaxNearbyTrikeCandidates = 4,
             MaxTotalWalkingMetersPerJourney = maxTotalWalkingMetersPerJourney,
