@@ -55,6 +55,10 @@ struct TukiRouteChoice: Identifiable, Hashable {
     let steps: [CommuteStep]
     let legRoutePoints: [[TukiCoordinate]]
     let legEndPoints: [TukiCoordinate]
+    /// Backend-assigned transport-route id per leg (nil for walk legs), matching Android's
+    /// `RouteOption.legRouteIds` — used to fetch the currently-relevant jeepney route's own
+    /// polyline for the live-trip map (`MapOverlayState.kt`'s "selected journey" routes).
+    var legRouteIds: [String?] = []
 }
 
 enum TukiServiceArea {
@@ -270,6 +274,7 @@ private struct GeometryDTO: Decodable { let latitude: Double; let longitude: Dou
 private struct JourneyLegDTO: Decodable {
     let mode: Int
     let routeName: String?
+    let routeId: String?
     let destinationLatitude: Double
     let destinationLongitude: Double
     let durationSeconds: Double
@@ -476,7 +481,8 @@ private extension JourneyRecommendationDTO {
             isRecommended: efficient,
             steps: steps,
             legRoutePoints: plan.legs.map { ($0.geometry ?? []).map { TukiCoordinate(latitude: $0.latitude, longitude: $0.longitude) } },
-            legEndPoints: plan.legs.map { TukiCoordinate(latitude: $0.destinationLatitude, longitude: $0.destinationLongitude) }
+            legEndPoints: plan.legs.map { TukiCoordinate(latitude: $0.destinationLatitude, longitude: $0.destinationLongitude) },
+            legRouteIds: plan.legs.map(\.routeId)
         )
     }
 }

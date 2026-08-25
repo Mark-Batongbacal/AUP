@@ -510,6 +510,7 @@ struct TukiUnifiedRouteDetailView: View {
 
 struct TukiUnifiedTrackingView: View {
     let api: TukiPlatformAPI?
+    let infrastructureAPI: TukiInfrastructureAPI?
     @ObservedObject var location: TukiLocationService
     let originName: String
     let destination: TukiPlace
@@ -523,9 +524,14 @@ struct TukiUnifiedTrackingView: View {
     @State private var working = false
     @State private var showExit = false
     @State private var showParaPo = false
+    @State private var followLocation = true
+    @State private var recenterRequestKey = 0
+    @State private var legOverviewRequestKey = 0
+    @ObservedObject private var overlayState = TukiMapOverlayState.shared
 
     init(
         api: TukiPlatformAPI?,
+        infrastructureAPI: TukiInfrastructureAPI?,
         location: TukiLocationService,
         originName: String,
         destination: TukiPlace,
@@ -535,6 +541,7 @@ struct TukiUnifiedTrackingView: View {
         onEnded: @escaping () -> Void
     ) {
         self.api = api
+        self.infrastructureAPI = infrastructureAPI
         self.location = location
         self.originName = originName
         self.destination = destination
@@ -558,6 +565,28 @@ struct TukiUnifiedTrackingView: View {
                     Spacer()
                 }
                 .padding(20).background(.white).clipShape(RoundedRectangle(cornerRadius: 20)).padding(24)
+                HStack {
+                    Spacer()
+                    VStack(spacing: 10) {
+                        Button { legOverviewRequestKey += 1 } label: {
+                            Text("View Leg").font(.system(size: 13, weight: .bold)).foregroundStyle(TukiPalette.dark)
+                                .padding(.horizontal, 14).padding(.vertical, 10)
+                                .background(.white).clipShape(Capsule()).shadow(radius: 3, y: 1)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!(choice.legRoutePoints.indices.contains(snapshot.currentLegIndex) && choice.legRoutePoints[snapshot.currentLegIndex].count >= 2))
+
+                        if !followLocation {
+                            Button { recenterRequestKey += 1 } label: {
+                                Text("◎ Recenter").font(.system(size: 13, weight: .bold)).foregroundStyle(TukiPalette.dark)
+                                    .padding(.horizontal, 14).padding(.vertical, 10)
+                                    .background(.white).clipShape(Capsule()).shadow(radius: 3, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.trailing, 20)
+                }
                 Spacer()
                 VStack(alignment: .leading, spacing: 12) {
                     Text("NEXT STEP").font(.system(size: 12, weight: .heavy)).foregroundStyle(TukiPalette.teal)
@@ -602,15 +631,34 @@ struct TukiUnifiedTrackingView: View {
             Text("Get ready to alight at your stop.")
         }
         .task(id: snapshot.sessionId) { await poll() }
+        .task { await overlayState.ensureTodaPoints(api: infrastructureAPI) }
+        .task(id: relevantRouteId) {
+            guard let relevantRouteId else { return }
+            await overlayState.ensureRoutePoints(routeId: relevantRouteId, api: infrastructureAPI)
+        }
     }
 
     private var routeMap: some View {
-        Map {
-            if let destinationPoint = choice.legEndPoints.last {
-                Marker("Destination", coordinate: CLLocationCoordinate2D(latitude: destinationPoint.latitude, longitude: destinationPoint.longitude)).tint(.orange)
-            }
-        }
-        .ignoresSafeArea()
+        TukiLiveTripMapView(
+            legRoutePoints: choice.legRoutePoints.map { $0.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) } },
+            currentLegIndex: snapshot.currentLegIndex,
+            destination: choice.legEndPoints.last.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) },
+            currentPosition: location.currentLocation?.coordinate,
+            todaPoints: overlayState.todaPoints,
+            relevantRoutePoints: relevantRouteId.flatMap { overlayState.routePoints[$0] } ?? [],
+            recenterRequestKey: recenterRequestKey,
+            legOverviewRequestKey: legOverviewRequestKey,
+            followLocation: $followLocation
+        )
+    }
+
+    /// The transport route backing the leg currently being traveled, if it's a jeepney/
+    /// tricycle leg — matches Android's "selected journey" jeepney route context
+    /// (`MapOverlayState.kt`'s `ensureSelectedJeepneyRoutes`, scoped to the active leg here
+    /// rather than the whole journey since that's all the live-trip map shows at once).
+    private var relevantRouteId: String? {
+        guard choice.legRouteIds.indices.contains(snapshot.currentLegIndex) else { return nil }
+        return choice.legRouteIds[snapshot.currentLegIndex]
     }
 
     private var canParaPo: Bool {

@@ -101,6 +101,7 @@ private struct TukiUnifiedMainView: View {
     private let api: TukiPlatformAPI?
     private let historyAPI: TukiHistoryAPI?
     private let assistantAPI: TukiAssistantAPI?
+    private let infrastructureAPI: TukiInfrastructureAPI?
 
     init(auth: AuthViewModel) {
         self.auth = auth
@@ -109,10 +110,12 @@ private struct TukiUnifiedMainView: View {
             api = TukiPlatformAPI(baseURL: configuration.backendBaseURL, credentialStore: store)
             historyAPI = TukiHistoryAPI(baseURL: configuration.backendBaseURL, credentialStore: store)
             assistantAPI = TukiAssistantAPI(baseURL: configuration.backendBaseURL, credentialStore: store)
+            infrastructureAPI = TukiInfrastructureAPI(baseURL: configuration.backendBaseURL)
         } else {
             api = nil
             historyAPI = nil
             assistantAPI = nil
+            infrastructureAPI = nil
         }
     }
 
@@ -211,6 +214,7 @@ private struct TukiUnifiedMainView: View {
             case .tracking(let originName, let destination, let choice, let snapshot, let guest):
                 TukiUnifiedTrackingView(
                     api: api,
+                    infrastructureAPI: infrastructureAPI,
                     location: location,
                     originName: originName,
                     destination: destination,
