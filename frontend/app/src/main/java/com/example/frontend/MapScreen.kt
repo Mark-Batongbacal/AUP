@@ -533,7 +533,7 @@ private fun updateTransitRouteLayers(style: Style, routes: List<TransitRouteOver
         val source = style.getSourceAs<GeoJsonSource>(sourceId)
         if (source != null) source.setGeoJson(geometry) else style.addSource(GeoJsonSource(sourceId, geometry))
         style.removeLayer(layerId)
-        val selected = route.routeId == selectedTransitRouteId
+        val selected = route.routeId == selectedRouteId
         style.addLayer(
             LineLayer(layerId, sourceId).withProperties(
                 PropertyFactory.lineColor(TransitRouteColors[index % TransitRouteColors.size]),
