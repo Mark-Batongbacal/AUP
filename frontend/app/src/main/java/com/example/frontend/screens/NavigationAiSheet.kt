@@ -33,10 +33,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantResponseDto
 import com.example.frontend.data.navigation.NavigationSnapshotDto
@@ -58,7 +61,8 @@ private data class NavigationAiMessage(
     val requestText: String? = null,
     val journeys: List<AssistantJourneyDto> = emptyList(),
     val destinationChoices: List<DestinationSearchResultDto> = emptyList(),
-    val destination: DestinationSearchResultDto? = null
+    val destination: DestinationSearchResultDto? = null,
+    val tripSessionId: String? = null
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,9 +71,13 @@ fun NavigationAiSheet(
     language: String = com.example.frontend.core.localization.AppLanguagePreference.current(),
     onDismiss: () -> Unit,
     ask: suspend (String, String?) -> ApiResult<AssistantResponseDto>,
-    confirmReplan: suspend (String) -> ApiResult<NavigationSnapshotDto>,
+    confirmReplan: (suspend (String) -> ApiResult<NavigationSnapshotDto>)? = null,
     onReplanApplied: (NavigationSnapshotDto) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val provider = remember(context.applicationContext) {
+        TukiDataProvider(context.applicationContext)
+    }
     val filipino = language.equals("Filipino", ignoreCase = true)
     val quickPrompts = if (filipino) {
         listOf(
@@ -119,7 +127,7 @@ fun NavigationAiSheet(
         if (trimmed.isEmpty() || thinking || applyingRecommendationId != null) return
         messages = messages + NavigationAiMessage(
             id = System.currentTimeMillis(),
-            text = if (destinationId == null) trimmed else trimmed,
+            text = trimmed,
             fromUser = true
         )
         input = ""
@@ -135,7 +143,8 @@ fun NavigationAiSheet(
                         requestText = trimmed,
                         journeys = response.journeys.orEmpty(),
                         destinationChoices = response.destinations.orEmpty(),
-                        destination = response.destination
+                        destination = response.destination,
+                        tripSessionId = response.action?.tripSessionId
                     )
                 }
                 is ApiResult.Failure -> {
@@ -150,11 +159,25 @@ fun NavigationAiSheet(
         }
     }
 
-    fun applyReplan(journey: AssistantJourneyDto) {
+    fun applyReplan(journey: AssistantJourneyDto, tripSessionId: String?) {
         if (thinking || applyingRecommendationId != null) return
         applyingRecommendationId = journey.journeyId
         scope.launch {
-            when (val result = confirmReplan(journey.journeyId)) {
+            val result = if (confirmReplan != null) {
+                confirmReplan(journey.journeyId)
+            } else if (tripSessionId != null) {
+                when (val confirmation = provider.aiRepository.confirmTripReplan(tripSessionId, journey.journeyId)) {
+                    is ApiResult.Failure -> confirmation
+                    is ApiResult.Success -> {
+                        NavigationSyncSignal.requestImmediateSync(samples = 1)
+                        provider.navigationRepository.getActiveNavigation()
+                    }
+                }
+            } else {
+                ApiResult.Failure(null, "This route proposal is missing its active-trip context.")
+            }
+
+            when (result) {
                 is ApiResult.Success -> {
                     onReplanApplied(result.data)
                     messages = messages + NavigationAiMessage(
@@ -266,7 +289,7 @@ fun NavigationAiSheet(
                                     applying = applyingRecommendationId == journey.journeyId,
                                     enabled = !thinking &&
                                         (applyingRecommendationId == null || applyingRecommendationId == journey.journeyId),
-                                    onApply = { applyReplan(journey) }
+                                    onApply = { applyReplan(journey, message.tripSessionId) }
                                 )
                                 Spacer(Modifier.height(8.dp))
                             }
@@ -366,6 +389,19 @@ fun NavigationAiSheet(
         }
     }
 }
+
+// Compatibility overload for the existing TripTrackingScreen call site. New callers
+// can use the two-argument ask callback to resolve destination candidates in-sheet.
+@Composable
+fun NavigationAiSheet(
+    language: String = com.example.frontend.core.localization.AppLanguagePreference.current(),
+    onDismiss: () -> Unit,
+    ask: suspend (String) -> ApiResult<AssistantResponseDto>
+) = NavigationAiSheet(
+    language = language,
+    onDismiss = onDismiss,
+    ask = { message, _ -> ask(message) }
+)
 
 @Composable
 private fun NavigationDestinationChoiceCard(
