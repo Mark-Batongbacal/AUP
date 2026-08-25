@@ -14,7 +14,6 @@ final class AuthViewModel: ObservableObject {
     @Published var isAuthenticating = false
     @Published var errorMessage: String?
     @Published private(set) var isAuthenticated: Bool
-    @Published private(set) var isGuest = false
     @Published private(set) var currentUserProfile: TukiUserProfile?
     #if DEBUG
     @Published private(set) var facebookLoginDiagnostic: FacebookLoginDiagnosticReport?
@@ -26,7 +25,25 @@ final class AuthViewModel: ObservableObject {
     private let googleSignInCoordinator: GoogleSignInCoordinator?
     private let facebookSignInCoordinator: FacebookSignInCoordinator?
 
-    var canEnterApp: Bool { isAuthenticated || isGuest }
+    var canEnterApp: Bool { isAuthenticated }
+
+    /// True for a guest session specifically (backend-reported role), matching Android's
+    /// `ProfileScreen` guest check (`role.equals("Guest")`). A guest is still `isAuthenticated`
+    /// — it has a real, normal session — so this only gates the small set of things Android
+    /// itself gates on the account's role (Edit Profile/Privacy rows, the guest banner/countdown),
+    /// not the general authenticated-vs-not distinction used everywhere else.
+    var isGuestAccount: Bool {
+        currentUserProfile?.role.caseInsensitiveCompare("Guest") == .orderedSame
+    }
+
+    /// Back-compat read for the not-yet-removed dead preview screens (ContentView.swift),
+    /// which predate the real guest session and only ever read this, never set it.
+    /// Live code should use `isGuestAccount`.
+    var isGuest: Bool { isGuestAccount }
+
+    /// The active session's expiry, if any — used to render the guest countdown
+    /// ("Xh Ym remaining"), matching Android's `AuthSessionStore.validSession()?.expiresAt`.
+    var sessionExpiresAt: String? { credentialStore.credential?.expiresAt }
 
     init() {
         let credentialStore = KeychainTukiCredentialStore()
@@ -169,7 +186,6 @@ final class AuthViewModel: ObservableObject {
         case .success(let profile):
             currentUserProfile = profile
             isAuthenticated = true
-            isGuest = false
             self.password = ""
             return true
         case .failure(let error):
@@ -222,19 +238,23 @@ final class AuthViewModel: ObservableObject {
         try? credentialStore.clear()
         currentUserProfile = nil
         isAuthenticated = false
-        isGuest = false
         password = ""
         #if DEBUG
         facebookLoginDiagnostic = nil
         #endif
     }
 
+    func continueAsGuest() async {
+        guard !isAuthenticating else { return }
+        guard let authAPI else { errorMessage = "TUKI login is not configured."; return }
+        await authenticate { await authAPI.loginAsGuest() }
+    }
+
+    /// Back-compat sync wrapper for the not-yet-removed dead preview screens
+    /// (ContentView.swift), which predate this becoming a real, awaited backend call.
+    /// Live code should call the `async` version directly.
     func continueAsGuest() {
-        currentUserProfile = nil
-        isGuest = true
-        isAuthenticated = false
-        errorMessage = nil
-        password = ""
+        Task { await continueAsGuest() }
     }
 
     private func authenticate(_ operation: @escaping () async -> AuthResult) async {
@@ -256,7 +276,6 @@ final class AuthViewModel: ObservableObject {
             case .success(let profile):
                 currentUserProfile = profile
                 isAuthenticated = true
-                isGuest = false
                 password = ""
             case .failure(let error):
                 try? credentialStore.clear()
@@ -284,7 +303,6 @@ final class AuthViewModel: ObservableObject {
         try? credentialStore.clear()
         currentUserProfile = nil
         isAuthenticated = false
-        isGuest = false
         password = ""
     }
 

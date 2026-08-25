@@ -35,6 +35,7 @@ struct TukiPlace: Codable, Identifiable, Hashable {
     let category: String
     let source: String
     let address: String?
+    var locality: String? = nil
 }
 
 struct TukiCoordinate: Codable, Hashable {
@@ -54,6 +55,10 @@ struct TukiRouteChoice: Identifiable, Hashable {
     let steps: [CommuteStep]
     let legRoutePoints: [[TukiCoordinate]]
     let legEndPoints: [TukiCoordinate]
+    /// Backend-assigned transport-route id per leg (nil for walk legs), matching Android's
+    /// `RouteOption.legRouteIds` — used to fetch the currently-relevant jeepney route's own
+    /// polyline for the live-trip map (`MapOverlayState.kt`'s "selected journey" routes).
+    var legRouteIds: [String?] = []
 }
 
 enum TukiServiceArea {
@@ -269,6 +274,7 @@ private struct GeometryDTO: Decodable { let latitude: Double; let longitude: Dou
 private struct JourneyLegDTO: Decodable {
     let mode: Int
     let routeName: String?
+    let routeId: String?
     let destinationLatitude: Double
     let destinationLongitude: Double
     let durationSeconds: Double
@@ -341,6 +347,15 @@ final class TukiPlatformAPI {
         if let focusLat { items.append(URLQueryItem(name: "focusLat", value: String(focusLat))) }
         if let focusLon { items.append(URLQueryItem(name: "focusLon", value: String(focusLon))) }
         return await request([TukiPlace].self, path: "api/places/search", query: items, auth: false)
+    }
+
+    /// Expanded results for the destination picker's "More places" affordance, matching
+    /// Android's `PlacesRepository.searchMorePlaces` (`GET api/places/search/more`).
+    func searchMorePlaces(_ query: String, focusLat: Double? = nil, focusLon: Double? = nil) async -> Result<[TukiPlace], TukiPlatformError> {
+        var items = [URLQueryItem(name: "q", value: query)]
+        if let focusLat { items.append(URLQueryItem(name: "focusLat", value: String(focusLat))) }
+        if let focusLon { items.append(URLQueryItem(name: "focusLon", value: String(focusLon))) }
+        return await request([TukiPlace].self, path: "api/places/search/more", query: items, auth: false)
     }
 
     func reverseGeocode(lat: Double, lon: Double) async -> Result<TukiPlace, TukiPlatformError> {
@@ -466,7 +481,8 @@ private extension JourneyRecommendationDTO {
             isRecommended: efficient,
             steps: steps,
             legRoutePoints: plan.legs.map { ($0.geometry ?? []).map { TukiCoordinate(latitude: $0.latitude, longitude: $0.longitude) } },
-            legEndPoints: plan.legs.map { TukiCoordinate(latitude: $0.destinationLatitude, longitude: $0.destinationLongitude) }
+            legEndPoints: plan.legs.map { TukiCoordinate(latitude: $0.destinationLatitude, longitude: $0.destinationLongitude) },
+            legRouteIds: plan.legs.map(\.routeId)
         )
     }
 }

@@ -44,9 +44,10 @@ private struct TukiAppContent: View {
                 .padding(.leading, 18)
                 .padding(.bottom, 210)
 
-            TukiNavigationCameraOverlay()
-                .padding(.top, 108)
-                .padding(.trailing, 18)
+            // TukiNavigationCameraOverlay() removed: it hijacked *any* MKMapView on screen
+            // via userTrackingMode, which would now fight TukiLiveTripMapView's own
+            // follow/recenter state (owned directly by the tracking screen, matching
+            // Android's LiveTripMapScreen). Left in place, unreferenced, for the cleanup pass.
 
             // Keep interactive trip controls at their intrinsic size. A
             // full-window transparent overlay would block Google/Facebook

@@ -18,7 +18,6 @@ struct TukiUnifiedProfileView: View {
     let onEdit: () -> Void
     let onPrivacy: () -> Void
     let onLanguage: () -> Void
-    let onAbout: () -> Void
     let onSettings: () -> Void
     let onLogout: () -> Void
 
@@ -26,8 +25,8 @@ struct TukiUnifiedProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 let profile = auth.currentUserProfile
-                let displayName = auth.isGuest ? "Guest" : (profile?.displayName ?? "User")
-                let email = auth.isGuest ? "Guest mode" : (profile?.email ?? "")
+                let displayName = auth.isGuestAccount ? "Guest" : (profile?.displayName ?? "User")
+                let email = auth.isGuestAccount ? "Guest mode" : (profile?.email ?? "")
 
                 Text(initials(displayName))
                     .font(.system(size: 34, weight: .heavy))
@@ -43,6 +42,23 @@ struct TukiUnifiedProfileView: View {
                     Text(email)
                         .font(.system(size: 13))
                         .foregroundStyle(TukiPalette.gray)
+                }
+
+                if auth.isGuestAccount {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Guest Mode · \(tukiGuestRemainingText(expiresAt: auth.sessionExpiresAt))")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(TukiPalette.orange)
+                            Text("Create an account to keep access without the guest time limit.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(TukiPalette.gray)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(14)
+                    .background(TukiPalette.orange.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
 
                 HStack(spacing: 12) {
@@ -62,15 +78,15 @@ struct TukiUnifiedProfileView: View {
                 .buttonStyle(.plain)
 
                 VStack(spacing: 0) {
-                    accountRow("Edit Profile", subtitle: "Update your personal information", action: onEdit)
+                    if !auth.isGuestAccount {
+                        accountRow("Edit Profile", subtitle: "Update your personal information", action: onEdit)
+                        divider
+                        accountRow("Privacy & Security", subtitle: "Password, permissions & privacy", action: onPrivacy)
+                        divider
+                    }
+                    accountRow(TukiInterfaceText.language, subtitle: TukiLanguagePreference.shared.currentLanguage, action: onLanguage)
                     divider
-                    accountRow("Privacy & Security", subtitle: "Password, permissions & privacy", action: onPrivacy)
-                    divider
-                    accountRow("Language", subtitle: "English", action: onLanguage)
-                    divider
-                    accountRow("About TUKI", subtitle: "App information", action: onAbout)
-                    divider
-                    accountRow("Settings", subtitle: "Notifications, support & app settings", action: onSettings)
+                    accountRow(TukiInterfaceText.settings, subtitle: "Appearance and app preferences", action: onSettings)
                 }
                 .background(TukiPalette.creamCard)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
@@ -213,10 +229,16 @@ struct TukiUnifiedEditProfileView: View {
 }
 
 struct TukiUnifiedPrivacySecurityView: View {
+    @ObservedObject var auth: AuthViewModel
     let onBack: () -> Void
     let onChangePassword: () -> Void
     let onPermissions: () -> Void
     let onPrivacyPolicy: () -> Void
+    let onAccountDeleted: () -> Void
+
+    @State private var showDeleteDialog = false
+    @State private var isDeleting = false
+    @State private var deleteError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -233,11 +255,52 @@ struct TukiUnifiedPrivacySecurityView: View {
                 }
                 .background(TukiPalette.creamCard)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
+
+                Button {
+                    deleteError = nil
+                    showDeleteDialog = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Delete account").font(.system(size: 16, weight: .bold)).foregroundStyle(TukiPalette.error)
+                            Text("Permanently remove your data").font(.system(size: 12)).foregroundStyle(TukiPalette.gray)
+                        }
+                        Spacer()
+                        Text("›").font(.system(size: 20, weight: .bold)).foregroundStyle(TukiPalette.gray)
+                    }
+                    .padding(.horizontal, 20).padding(.vertical, 14)
+                    .background(TukiPalette.creamCard)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+                if let deleteError {
+                    Text(deleteError).font(.system(size: 12)).foregroundStyle(TukiPalette.error)
+                }
+
                 Spacer()
             }
             .padding(.horizontal, 30)
         }
         .background(TukiPalette.cream.ignoresSafeArea())
+        .alert("Delete your account?", isPresented: $showDeleteDialog) {
+            Button("Delete", role: .destructive) { Task { await confirmDelete() } }
+                .disabled(isDeleting)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete your account and all of your data, including trip history and favorites. This can't be undone.")
+        }
+    }
+
+    private func confirmDelete() async {
+        guard !isDeleting else { return }
+        isDeleting = true
+        defer { isDeleting = false }
+        switch await auth.deleteAccount() {
+        case .success:
+            onAccountDeleted()
+        case .failure(let error):
+            deleteError = error.message
+        }
     }
 }
 
@@ -338,14 +401,14 @@ enum TukiParityLanguage: String, CaseIterable, Identifiable {
 
 struct TukiUnifiedLanguageView: View {
     let onBack: () -> Void
-    @AppStorage("tuki.language") private var storedLanguage = TukiParityLanguage.english.rawValue
+    @ObservedObject private var languageStore = TukiLanguagePreference.shared
     @State private var selected = TukiParityLanguage.english
 
     var body: some View {
         VStack(spacing: 0) {
-            pageHeader("Language", onBack: onBack)
+            pageHeader(TukiInterfaceText.language, onBack: onBack)
             VStack(alignment: .leading, spacing: 12) {
-                Text("SELECT LANGUAGE").font(.system(size: 12, weight: .bold)).foregroundStyle(TukiPalette.gray)
+                Text(TukiInterfaceText.selectLanguage).font(.system(size: 12, weight: .bold)).foregroundStyle(TukiPalette.gray)
                 ForEach(TukiParityLanguage.allCases) { option in
                     Button { selected = option } label: {
                         HStack {
@@ -364,8 +427,8 @@ struct TukiUnifiedLanguageView: View {
                     .buttonStyle(.plain)
                 }
                 Spacer()
-                TukiPrimaryButton(title: "Save") {
-                    storedLanguage = selected.rawValue
+                TukiPrimaryButton(title: TukiInterfaceText.save) {
+                    languageStore.update(selected.rawValue)
                     onBack()
                 }
             }
@@ -373,7 +436,204 @@ struct TukiUnifiedLanguageView: View {
             .padding(.bottom, 20)
         }
         .background(TukiPalette.cream.ignoresSafeArea())
-        .onAppear { selected = TukiParityLanguage(rawValue: storedLanguage) ?? .english }
+        .onAppear { selected = TukiParityLanguage(rawValue: languageStore.currentLanguage) ?? .english }
+    }
+}
+
+private func supportCopy(_ english: String, _ filipino: String) -> String {
+    TukiInterfaceText.isFilipino ? filipino : english
+}
+
+/// Ported from Android's `HelpCenterScreen` (screens/SupportScreens.kt): same five FAQ
+/// entries, same expand/collapse behavior, same footer nudge to Send Feedback.
+struct TukiUnifiedHelpCenterView: View {
+    let onBack: () -> Void
+    @State private var expandedIndex: Int?
+
+    private var faqItems: [(String, String)] {
+        [
+            (supportCopy("How do I plan a trip?", "Paano ako magpaplano ng biyahe?"),
+             supportCopy(
+                "From Home, set your current location and destination, then choose Find Routes. TUKI will show available commute options when route data is available.",
+                "Sa Home, itakda ang kasalukuyang lokasyon at destinasyon, pagkatapos piliin ang Maghanap ng Ruta. Ipapakita ng TUKI ang available na commute options kapag may route data.")),
+            (supportCopy("How do Favorites work?", "Paano gumagana ang Favorites?"),
+             supportCopy(
+                "Tap the star on a route to save it. Your saved routes appear in Favorites for quicker access later.",
+                "I-tap ang bituin sa isang ruta para i-save ito. Lalabas ang mga naka-save mong ruta sa Favorites para mas mabilis itong balikan.")),
+            (supportCopy("What appears in Recent Trips?", "Ano ang makikita sa Recent Trips?"),
+             supportCopy(
+                "Recent Trips shows your saved journey history and its status, such as completed or cancelled trips.",
+                "Ipinapakita ng Recent Trips ang iyong journey history at status nito, gaya ng natapos o kinanselang biyahe.")),
+            (supportCopy("How do I change the app language?", "Paano palitan ang wika ng app?"),
+             supportCopy(
+                "Open Profile, tap Language, choose English or Filipino, then save your selection.",
+                "Buksan ang Profile, i-tap ang Language, piliin ang English o Filipino, at i-save ang napili.")),
+            (supportCopy("How do I switch Light and Dark Mode?", "Paano magpalit ng Light at Dark Mode?"),
+             supportCopy(
+                "Open Profile > Settings and use the Dark Mode switch under Appearance.",
+                "Buksan ang Profile > Settings at gamitin ang Dark Mode switch sa Appearance."))
+        ]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            pageHeader(TukiInterfaceText.helpCenter, onBack: onBack)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(supportCopy("Find quick answers about using TUKI.", "Makahanap ng mabilis na sagot tungkol sa paggamit ng TUKI."))
+                        .font(.system(size: 13)).foregroundStyle(TukiPalette.gray)
+                        .padding(.bottom, 8)
+                    ForEach(Array(faqItems.enumerated()), id: \.offset) { index, item in
+                        Button {
+                            expandedIndex = expandedIndex == index ? nil : index
+                        } label: {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack(spacing: 12) {
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 11).fill(Color(red: 1, green: 0.94, blue: 0.835)).frame(width: 36, height: 36)
+                                        Text("?").font(.system(size: 15, weight: .bold)).foregroundStyle(Color(red: 0x15 / 255, green: 0x3E / 255, blue: 0x4B / 255))
+                                    }
+                                    Text(item.0).font(.system(size: 15, weight: .semibold)).foregroundStyle(TukiPalette.dark)
+                                    Spacer(minLength: 0)
+                                    Text(expandedIndex == index ? "⌃" : "⌄").foregroundStyle(TukiPalette.gray)
+                                }
+                                if expandedIndex == index {
+                                    Text(item.1).font(.system(size: 13)).foregroundStyle(TukiPalette.gray)
+                                }
+                            }
+                            .padding(16)
+                            .background(TukiPalette.creamCard)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text(supportCopy("Still need help? Go back to Settings and choose Send Feedback.", "Kailangan pa ng tulong? Bumalik sa Settings at piliin ang Send Feedback."))
+                        .font(.system(size: 13)).foregroundStyle(TukiPalette.dark)
+                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(TukiPalette.teal.opacity(0.1)).clipShape(RoundedRectangle(cornerRadius: 16))
+                        .padding(.top, 8)
+                }
+                .padding(.horizontal, 30)
+                .padding(.bottom, 30)
+            }
+        }
+        .background(TukiPalette.cream.ignoresSafeArea())
+    }
+}
+
+/// Ported from Android's `SendFeedbackScreen` (screens/SupportScreens.kt): category chips,
+/// a message field, and a "Send Feedback" button that opens the device's mail app with both
+/// TUKI recipients pre-filled — same recipients, same subject/body format.
+struct TukiUnifiedSendFeedbackView: View {
+    let onBack: () -> Void
+
+    @State private var category: String
+    @State private var message = ""
+    @State private var shareError: String?
+
+    private static let feedbackEmails = "pinacate.stephen@gmail.com,batongbacalmark@gmail.com"
+    private let categories: [String]
+
+    init(onBack: @escaping () -> Void) {
+        self.onBack = onBack
+        let categories = TukiInterfaceText.isFilipino
+            ? ["Pangkalahatan", "Mga Ruta", "Problema sa App", "Mungkahi"]
+            : ["General", "Routes", "App issue", "Suggestion"]
+        self.categories = categories
+        _category = State(initialValue: categories[0])
+    }
+
+    private var canSend: Bool { !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            pageHeader(TukiInterfaceText.sendFeedback, onBack: onBack)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(supportCopy(
+                        "Tell us what worked, what went wrong, or what you would like TUKI to improve.",
+                        "Ibahagi kung ano ang gumana, ano ang naging problema, o ano ang gusto mong mapahusay sa TUKI."
+                    )).font(.system(size: 13)).foregroundStyle(TukiPalette.gray)
+
+                    Text(supportCopy("CATEGORY", "KATEGORYA")).font(.system(size: 11, weight: .bold)).foregroundStyle(TukiPalette.dark).padding(.top, 10)
+                    categoryGrid
+
+                    Text(supportCopy("YOUR FEEDBACK", "IYONG FEEDBACK")).font(.system(size: 11, weight: .bold)).foregroundStyle(TukiPalette.dark).padding(.top, 10)
+                    TextEditor(text: $message)
+                        .frame(height: 160)
+                        .padding(8)
+                        .background(TukiPalette.creamCard)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .onChange(of: message) { _, _ in shareError = nil }
+
+                    Text(supportCopy(
+                        "Send Feedback opens your email app with both TUKI feedback recipients already filled in.",
+                        "Bubuksan ng Send Feedback ang email app na nakalagay na ang dalawang TUKI feedback recipients."
+                    )).font(.system(size: 11)).foregroundStyle(TukiPalette.gray)
+
+                    if let shareError {
+                        Text(shareError).font(.system(size: 12)).foregroundStyle(TukiPalette.error)
+                    }
+                }
+                .padding(.horizontal, 30)
+                .padding(.bottom, 16)
+            }
+            Button(action: send) {
+                Text(TukiInterfaceText.sendFeedback)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(canSend ? TukiPalette.orange : TukiPalette.orange.opacity(0.35))
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .padding(.horizontal, 30)
+            .padding(.bottom, 16)
+        }
+        .background(TukiPalette.cream.ignoresSafeArea())
+    }
+
+    private var categoryGrid: some View {
+        let rows = stride(from: 0, to: categories.count, by: 2).map { Array(categories[$0..<min($0 + 2, categories.count)]) }
+        return VStack(spacing: 8) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 8) {
+                    ForEach(row, id: \.self) { item in
+                        Button { category = item } label: {
+                            Text(item)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(category == item ? .white : TukiPalette.dark)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 11)
+                                .background(category == item ? TukiPalette.teal : TukiPalette.creamCard)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if row.count == 1 { Spacer(minLength: 0) }
+                }
+            }
+        }
+    }
+
+    private func send() {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let subject = "TUKI Feedback - \(category)"
+        let body = "TUKI Feedback\nCategory: \(category)\n\n\(trimmed)"
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = Self.feedbackEmails
+        components.queryItems = [
+            URLQueryItem(name: "subject", value: subject),
+            URLQueryItem(name: "body", value: body)
+        ]
+        guard let url = components.url, UIApplication.shared.canOpenURL(url) else {
+            shareError = supportCopy("No compatible email app was found on this device.", "Walang compatible na email app na nakita sa device na ito.")
+            return
+        }
+        UIApplication.shared.open(url)
     }
 }
 
@@ -396,35 +656,43 @@ struct TukiUnifiedAboutView: View {
     }
 }
 
+/// Matches Android's `SettingsScreen.kt` exactly: just Appearance (Dark Mode) and Support
+/// (Help Center / Send Feedback / About TUKI) — Android has no Notifications toggle,
+/// Language row, Privacy Policy, or Terms of Service here (Language and Privacy Policy
+/// live under Profile only, matching Android's single navigation path to each).
 struct TukiUnifiedSettingsView: View {
     let onBack: () -> Void
-    let onPrivacyPolicy: () -> Void
-    let onLanguage: () -> Void
+    let onHelpCenter: () -> Void
+    let onSendFeedback: () -> Void
+    let onAbout: () -> Void
     let onLogout: () -> Void
-    @AppStorage("tuki.notifications") private var notifications = true
-    @AppStorage("tuki.darkModePreference") private var darkMode = false
+    @ObservedObject private var theme = TukiThemeRuntime.shared
 
     var body: some View {
         VStack(spacing: 0) {
-            pageHeader("Settings", onBack: onBack)
+            pageHeader(TukiInterfaceText.settings, onBack: onBack)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    settingsSection("GENERAL") {
-                        Toggle("Notifications", isOn: $notifications)
-                        Toggle("Dark Mode", isOn: $darkMode)
-                        navigationRow("Language", subtitle: "English", action: onLanguage)
+                    settingsSection(TukiInterfaceText.appearance) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(TukiInterfaceText.darkMode).font(.system(size: 16, weight: .bold)).foregroundStyle(TukiPalette.dark)
+                                Text(TukiInterfaceText.darkModeSubtitle).font(.system(size: 12)).foregroundStyle(TukiPalette.gray)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $theme.isDarkMode).labelsHidden().tint(TukiPalette.teal)
+                        }
+                        .padding(.horizontal, 6).padding(.vertical, 6)
                     }
-                    settingsSection("SUPPORT") {
-                        navigationRow("Help Center", subtitle: "FAQs and guides") {}
-                        navigationRow("Report a Problem", subtitle: "Tell us what's wrong") {}
-                    }
-                    settingsSection("ABOUT") {
-                        navigationRow("Privacy Policy", subtitle: "Data usage & safety", action: onPrivacyPolicy)
-                        navigationRow("Terms of Service", subtitle: "Usage rules") {}
-                        HStack { VStack(alignment: .leading) { Text("App Version").fontWeight(.bold); Text("1.0.0 (Beta)").font(.system(size: 13)).foregroundStyle(TukiPalette.gray) }; Spacer() }.padding(14)
+                    settingsSection(TukiInterfaceText.support) {
+                        navigationRow(TukiInterfaceText.helpCenter, subtitle: TukiInterfaceText.isFilipino ? "Mga FAQ at gabay" : "FAQs and guides", action: onHelpCenter)
+                        thinDivider
+                        navigationRow(TukiInterfaceText.sendFeedback, subtitle: TukiInterfaceText.isFilipino ? "Tulungan kaming mapahusay ang TUKI" : "Help us improve TUKI", action: onSendFeedback)
+                        thinDivider
+                        navigationRow(TukiInterfaceText.aboutTuki, subtitle: "Version 1.0.0", action: onAbout)
                     }
                     Button(action: onLogout) {
-                        Text("Log Out").font(.system(size: 17, weight: .bold)).foregroundStyle(.red).frame(maxWidth: .infinity).frame(height: 56).background(.white).clipShape(RoundedRectangle(cornerRadius: 16))
+                        Text(TukiInterfaceText.logOut).font(.system(size: 17, weight: .bold)).foregroundStyle(.red).frame(maxWidth: .infinity).frame(height: 56).background(.white).clipShape(RoundedRectangle(cornerRadius: 16))
                     }
                     .buttonStyle(.plain)
                 }
@@ -437,7 +705,7 @@ struct TukiUnifiedSettingsView: View {
 
     private func settingsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 13, weight: .heavy)).foregroundStyle(TukiPalette.gray)
+            Text(title.uppercased()).font(.system(size: 13, weight: .heavy)).foregroundStyle(TukiPalette.gray)
             VStack(spacing: 0) { content() }.padding(.horizontal, 10).background(TukiPalette.creamCard).clipShape(RoundedRectangle(cornerRadius: 18))
         }
     }

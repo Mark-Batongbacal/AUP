@@ -12,6 +12,13 @@
 		DCD250243033FA0000106143 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD250263033FA0000106143 /* AppConfigurationTests.swift */; };
 		DCD250253033FA0000106143 /* AuthModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD250273033FA0000106143 /* AuthModelsTests.swift */; };
 		DCD250353033FA0000106143 /* AuthAPITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD250363033FA0000106143 /* AuthAPITests.swift */; };
+		0DCA88E2768F9DA09C94AE26 /* TukiThemeRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC29A4602E73F2179CA45E5D /* TukiThemeRuntimeTests.swift */; };
+		999BADAFCC7929FD44C7A1DF /* TukiLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C09BC1CB3E722692A7A536F /* TukiLocalizationTests.swift */; };
+		FF79BE1D24D7B1A03629DE00 /* TukiMapKitSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 738FB81DD8844EC36AB70C2D /* TukiMapKitSupportTests.swift */; };
+		480A51582AB35C48CA8191E7 /* TukiDestinationPickerMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */; };
+		E7E6503338D29BCAEB32583F /* TukiGuestSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */; };
+		8BFAE05015B2064A31FA7598 /* TukiInfrastructureAPITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65078850A16BEDFD85CE87C6 /* TukiInfrastructureAPITests.swift */; };
+		98032F12CAE6148DA80B2A38 /* TukiHistoryAPITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADFE4EE6926FFE81EAC2D69 /* TukiHistoryAPITests.swift */; };
 		DCFB00033033FA0000106143 /* FacebookCore in Frameworks */ = {isa = PBXBuildFile; productRef = DCFB00013033FA0000106143 /* FacebookCore */; };
 		DCFB00043033FA0000106143 /* FacebookLogin in Frameworks */ = {isa = PBXBuildFile; productRef = DCFB00023033FA0000106143 /* FacebookLogin */; };
 /* End PBXBuildFile section */
@@ -33,6 +40,13 @@
 		DCD250273033FA0000106143 /* AuthModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModelsTests.swift; sourceTree = "<group>"; };
 		DCD250283033FA0000106143 /* TUKITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TUKITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DCD250363033FA0000106143 /* AuthAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthAPITests.swift; sourceTree = "<group>"; };
+		AC29A4602E73F2179CA45E5D /* TukiThemeRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiThemeRuntimeTests.swift; sourceTree = "<group>"; };
+		6C09BC1CB3E722692A7A536F /* TukiLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiLocalizationTests.swift; sourceTree = "<group>"; };
+		738FB81DD8844EC36AB70C2D /* TukiMapKitSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiMapKitSupportTests.swift; sourceTree = "<group>"; };
+		D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiDestinationPickerMergeTests.swift; sourceTree = "<group>"; };
+		815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiGuestSessionTests.swift; sourceTree = "<group>"; };
+		65078850A16BEDFD85CE87C6 /* TukiInfrastructureAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiInfrastructureAPITests.swift; sourceTree = "<group>"; };
+		4ADFE4EE6926FFE81EAC2D69 /* TukiHistoryAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiHistoryAPITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -102,6 +116,13 @@
 				DCD250263033FA0000106143 /* AppConfigurationTests.swift */,
 				DCD250363033FA0000106143 /* AuthAPITests.swift */,
 				DCD250273033FA0000106143 /* AuthModelsTests.swift */,
+				AC29A4602E73F2179CA45E5D /* TukiThemeRuntimeTests.swift */,
+				6C09BC1CB3E722692A7A536F /* TukiLocalizationTests.swift */,
+				738FB81DD8844EC36AB70C2D /* TukiMapKitSupportTests.swift */,
+				D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */,
+				815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */,
+				65078850A16BEDFD85CE87C6 /* TukiInfrastructureAPITests.swift */,
+				4ADFE4EE6926FFE81EAC2D69 /* TukiHistoryAPITests.swift */,
 			);
 			path = TUKITests;
 			sourceTree = "<group>";
@@ -230,6 +251,13 @@
 				DCD250243033FA0000106143 /* AppConfigurationTests.swift in Sources */,
 				DCD250353033FA0000106143 /* AuthAPITests.swift in Sources */,
 				DCD250253033FA0000106143 /* AuthModelsTests.swift in Sources */,
+				0DCA88E2768F9DA09C94AE26 /* TukiThemeRuntimeTests.swift in Sources */,
+				999BADAFCC7929FD44C7A1DF /* TukiLocalizationTests.swift in Sources */,
+				FF79BE1D24D7B1A03629DE00 /* TukiMapKitSupportTests.swift in Sources */,
+				480A51582AB35C48CA8191E7 /* TukiDestinationPickerMergeTests.swift in Sources */,
+				E7E6503338D29BCAEB32583F /* TukiGuestSessionTests.swift in Sources */,
+				8BFAE05015B2064A31FA7598 /* TukiInfrastructureAPITests.swift in Sources */,
+				98032F12CAE6148DA80B2A38 /* TukiHistoryAPITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
