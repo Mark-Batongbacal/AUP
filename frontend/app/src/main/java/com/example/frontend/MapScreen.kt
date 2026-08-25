@@ -10,8 +10,10 @@ import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -132,6 +134,7 @@ fun MapScreen(
     showDeviceLocation: Boolean = true,
     fitRouteBounds: Boolean = false,
     routeBoundsPoints: List<LatLng> = routePoints,
+    routeInteractionControlsEnabled: Boolean = false,
 ) {
     if (LocalInspectionMode.current) {
         MapPreviewPlaceholder(modifier)
@@ -229,16 +232,30 @@ fun MapScreen(
         }
     }
 
-    DisposableEffect(mapView, navigationTrackingEnabled) {
-        if (!navigationTrackingEnabled) {
+    DisposableEffect(mapView, navigationTrackingEnabled, routeInteractionControlsEnabled) {
+        if (!navigationTrackingEnabled && !routeInteractionControlsEnabled) {
             mapView.setOnTouchListener(null)
             onDispose { }
         } else {
-            mapView.setOnTouchListener { _, event ->
-                if (event.actionMasked == MotionEvent.ACTION_DOWN && followNavigationLocation) followNavigationLocation = false
+            mapView.setOnTouchListener { view, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN && navigationTrackingEnabled && followNavigationLocation) {
+                    followNavigationLocation = false
+                }
+                if (routeInteractionControlsEnabled) {
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN,
+                        MotionEvent.ACTION_POINTER_DOWN,
+                        MotionEvent.ACTION_MOVE -> view.parent?.requestDisallowInterceptTouchEvent(true)
+                        MotionEvent.ACTION_UP,
+                        MotionEvent.ACTION_CANCEL -> view.parent?.requestDisallowInterceptTouchEvent(false)
+                    }
+                }
                 false
             }
-            onDispose { mapView.setOnTouchListener(null) }
+            onDispose {
+                mapView.parent?.requestDisallowInterceptTouchEvent(false)
+                mapView.setOnTouchListener(null)
+            }
         }
     }
 
@@ -321,20 +338,12 @@ fun MapScreen(
         if (!fitRouteBounds || navigationTrackingEnabled) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         if (loadedStyle == null || routeBoundsPoints.isEmpty()) return@LaunchedEffect
-        val density = context.resources.displayMetrics.density
-        val sidePadding = (26f * density).toInt()
-        val verticalPadding = (34f * density).toInt()
-        fitMapCameraToRoute(
+        fitRoutePreviewCamera(
+            context = context,
             map = map,
             mapView = mapView,
             routePoints = routeBoundsPoints,
-            anchors = listOfNotNull(startPoint, selectedDestination, finalDestination),
-            insets = MapCameraInsets(
-                left = sidePadding,
-                top = verticalPadding,
-                right = sidePadding,
-                bottom = verticalPadding
-            )
+            anchors = listOfNotNull(startPoint, selectedDestination, finalDestination)
         )
     }
 
@@ -395,6 +404,33 @@ fun MapScreen(
             }
         }
 
+        if (routeInteractionControlsEnabled) {
+            Column(
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                MapInteractionButton("+") {
+                    mapLibreMap?.animateCamera(CameraUpdateFactory.zoomIn(), 180)
+                }
+                MapInteractionButton("−") {
+                    mapLibreMap?.animateCamera(CameraUpdateFactory.zoomOut(), 180)
+                }
+                if (routeBoundsPoints.isNotEmpty()) {
+                    MapInteractionButton("Fit") {
+                        val map = mapLibreMap ?: return@MapInteractionButton
+                        fitRoutePreviewCamera(
+                            context = context,
+                            map = map,
+                            mapView = mapView,
+                            routePoints = routeBoundsPoints,
+                            anchors = listOfNotNull(startPoint, selectedDestination, finalDestination)
+                        )
+                    }
+                }
+            }
+        }
+
         if (navigationTrackingEnabled && navigationTrackingPoint != null && !followNavigationLocation) {
             Button(
                 onClick = { followNavigationLocation = true },
@@ -409,6 +445,42 @@ fun MapScreen(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
             )
         }
+    }
+}
+
+private fun fitRoutePreviewCamera(
+    context: Context,
+    map: MapLibreMap,
+    mapView: MapView,
+    routePoints: List<LatLng>,
+    anchors: List<LatLng>
+) {
+    if (routePoints.isEmpty()) return
+    val density = context.resources.displayMetrics.density
+    val sidePadding = (26f * density).toInt()
+    val verticalPadding = (34f * density).toInt()
+    fitMapCameraToRoute(
+        map = map,
+        mapView = mapView,
+        routePoints = routePoints,
+        anchors = anchors,
+        insets = MapCameraInsets(
+            left = sidePadding,
+            top = verticalPadding,
+            right = sidePadding,
+            bottom = verticalPadding
+        )
+    )
+}
+
+@Composable
+private fun MapInteractionButton(label: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.widthIn(min = 48.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(label)
     }
 }
 
