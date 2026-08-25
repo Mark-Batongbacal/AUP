@@ -230,6 +230,11 @@ struct RecentCommute: Identifiable, Hashable {
     var destinationLatitude: Double? = nil
     var destinationLongitude: Double? = nil
     var steps: [CommuteStep] = []
+    /// Nil for guest/local trips that never got a real recommendation — matches Android's
+    /// `canFavorite = !isGuest && recommendationId != null` gate on the favorite-star toggle.
+    var recommendationId: String? = nil
+    var totalFare: Double = 0
+    var endedAt: String? = nil
 }
 
 struct CommuteStep: Hashable {
@@ -246,6 +251,10 @@ struct FavoriteRoute: Identifiable, Hashable {
     let destination: String
     let timesUsed: Int
     let note: String
+    var recommendationId: String? = nil
+    var totalMinutes: Int = 0
+    var totalFare: Double = 0
+    var transferCount: Int = 0
 }
 
 struct RouteOption: Identifiable, Hashable {

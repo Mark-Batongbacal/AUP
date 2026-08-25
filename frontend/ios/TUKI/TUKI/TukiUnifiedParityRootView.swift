@@ -81,6 +81,8 @@ private enum UnifiedScreen {
     case privacyPolicy
     case language
     case about
+    case helpCenter
+    case sendFeedback
     case settings
 }
 
@@ -97,6 +99,9 @@ private struct TukiUnifiedMainView: View {
     @State private var selectedDestination: TukiPlace?
     @State private var recentLoading = false
     @State private var recentError: String?
+    @State private var favoriteRecommendationIds: Set<String> = []
+    @State private var favoriteWorkingIds: Set<String> = []
+    @State private var favoritesOpenError: String?
 
     private let api: TukiPlatformAPI?
     private let historyAPI: TukiHistoryAPI?
@@ -250,10 +255,12 @@ private struct TukiUnifiedMainView: View {
 
             case .privacySecurity:
                 TukiUnifiedPrivacySecurityView(
+                    auth: auth,
                     onBack: { screen = .tabs; tab = .profile },
                     onChangePassword: { screen = .changePassword },
                     onPermissions: { screen = .permissions },
-                    onPrivacyPolicy: { screen = .privacyPolicy }
+                    onPrivacyPolicy: { screen = .privacyPolicy },
+                    onAccountDeleted: { auth.signOut() }
                 )
 
             case .changePassword:
@@ -269,13 +276,20 @@ private struct TukiUnifiedMainView: View {
                 TukiUnifiedLanguageView { screen = .tabs; tab = .profile }
 
             case .about:
-                TukiUnifiedAboutView { screen = .tabs; tab = .profile }
+                TukiUnifiedAboutView { screen = .settings }
+
+            case .helpCenter:
+                TukiUnifiedHelpCenterView { screen = .settings }
+
+            case .sendFeedback:
+                TukiUnifiedSendFeedbackView { screen = .settings }
 
             case .settings:
                 TukiUnifiedSettingsView(
                     onBack: { screen = .tabs; tab = .profile },
-                    onPrivacyPolicy: { screen = .privacyPolicy },
-                    onLanguage: { screen = .language },
+                    onHelpCenter: { screen = .helpCenter },
+                    onSendFeedback: { screen = .sendFeedback },
+                    onAbout: { screen = .about },
                     onLogout: { auth.signOut() }
                 )
             }
@@ -309,17 +323,23 @@ private struct TukiUnifiedMainView: View {
                         guest: !auth.isAuthenticated,
                         loading: recentLoading,
                         error: recentError,
+                        favoriteRecommendationIds: favoriteRecommendationIds,
+                        favoriteWorkingIds: favoriteWorkingIds,
+                        onToggleFavorite: { commute in Task { await toggleFavorite(commute) } },
                         onTap: { screen = .commute($0) }
                     )
                 case .favorites:
-                    UnifiedFavorites(routes: favorites, guest: !auth.isAuthenticated)
+                    UnifiedFavorites(
+                        routes: favorites,
+                        guest: !auth.isAuthenticated,
+                        onTap: { route in Task { await openFavorite(route) } }
+                    )
                 case .profile:
                     TukiUnifiedProfileView(
                         auth: auth,
                         onEdit: { if !auth.isGuestAccount { screen = .editProfile } },
                         onPrivacy: { if !auth.isGuestAccount { screen = .privacySecurity } },
                         onLanguage: { screen = .language },
-                        onAbout: { screen = .about },
                         onSettings: { screen = .settings },
                         onLogout: { auth.signOut() }
                     )
@@ -331,6 +351,14 @@ private struct TukiUnifiedMainView: View {
         }
         .background(TukiPalette.cream.ignoresSafeArea())
         .task(id: tab) { await refreshTab() }
+        .alert("Favorite unavailable", isPresented: Binding(
+            get: { favoritesOpenError != nil },
+            set: { if !$0 { favoritesOpenError = nil } }
+        )) {
+            Button("OK", role: .cancel) { favoritesOpenError = nil }
+        } message: {
+            Text(favoritesOpenError ?? "")
+        }
     }
 
     private func returnHome() {
@@ -401,8 +429,49 @@ private struct TukiUnifiedMainView: View {
             case .failure(let error): recent = []; recentError = error.message
             }
             recentLoading = false
+            if case .success(let values) = await historyAPI.favorites() {
+                favorites = values
+                favoriteRecommendationIds = Set(values.compactMap(\.recommendationId))
+            }
         } else if tab == .favorites, let historyAPI {
-            if case .success(let values) = await historyAPI.favorites() { favorites = values }
+            if case .success(let values) = await historyAPI.favorites() {
+                favorites = values
+                favoriteRecommendationIds = Set(values.compactMap(\.recommendationId))
+            }
+            if recent.isEmpty, case .success(let values) = await historyAPI.history() {
+                recent = values
+            }
+        }
+    }
+
+    private func toggleFavorite(_ commute: RecentCommute) async {
+        guard let historyAPI, let recommendationId = commute.recommendationId else { return }
+        guard !favoriteWorkingIds.contains(recommendationId) else { return }
+        favoriteWorkingIds.insert(recommendationId)
+        defer { favoriteWorkingIds.remove(recommendationId) }
+
+        if favoriteRecommendationIds.contains(recommendationId) {
+            guard let favoriteTripId = favorites.first(where: { $0.recommendationId == recommendationId })?.id else { return }
+            if case .success = await historyAPI.removeFavorite(favoriteTripId: favoriteTripId) {
+                favorites.removeAll { $0.recommendationId == recommendationId }
+                favoriteRecommendationIds.remove(recommendationId)
+            }
+        } else {
+            if case .success(let route) = await historyAPI.addFavorite(recommendationId: recommendationId) {
+                favorites.append(route)
+                favoriteRecommendationIds.insert(recommendationId)
+            }
+        }
+    }
+
+    private func openFavorite(_ route: FavoriteRoute) async {
+        if recent.isEmpty, let historyAPI, case .success(let values) = await historyAPI.history() {
+            recent = values
+        }
+        if let match = recent.first(where: { $0.recommendationId != nil && $0.recommendationId == route.recommendationId }) {
+            screen = .commute(match)
+        } else {
+            favoritesOpenError = "Route details aren't available for this favorite yet."
         }
     }
 }
@@ -697,24 +766,161 @@ private struct UnifiedHome: View {
     }
 }
 
+private enum RecentFilterTab: CaseIterable {
+    case all, completed, cancelled
+
+    var label: String {
+        switch self {
+        case .all: TukiInterfaceText.all
+        case .completed: TukiInterfaceText.completed
+        case .cancelled: TukiInterfaceText.cancelled
+        }
+    }
+}
+
+/// Ported from Android's `RecentScreen.kt`: All/Completed/Cancelled filter tabs and an
+/// inline favorite-star toggle (with a remove-confirmation dialog), replacing the earlier
+/// plain list with no filtering and no favoriting at all.
 private struct UnifiedRecent: View {
     let commutes: [RecentCommute]
     let guest: Bool
     let loading: Bool
     let error: String?
+    let favoriteRecommendationIds: Set<String>
+    let favoriteWorkingIds: Set<String>
+    let onToggleFavorite: (RecentCommute) -> Void
     let onTap: (RecentCommute) -> Void
+
+    @State private var filter: RecentFilterTab = .all
+    @State private var pendingRemoval: RecentCommute?
+
+    private var filtered: [RecentCommute] {
+        switch filter {
+        case .all: commutes
+        case .completed: commutes.filter { $0.status.caseInsensitiveCompare("Completed") == .orderedSame }
+        case .cancelled: commutes.filter { $0.status.caseInsensitiveCompare("Cancelled") == .orderedSame }
+        }
+    }
+
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                Text("Recent").font(.system(size: 27, weight: .heavy)).foregroundStyle(TukiPalette.dark)
+                Text(TukiInterfaceText.recentTrips).font(.system(size: 27, weight: .heavy)).foregroundStyle(TukiPalette.dark)
+                tabs
                 if loading { ProgressView().tint(TukiPalette.teal) }
                 if let error { Text(error).foregroundStyle(TukiPalette.error) }
-                if commutes.isEmpty && !loading { Text(guest ? "Sign in to view your recent journeys." : "No completed or cancelled trips yet.").foregroundStyle(TukiPalette.gray) }
-                ForEach(commutes) { commute in
-                    Button { onTap(commute) } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(commute.origin) to \(commute.destination)").font(.system(size: 17, weight: .bold)).foregroundStyle(TukiPalette.dark)
-                            Text("\(commute.status) · \(commute.legs) legs · \(commute.minutes) min").font(.system(size: 13)).foregroundStyle(TukiPalette.teal)
+                if filtered.isEmpty && !loading {
+                    Text(guest ? TukiInterfaceText.signInToViewJourneys : TukiInterfaceText.noTripsYet).foregroundStyle(TukiPalette.gray)
+                }
+                ForEach(filtered) { commute in card(commute) }
+            }
+            .padding(30)
+        }
+        .background(TukiPalette.cream)
+        .alert("Remove from favorites?", isPresented: Binding(
+            get: { pendingRemoval != nil },
+            set: { if !$0 { pendingRemoval = nil } }
+        )) {
+            Button("Remove", role: .destructive) {
+                if let commute = pendingRemoval { onToggleFavorite(commute) }
+                pendingRemoval = nil
+            }
+            Button("Keep Favorite", role: .cancel) { pendingRemoval = nil }
+        } message: {
+            Text("Are you sure you want to remove \(pendingRemoval?.origin ?? "") \u{2192} \(pendingRemoval?.destination ?? "") from your favorites?")
+        }
+    }
+
+    private var tabs: some View {
+        HStack(spacing: 2) {
+            ForEach(RecentFilterTab.allCases, id: \.self) { tab in
+                Button { filter = tab } label: {
+                    Text(tab.label)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(filter == tab ? .white : TukiPalette.dark)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(filter == tab ? TukiPalette.teal : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 19))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(TukiPalette.teal.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+    }
+
+    private func card(_ commute: RecentCommute) -> some View {
+        let completed = commute.status.caseInsensitiveCompare("Completed") == .orderedSame
+        let canFavorite = !guest && commute.recommendationId != nil
+        let isFavorite = commute.recommendationId.map(favoriteRecommendationIds.contains) ?? false
+        let working = commute.recommendationId.map(favoriteWorkingIds.contains) ?? false
+
+        return HStack(spacing: 8) {
+            Button { onTap(commute) } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(commute.origin) \u{2192} \(commute.destination)")
+                        .font(.system(size: 16, weight: .bold)).foregroundStyle(TukiPalette.dark).lineLimit(1)
+                    Text("\(recentDateText(commute.endedAt)) \u{00B7} \(commute.minutes) min \u{00B7} \u{20B1}\(Int(commute.totalFare.rounded()))")
+                        .font(.system(size: 12)).foregroundStyle(TukiPalette.gray).lineLimit(1)
+                    Text(TukiInterfaceText.status(commute.status.isEmpty ? (completed ? "Completed" : "Cancelled") : commute.status))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(completed ? TukiPalette.teal : TukiPalette.error)
+                        .padding(.horizontal, 10).padding(.vertical, 3)
+                        .background((completed ? TukiPalette.teal : TukiPalette.error).opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                guard canFavorite, !working else { return }
+                if isFavorite { pendingRemoval = commute } else { onToggleFavorite(commute) }
+            } label: {
+                if working {
+                    ProgressView().frame(width: 26, height: 26)
+                } else {
+                    Text(isFavorite ? "\u{2605}" : "\u{2606}").font(.system(size: 22)).foregroundStyle(TukiPalette.orange)
+                        .frame(width: 26, height: 26)
+                }
+            }
+            .buttonStyle(.plain)
+            .opacity(canFavorite ? 1 : 0.3)
+            .disabled(!canFavorite || working)
+        }
+        .padding(14)
+        .background(TukiPalette.creamCard)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+/// Ported from Android's `FavoritesScreen.kt`: rows are tappable (previously not at all on
+/// iOS), resolving into the matching completed trip's full detail via history lookup —
+/// mirrors `FavoriteRouteDetailsHost`.
+private struct UnifiedFavorites: View {
+    let routes: [FavoriteRoute]
+    let guest: Bool
+    let onTap: (FavoriteRoute) -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                Text(TukiInterfaceText.favorites).font(.system(size: 27, weight: .heavy)).foregroundStyle(TukiPalette.dark)
+                if routes.isEmpty {
+                    Text(guest ? TukiInterfaceText.signInFavorites : TukiInterfaceText.noFavoriteRoutes).foregroundStyle(TukiPalette.gray)
+                }
+                ForEach(routes) { route in
+                    Button { onTap(route) } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("\(route.origin) \u{2192} \(route.destination)").font(.system(size: 17, weight: .bold)).foregroundStyle(TukiPalette.dark).lineLimit(1)
+                                Text("\(route.totalMinutes) min \u{00B7} \u{20B1}\(Int(route.totalFare.rounded())) \u{00B7} Used \(route.timesUsed)\u{00D7}")
+                                    .font(.system(size: 13)).foregroundStyle(TukiPalette.gray)
+                            }
+                            Spacer(minLength: 0)
+                            Text("\u{203A}").font(.system(size: 22, weight: .bold)).foregroundStyle(TukiPalette.gray)
                         }
                         .padding(16).frame(maxWidth: .infinity, alignment: .leading).background(TukiPalette.creamCard).clipShape(RoundedRectangle(cornerRadius: 16))
                     }
@@ -727,26 +933,22 @@ private struct UnifiedRecent: View {
     }
 }
 
-private struct UnifiedFavorites: View {
-    let routes: [FavoriteRoute]
-    let guest: Bool
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                Text("Favorites").font(.system(size: 27, weight: .heavy)).foregroundStyle(TukiPalette.dark)
-                if routes.isEmpty { Text(guest ? "Sign in to save favorite routes." : "No favorite routes yet.").foregroundStyle(TukiPalette.gray) }
-                ForEach(routes) { route in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("\(route.origin) to \(route.destination)").font(.system(size: 17, weight: .bold)).foregroundStyle(TukiPalette.dark)
-                        Text("Used \(route.timesUsed) times · \(route.note)").font(.system(size: 13)).foregroundStyle(TukiPalette.gray)
-                    }
-                    .padding(16).frame(maxWidth: .infinity, alignment: .leading).background(TukiPalette.creamCard).clipShape(RoundedRectangle(cornerRadius: 16))
-                }
-            }
-            .padding(30)
-        }
-        .background(TukiPalette.cream)
+func recentDateText(_ value: String?) -> String {
+    guard let value, !value.isEmpty else {
+        return TukiInterfaceText.isFilipino ? "Kamakailang biyahe" : "Recent trip"
     }
+    let formatter = ISO8601DateFormatter()
+    var date = formatter.date(from: value)
+    if date == nil {
+        formatter.formatOptions.insert(.withFractionalSeconds)
+        date = formatter.date(from: value)
+    }
+    guard let date else {
+        return TukiInterfaceText.isFilipino ? "Kamakailang biyahe" : "Recent trip"
+    }
+    let display = DateFormatter()
+    display.dateFormat = "MMM d, yyyy"
+    return display.string(from: date)
 }
 
 private struct UnifiedBottomBar: View {

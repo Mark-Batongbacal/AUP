@@ -18,6 +18,7 @@
 		480A51582AB35C48CA8191E7 /* TukiDestinationPickerMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */; };
 		E7E6503338D29BCAEB32583F /* TukiGuestSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */; };
 		8BFAE05015B2064A31FA7598 /* TukiInfrastructureAPITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65078850A16BEDFD85CE87C6 /* TukiInfrastructureAPITests.swift */; };
+		98032F12CAE6148DA80B2A38 /* TukiHistoryAPITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADFE4EE6926FFE81EAC2D69 /* TukiHistoryAPITests.swift */; };
 		DCFB00033033FA0000106143 /* FacebookCore in Frameworks */ = {isa = PBXBuildFile; productRef = DCFB00013033FA0000106143 /* FacebookCore */; };
 		DCFB00043033FA0000106143 /* FacebookLogin in Frameworks */ = {isa = PBXBuildFile; productRef = DCFB00023033FA0000106143 /* FacebookLogin */; };
 /* End PBXBuildFile section */
@@ -45,6 +46,7 @@
 		D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiDestinationPickerMergeTests.swift; sourceTree = "<group>"; };
 		815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiGuestSessionTests.swift; sourceTree = "<group>"; };
 		65078850A16BEDFD85CE87C6 /* TukiInfrastructureAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiInfrastructureAPITests.swift; sourceTree = "<group>"; };
+		4ADFE4EE6926FFE81EAC2D69 /* TukiHistoryAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TukiHistoryAPITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -120,6 +122,7 @@
 				D456DCC30BAB22F4B24A3CCD /* TukiDestinationPickerMergeTests.swift */,
 				815111F0171EFC55D3D6C342 /* TukiGuestSessionTests.swift */,
 				65078850A16BEDFD85CE87C6 /* TukiInfrastructureAPITests.swift */,
+				4ADFE4EE6926FFE81EAC2D69 /* TukiHistoryAPITests.swift */,
 			);
 			path = TUKITests;
 			sourceTree = "<group>";
@@ -254,6 +257,7 @@
 				480A51582AB35C48CA8191E7 /* TukiDestinationPickerMergeTests.swift in Sources */,
 				E7E6503338D29BCAEB32583F /* TukiGuestSessionTests.swift in Sources */,
 				8BFAE05015B2064A31FA7598 /* TukiInfrastructureAPITests.swift in Sources */,
+				98032F12CAE6148DA80B2A38 /* TukiHistoryAPITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
