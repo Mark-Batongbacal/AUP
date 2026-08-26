@@ -75,66 +75,90 @@ fun RouteResultsScreen(
     destinationLatitude: Double? = null,
     destinationLongitude: Double? = null,
     onBack: () -> Unit = {},
-    onRouteSelect: (RouteOption) -> Unit = {},
+    onRouteSelect: (RouteOption, String, String, Double?, Double?) -> Unit = { _, _, _, _, _ -> },
     onSuggestToda: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    var activeOrigin by remember(origin) { mutableStateOf(origin) }
+    var activeDestinationQuery by remember(destinationQuery) { mutableStateOf(destinationQuery) }
+    var activeOriginLatitude by remember(originLatitude) { mutableStateOf(originLatitude) }
+    var activeOriginLongitude by remember(originLongitude) { mutableStateOf(originLongitude) }
+    var activeDestinationLatitude by remember(destinationLatitude) { mutableStateOf(destinationLatitude) }
+    var activeDestinationLongitude by remember(destinationLongitude) { mutableStateOf(destinationLongitude) }
+
+    var resolvedOriginLatitude by remember { mutableStateOf<Double?>(null) }
+    var resolvedOriginLongitude by remember { mutableStateOf<Double?>(null) }
+    var resolvedDestinationLatitude by remember { mutableStateOf<Double?>(null) }
+    var resolvedDestinationLongitude by remember { mutableStateOf<Double?>(null) }
+
     var isLoading by remember { mutableStateOf(true) }
     var routeOptions by remember { mutableStateOf<List<RouteOption>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showUnsupportedLocationDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
-    var routeCycleRequest by remember { mutableStateOf(0) }
 
-    LaunchedEffect(destinationQuery, originLatitude, originLongitude, destinationLatitude, destinationLongitude) {
+    LaunchedEffect(
+        activeDestinationQuery,
+        activeOriginLatitude,
+        activeOriginLongitude,
+        activeDestinationLatitude,
+        activeDestinationLongitude
+    ) {
         isLoading = true
         errorMessage = null
         routeOptions = emptyList()
         selectedTab = 0
-        routeCycleRequest = 0
+        resolvedOriginLatitude = null
+        resolvedOriginLongitude = null
+        resolvedDestinationLatitude = null
+        resolvedDestinationLongitude = null
 
-        val deviceLocation = if (originLatitude == null || originLongitude == null) context.currentDeviceLocation() else null
-        val resolvedOriginLatitude = originLatitude ?: deviceLocation?.latitude
-        val resolvedOriginLongitude = originLongitude ?: deviceLocation?.longitude
+        val deviceLocation = if (activeOriginLatitude == null || activeOriginLongitude == null) {
+            context.currentDeviceLocation()
+        } else {
+            null
+        }
+        val finalOriginLatitude = activeOriginLatitude ?: deviceLocation?.latitude
+        val finalOriginLongitude = activeOriginLongitude ?: deviceLocation?.longitude
 
-        if (resolvedOriginLatitude == null || resolvedOriginLongitude == null) {
+        if (finalOriginLatitude == null || finalOriginLongitude == null) {
             errorMessage = LocationDetectionFailureMessage
             isLoading = false
             return@LaunchedEffect
         }
 
-        if (!isLocationSupported(resolvedOriginLatitude, resolvedOriginLongitude)) {
+        if (!isLocationSupported(finalOriginLatitude, finalOriginLongitude)) {
             showUnsupportedLocationDialog = true
             errorMessage = LocationNotSupportedShortMessage
             isLoading = false
             return@LaunchedEffect
         }
 
-        var resolvedDestinationLatitude = destinationLatitude
-        var resolvedDestinationLongitude = destinationLongitude
-        var resolvedDestinationName = destinationQuery
+        var finalDestinationLatitude = activeDestinationLatitude
+        var finalDestinationLongitude = activeDestinationLongitude
+        var resolvedDestinationName = activeDestinationQuery
 
-        if (resolvedDestinationLatitude == null || resolvedDestinationLongitude == null) {
+        if (finalDestinationLatitude == null || finalDestinationLongitude == null) {
             when (
                 val placeResult = placesRepository.searchPlaces(
-                    query = destinationQuery,
-                    focusLatitude = resolvedOriginLatitude,
-                    focusLongitude = resolvedOriginLongitude
+                    query = activeDestinationQuery,
+                    focusLatitude = finalOriginLatitude,
+                    focusLongitude = finalOriginLongitude
                 )
             ) {
                 is ApiResult.Success -> {
                     val place = placeResult.data.firstOrNull()
                     if (place == null) {
                         errorMessage = if (TukiInterfaceText.isFilipino) {
-                            "Walang nahanap na destinasyon para sa \"$destinationQuery\"."
+                            "Walang nahanap na destinasyon para sa \"$activeDestinationQuery\"."
                         } else {
-                            "No matching destination found for \"$destinationQuery\"."
+                            "No matching destination found for \"$activeDestinationQuery\"."
                         }
                         isLoading = false
                         return@LaunchedEffect
                     }
-                    resolvedDestinationLatitude = place.latitude
-                    resolvedDestinationLongitude = place.longitude
+                    finalDestinationLatitude = place.latitude
+                    finalDestinationLongitude = place.longitude
                     resolvedDestinationName = place.name
                 }
                 is ApiResult.Failure -> {
@@ -145,41 +169,67 @@ fun RouteResultsScreen(
             }
         }
 
-        val finalDestinationLatitude = resolvedDestinationLatitude
-        val finalDestinationLongitude = resolvedDestinationLongitude
-        if (finalDestinationLatitude == null || finalDestinationLongitude == null) {
-            errorMessage = if (TukiInterfaceText.isFilipino) "Hindi available ang coordinates ng destinasyon." else "Destination coordinates are unavailable."
+        val destinationLat = finalDestinationLatitude
+        val destinationLon = finalDestinationLongitude
+        if (destinationLat == null || destinationLon == null) {
+            errorMessage = if (TukiInterfaceText.isFilipino) {
+                "Hindi available ang coordinates ng destinasyon."
+            } else {
+                "Destination coordinates are unavailable."
+            }
             isLoading = false
             return@LaunchedEffect
         }
 
-        if (!isLocationSupported(finalDestinationLatitude, finalDestinationLongitude)) {
+        if (!isLocationSupported(destinationLat, destinationLon)) {
             showUnsupportedLocationDialog = true
             errorMessage = LocationNotSupportedShortMessage
             isLoading = false
             return@LaunchedEffect
         }
 
+        resolvedOriginLatitude = finalOriginLatitude
+        resolvedOriginLongitude = finalOriginLongitude
+        resolvedDestinationLatitude = destinationLat
+        resolvedDestinationLongitude = destinationLon
+
         when (
             val result = routingRepository.planJourneys(
                 JourneyPlanRequest(
-                    originLatitude = resolvedOriginLatitude,
-                    originLongitude = resolvedOriginLongitude,
+                    originLatitude = finalOriginLatitude,
+                    originLongitude = finalOriginLongitude,
                     destinationName = resolvedDestinationName,
-                    destinationLatitude = finalDestinationLatitude,
-                    destinationLongitude = finalDestinationLongitude
+                    destinationLatitude = destinationLat,
+                    destinationLongitude = destinationLon
                 )
             )
         ) {
             is ApiResult.Success -> {
                 routeOptions = result.data.map { planned ->
-                    planned.toRouteOption(origin, destinationQuery)
+                    planned.toRouteOption(activeOrigin, activeDestinationQuery)
                 }
             }
             is ApiResult.Failure -> errorMessage = result.message
         }
 
         isLoading = false
+    }
+
+    fun swapLocations() {
+        val originLat = resolvedOriginLatitude ?: return
+        val originLon = resolvedOriginLongitude ?: return
+        val destinationLat = resolvedDestinationLatitude ?: return
+        val destinationLon = resolvedDestinationLongitude ?: return
+
+        val previousOrigin = activeOrigin
+        val previousDestination = activeDestinationQuery
+
+        activeOrigin = previousDestination
+        activeDestinationQuery = previousOrigin
+        activeOriginLatitude = destinationLat
+        activeOriginLongitude = destinationLon
+        activeDestinationLatitude = originLat
+        activeDestinationLongitude = originLon
     }
 
     if (showUnsupportedLocationDialog) {
@@ -198,14 +248,22 @@ fun RouteResultsScreen(
         RouteResultsHeader(onBack = onBack)
         Spacer(modifier = Modifier.height(14.dp))
         CurrentAndDestinationCard(
-            origin = origin,
-            destinationQuery = destinationQuery,
-            canCycleRoutes = !isLoading && errorMessage == null && routeOptions.size > 1,
-            onCycleRoute = { routeCycleRequest += 1 },
+            origin = activeOrigin,
+            destinationQuery = activeDestinationQuery,
+            canSwapLocations = !isLoading &&
+                resolvedOriginLatitude != null &&
+                resolvedOriginLongitude != null &&
+                resolvedDestinationLatitude != null &&
+                resolvedDestinationLongitude != null,
+            onSwapLocations = ::swapLocations,
             modifier = Modifier.padding(horizontal = 22.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
-        RouteTabs(selectedTab = selectedTab, onTabSelected = { selectedTab = it }, modifier = Modifier.padding(horizontal = 16.dp))
+        RouteTabs(
+            selectedTab = selectedTab,
+            onTabSelected = { selectedTab = it },
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
         Spacer(modifier = Modifier.height(14.dp))
 
         when {
@@ -217,20 +275,26 @@ fun RouteResultsScreen(
             routeOptions.isEmpty() -> RouteMessageCard(
                 title = if (TukiInterfaceText.isFilipino) "Walang rutang nahanap" else "No routes found",
                 message = if (TukiInterfaceText.isFilipino) {
-                    "Wala pang route recommendation para sa \"$destinationQuery\"."
+                    "Wala pang route recommendation para sa \"$activeDestinationQuery\"."
                 } else {
-                    "There are no route recommendations for \"$destinationQuery\" yet."
+                    "There are no route recommendations for \"$activeDestinationQuery\" yet."
                 }
             )
             else -> {
                 val visibleRoutes = if (selectedTab == 0) routeOptions.take(3) else routeOptions
                 RouteCarouselSection(
                     routes = visibleRoutes,
-                    cycleRequest = routeCycleRequest,
+                    origin = activeOrigin,
+                    destination = activeDestinationQuery,
+                    originLatitude = resolvedOriginLatitude,
+                    originLongitude = resolvedOriginLongitude,
                     onRouteSelect = onRouteSelect
                 )
                 Spacer(modifier = Modifier.height(22.dp))
-                SuggestTodaBanner(onClick = onSuggestToda, modifier = Modifier.padding(horizontal = 22.dp))
+                SuggestTodaBanner(
+                    onClick = onSuggestToda,
+                    modifier = Modifier.padding(horizontal = 22.dp)
+                )
             }
         }
     }
@@ -238,12 +302,22 @@ fun RouteResultsScreen(
 
 @Composable
 private fun RouteResultsHeader(onBack: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(36.dp).clickable(onClick = onBack), contentAlignment = Alignment.Center) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(36.dp).clickable(onClick = onBack),
+            contentAlignment = Alignment.Center
+        ) {
             Text(text = "←", color = TukiInk, style = MaterialTheme.typography.displaySmall)
         }
         Spacer(modifier = Modifier.width(10.dp))
-        Text(text = TukiInterfaceText.whereAreYouGoing, color = TukiInk, style = MaterialTheme.typography.displaySmall)
+        Text(
+            text = TukiInterfaceText.whereAreYouGoing,
+            color = TukiInk,
+            style = MaterialTheme.typography.displaySmall
+        )
     }
 }
 
@@ -251,41 +325,47 @@ private fun RouteResultsHeader(onBack: () -> Unit) {
 private fun CurrentAndDestinationCard(
     origin: String,
     destinationQuery: String,
-    canCycleRoutes: Boolean,
-    onCycleRoute: () -> Unit,
+    canSwapLocations: Boolean,
+    onSwapLocations: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val originLabel = if (origin.contains("current location", ignoreCase = true)) {
-        if (TukiInterfaceText.isFilipino && origin.equals("Current location", true)) TukiInterfaceText.currentLocation else origin
+    val originLabel = if (origin.equals("Current location", ignoreCase = true)) {
+        if (TukiInterfaceText.isFilipino) TukiInterfaceText.currentLocation else origin
     } else {
-        "$origin (${TukiInterfaceText.currentLocation.lowercase()})"
+        origin
     }
 
     Row(
-        modifier = modifier.fillMaxWidth().background(TukiGold.copy(alpha = 0.1f), RoundedCornerShape(18.dp))
+        modifier = modifier
+            .fillMaxWidth()
+            .background(TukiGold.copy(alpha = 0.1f), RoundedCornerShape(18.dp))
             .padding(start = 16.dp, end = 12.dp, top = 13.dp, bottom = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            LocationRow(dotColor = TukiTeal, text = originLabel, bold = true)
+            LocationRow(dotColor = TukiTeal, text = originLabel)
             Spacer(modifier = Modifier.height(9.dp))
             LocationRow(
                 dotColor = TukiOrange,
-                text = destinationQuery.ifBlank { if (TukiInterfaceText.isFilipino) "Kahit saan" else "Somewhere" },
-                bold = true
+                text = destinationQuery.ifBlank {
+                    if (TukiInterfaceText.isFilipino) "Kahit saan" else "Somewhere"
+                }
             )
         }
         Spacer(modifier = Modifier.width(8.dp))
         Box(
             modifier = Modifier
                 .size(38.dp)
-                .background(TukiSurfaceRaised.copy(alpha = if (canCycleRoutes) 0.92f else 0.45f), CircleShape)
-                .clickable(enabled = canCycleRoutes, onClick = onCycleRoute),
+                .background(
+                    TukiSurfaceRaised.copy(alpha = if (canSwapLocations) 0.92f else 0.45f),
+                    CircleShape
+                )
+                .clickable(enabled = canSwapLocations, onClick = onSwapLocations),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "⇄",
-                color = if (canCycleRoutes) TukiDeepTeal else TukiMuted.copy(alpha = 0.55f),
+                color = if (canSwapLocations) TukiDeepTeal else TukiMuted.copy(alpha = 0.55f),
                 fontSize = 20.sp,
                 fontWeight = FontWeight.ExtraBold
             )
@@ -294,18 +374,29 @@ private fun CurrentAndDestinationCard(
 }
 
 @Composable
-private fun LocationRow(dotColor: Color, text: String, bold: Boolean) {
+private fun LocationRow(dotColor: Color, text: String) {
     Row(verticalAlignment = Alignment.Top) {
         Box(modifier = Modifier.padding(top = 5.dp).size(10.dp).background(dotColor, CircleShape))
         Spacer(modifier = Modifier.width(10.dp))
-        Text(text = text, modifier = Modifier.weight(1f), color = TukiInk, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+            text = text,
+            modifier = Modifier.weight(1f),
+            color = TukiInk,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
 @Composable
 private fun RouteTabs(selectedTab: Int, onTabSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.fillMaxWidth().height(42.dp).background(TukiSky.copy(alpha = 0.35f), RoundedCornerShape(22.dp)).padding(2.dp)
+        modifier = modifier
+            .fillMaxWidth()
+            .height(42.dp)
+            .background(TukiSky.copy(alpha = 0.35f), RoundedCornerShape(22.dp))
+            .padding(2.dp)
     ) {
         RouteTab(
             text = if (TukiInterfaceText.isFilipino) "Top 3 Ruta" else "Top 3 Routes",
@@ -325,21 +416,35 @@ private fun RouteTabs(selectedTab: Int, onTabSelected: (Int) -> Unit, modifier: 
 @Composable
 private fun RouteTab(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        modifier = modifier.fillMaxSize().background(if (selected) TukiDeepTeal else Color.Transparent, RoundedCornerShape(20.dp)).clickable(onClick = onClick),
+        modifier = modifier
+            .fillMaxSize()
+            .background(if (selected) TukiDeepTeal else Color.Transparent, RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(text = text, color = if (selected) Color.White else TukiMuted, style = MaterialTheme.typography.labelLarge)
+        Text(
+            text = text,
+            color = if (selected) Color.White else TukiMuted,
+            style = MaterialTheme.typography.labelLarge
+        )
     }
 }
 
 @Composable
 private fun LoadingRoutes() {
-    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 70.dp), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 70.dp),
+        contentAlignment = Alignment.Center
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             CircularProgressIndicator(color = TukiTeal)
             Spacer(modifier = Modifier.height(14.dp))
             Text(
-                text = if (TukiInterfaceText.isFilipino) "Hinahanap ang pinakamainam na ruta..." else "Finding the best routes...",
+                text = if (TukiInterfaceText.isFilipino) {
+                    "Hinahanap ang pinakamainam na ruta..."
+                } else {
+                    "Finding the best routes..."
+                },
                 color = TukiMuted,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
@@ -351,36 +456,44 @@ private fun LoadingRoutes() {
 @Composable
 private fun RouteMessageCard(title: String, message: String) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).background(TukiSurfaceRaised, RoundedCornerShape(18.dp)).padding(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 22.dp)
+            .background(TukiSurfaceRaised, RoundedCornerShape(18.dp))
+            .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(text = title, color = TukiInk, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+        Text(
+            text = title,
+            color = TukiInk,
+            style = MaterialTheme.typography.titleLarge,
+            textAlign = TextAlign.Center
+        )
         Spacer(modifier = Modifier.height(6.dp))
-        Text(text = message, color = TukiMuted, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+        Text(
+            text = message,
+            color = TukiMuted,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
 @Composable
 private fun RouteCarouselSection(
     routes: List<RouteOption>,
-    cycleRequest: Int,
-    onRouteSelect: (RouteOption) -> Unit
+    origin: String,
+    destination: String,
+    originLatitude: Double?,
+    originLongitude: Double?,
+    onRouteSelect: (RouteOption, String, String, Double?, Double?) -> Unit
 ) {
     if (routes.isEmpty()) return
     val pagerState = rememberPagerState(pageCount = { routes.size })
-    var lastHandledCycleRequest by remember { mutableStateOf(cycleRequest) }
 
     LaunchedEffect(routes.size) {
-        if (pagerState.currentPage > routes.lastIndex) pagerState.scrollToPage(routes.lastIndex.coerceAtLeast(0))
-    }
-
-    LaunchedEffect(cycleRequest, routes.size) {
-        if (cycleRequest != lastHandledCycleRequest) {
-            lastHandledCycleRequest = cycleRequest
-            if (routes.size > 1) {
-                val nextPage = (pagerState.currentPage + 1) % routes.size
-                pagerState.animateScrollToPage(nextPage)
-            }
+        if (pagerState.currentPage > routes.lastIndex) {
+            pagerState.scrollToPage(routes.lastIndex.coerceAtLeast(0))
         }
     }
 
@@ -401,7 +514,7 @@ private fun RouteCarouselSection(
     SelectRouteButton(
         onClick = {
             com.example.frontend.TukiMapOverlayState.selectJourneyJeepneyRoutes(selectedRoute.legRouteIds)
-            onRouteSelect(selectedRoute)
+            onRouteSelect(selectedRoute, origin, destination, originLatitude, originLongitude)
         },
         modifier = Modifier.padding(horizontal = 22.dp)
     )
@@ -419,11 +532,18 @@ private fun RouteOptionCard(option: RouteOption) {
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp).background(cardColor, RoundedCornerShape(22.dp))
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp)
+                .background(cardColor, RoundedCornerShape(22.dp))
                 .padding(start = 15.dp, end = 15.dp, top = 28.dp, bottom = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
                 Text(
                     text = titleIcon,
                     color = if (option.isRecommended) TukiGold else Color.White,
@@ -455,29 +575,56 @@ private fun RouteOptionCard(option: RouteOption) {
             Spacer(modifier = Modifier.height(15.dp))
 
             Row(modifier = Modifier.fillMaxWidth()) {
-                StatTile("◷", "~${option.totalMinutes} min", if (TukiInterfaceText.isFilipino) "Tinatayang oras" else "Est. time", Modifier.weight(1f))
+                StatTile(
+                    "◷",
+                    "~${option.totalMinutes} min",
+                    if (TukiInterfaceText.isFilipino) "Tinatayang oras" else "Est. time",
+                    Modifier.weight(1f)
+                )
                 Spacer(modifier = Modifier.width(3.dp))
-                StatTile("▣", "₱${option.totalFare.roundToInt()}", if (TukiInterfaceText.isFilipino) "Tinatayang pamasahe" else "Est. fare", Modifier.weight(1f))
+                StatTile(
+                    "▣",
+                    option.generalCost.roundToInt().toString(),
+                    "Tuki Cost",
+                    Modifier.weight(1f)
+                )
             }
             Spacer(modifier = Modifier.height(3.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
-                StatTile("♙", "${option.walkMeters} m", if (TukiInterfaceText.isFilipino) "Lakad" else "Walk", Modifier.weight(1f))
+                StatTile(
+                    "♙",
+                    "${option.walkMeters} m",
+                    if (TukiInterfaceText.isFilipino) "Lakad" else "Walk",
+                    Modifier.weight(1f)
+                )
                 Spacer(modifier = Modifier.width(3.dp))
-                StatTile("◉", "${option.steps.size} ${if (TukiInterfaceText.isFilipino) "hakbang" else "legs"}", transferLabel(option.transfers), Modifier.weight(1f))
+                StatTile(
+                    "◉",
+                    "${option.steps.size} ${if (TukiInterfaceText.isFilipino) "hakbang" else "legs"}",
+                    transferLabel(option.transfers),
+                    Modifier.weight(1f)
+                )
             }
             Spacer(modifier = Modifier.height(4.dp))
 
             Row(
-                modifier = Modifier.fillMaxWidth().background(TukiSky.copy(alpha = 0.2f), RoundedCornerShape(11.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(TukiSky.copy(alpha = 0.2f), RoundedCornerShape(11.dp))
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (TukiInterfaceText.isFilipino) "Kabuuang Cost" else "Gen. Cost",
+                    text = if (TukiInterfaceText.isFilipino) "Kabuuang Pamasahe" else "Total Fare",
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge
                 )
-                Text(text = "₱${option.generalCost.roundToInt()}", color = TukiOrange, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    text = "₱${option.totalFare.roundToInt()}",
+                    color = TukiOrange,
+                    style = MaterialTheme.typography.titleLarge
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -496,7 +643,10 @@ private fun RouteOptionCard(option: RouteOption) {
 
         if (option.isRecommended) {
             Box(
-                modifier = Modifier.align(Alignment.TopCenter).background(TukiOrange, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 5.dp)
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .background(TukiOrange, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 14.dp, vertical = 5.dp)
             ) {
                 Text(
                     text = if (TukiInterfaceText.isFilipino) "REKOMENDADO" else "RECOMMENDED",
@@ -512,14 +662,29 @@ private fun RouteOptionCard(option: RouteOption) {
 @Composable
 private fun StatTile(symbol: String, value: String, label: String, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.height(62.dp).background(TukiSky.copy(alpha = 0.2f), RoundedCornerShape(11.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
+        modifier = modifier
+            .height(62.dp)
+            .background(TukiSky.copy(alpha = 0.2f), RoundedCornerShape(11.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(text = symbol, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.width(8.dp))
         Column {
-            Text(text = value, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(text = label, color = Color.White.copy(alpha = 0.72f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = value,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = label,
+                color = Color.White.copy(alpha = 0.72f),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -562,10 +727,16 @@ private fun transferLabel(transfers: Int): String {
 
 @Composable
 private fun PagerDots(pageCount: Int, currentPage: Int) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         repeat(pageCount) { index ->
             Box(
-                modifier = Modifier.padding(horizontal = 3.dp).size(if (index == currentPage) 8.dp else 7.dp)
+                modifier = Modifier
+                    .padding(horizontal = 3.dp)
+                    .size(if (index == currentPage) 8.dp else 7.dp)
                     .background(if (index == currentPage) TukiTeal else TukiOutline, CircleShape)
             )
         }
@@ -575,7 +746,11 @@ private fun PagerDots(pageCount: Int, currentPage: Int) {
 @Composable
 private fun SelectRouteButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.fillMaxWidth().height(52.dp).background(TukiOrange, RoundedCornerShape(17.dp)).clickable(onClick = onClick),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .background(TukiOrange, RoundedCornerShape(17.dp))
+            .clickable(onClick = onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -593,22 +768,36 @@ private fun SelectRouteButton(onClick: () -> Unit, modifier: Modifier = Modifier
 @Composable
 private fun SuggestTodaBanner(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.fillMaxWidth().background(TukiGold.copy(alpha = 0.1f), RoundedCornerShape(16.dp)).clickable(onClick = onClick)
+        modifier = modifier
+            .fillMaxWidth()
+            .background(TukiGold.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(modifier = Modifier.size(28.dp).background(TukiTeal, CircleShape), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier.size(28.dp).background(TukiTeal, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
             Text("+", color = Color.White, style = MaterialTheme.typography.titleLarge)
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column {
             Text(
-                text = if (TukiInterfaceText.isFilipino) "May alam kang TODA na wala pa sa amin? I-suggest ito" else "Know a TODA we don't have? Suggest it",
+                text = if (TukiInterfaceText.isFilipino) {
+                    "May alam kang TODA na wala pa sa amin? I-suggest ito"
+                } else {
+                    "Know a TODA we don't have? Suggest it"
+                },
                 color = TukiInk,
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                text = if (TukiInterfaceText.isFilipino) "Rerepasuhin muna ng team bago ito maging available" else "Reviewed by our team before it goes live",
+                text = if (TukiInterfaceText.isFilipino) {
+                    "Rerepasuhin muna ng team bago ito maging available"
+                } else {
+                    "Reviewed by our team before it goes live"
+                },
                 color = TukiMuted,
                 style = MaterialTheme.typography.bodySmall
             )
