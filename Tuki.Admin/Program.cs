@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Tuki.Admin.Repositories.AdminAuth;
+using Tuki.Admin.Repositories.Common;
 using Tuki.Admin.Services.AdminAuth;
-using Tuki.Admin.Services.BackendApiClient;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,7 +33,7 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromHours(8);
 });
 
-builder.Services.AddHttpClient<IBackendApiClientService, BackendApiClientService>((serviceProvider, client) =>
+builder.Services.AddHttpClient(BackendApiClientNames.TukiBackend, (serviceProvider, client) =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
     var baseUrl = configuration["BackendApi:BaseUrl"];
@@ -45,6 +46,7 @@ builder.Services.AddHttpClient<IBackendApiClientService, BackendApiClientService
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 
+builder.Services.AddScoped<IAdminAuthRepository, AdminAuthRepository>();
 builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
 
 var app = builder.Build();
