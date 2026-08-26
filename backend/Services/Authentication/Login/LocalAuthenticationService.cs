@@ -45,7 +45,9 @@ public sealed class LocalAuthenticationService(TukiDbContext context) : ILocalAu
         CancellationToken cancellationToken = default) =>
         _context.LocalUserCredentials
             .AsNoTracking()
-            .Where(current => current.UserId == userId)
+            .Where(current =>
+                current.UserId == userId &&
+                current.UpdatedAt > current.CreatedAt)
             .Select(current => (DateTime?)current.UpdatedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
