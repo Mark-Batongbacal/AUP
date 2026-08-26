@@ -170,10 +170,10 @@ fun LiveTripMapScreen(
                 renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
                 updateLiveTripFutureLayers(style, futureRouteSegments)
                 updateLiveTripRoute(style, routePoints)
-                updateLiveTripCurrentPoint(style, currentPosition)
                 updateLiveTripDestination(style, legDestination)
                 updateLiveTripTodaPoints(style, effectiveTodaPoints)
                 updateLiveTripFinalDestination(style, finalDestination)
+                updateLiveTripCurrentPoint(style, currentPosition)
 
                 val target = gpsPosition
                     ?: currentPosition
@@ -230,8 +230,13 @@ fun LiveTripMapScreen(
     }
 
     fun redrawTopMarkers(style: Style) {
+        // Route/future/transit layers are frequently removed and re-added, which moves them to the
+        // top of MapLibre's style stack. Re-add every navigation marker afterward so lines can never
+        // visually cut through the current-location or leg-destination dots.
+        updateLiveTripDestination(style, legDestination)
         updateLiveTripTodaPoints(style, effectiveTodaPoints)
         updateLiveTripFinalDestination(style, finalDestination)
+        updateLiveTripCurrentPoint(style, currentPosition)
     }
 
     LaunchedEffect(loadedStyle, routePoints, progressAwareOverviewRoute, showLegOverview) {
@@ -540,9 +545,14 @@ private fun updateLiveTripCurrentPoint(style: Style, point: LatLng?) {
     val source = style.getSourceAs<GeoJsonSource>(LiveTripCurrentSource)
     if (source != null) {
         source.setGeoJson(geometry)
-        return
+    } else {
+        style.addSource(GeoJsonSource(LiveTripCurrentSource, geometry))
     }
-    style.addSource(GeoJsonSource(LiveTripCurrentSource, geometry))
+
+    // Re-add both layers so the live-location marker remains above any route layer that was
+    // recreated after the marker source was first installed.
+    style.removeLayer(LiveTripCurrentLayer)
+    style.removeLayer(LiveTripCurrentHalo)
     style.addLayer(
         CircleLayer(LiveTripCurrentHalo, LiveTripCurrentSource).withProperties(
             PropertyFactory.circleColor("#4D8DFF"),
@@ -578,9 +588,12 @@ private fun updateLiveTripPoint(style: Style, point: LatLng?, sourceId: String, 
     val source = style.getSourceAs<GeoJsonSource>(sourceId)
     if (source != null) {
         source.setGeoJson(geometry)
-        return
+    } else {
+        style.addSource(GeoJsonSource(sourceId, geometry))
     }
-    style.addSource(GeoJsonSource(sourceId, geometry))
+
+    // Re-add point markers after route redraws so the orange leg target cannot be covered by a line.
+    style.removeLayer(layerId)
     style.addLayer(
         CircleLayer(layerId, sourceId).withProperties(
             PropertyFactory.circleColor(color),
