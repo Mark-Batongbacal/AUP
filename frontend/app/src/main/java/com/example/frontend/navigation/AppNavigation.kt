@@ -197,7 +197,6 @@ fun AppNavigation(
                     is ApiResult.Failure -> favoritesError = result.message
                 }
             }
-
             favoriteActionRecommendationIds = favoriteActionRecommendationIds - recommendationId
         }
     }
@@ -668,6 +667,28 @@ fun AppNavigation(
                 )
             }
 
+            composable(route = AppScreen.TODA_SUBMISSION.name) {
+                LocationAwareTricycleSubmissionScreen(
+                    dataProvider = dataProvider,
+                    onBack = { navController.popBackStack() },
+                    onHomeClick = {
+                        navController.navigate(AppScreen.HOME.name) {
+                            popUpTo(AppScreen.HOME.name) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                    onRecentClick = {
+                        navController.navigate(AppScreen.RECENT.name)
+                    },
+                    onFavoritesClick = {
+                        navController.navigate(AppScreen.FAVORITES.name)
+                    },
+                    onProfileClick = {
+                        navController.navigate(AppScreen.PROFILE.name)
+                    }
+                )
+            }
+
             composable(route = AppScreen.COMMUTE_DETAIL.name) {
                 selectedCommute?.let { commute ->
                     LaunchedEffect(commute.id) {
@@ -754,15 +775,19 @@ fun AppNavigation(
                     destinationLatitude = exactDestination?.latitude,
                     destinationLongitude = exactDestination?.longitude,
                     onBack = { navController.popBackStack() },
-                    onRouteSelect = { option ->
+                    onRouteSelect = { option, selectedOrigin, selectedDestination, selectedOriginLatitude, selectedOriginLongitude ->
                         selectedRouteOption = option
+                        selectedRoutingOriginLatitude = selectedOriginLatitude
+                        selectedRoutingOriginLongitude = selectedOriginLongitude
                         resolvedLegGeometries = option.legRoutePoints.map { segment ->
                             segment.map { point -> LatLng(point.latitude, point.longitude) }
                         }
                         liveCurrentLegGeometry = emptyList()
-                        navController.navigate(navigationRoute(origin, destination))
+                        navController.navigate(navigationRoute(selectedOrigin, selectedDestination))
                     },
-                    onSuggestToda = {}
+                    onSuggestToda = {
+                        navController.navigate(AppScreen.TODA_SUBMISSION.name)
+                    }
                 )
             }
 
