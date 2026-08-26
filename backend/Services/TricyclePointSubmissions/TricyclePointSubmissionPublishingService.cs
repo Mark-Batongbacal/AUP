@@ -53,8 +53,16 @@ public sealed class TricyclePointSubmissionPublishingService(
                 "A verified point name is required before approval.");
         }
 
-        var latitude = (double)submission.Latitude;
-        var longitude = (double)submission.Longitude;
+        if ((submission.AdminLatitude is null) != (submission.AdminLongitude is null))
+        {
+            return TricyclePointSubmissionPublishResult.Invalid(
+                "Reviewed coordinates are incomplete and must be corrected before approval.");
+        }
+
+        var reviewedLatitude = submission.AdminLatitude ?? submission.Latitude;
+        var reviewedLongitude = submission.AdminLongitude ?? submission.Longitude;
+        var latitude = (double)reviewedLatitude;
+        var longitude = (double)reviewedLongitude;
         if (!double.IsFinite(latitude) || latitude is < -90 or > 90 ||
             !double.IsFinite(longitude) || longitude is < -180 or > 180)
         {

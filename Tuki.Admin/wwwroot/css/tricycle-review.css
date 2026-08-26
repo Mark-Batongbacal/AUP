@@ -1,0 +1,100 @@
+.submitted-location-evidence {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--tuki-border);
+  border-radius: 16px;
+  background: #fbf8ef;
+}
+
+.submitted-location-evidence .card-kicker {
+  display: block;
+  margin-top: 0;
+}
+
+.submitted-location-evidence p,
+.map-verification-note {
+  color: var(--tuki-muted);
+  font-size: .9rem;
+}
+
+.coordinate-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.coordinate-evidence-grid > div {
+  padding: 12px;
+  border-radius: 12px;
+  background: white;
+}
+
+.coordinate-evidence-grid span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--tuki-muted);
+  font-size: .72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.coordinate-evidence-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--tuki-deep);
+  font-variant-numeric: tabular-nums;
+}
+
+.review-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 10px;
+  color: var(--tuki-muted);
+  font-size: .82rem;
+  font-weight: 700;
+}
+
+.review-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.legend-original {
+  border: 3px solid var(--tuki-teal);
+  background: white;
+}
+
+.legend-pin {
+  color: #3388ff;
+  font-size: 1rem;
+}
+
+.map-verification-note {
+  margin-top: 10px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: #fff8e8;
+  border: 1px solid #efd9a8;
+}
+
+.review-alert-warning {
+  background: #fff3d6;
+  color: #805710;
+}
+
+@media (max-width: 700px) {
+  .coordinate-evidence-grid {
+    grid-template-columns: 1fr;
+  }
+}

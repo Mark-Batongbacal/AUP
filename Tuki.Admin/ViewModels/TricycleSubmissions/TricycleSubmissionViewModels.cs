@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using Tuki.Admin.Models.TricycleSubmissions;
 
 namespace Tuki.Admin.ViewModels.TricycleSubmissions;
@@ -46,14 +47,26 @@ public sealed class TricycleSubmissionReviewViewModel
     public string? ErrorMessage { get; init; }
     public string? SuccessMessage { get; init; }
 
-    public string GoogleMapsUrl =>
-        $"https://www.google.com/maps/search/?api=1&query={Latitude?.ToString(System.Globalization.CultureInfo.InvariantCulture)},{Longitude?.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+    public decimal OriginalLatitude => Submission.Latitude;
+    public decimal OriginalLongitude => Submission.Longitude;
+    public bool HasAdminCoordinateCorrection =>
+        Submission.AdminLatitude is not null && Submission.AdminLongitude is not null;
+
+    public string OriginalGoogleMapsUrl => BuildGoogleMapsUrl(OriginalLatitude, OriginalLongitude);
+    public string ReviewedGoogleMapsUrl => BuildGoogleMapsUrl(
+        Latitude ?? OriginalLatitude,
+        Longitude ?? OriginalLongitude);
+
+    public string OriginalLatitudeInvariant => OriginalLatitude.ToString(CultureInfo.InvariantCulture);
+    public string OriginalLongitudeInvariant => OriginalLongitude.ToString(CultureInfo.InvariantCulture);
+    public string ReviewedLatitudeInvariant => (Latitude ?? OriginalLatitude).ToString(CultureInfo.InvariantCulture);
+    public string ReviewedLongitudeInvariant => (Longitude ?? OriginalLongitude).ToString(CultureInfo.InvariantCulture);
 
     public static TricycleSubmissionReviewViewModel From(AdminTricycleSubmission submission) => new()
     {
         Submission = submission,
-        Latitude = submission.Latitude,
-        Longitude = submission.Longitude,
+        Latitude = submission.AdminLatitude ?? submission.Latitude,
+        Longitude = submission.AdminLongitude ?? submission.Longitude,
         PointName = submission.AdminPointName ?? submission.SuggestedTodaName,
         OperatorName = submission.AdminOperatorName,
         Address = submission.AdminAddress,
@@ -61,6 +74,9 @@ public sealed class TricycleSubmissionReviewViewModel
         Description = submission.AdminDescription,
         AdminNotes = submission.AdminNotes
     };
+
+    private static string BuildGoogleMapsUrl(decimal latitude, decimal longitude) =>
+        $"https://www.google.com/maps/search/?api=1&query={latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}";
 }
 
 public sealed class TricycleSubmissionDecisionViewModel

@@ -76,8 +76,22 @@ public sealed class AdminTricyclePointSubmissionService(ITricyclePointSubmission
             return AdminTricyclePointSubmissionMutationResult.Invalid(errors.ToArray());
         }
 
-        submission.Latitude = request.Latitude!.Value;
-        submission.Longitude = request.Longitude!.Value;
+        var reviewedLatitude = request.Latitude!.Value;
+        var reviewedLongitude = request.Longitude!.Value;
+
+        // Preserve the passenger-submitted GPS coordinates permanently. Only store a separate
+        // reviewed pair when an administrator actually moves/corrects the location.
+        if (reviewedLatitude == submission.Latitude && reviewedLongitude == submission.Longitude)
+        {
+            submission.AdminLatitude = null;
+            submission.AdminLongitude = null;
+        }
+        else
+        {
+            submission.AdminLatitude = reviewedLatitude;
+            submission.AdminLongitude = reviewedLongitude;
+        }
+
         submission.AdminPointName = NormalizeOptional(request.PointName);
         submission.AdminOperatorName = NormalizeOptional(request.OperatorName);
         submission.AdminAddress = NormalizeOptional(request.Address);
@@ -221,6 +235,8 @@ public sealed class AdminTricyclePointSubmissionService(ITricyclePointSubmission
             submission.ProofImageUrl,
             submission.Latitude,
             submission.Longitude,
+            submission.AdminLatitude,
+            submission.AdminLongitude,
             submission.AccuracyMeters,
             submission.LocationCapturedAt,
             submission.SuggestedTodaName,

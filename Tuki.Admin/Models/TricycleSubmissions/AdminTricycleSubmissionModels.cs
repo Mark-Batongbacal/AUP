@@ -8,6 +8,8 @@ public sealed record AdminTricycleSubmission(
     string ProofImageUrl,
     decimal Latitude,
     decimal Longitude,
+    decimal? AdminLatitude,
+    decimal? AdminLongitude,
     decimal? AccuracyMeters,
     DateTimeOffset LocationCapturedAt,
     string? SuggestedTodaName,

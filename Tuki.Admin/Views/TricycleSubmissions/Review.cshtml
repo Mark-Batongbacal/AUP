@@ -16,29 +16,71 @@
             const mapNode = document.getElementById('review-map');
             if (!latInput || !lngInput || !mapNode || typeof L === 'undefined') return;
 
-            const startLat = Number.parseFloat(latInput.value);
-            const startLng = Number.parseFloat(lngInput.value);
-            if (!Number.isFinite(startLat) || !Number.isFinite(startLng)) return;
+            // Server-rendered invariant numeric literals are the source for map initialization.
+            // Do not parse editable HTML input text to decide where the submitted GPS belongs.
+            const originalLat = @Html.Raw(Model.OriginalLatitudeInvariant);
+            const originalLng = @Html.Raw(Model.OriginalLongitudeInvariant);
+            const reviewedLat = @Html.Raw(Model.ReviewedLatitudeInvariant);
+            const reviewedLng = @Html.Raw(Model.ReviewedLongitudeInvariant);
 
-            const map = L.map('review-map').setView([startLat, startLng], 18);
+            if (![originalLat, originalLng, reviewedLat, reviewedLng].every(Number.isFinite)) return;
+
+            const map = L.map('review-map').setView([reviewedLat, reviewedLng], 18);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '&copy; OpenStreetMap contributors'
             }).addTo(map);
 
-            const marker = L.marker([startLat, startLng], { draggable: @canReview.ToString().ToLowerInvariant() }).addTo(map);
-            const updateFields = (latlng) => {
+            L.circleMarker([originalLat, originalLng], {
+                radius: 8,
+                weight: 3,
+                color: '#0d8b97',
+                fillColor: '#ffffff',
+                fillOpacity: 0.95
+            }).addTo(map).bindTooltip('Original passenger GPS');
+
+            const marker = L.marker(
+                [reviewedLat, reviewedLng],
+                { draggable: @canReview.ToString().ToLowerInvariant() }
+            ).addTo(map).bindTooltip('Admin reviewed location');
+
+            const updateReviewedFields = (latlng) => {
                 latInput.value = latlng.lat.toFixed(6);
                 lngInput.value = latlng.lng.toFixed(6);
-                const mapsLink = document.getElementById('google-maps-link');
-                if (mapsLink) mapsLink.href = `https://www.google.com/maps/search/?api=1&query=${latlng.lat},${latlng.lng}`;
+                const reviewedMapsLink = document.getElementById('reviewed-google-maps-link');
+                if (reviewedMapsLink) {
+                    reviewedMapsLink.href = `https://www.google.com/maps/search/?api=1&query=${latlng.lat},${latlng.lng}`;
+                }
             };
-            marker.on('dragend', event => updateFields(event.target.getLatLng()));
+
+            marker.on('dragend', event => updateReviewedFields(event.target.getLatLng()));
             if (@canReview.ToString().ToLowerInvariant()) {
                 map.on('click', event => {
                     marker.setLatLng(event.latlng);
-                    updateFields(event.latlng);
+                    updateReviewedFields(event.latlng);
                 });
+
+                const resetButton = document.getElementById('reset-reviewed-location');
+                if (resetButton) {
+                    resetButton.addEventListener('click', () => {
+                        const original = L.latLng(originalLat, originalLng);
+                        marker.setLatLng(original);
+                        updateReviewedFields(original);
+                        map.setView(original, 18, { animate: false });
+                    });
+                }
+            }
+
+            const refreshMapLayout = () => {
+                map.invalidateSize(false);
+                map.setView(marker.getLatLng(), map.getZoom(), { animate: false });
+            };
+
+            window.requestAnimationFrame(refreshMapLayout);
+            window.setTimeout(refreshMapLayout, 150);
+            if (typeof ResizeObserver !== 'undefined') {
+                const resizeObserver = new ResizeObserver(refreshMapLayout);
+                resizeObserver.observe(mapNode);
             }
         })();
     </script>
@@ -49,7 +91,7 @@
         <a asp-action="Index" asp-route-status="@Model.Submission.Status" class="review-back-link">← Back to submissions</a>
         <p class="eyebrow">SUBMISSION #@Model.Submission.TricyclePointSubmissionId</p>
         <h1>Verify tricycle point</h1>
-        <p>Compare the passenger proof, detected GPS location, and external map information before taking action.</p>
+        <p>Preserve the passenger GPS as evidence, verify it externally, and only save a separate Admin correction when needed.</p>
     </div>
     <span class="status-pill status-@Model.Submission.Status.ToLowerInvariant()">@Model.Submission.Status</span>
 </div>
@@ -86,29 +128,73 @@
             <div><dt>GPS accuracy</dt><dd>@(Model.Submission.AccuracyMeters is null ? "Unknown" : $"±{Model.Submission.AccuracyMeters:0.#} m")</dd></div>
             <div><dt>Captured</dt><dd>@Model.Submission.LocationCapturedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</dd></div>
         </dl>
+
+        <div class="submitted-location-evidence">
+            <span class="card-kicker">ORIGINAL PASSENGER GPS</span>
+            <div class="coordinate-evidence-grid">
+                <div><span>Latitude</span><strong>@Model.OriginalLatitudeInvariant</strong></div>
+                <div><span>Longitude</span><strong>@Model.OriginalLongitudeInvariant</strong></div>
+            </div>
+            <p>These submitted coordinates are preserved and cannot be changed by Admin review.</p>
+            <a id="original-google-maps-link"
+               href="@Model.OriginalGoogleMapsUrl"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="btn btn-tuki w-100">
+                Verify original GPS in Google Maps
+            </a>
+        </div>
     </section>
 
     <section class="review-panel">
         <div class="panel-heading map-heading">
             <div>
-                <span class="card-kicker">LOCATION VERIFICATION</span>
-                <h2>Detected location</h2>
-                <p>@(canReview ? "Drag the marker or click the map to correct the coordinates." : "This finalized review is read-only.")</p>
+                <span class="card-kicker">SECONDARY MAP REFERENCE</span>
+                <h2>OpenStreetMap preview</h2>
+                <p>Use this map as a visual aid only. If its streets or landmarks disagree with Google Maps, trust the submitted coordinates and verify them in Google Maps before correcting anything.</p>
             </div>
-            <a id="google-maps-link" href="@Model.GoogleMapsUrl" target="_blank" rel="noopener noreferrer" class="btn btn-outline-tuki">Open in Google Maps</a>
         </div>
-        <div id="review-map" class="review-map" aria-label="Submission location map"></div>
+        <div class="review-map-legend">
+            <span><i class="legend-dot legend-original"></i> Original passenger GPS</span>
+            <span><i class="legend-pin">●</i> Admin reviewed location</span>
+        </div>
+        <div id="review-map" class="review-map" aria-label="Submission location reference map"></div>
+        <div class="map-verification-note">
+            OpenStreetMap and Google Maps can display different road/place data. Coordinate values are the source of truth.
+        </div>
     </section>
 </div>
 
 <section class="review-panel review-form-panel">
     <div class="panel-heading">
         <div>
-            <span class="card-kicker">VERIFIED DETAILS</span>
+            <span class="card-kicker">ADMIN REVIEWED LOCATION</span>
             <h2>Official point information</h2>
-            <p>Review these values before publishing. Community-approved points use a 500 m service radius; fare and service-time data remain unset until separately verified.</p>
+            <p>These coordinates start from the passenger GPS. Move the marker only after external verification shows that a correction is necessary.</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a id="reviewed-google-maps-link"
+               href="@Model.ReviewedGoogleMapsUrl"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="btn btn-outline-tuki">
+                Open reviewed location in Google Maps
+            </a>
+            @if (canReview)
+            {
+                <button id="reset-reviewed-location" type="button" class="btn btn-outline-secondary">
+                    Reset to original GPS
+                </button>
+            }
         </div>
     </div>
+
+    @if (Model.HasAdminCoordinateCorrection)
+    {
+        <div class="review-alert review-alert-warning">
+            This submission currently has an Admin coordinate correction. The original passenger GPS remains preserved above.
+        </div>
+    }
 
     <form asp-action="SaveReview" asp-route-id="@Model.Submission.TricyclePointSubmissionId" method="post" class="review-form">
         <div class="review-form-grid">
@@ -130,12 +216,14 @@
                 <input asp-for="Landmark" class="form-control" disabled="@(!canReview)" />
             </div>
             <div class="field-group">
-                <label asp-for="Latitude">Latitude</label>
-                <input asp-for="Latitude" class="form-control" inputmode="decimal" readonly="@(!canReview)" />
+                <label for="Latitude">Reviewed latitude</label>
+                <input id="Latitude" name="Latitude" value="@Model.ReviewedLatitudeInvariant" class="form-control" inputmode="decimal" readonly="@(!canReview)" />
+                <span asp-validation-for="Latitude" class="field-error"></span>
             </div>
             <div class="field-group">
-                <label asp-for="Longitude">Longitude</label>
-                <input asp-for="Longitude" class="form-control" inputmode="decimal" readonly="@(!canReview)" />
+                <label for="Longitude">Reviewed longitude</label>
+                <input id="Longitude" name="Longitude" value="@Model.ReviewedLongitudeInvariant" class="form-control" inputmode="decimal" readonly="@(!canReview)" />
+                <span asp-validation-for="Longitude" class="field-error"></span>
             </div>
             <div class="field-group review-form-wide">
                 <label asp-for="Description">Description</label>
@@ -153,7 +241,7 @@
                 <button type="submit"
                         formaction="@Url.Action("Approve", "TricycleSubmissions", new { id = Model.Submission.TricyclePointSubmissionId })"
                         class="btn btn-tuki"
-                        onclick="return confirm('Approve this submission and publish it as an official active tricycle point?');">
+                        onclick="return confirm('Approve this submission and publish the reviewed location as an official active tricycle point?');">
                     Approve &amp; Publish
                 </button>
             </div>
