@@ -11,7 +11,7 @@ public sealed class ForgotPasswordRequestController(
 {
     [HttpPost("request")]
     [AllowAnonymous]
-    public async Task<IActionResult> Request(
+    public async Task<IActionResult> RequestPasswordReset(
         [FromBody] ForgotPasswordRequest? request,
         CancellationToken cancellationToken)
     {
