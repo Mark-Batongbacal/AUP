@@ -2,3 +2,4 @@ bin/
 obj/
 TestResults/
 .env
+backend/tricycle-submission-proofs/

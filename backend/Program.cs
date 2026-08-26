@@ -152,6 +152,7 @@ builder.Services.AddScoped<IRoutePointService, RoutePointService>();
 builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
 builder.Services.AddScoped<ITricyclePointSubmissionService, TricyclePointSubmissionService>();
+builder.Services.AddSingleton<ITricycleProofStorage, FileSystemTricycleProofStorage>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
 builder.Services.AddScoped<IAssistantIntentExtractor, NemotronIntentExtractor>();
