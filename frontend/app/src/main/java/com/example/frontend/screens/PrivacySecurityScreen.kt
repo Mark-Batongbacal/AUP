@@ -18,8 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,7 +41,6 @@ import com.example.frontend.ui.theme.TukiDanger
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiSurfaceRaised
-import com.example.frontend.ui.theme.TukiTeal
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.launch
@@ -57,6 +54,7 @@ sealed interface DeleteAccountResult {
 }
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun PrivacySecurityScreen(
     initial2FAEnabled: Boolean = false,
     onBack: () -> Unit = {},
@@ -69,7 +67,6 @@ fun PrivacySecurityScreen(
 ) {
     val context = LocalContext.current
     val dataProvider = remember(context) { TukiDataProvider(context.applicationContext) }
-    var is2FAEnabled by remember { mutableStateOf(initial2FAEnabled) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
@@ -145,41 +142,12 @@ fun PrivacySecurityScreen(
         )
 
         Spacer(modifier = Modifier.height(24.dp))
-        SectionLabel("SECURITY")
-        Spacer(modifier = Modifier.height(8.dp))
-        SettingCard(
-            iconText = "⛨",
-            title = "Two-factor authentication",
-            subtitle = "Add an extra layer of security",
-            titleColor = TukiInk,
-            onClick = {
-                is2FAEnabled = !is2FAEnabled
-                on2FAToggle(is2FAEnabled)
-            },
-            trailingContent = {
-                Switch(
-                    checked = is2FAEnabled,
-                    onCheckedChange = {
-                        is2FAEnabled = it
-                        on2FAToggle(it)
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = TukiTeal,
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = TukiMuted.copy(alpha = 0.35f)
-                    )
-                )
-            }
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
         SectionLabel("DATA")
         Spacer(modifier = Modifier.height(8.dp))
         SettingCard(
             iconText = "♲",
             title = "Delete account",
-            subtitle = "Permanently remove your data",
+            subtitle = "Remove this account and release its email",
             titleColor = TukiDanger,
             onClick = {
                 deleteError = null
@@ -201,7 +169,7 @@ fun PrivacySecurityScreen(
             text = {
                 Column {
                     Text(
-                        "This will permanently delete your account and all of your data, including trip history and favorites. This can't be undone.",
+                        "This removes your sign-in credentials and profile details and signs you out. You can register again later with the same email, but it will be a new account and won't restore this account's old trips or favorites.",
                         color = TukiMuted,
                         style = MaterialTheme.typography.bodyMedium
                     )
