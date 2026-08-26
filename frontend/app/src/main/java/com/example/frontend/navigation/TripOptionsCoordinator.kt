@@ -161,6 +161,7 @@ class TripOptionsCoordinator(context: Context) {
         message: String,
         destinationId: String? = null
     ): ApiResult<AssistantResponseDto> {
+        TukiMapOverlayState.beginRouteReplacement()
         val result = ai.askTrip(
             sessionId,
             ActiveTripAssistantRequest(
@@ -172,6 +173,16 @@ class TripOptionsCoordinator(context: Context) {
         if (result is ApiResult.Success) {
             result.data.conversationId?.let { navigationAssistantConversations[sessionId] = it }
         }
+
+        val rerouted = result is ApiResult.Success &&
+            result.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true)
+        if (rerouted) {
+            TukiMapOverlayState.clearJourneyJeepneyRoutes()
+            // Keep route suppression active until TripTrackingScreen asks for the replacement
+            // current-leg geometry. That avoids flashing the old route back between API calls.
+        } else {
+            TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+        }
         return result
     }
 
@@ -179,11 +190,22 @@ class TripOptionsCoordinator(context: Context) {
         sessionId: String,
         recommendationId: String
     ): ApiResult<NavigationSnapshotDto> {
+        TukiMapOverlayState.beginRouteReplacement()
         return when (val confirmation = ai.confirmTripReplan(sessionId, recommendationId)) {
-            is ApiResult.Failure -> confirmation
+            is ApiResult.Failure -> {
+                TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                confirmation
+            }
             is ApiResult.Success -> {
+                TukiMapOverlayState.clearJourneyJeepneyRoutes()
                 NavigationSyncSignal.requestImmediateSync(samples = 1)
-                navigation.getActiveNavigation()
+                when (val refreshed = navigation.getActiveNavigation()) {
+                    is ApiResult.Success -> refreshed
+                    is ApiResult.Failure -> {
+                        TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                        refreshed
+                    }
+                }
             }
         }
     }
@@ -269,26 +291,56 @@ class TripOptionsCoordinator(context: Context) {
     }
 
     suspend fun currentLegGeometry(snapshot: NavigationSnapshotDto): ApiResult<NavigationGeometryResponseDto> {
-        val leg = snapshot.currentLeg ?: return ApiResult.Failure(null, "Current route leg is unavailable.")
+        val leg = snapshot.currentLeg
+            ?: return ApiResult.Failure(null, "Current route leg is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
         // Keep the complete planned leg geometry stable. Live GPS is matched onto this geometry
         // locally; using the current location as the start would silently discard already-planned
         // points and make turn/landmark progress anchors drift.
         val startLat = leg.startLatitude ?: snapshot.currentLatitude
-            ?: return ApiResult.Failure(null, "Current route location is unavailable.")
+            ?: return ApiResult.Failure(null, "Current route location is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
         val startLon = leg.startLongitude ?: snapshot.currentLongitude
-            ?: return ApiResult.Failure(null, "Current route location is unavailable.")
-        val endLat = leg.endLatitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
-        val endLon = leg.endLongitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
-        return navigation.getGeometry(
-            startLatitude = startLat,
-            startLongitude = startLon,
-            endLatitude = endLat,
-            endLongitude = endLon,
-            mode = leg.transportMode,
-            routeId = leg.routeId,
-            startRouteProgressMeters = leg.startRouteProgressMeters,
-            endRouteProgressMeters = leg.endRouteProgressMeters
-        )
+            ?: return ApiResult.Failure(null, "Current route location is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
+        val endLat = leg.endLatitude
+            ?: return ApiResult.Failure(null, "Current route destination is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
+        val endLon = leg.endLongitude
+            ?: return ApiResult.Failure(null, "Current route destination is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
+
+        return try {
+            navigation.getGeometry(
+                startLatitude = startLat,
+                startLongitude = startLon,
+                endLatitude = endLat,
+                endLongitude = endLon,
+                mode = leg.transportMode,
+                routeId = leg.routeId,
+                startRouteProgressMeters = leg.startRouteProgressMeters,
+                endRouteProgressMeters = leg.endRouteProgressMeters
+            )
+        } finally {
+            if (TukiMapOverlayState.routeReplacementInFlight) {
+                TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+            }
+        }
     }
 
     private suspend fun reroute(
@@ -296,17 +348,14 @@ class TripOptionsCoordinator(context: Context) {
         request: NavigationRerouteRequest
     ): ApiResult<NavigationSnapshotDto> {
         TukiMapOverlayState.beginRouteReplacement()
-        var succeeded = false
-        return try {
-            rerouteDispatcher.reroute(sessionId, request).also { result ->
-                succeeded = result is ApiResult.Success
-            }
-        } finally {
-            // Failed reroutes restore the existing overlays. Successful reroutes discard the old
-            // journey highlights so no stale route can survive underneath the replacement geometry.
-            TukiMapOverlayState.finishRouteReplacement(
-                clearPreviousJourneyRoutes = succeeded
-            )
+        val result = rerouteDispatcher.reroute(sessionId, request)
+        return if (result is ApiResult.Success) {
+            TukiMapOverlayState.clearJourneyJeepneyRoutes()
+            // Suppression remains active until currentLegGeometry() loads the new route.
+            result
+        } else {
+            TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+            result
         }
     }
 
