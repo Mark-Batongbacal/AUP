@@ -62,7 +62,7 @@ fun BottomBar(
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .height(64.dp)
-                .padding(horizontal = 4.dp),
+                .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BottomBarItem(
@@ -145,7 +145,7 @@ private fun BottomBarItem(
         modifier = modifier
             .fillMaxHeight()
             .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp, vertical = 7.dp),
+            .padding(vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
