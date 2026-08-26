@@ -58,6 +58,15 @@ public sealed class AdminTricycleReviewRequest
     public string? AdminNotes { get; set; }
 }
 
+public sealed record AdminTricyclePublication(
+    long TricyclePointSubmissionId,
+    long TricyclePointId,
+    string PointCode,
+    string PointName,
+    string Status,
+    Guid ReviewedByUserId,
+    DateTimeOffset ReviewedAt);
+
 public sealed record AdminDecisionRequest(string Reason);
 public sealed record BackendErrorResponse(IReadOnlyList<string> Errors);
 public sealed record ProofImageContent(byte[] Bytes, string ContentType);

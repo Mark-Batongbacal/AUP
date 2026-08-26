@@ -4,8 +4,6 @@
     ViewData["Title"] = $"Review Submission #{Model.Submission.TricyclePointSubmissionId}";
     var canReview = Model.Submission.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
                     || Model.Submission.Status.Equals("NeedsChanges", StringComparison.OrdinalIgnoreCase);
-    var lat = Model.Latitude?.ToString(CultureInfo.InvariantCulture) ?? "0";
-    var lng = Model.Longitude?.ToString(CultureInfo.InvariantCulture) ?? "0";
 }
 
 @section Scripts {
@@ -66,6 +64,13 @@
 }
 <div asp-validation-summary="ModelOnly" class="review-alert review-alert-error"></div>
 
+@if (Model.Submission.PublishedTricyclePointId is long publishedPointId)
+{
+    <div class="review-alert review-alert-success">
+        This submission is published as official tricycle point <strong>#@publishedPointId</strong>.
+    </div>
+}
+
 <div class="review-detail-grid">
     <section class="review-panel">
         <div class="panel-heading">
@@ -101,7 +106,7 @@
         <div>
             <span class="card-kicker">VERIFIED DETAILS</span>
             <h2>Official point information</h2>
-            <p>These fields are Admin-reviewed values. Approval/publishing will be handled separately.</p>
+            <p>Review these values before publishing. Community-approved points use a 500 m service radius; fare and service-time data remain unset until separately verified.</p>
         </div>
     </div>
 
@@ -143,7 +148,15 @@
         </div>
         @if (canReview)
         {
-            <button type="submit" class="btn btn-tuki">Save review changes</button>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="submit" class="btn btn-outline-tuki">Save review changes</button>
+                <button type="submit"
+                        formaction="@Url.Action("Approve", "TricycleSubmissions", new { id = Model.Submission.TricyclePointSubmissionId })"
+                        class="btn btn-tuki"
+                        onclick="return confirm('Approve this submission and publish it as an official active tricycle point?');">
+                    Approve &amp; Publish
+                </button>
+            </div>
         }
     </form>
 </section>

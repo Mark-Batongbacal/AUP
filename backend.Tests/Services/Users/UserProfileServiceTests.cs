@@ -173,8 +173,14 @@ public sealed class UserProfileServiceTests
     {
         var context = CreateContext();
         var userId = Guid.NewGuid();
+        var existingProfile = CreateProfile(userId);
         UserProfile? capturedProfile = null;
 
+        context.Repository
+            .Setup(repository => repository.GetActiveByUserIdAsync(
+                userId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingProfile);
         context.Repository
             .Setup(repository => repository.UpdateEditableFieldsAsync(
                 userId,
@@ -215,12 +221,8 @@ public sealed class UserProfileServiceTests
         var context = CreateContext();
         var userId = Guid.NewGuid();
         context.Repository
-            .Setup(repository => repository.UpdateEditableFieldsAsync(
+            .Setup(repository => repository.GetActiveByUserIdAsync(
                 userId,
-                "Ana",
-                null,
-                null,
-                null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((UserProfile?)null);
 
@@ -234,6 +236,15 @@ public sealed class UserProfileServiceTests
         Assert.Equal(UserProfileMutationStatus.NotFound, result.Status);
         Assert.Null(result.Profile);
         Assert.NotEmpty(result.Errors);
+        context.Repository.Verify(
+            repository => repository.UpdateEditableFieldsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

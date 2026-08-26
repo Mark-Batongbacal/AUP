@@ -82,43 +82,49 @@ public sealed class TricycleSubmissionsController(
     {
         if (!ModelState.IsValid || model.Latitude is null || model.Longitude is null)
         {
-            var current = await repository.GetByIdAsync(id, cancellationToken);
-            if (!current.Succeeded || current.Value is null)
-            {
-                return RedirectToAction(nameof(Index));
-            }
-
-            model = MergeSubmission(model, current.Value);
-            return View("Review", model);
+            return await ReviewWithCurrentSubmissionAsync(id, model, cancellationToken);
         }
 
-        var result = await repository.UpdateReviewAsync(
-            id,
-            new AdminTricycleReviewRequest
-            {
-                Latitude = model.Latitude,
-                Longitude = model.Longitude,
-                PointName = model.PointName,
-                OperatorName = model.OperatorName,
-                Address = model.Address,
-                Landmark = model.Landmark,
-                Description = model.Description,
-                AdminNotes = model.AdminNotes
-            },
-            cancellationToken);
-
+        var result = await SaveReviewValuesAsync(id, model, cancellationToken);
         if (!result.Succeeded)
         {
             ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Unable to save review changes.");
-            var current = await repository.GetByIdAsync(id, cancellationToken);
-            if (current.Value is not null)
-            {
-                model = MergeSubmission(model, current.Value);
-            }
-            return View("Review", model);
+            return await ReviewWithCurrentSubmissionAsync(id, model, cancellationToken);
         }
 
         TempData["AdminSuccess"] = "Review details and coordinates saved.";
+        return RedirectToAction(nameof(Review), new { id });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Approve(
+        long id,
+        TricycleSubmissionReviewViewModel model,
+        CancellationToken cancellationToken = default)
+    {
+        if (!ModelState.IsValid || model.Latitude is null || model.Longitude is null)
+        {
+            ModelState.AddModelError(string.Empty, "Correct the review fields before approval.");
+            return await ReviewWithCurrentSubmissionAsync(id, model, cancellationToken);
+        }
+
+        var save = await SaveReviewValuesAsync(id, model, cancellationToken);
+        if (!save.Succeeded)
+        {
+            ModelState.AddModelError(string.Empty, save.ErrorMessage ?? "Unable to save the reviewed values before approval.");
+            return await ReviewWithCurrentSubmissionAsync(id, model, cancellationToken);
+        }
+
+        var result = await repository.ApproveAsync(id, cancellationToken);
+        if (!result.Succeeded || result.Value is null)
+        {
+            TempData["AdminError"] = result.ErrorMessage ?? "Unable to approve and publish the submission.";
+            return RedirectToAction(nameof(Review), new { id });
+        }
+
+        TempData["AdminSuccess"] =
+            $"Submission approved and published as official point {result.Value.PointCode} (ID {result.Value.TricyclePointId}).";
         return RedirectToAction(nameof(Review), new { id });
     }
 
@@ -186,6 +192,39 @@ public sealed class TricycleSubmissionsController(
         }
 
         return File(proof.Value.Bytes, proof.Value.ContentType);
+    }
+
+    private Task<AdminRepositoryResult<AdminTricycleSubmission>> SaveReviewValuesAsync(
+        long id,
+        TricycleSubmissionReviewViewModel model,
+        CancellationToken cancellationToken) =>
+        repository.UpdateReviewAsync(
+            id,
+            new AdminTricycleReviewRequest
+            {
+                Latitude = model.Latitude,
+                Longitude = model.Longitude,
+                PointName = model.PointName,
+                OperatorName = model.OperatorName,
+                Address = model.Address,
+                Landmark = model.Landmark,
+                Description = model.Description,
+                AdminNotes = model.AdminNotes
+            },
+            cancellationToken);
+
+    private async Task<IActionResult> ReviewWithCurrentSubmissionAsync(
+        long id,
+        TricycleSubmissionReviewViewModel model,
+        CancellationToken cancellationToken)
+    {
+        var current = await repository.GetByIdAsync(id, cancellationToken);
+        if (!current.Succeeded || current.Value is null)
+        {
+            return RedirectToAction(nameof(Index));
+        }
+
+        return View("Review", MergeSubmission(model, current.Value));
     }
 
     private static TricycleSubmissionReviewViewModel MergeSubmission(

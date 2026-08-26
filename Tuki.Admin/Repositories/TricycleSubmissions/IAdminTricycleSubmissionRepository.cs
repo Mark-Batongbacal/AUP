@@ -19,6 +19,10 @@ public interface IAdminTricycleSubmissionRepository
         AdminTricycleReviewRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<AdminRepositoryResult<AdminTricyclePublication>> ApproveAsync(
+        long id,
+        CancellationToken cancellationToken = default);
+
     Task<AdminRepositoryResult<AdminTricycleSubmission>> RejectAsync(
         long id,
         string reason,

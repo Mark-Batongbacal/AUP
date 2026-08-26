@@ -151,7 +151,6 @@ public sealed class TripSessionRepositoryTests
                     CurrentNavigationState TEXT NOT NULL,
                     CurrentProgressMeters REAL NOT NULL,
                     CurrentRouteProgressMeters REAL NULL,
-                    ApproxFareSpent TEXT NOT NULL,
                     StartedAt TEXT NULL,
                     LastLocationAt TEXT NULL,
                     LastLatitude REAL NULL,

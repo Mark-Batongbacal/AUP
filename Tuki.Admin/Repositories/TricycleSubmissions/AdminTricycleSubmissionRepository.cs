@@ -43,6 +43,14 @@ public sealed class AdminTricycleSubmissionRepository(
         return await SendJsonAsync<AdminTricycleSubmission>(message, cancellationToken);
     }
 
+    public async Task<AdminRepositoryResult<AdminTricyclePublication>> ApproveAsync(
+        long id,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = CreateRequest(HttpMethod.Post, $"api/admin/tricycle-point-submissions/{id}/approve");
+        return await SendJsonAsync<AdminTricyclePublication>(request, cancellationToken);
+    }
+
     public Task<AdminRepositoryResult<AdminTricycleSubmission>> RejectAsync(
         long id,
         string reason,
