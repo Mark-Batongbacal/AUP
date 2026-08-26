@@ -1,6 +1,7 @@
 IF OBJECT_ID(N'dbo.TricyclePointSubmissions', N'U') IS NULL
 BEGIN
-    THROW 50001, 'dbo.TricyclePointSubmissions does not exist. Apply the tricycle submission foundation migration first.', 1;
+    RAISERROR('dbo.TricyclePointSubmissions does not exist. Apply the tricycle submission foundation migration first.', 16, 1);
+    RETURN;
 END;
 
 IF COL_LENGTH(N'dbo.TricyclePointSubmissions', N'AdminLatitude') IS NULL
