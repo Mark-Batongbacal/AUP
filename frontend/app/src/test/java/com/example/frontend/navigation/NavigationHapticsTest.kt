@@ -67,6 +67,25 @@ class NavigationHapticsTest {
     }
 
     @Test
+    fun preparePattern_usesFormerAlightNowDoublePulse() {
+        val pattern = navigationHapticPattern(NavigationHapticEventType.PREPARE_TO_ALIGHT)
+
+        assertTrue(pattern.timings.contentEquals(longArrayOf(0, 180, 80, 180)))
+        assertTrue(pattern.amplitudes.contentEquals(intArrayOf(0, 255, 0, 255)))
+    }
+
+    @Test
+    fun alightNowPattern_isLongAlarmStyleSequence() {
+        val pattern = navigationHapticPattern(NavigationHapticEventType.ALIGHT_NOW)
+        val totalDurationMillis = pattern.timings.sum()
+        val strongPulseCount = pattern.amplitudes.count { it == 255 }
+
+        assertTrue(totalDurationMillis >= 9_000L)
+        assertTrue(strongPulseCount >= 10)
+        assertEquals(pattern.timings.size, pattern.amplitudes.size)
+    }
+
+    @Test
     fun ordinaryGpsState_doesNotCreateHapticEvent() {
         assertNull(navigationHapticEvent(snapshot("ON_ROUTE"), false, null))
     }

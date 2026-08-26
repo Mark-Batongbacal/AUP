@@ -57,9 +57,8 @@ public sealed class LocationTrackingService(
 
         // Routine trip progress is intentionally kept local on the client. That means the server's
         // previous route progress can be several kilometres behind when the client finally sends a
-        // meaningful leg-end sync. If the normal anti-jump window cannot match that fresh fix, allow
-        // a tightly bounded reacquisition only inside the final approach of the authoritative current
-        // transit leg. GPS quality, route proximity, and alight-zone proximity are still verified.
+        // meaningful leg-end sync. First try reacquiring inside the final approach of the current
+        // authoritative transit leg without the stale previous-progress window.
         if (expectedMatch is null && IsTransitNavigationState(session) && NavigationTripRules.IsTransit(leg))
         {
             var reacquireMinimum = Math.Max(legStart,
@@ -81,6 +80,38 @@ public sealed class LocationTrackingService(
                 match = reacquired;
                 expectedMatch = reacquired;
                 _telemetry.Event("LegEndProgressReacquired", sessionId);
+            }
+
+            // Some long/looping stored route geometries can still disagree with the persisted leg
+            // progress enough for the range projection above to return null. The alight endpoint is
+            // a stronger final authority for this one state transition: if a quality-validated fix
+            // is physically inside the confirmed alight zone, accept it as the end of THIS current
+            // transit leg. This only opens the Alight Now confirmation; it never auto-alights.
+            if (expectedMatch is null)
+            {
+                var endpoint = ResolveLegEndCoordinate(leg, geometry, legEnd);
+                var endpointDistance = Geo.DistanceMeters(
+                    update.Latitude,
+                    update.Longitude,
+                    endpoint.Latitude,
+                    endpoint.Longitude);
+                var endpointTolerance = _options.ConfirmAlightDistanceMeters +
+                    Math.Min(Math.Max(0, update.AccuracyMeters), 25d);
+
+                if (endpointDistance <= endpointTolerance)
+                {
+                    var endpointMatch = new RouteMatch(
+                        endpoint.Latitude,
+                        endpoint.Longitude,
+                        endpointDistance,
+                        Math.Max(0, legEnd - legStart),
+                        legEnd,
+                        Math.Max(0, geometry.Count - 2),
+                        1d);
+                    match = endpointMatch;
+                    expectedMatch = endpointMatch;
+                    _telemetry.Event("AlightEndpointReacquired", sessionId);
+                }
             }
         }
 
@@ -242,6 +273,40 @@ public sealed class LocationTrackingService(
         {
             return [];
         }
+    }
+
+    private static (double Latitude, double Longitude) ResolveLegEndCoordinate(
+        RecommendationLeg leg,
+        IReadOnlyList<(double Latitude, double Longitude)> geometry,
+        double legEndRouteProgressMeters)
+    {
+        if (leg.EndLatitude is { } endLat && leg.EndLongitude is { } endLon)
+            return (endLat, endLon);
+        if (geometry.Count == 0) return default;
+        if (geometry.Count == 1 || legEndRouteProgressMeters <= 0) return geometry[0];
+
+        var accumulated = 0d;
+        for (var index = 0; index < geometry.Count - 1; index++)
+        {
+            var from = geometry[index];
+            var to = geometry[index + 1];
+            var segmentLength = Geo.DistanceMeters(
+                from.Latitude, from.Longitude, to.Latitude, to.Longitude);
+            if (segmentLength <= 0) continue;
+            if (accumulated + segmentLength >= legEndRouteProgressMeters)
+            {
+                var fraction = Math.Clamp(
+                    (legEndRouteProgressMeters - accumulated) / segmentLength,
+                    0d,
+                    1d);
+                return (
+                    from.Latitude + (to.Latitude - from.Latitude) * fraction,
+                    from.Longitude + (to.Longitude - from.Longitude) * fraction);
+            }
+            accumulated += segmentLength;
+        }
+
+        return geometry[^1];
     }
 
     private static bool IsWalking(RecommendationLeg leg) =>
