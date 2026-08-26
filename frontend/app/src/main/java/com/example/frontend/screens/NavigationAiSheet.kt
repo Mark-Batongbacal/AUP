@@ -5,10 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,9 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,8 +37,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -106,6 +114,9 @@ fun NavigationAiSheet(
     }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val inputFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     var input by remember { mutableStateOf("") }
     var thinking by remember { mutableStateOf(false) }
     var applyingRecommendationId by remember { mutableStateOf<String?>(null) }
@@ -123,6 +134,13 @@ fun NavigationAiSheet(
 
     LaunchedEffect(messages.size, thinking, applyingRecommendationId) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    }
+
+    LaunchedEffect(sheetState.currentValue) {
+        if (sheetState.currentValue == SheetValue.Expanded) {
+            inputFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
     }
 
     fun appendAssistantResponse(response: AssistantResponseDto, requestText: String) {
@@ -249,6 +267,7 @@ fun NavigationAiSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = NavigationAiSurface,
         contentColor = NavigationAiDark,
         shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)
@@ -256,10 +275,13 @@ fun NavigationAiSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 18.dp)
+                .weight(1f)
+                .imePadding()
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
                     Modifier.size(42.dp).background(NavigationAiTeal.copy(alpha = 0.14f), CircleShape),
                     contentAlignment = Alignment.Center
@@ -281,7 +303,10 @@ fun NavigationAiSheet(
 
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().height(360.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 items(messages, key = { it.id }) { message ->
@@ -358,50 +383,65 @@ fun NavigationAiSheet(
                         }
                     }
                 }
-            }
 
-            if (messages.size == 1) {
-                Spacer(Modifier.height(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    quickPrompts.forEach { prompt ->
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(NavigationAiTeal.copy(alpha = 0.09f), RoundedCornerShape(14.dp))
-                                .clickable(enabled = !thinking && applyingRecommendationId == null) {
-                                    send(prompt)
+                if (messages.size == 1) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            quickPrompts.forEach { prompt ->
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            NavigationAiTeal.copy(alpha = 0.09f),
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable(
+                                            enabled = !thinking && applyingRecommendationId == null
+                                        ) {
+                                            send(prompt)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                                ) {
+                                    Text(
+                                        prompt,
+                                        color = NavigationAiDark,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
-                                .padding(horizontal = 12.dp, vertical = 9.dp)
-                        ) {
-                            Text(
-                                prompt,
-                                color = NavigationAiDark,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            }
                         }
                     }
                 }
+
+                item {
+                    Text(
+                        if (filipino) {
+                            "Hindi awtomatikong papalitan ni TUKI ang active route. Kapag meaningful yung pagbabago, pipili ka muna ng exact route proposal."
+                        } else {
+                            "TUKI will not silently replace your active route. For meaningful changes, you choose the exact route proposal first."
+                        },
+                        modifier = Modifier.padding(top = 3.dp, bottom = 5.dp),
+                        color = NavigationAiMuted,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
             }
 
-            Spacer(Modifier.height(12.dp))
-            Text(
-                if (filipino) {
-                    "Hindi awtomatikong papalitan ni TUKI ang active route. Kapag meaningful yung pagbabago, pipili ka muna ng exact route proposal."
-                } else {
-                    "TUKI will not silently replace your active route. For meaningful changes, you choose the exact route proposal first."
-                },
-                color = NavigationAiMuted,
-                fontSize = 11.sp,
-                lineHeight = 15.sp
-            )
-            Spacer(Modifier.height(9.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 TextField(
                     value = input,
                     onValueChange = { input = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(inputFocusRequester),
                     singleLine = true,
                     enabled = !thinking && applyingRecommendationId == null,
                     placeholder = {

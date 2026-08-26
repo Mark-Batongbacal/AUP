@@ -11,6 +11,11 @@ public interface ITripSessionService
     Task<TripSessionOperation> CancelAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<TripSessionOperation> ConfirmBoardingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<TripSessionOperation> ConfirmAlightingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
+    Task<TripSessionOperation> ResolveAlightStatusAsync(
+        Guid userId,
+        Guid sessionId,
+        bool alreadyOff,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record CreateTripSessionRequest(Guid RecommendationId);

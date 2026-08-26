@@ -17,6 +17,7 @@ import java.math.BigDecimal
 import java.util.Locale
 
 data class StartNavigationRequest(val recommendationId: String)
+data class ResolveAlightStatusRequest(val alreadyOff: Boolean)
 data class NavigationRerouteRequest(
     val reason: String = "MANUAL",
     val preference: String? = null,
@@ -135,7 +136,8 @@ data class NavigationSnapshotDto(
     val tripSummary: NavigationTripSummaryDto? = null,
     val spokenInstructionTemplate: String? = null,
     val currentLegInstructions: List<NavigationInstructionDetailDto> = emptyList(),
-    val currentLegLandmarks: List<NavigationLandmarkDto> = emptyList()
+    val currentLegLandmarks: List<NavigationLandmarkDto> = emptyList(),
+    val recommendationId: String? = null
 ) {
     fun displayInstruction(): String? = spokenInstruction?.takeIf { it.isNotBlank() }
 
@@ -178,6 +180,12 @@ interface NavigationApi {
     @POST("api/navigation/{sessionId}/alighting")
     suspend fun alighting(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
 
+    @POST("api/navigation/{sessionId}/alight-status")
+    suspend fun resolveAlightStatus(
+        @Path("sessionId") sessionId: String,
+        @Body request: ResolveAlightStatusRequest
+    ): Response<NavigationSnapshotDto>
+
     @POST("api/tripsessions/{sessionId}/cancel")
     suspend fun cancel(@Path("sessionId") sessionId: String): Response<TripSessionDto>
 
@@ -203,6 +211,11 @@ interface NavigationRepository {
     suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto>
     suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto>
     suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto>
+    suspend fun resolveAlightStatus(
+        sessionId: String,
+        alreadyOff: Boolean
+    ): ApiResult<NavigationSnapshotDto> =
+        ApiResult.Failure(null, "Alight-status recovery is unavailable.")
     suspend fun cancel(sessionId: String): ApiResult<TripSessionDto>
     suspend fun reroute(
         sessionId: String,
@@ -313,6 +326,15 @@ class NavigationRepositoryImpl(
 
     override suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto> =
         cacheSnapshot(call { api.alighting(sessionId) }, resetSyncSignal = true)
+
+    override suspend fun resolveAlightStatus(
+        sessionId: String,
+        alreadyOff: Boolean
+    ): ApiResult<NavigationSnapshotDto> =
+        cacheSnapshot(
+            call { api.resolveAlightStatus(sessionId, ResolveAlightStatusRequest(alreadyOff)) },
+            resetSyncSignal = true
+        )
 
     override suspend fun cancel(sessionId: String): ApiResult<TripSessionDto> {
         val result = call { api.cancel(sessionId) }

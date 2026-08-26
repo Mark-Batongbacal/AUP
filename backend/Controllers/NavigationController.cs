@@ -94,6 +94,14 @@ public sealed class NavigationController(
     public async Task<IActionResult> Alighting(Guid sessionId, CancellationToken cancellationToken) =>
         Result(await navigation.ConfirmAlightingAsync(UserId(), sessionId, cancellationToken));
 
+    [HttpPost("{sessionId:guid}/alight-status")]
+    public async Task<IActionResult> ResolveAlightStatus(
+        Guid sessionId,
+        ResolveAlightStatusRequest request,
+        CancellationToken cancellationToken) =>
+        Result(await navigation.ResolveAlightStatusAsync(
+            UserId(), sessionId, request.AlreadyOff, cancellationToken));
+
     [HttpPost("{sessionId:guid}/cancel")]
     public async Task<IActionResult> Cancel(Guid sessionId, CancellationToken cancellationToken) =>
         Result(await navigation.CancelAsync(UserId(), sessionId, cancellationToken));

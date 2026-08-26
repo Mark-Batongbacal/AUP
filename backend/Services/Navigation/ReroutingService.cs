@@ -60,6 +60,25 @@ public sealed class ReroutingService(
         if (automaticRecovery && session.LastRerouteAt is { } last &&
             last.AddSeconds(_options.RerouteCooldownSeconds) > DateTime.UtcNow)
             return new(false, "REROUTE_COOLDOWN");
+
+        RecommendationLeg? missedTransitLeg = null;
+        OnboardTransitPlanningContext? onboardContext = null;
+        if (normalizedReason == "MISSED_ALIGHT" &&
+            session.CurrentRouteProgressMeters is { } currentRouteProgress)
+        {
+            var activeLegs = await recommendations.GetOrderedLegsAsync(
+                session.RecommendationId, cancellationToken);
+            missedTransitLeg = activeLegs.FirstOrDefault(
+                leg => leg.LegOrder == session.CurrentLegIndex &&
+                       NavigationTripRules.IsTransit(leg));
+            if (!string.IsNullOrWhiteSpace(missedTransitLeg?.Route?.RouteCode))
+            {
+                onboardContext = new OnboardTransitPlanningContext(
+                    missedTransitLeg.Route.RouteCode,
+                    currentRouteProgress,
+                    _options.SameRouteReboardingProgressToleranceMeters);
+            }
+        }
         var hasAnyCurrentLocationField = request.Latitude is not null ||
             request.Longitude is not null || request.AccuracyMeters is not null ||
             request.Timestamp is not null || request.SpeedMetersPerSecond is not null ||
@@ -82,7 +101,8 @@ public sealed class ReroutingService(
                 request.Timestamp!.Value,
                 request.SpeedMetersPerSecond,
                 request.BearingDegrees);
-            var qualityError = gpsValidator.Validate(suppliedLocation, session, DateTime.UtcNow);
+            var qualityError = gpsValidator.ValidateForReroute(
+                suppliedLocation, session, DateTime.UtcNow);
             if (qualityError is not null) return new(false, qualityError);
             latitude = suppliedLocation.Latitude;
             longitude = suppliedLocation.Longitude;
@@ -138,14 +158,20 @@ public sealed class ReroutingService(
 
         try
         {
-            var plans = await routing.PlanTripsAsync(latitude, longitude,
-                destinationLatitude, destinationLongitude, cancellationToken);
+            var plans = onboardContext is null
+                ? await routing.PlanTripsAsync(latitude, longitude,
+                    destinationLatitude, destinationLongitude, cancellationToken)
+                : await routing.PlanTripsAsync(latitude, longitude,
+                    destinationLatitude, destinationLongitude,
+                    new JourneyPlanningPreferences(OnboardTransit: onboardContext),
+                    cancellationToken);
             var eligible = plans
                 .Where(plan => RoutingPlanSafety.HasValidTransitAccess(
                     plan,
                     _routingOptions.MaxWalkAccessDistanceMeters))
                 .Where(plan => budget is null || (decimal)plan.TotalFarePesos <= budget.Value)
                 .Where(plan => !UsesTransportMode(plan, avoidTransportMode))
+                .Where(plan => IsValidForOnboardRecovery(plan, onboardContext))
                 .ToList();
             var selected = Select(eligible, preference);
             if (selected is null)
@@ -162,6 +188,13 @@ public sealed class ReroutingService(
             session.DestinationLongitude = destinationLongitude;
             session.OriginalBudget = budget;
             session.OriginalPreference = preference;
+            if (missedTransitLeg is not null &&
+                NavigationTripRules.IsPaidTransport(missedTransitLeg))
+            {
+                session.ApproxFareSpent += missedTransitLeg.EstimatedFare;
+                _telemetry.Event("ApproxFareRecorded", sessionId,
+                    missedTransitLeg.EstimatedFare.ToString("0.00"));
+            }
             session.CurrentLegIndex = 0;
             session.CurrentProgressMeters = 0;
             session.CurrentRouteProgressMeters = null;
@@ -187,7 +220,10 @@ public sealed class ReroutingService(
             if (firstLeg is null)
                 throw new InvalidOperationException("Reroute produced no journey legs.");
 
-            var resumedState = IsWalking(firstLeg)
+            var selectedFirstPlanLeg = selected.Legs.FirstOrDefault();
+            var resumedState = selectedFirstPlanLeg?.StartsAlreadyOnboard == true
+                ? TripNavigationState.OnJeepney
+                : IsWalking(firstLeg)
                 ? (reroutedLegs.Count == 1
                     ? TripNavigationState.WalkingToDestination
                     : TripNavigationState.WalkingToPickup)
@@ -396,6 +432,19 @@ public sealed class ReroutingService(
         "JEEPNEY" => plan.Legs.Any(item => item.Mode != AccessMode.Walk && item.Mode != AccessMode.Trike),
         _ => false
     };
+
+    internal static bool IsValidForOnboardRecovery(
+        JeepneyTripPlan plan,
+        OnboardTransitPlanningContext? context)
+    {
+        if (context is null) return true;
+        return plan.Legs
+            .Where(leg => leg.Mode == AccessMode.Jeepney &&
+                          string.Equals(leg.RouteId, context.RouteId, StringComparison.Ordinal))
+            .All(leg => leg.StartsAlreadyOnboard ||
+                        leg.BoardRouteProgressMeters is { } progress &&
+                        !context.IsMateriallyBehind(progress));
+    }
 
     private static JeepneyTripPlan? Select(List<JeepneyTripPlan> plans, string? preference) =>
         plans.FirstOrDefault(plan => preference is not null &&

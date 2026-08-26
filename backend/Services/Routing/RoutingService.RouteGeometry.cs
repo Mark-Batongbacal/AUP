@@ -493,6 +493,35 @@ public partial class RoutingService
             maximumSegment);
     }
 
+    private RouteAnchor GetRouteAnchorAtProgress(
+        string routeId,
+        double progressMeters)
+    {
+        var geometry = _routeGeometries[routeId];
+        var clamped = Math.Clamp(progressMeters, 0, geometry.CumulativeMeters[^1]);
+        var segmentIndex = 0;
+        while (segmentIndex < geometry.CumulativeMeters.Length - 2 &&
+               geometry.CumulativeMeters[segmentIndex + 1] < clamped)
+        {
+            segmentIndex++;
+        }
+
+        var fromProgress = geometry.CumulativeMeters[segmentIndex];
+        var toProgress = geometry.CumulativeMeters[segmentIndex + 1];
+        var fraction = toProgress <= fromProgress
+            ? 0
+            : (clamped - fromProgress) / (toProgress - fromProgress);
+        var from = geometry.Points[segmentIndex];
+        var to = geometry.Points[segmentIndex + 1];
+        return new RouteAnchor(
+            routeId,
+            segmentIndex,
+            fraction,
+            from.Latitude + (to.Latitude - from.Latitude) * fraction,
+            from.Longitude + (to.Longitude - from.Longitude) * fraction,
+            clamped);
+    }
+
     private static double RouteDistanceBetweenAnchors(
         RouteAnchor from,
         RouteAnchor to) =>
@@ -530,7 +559,8 @@ public partial class RoutingService
     private sealed record BoardAccessDiscovery(
         AccessCandidate[] Projected,
         AccessCandidate[] SearchAnchors,
-        AccessCandidate? Exact);
+        AccessCandidate? Exact,
+        AccessCandidate? Onboard = null);
 
     private sealed record InterchangePairCandidate(
         int IndexA,
@@ -598,7 +628,8 @@ public partial class RoutingService
         int? RouteSampleIndex = null,
         RouteAnchor? FullRouteAnchor = null,
         IReadOnlyList<AccessCandidate>? Alternatives = null,
-        bool IsNetworkWalkConfirmed = false)
+        bool IsNetworkWalkConfirmed = false,
+        bool IsAlreadyOnboard = false)
     {
         public IReadOnlyList<AccessCandidate> AllAlternatives =>
             Alternatives ?? [this];

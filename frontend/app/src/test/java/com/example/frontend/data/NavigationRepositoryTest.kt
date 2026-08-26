@@ -10,6 +10,7 @@ import com.example.frontend.data.navigation.NavigationGeometryResponseDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRepositoryImpl
 import com.example.frontend.data.navigation.NavigationRerouteRequest
+import com.example.frontend.data.navigation.ResolveAlightStatusRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.navigation.StartNavigationRequest
 import com.example.frontend.data.tripsessions.TripSessionDto
@@ -187,6 +188,11 @@ class NavigationRepositoryTest {
             alightingCalls++
             return Response.success(response)
         }
+
+        override suspend fun resolveAlightStatus(
+            sessionId: String,
+            request: ResolveAlightStatusRequest
+        ): Response<NavigationSnapshotDto> = Response.success(response)
 
         override suspend fun cancel(sessionId: String): Response<TripSessionDto> = Response.success(null)
         override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest) = Response.success(response)

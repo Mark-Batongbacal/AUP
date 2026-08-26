@@ -65,6 +65,24 @@ public partial class RoutingService
                 originLongitude,
                 cancellationToken,
                 maxWalkAccessDistanceMeters);
+            if (planningPreferences?.OnboardTransit is { } onboard &&
+                string.Equals(onboard.RouteId, routeId, StringComparison.Ordinal))
+            {
+                var anchor = GetRouteAnchorAtProgress(
+                    routeId, onboard.CurrentRouteProgressMeters);
+                boardDiscovery = boardDiscovery with
+                {
+                    Onboard = WalkAccess(
+                        (anchor.Latitude, anchor.Longitude),
+                        0,
+                        GetNearestSampleIndex(samples, (anchor.Latitude, anchor.Longitude)),
+                        anchor) with
+                    {
+                        IsNetworkWalkConfirmed = true,
+                        IsAlreadyOnboard = true
+                    }
+                };
+            }
             var boardOptions = boardDiscovery.Projected;
 
             var directConnections = FindBestConnections(
@@ -74,7 +92,8 @@ public partial class RoutingService
                 destinationLatitude,
                 destinationLongitude,
                 boardDiscovery,
-                maxWalkAccessDistanceMeters);
+                maxWalkAccessDistanceMeters,
+                planningPreferences?.OnboardTransit);
             directConnectionsByRoute[routeId] = directConnections;
 
             // Transfer journeys take their origin access from these bounded
@@ -82,13 +101,17 @@ public partial class RoutingService
             // states selected above for direct search. Applying the same
             // transit-access limit keeps one configured walking cap instead
             // of allowing a multi-kilometre transfer-only access walk.
-            boardAccessPrefixByRoute[routeId] =
-                ComputePrefixAccessOptions(
+            var accessPrefix = ComputePrefixAccessOptions(
                     routeId,
                     ConstrainTransitAccessOptions(
                         boardOptions,
                         maxWalkAccessDistanceMeters),
                     directConnections.Select(candidate => candidate.BoardAccess));
+            boardAccessPrefixByRoute[routeId] = ApplyOnboardAccessContext(
+                routeId,
+                accessPrefix,
+                boardDiscovery.Onboard,
+                planningPreferences?.OnboardTransit);
 
             var alightOptions =
                 ComputeAlightAccessOptions(
@@ -341,9 +364,38 @@ public partial class RoutingService
                normalized.MaxWalkingMeters is null &&
                normalized.WalkingPreference == JourneyWalkingPreference.Normal &&
                normalized.OptimizationPreference is null &&
-               normalized.AvoidTransportModes.Count == 0
+               normalized.AvoidTransportModes.Count == 0 &&
+               normalized.OnboardTransit is null
             ? null
             : normalized;
+    }
+
+    private IReadOnlyList<AccessCandidate>[] ApplyOnboardAccessContext(
+        string routeId,
+        IReadOnlyList<AccessCandidate>[] prefix,
+        AccessCandidate? onboardAccess,
+        OnboardTransitPlanningContext? context)
+    {
+        if (context is null || onboardAccess is null ||
+            !string.Equals(context.RouteId, routeId, StringComparison.Ordinal))
+            return prefix;
+
+        return prefix.Select((options, index) =>
+        {
+            var retained = options.Where(candidate =>
+            {
+                var progress = candidate.FullRouteAnchor?.DistanceFromRouteStartMeters;
+                return progress is null ||
+                       (!context.IsMateriallyBehind(progress.Value) &&
+                        !context.IsCurrentOccurrence(progress.Value));
+            }).ToList();
+            if (_routeSearchAnchors[routeId][index].DistanceFromRouteStartMeters >=
+                context.CurrentRouteProgressMeters - context.ProgressToleranceMeters)
+            {
+                retained.Insert(0, onboardAccess);
+            }
+            return (IReadOnlyList<AccessCandidate>)retained;
+        }).ToArray();
     }
 
     internal double GetWalkAccessDistanceLimit(

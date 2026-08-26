@@ -215,7 +215,9 @@ public partial class RoutingService
 
         for (var index = 0; index < candidate.Legs.Count; index++)
         {
-            legs.Add(BuildJeepneyLeg(candidate.Legs[index]));
+            legs.Add(BuildJeepneyLeg(
+                candidate.Legs[index],
+                index == 0 && candidate.OriginAccess.IsAlreadyOnboard));
 
             if (index < transfers.Count && transfers[index].Distance > 0)
             {
@@ -289,7 +291,9 @@ public partial class RoutingService
         return legs;
     }
 
-    private JeepneyTripLeg BuildJeepneyLeg(JourneyLegCandidate leg)
+    private JeepneyTripLeg BuildJeepneyLeg(
+        JourneyLegCandidate leg,
+        bool startsAlreadyOnboard = false)
     {
         var samples = _routeSamples[leg.RouteId];
         var boardIndex = leg.BoardIndex ?? GetNearestSampleIndex(samples, leg.Board);
@@ -299,8 +303,9 @@ public partial class RoutingService
         var alightAnchor = leg.AlightFullRouteAnchor ??
             GetRouteAnchor(leg.RouteId, alightIndex, leg.Alight);
         var distance = RouteDistanceBetweenAnchors(boardAnchor, alightAnchor);
-        var time = JeepneyBoardingWaitTimeSeconds +
+        var time = (startsAlreadyOnboard ? 0 : JeepneyBoardingWaitTimeSeconds) +
             distance / JeepneySpeedMetersPerSecond;
+        var fare = startsAlreadyOnboard ? 0 : JeepneyBaseFarePesos;
 
         return new JeepneyTripLeg
         {
@@ -317,12 +322,15 @@ public partial class RoutingService
             DestinationLongitude = leg.Alight.Longitude,
             DistanceMeters = distance,
             DurationSeconds = time,
-            FarePesos = JeepneyBaseFarePesos,
+            FarePesos = fare,
             GeneralizedCostPesos = GeneralizedCostFromTimeAndFare(
                 time,
-                JeepneyBaseFarePesos),
+                fare),
             JeepneyDistanceMeters = distance,
-            JeepneyTimeSeconds = time
+            JeepneyTimeSeconds = time,
+            BoardRouteProgressMeters = boardAnchor.DistanceFromRouteStartMeters,
+            AlightRouteProgressMeters = alightAnchor.DistanceFromRouteStartMeters,
+            StartsAlreadyOnboard = startsAlreadyOnboard
         };
     }
 

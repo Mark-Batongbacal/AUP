@@ -100,6 +100,20 @@ class TripOptionsCoordinator(context: Context) {
     suspend fun recoverMissedLegTarget(sessionId: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "MISSED_LEG_TARGET"))
 
+    suspend fun resolveAlightStatus(
+        sessionId: String,
+        alreadyOff: Boolean
+    ): ApiResult<NavigationSnapshotDto> {
+        val result = navigation.resolveAlightStatus(sessionId, alreadyOff)
+        if (result is ApiResult.Success) {
+            NavigationSyncSignal.requestImmediateSync(samples = 1)
+        }
+        return result
+    }
+
+    suspend fun recoverMissedAlight(sessionId: String): ApiResult<NavigationSnapshotDto> =
+        reroute(sessionId, NavigationRerouteRequest(reason = "MISSED_ALIGHT"))
+
     suspend fun changePreference(sessionId: String, preference: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "PREFERENCE_CHANGED", preference = preference))
 

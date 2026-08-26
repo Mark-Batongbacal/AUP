@@ -48,37 +48,55 @@ public sealed class LocationTrackingService(
         var match = matcher.Match(update, geometry, legStart, legEnd, session.CurrentRouteProgressMeters);
         var fullEnd = matcher.ProjectProgress(geometry, geometry[^1].Latitude, geometry[^1].Longitude);
         var expectedMatch = matcher.Match(update, geometry, legStart, fullEnd, session.CurrentRouteProgressMeters);
-        if (expectedMatch is null) return new(false, "LOCATION_NOT_MATCHED");
+        if (expectedMatch is null)
+        {
+            if (!IsUnconfirmedAlightCandidate(session, leg))
+                return new(false, "LOCATION_NOT_MATCHED");
+
+            var unmatchedStatus = offRouteDetector.Evaluate(
+                session, leg, double.PositiveInfinity, update.AccuracyMeters, update.Timestamp);
+            if (unmatchedStatus == OffRouteStatus.Confirmed)
+                return await MarkAlightStatusUnknownAsync(session, update, cancellationToken);
+
+            session.LastNavigationStatus = unmatchedStatus == OffRouteStatus.UncertainGps
+                ? "UNCERTAIN_GPS" : "OFF_ROUTE_SUSPECTED";
+            session.UpdatedAt = DateTime.UtcNow;
+            await sessions.UpdateAsync(session, cancellationToken);
+            return new(false, session.LastNavigationStatus);
+        }
         if (session.CurrentNavigationState is TripNavigationState.OnJeepney or TripNavigationState.ApproachingAlightPoint &&
             expectedMatch.DistanceFromGeometryMeters <= _options.TransitOffRouteMeters + update.AccuracyMeters &&
             expectedMatch.DistanceFromRouteStartMeters > legEnd + _options.MissedAlightDistanceMeters)
         {
-            session.LastLatitude = update.Latitude;
-            session.LastLongitude = update.Longitude;
-            session.LastAccuracyMeters = update.AccuracyMeters;
-            session.LastLocationAt = update.Timestamp;
+            SaveLocation(session, update);
+            session.CurrentProgressMeters = Math.Max(0,
+                expectedMatch.DistanceFromRouteStartMeters - legStart);
+            session.CurrentRouteProgressMeters = expectedMatch.DistanceFromRouteStartMeters;
             session.LastRerouteReason = "MISSED_ALIGHT";
             session.LastNavigationStatus = "MISSED_ALIGHT";
-            if (!stateMachine.CanTransition(session.CurrentNavigationState, TripNavigationState.OffRoute))
-                return new(false, "INVALID_STATE_TRANSITION");
-            session.CurrentNavigationState = TripNavigationState.OffRoute;
-            session.LastNavigationStatus = "OFF_ROUTE";
+            session.ConsecutiveOffRouteSamples = 0;
+            session.OffRouteSuspectedAt = null;
             session.UpdatedAt = DateTime.UtcNow;
             await sessions.UpdateAsync(session, cancellationToken);
             _telemetry.Event("MissedAlightDetected", sessionId);
-            return new(true, "MISSED_ALIGHT", DistanceFromGeometryMeters: expectedMatch.DistanceFromGeometryMeters);
+            return new(true, "MISSED_ALIGHT",
+                session.CurrentProgressMeters,
+                expectedMatch.DistanceFromRouteStartMeters,
+                expectedMatch.DistanceFromGeometryMeters);
         }
         var offRoute = offRouteDetector.Evaluate(
             session, leg, expectedMatch.DistanceFromGeometryMeters, update.AccuracyMeters, update.Timestamp);
         if (offRoute == OffRouteStatus.Confirmed)
         {
-            session.LastLatitude = update.Latitude;
-            session.LastLongitude = update.Longitude;
-            session.LastAccuracyMeters = update.AccuracyMeters;
-            session.LastLocationAt = update.Timestamp;
+            if (IsUnconfirmedAlightCandidate(session, leg))
+                return await MarkAlightStatusUnknownAsync(session, update, cancellationToken,
+                    expectedMatch.DistanceFromGeometryMeters);
+
+            SaveLocation(session, update);
             if (!stateMachine.CanTransition(session.CurrentNavigationState, TripNavigationState.OffRoute))
                 return new(false, "INVALID_STATE_TRANSITION");
             session.CurrentNavigationState = TripNavigationState.OffRoute;
+            session.LastNavigationStatus = "OFF_ROUTE";
             session.UpdatedAt = DateTime.UtcNow;
             await sessions.UpdateAsync(session, cancellationToken);
             _telemetry.Event("OffRouteConfirmed", sessionId);
@@ -96,10 +114,7 @@ public sealed class LocationTrackingService(
         }
 
         var previousProgress = session.CurrentRouteProgressMeters ?? match.DistanceFromRouteStartMeters;
-        session.LastLatitude = update.Latitude;
-        session.LastLongitude = update.Longitude;
-        session.LastAccuracyMeters = update.AccuracyMeters;
-        session.LastLocationAt = update.Timestamp;
+        SaveLocation(session, update);
         session.CurrentProgressMeters = match.DistanceFromLegStartMeters;
         session.CurrentRouteProgressMeters = match.DistanceFromRouteStartMeters;
         session.UpdatedAt = DateTime.UtcNow;
@@ -195,4 +210,35 @@ public sealed class LocationTrackingService(
 
     private static bool IsWalking(RecommendationLeg leg) =>
         leg.TransportMode?.Code is "WALK" or "WALKING" or "PEDESTRIAN";
+
+    private static bool IsUnconfirmedAlightCandidate(
+        TripSession session,
+        RecommendationLeg leg) =>
+        session.CurrentNavigationState == TripNavigationState.ApproachingAlightPoint &&
+        NavigationTripRules.IsTransit(leg);
+
+    private async Task<LocationUpdateResult> MarkAlightStatusUnknownAsync(
+        TripSession session,
+        LocationUpdate update,
+        CancellationToken cancellationToken,
+        double? distanceFromGeometryMeters = null)
+    {
+        SaveLocation(session, update);
+        session.LastNavigationStatus = "ALIGHT_STATUS_UNKNOWN";
+        session.ConsecutiveOffRouteSamples = 0;
+        session.OffRouteSuspectedAt = null;
+        session.UpdatedAt = DateTime.UtcNow;
+        await sessions.UpdateAsync(session, cancellationToken);
+        _telemetry.Event("AlightStatusUnknown", session.TripSessionId);
+        return new(true, "ALIGHT_STATUS_UNKNOWN",
+            DistanceFromGeometryMeters: distanceFromGeometryMeters);
+    }
+
+    private static void SaveLocation(TripSession session, LocationUpdate update)
+    {
+        session.LastLatitude = update.Latitude;
+        session.LastLongitude = update.Longitude;
+        session.LastAccuracyMeters = update.AccuracyMeters;
+        session.LastLocationAt = update.Timestamp;
+    }
 }

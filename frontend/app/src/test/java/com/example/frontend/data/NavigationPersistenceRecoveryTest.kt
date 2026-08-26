@@ -13,6 +13,7 @@ import com.example.frontend.data.navigation.NavigationLocalStore
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRepositoryImpl
 import com.example.frontend.data.navigation.NavigationRerouteRequest
+import com.example.frontend.data.navigation.ResolveAlightStatusRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.navigation.StartNavigationRequest
 import com.example.frontend.data.tripsessions.TripSessionDto
@@ -204,6 +205,11 @@ class NavigationPersistenceRecoveryTest {
 
         override suspend fun alighting(sessionId: String): Response<NavigationSnapshotDto> =
             Response.success(snapshot())
+
+        override suspend fun resolveAlightStatus(
+            sessionId: String,
+            request: ResolveAlightStatusRequest
+        ): Response<NavigationSnapshotDto> = Response.success(snapshot())
 
         override suspend fun cancel(sessionId: String): Response<TripSessionDto> = Response.success(null)
 

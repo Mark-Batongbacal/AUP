@@ -141,7 +141,8 @@ public partial class RoutingService
         double destinationLatitude,
         double destinationLongitude,
         BoardAccessDiscovery boardDiscovery,
-        double? walkAccessDistanceLimitMeters = null)
+        double? walkAccessDistanceLimitMeters = null,
+        OnboardTransitPlanningContext? onboardContext = null)
     {
         var walkAccessLimit = walkAccessDistanceLimitMeters ??
             GetWalkAccessDistanceLimit(null);
@@ -198,6 +199,18 @@ public partial class RoutingService
 
         var exactBoard = boardDiscovery.Exact;
         AddUniqueAccessCandidate(boardCandidates, exactBoard);
+        if (onboardContext is not null &&
+            string.Equals(onboardContext.RouteId, route.RouteId, StringComparison.Ordinal))
+        {
+            boardCandidates = boardCandidates.Where(candidate =>
+            {
+                var progress = candidate.FullRouteAnchor?.DistanceFromRouteStartMeters;
+                return progress is null ||
+                       (!onboardContext.IsMateriallyBehind(progress.Value) &&
+                        !onboardContext.IsCurrentOccurrence(progress.Value));
+            }).ToList();
+            AddUniqueAccessCandidate(boardCandidates, boardDiscovery.Onboard);
+        }
 
         var alightCandidates = alightAccessOptions
             .Select(candidate => ConstrainTransitAccess(

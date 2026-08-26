@@ -1,6 +1,7 @@
 namespace backend.Services.Navigation;
 
 public sealed record StartNavigationRequest(Guid RecommendationId);
+public sealed record ResolveAlightStatusRequest(bool AlreadyOff);
 
 public sealed record NavigationRerouteRequest(
     string Reason = "MANUAL",
@@ -106,7 +107,8 @@ public sealed record NavigationSnapshot(
     NavigationTripSummarySnapshot? TripSummary = null,
     string? SpokenInstructionTemplate = null,
     IReadOnlyList<NavigationInstructionDetailSnapshot>? CurrentLegInstructions = null,
-    IReadOnlyList<NavigationLandmarkSnapshot>? CurrentLegLandmarks = null);
+    IReadOnlyList<NavigationLandmarkSnapshot>? CurrentLegLandmarks = null,
+    Guid? RecommendationId = null);
 
 public sealed record NavigationOperation(NavigationSnapshot? Snapshot, string? Error = null)
 {
