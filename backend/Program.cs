@@ -152,6 +152,7 @@ builder.Services.AddScoped<IRoutePointService, RoutePointService>();
 builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
 builder.Services.AddScoped<ITricyclePointSubmissionService, TricyclePointSubmissionService>();
+builder.Services.AddScoped<IAdminTricyclePointSubmissionService, AdminTricyclePointSubmissionService>();
 builder.Services.AddSingleton<ITricycleProofStorage, FileSystemTricycleProofStorage>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
@@ -219,23 +220,23 @@ app.UseCors("Frontend");
 app.Use(async (context, next) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    try
+    await next();
+    stopwatch.Stop();
+
+    if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
     {
-        await next();
-    }
-    finally
-    {
-        stopwatch.Stop();
-        var telemetry = context.RequestServices.GetRequiredService<ITukiTelemetry>();
-        telemetry.RecordRequest(
-            context.Request.Path,
+        context.RequestServices.GetRequiredService<ITukiTelemetry>().TrackRequest(
+            context.Request.Method,
+            context.Request.Path.Value ?? string.Empty,
             context.Response.StatusCode,
             stopwatch.Elapsed.TotalMilliseconds);
     }
 });
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
+
 app.Run();
 
 static void LoadDevelopmentEnvironmentFile()
@@ -250,16 +251,16 @@ static void LoadDevelopmentEnvironmentFile()
     {
         Path.Combine(Directory.GetCurrentDirectory(), ".env"),
         Path.Combine(Directory.GetCurrentDirectory(), "backend", ".env"),
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.env")),
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".env"))
     };
 
-    var envPath = candidates.FirstOrDefault(File.Exists);
-    if (envPath is null)
+    var path = candidates.FirstOrDefault(File.Exists);
+    if (path is null)
     {
         return;
     }
 
-    foreach (var rawLine in File.ReadLines(envPath))
+    foreach (var rawLine in File.ReadLines(path))
     {
         var line = rawLine.Trim();
         if (line.Length == 0 || line.StartsWith('#'))
@@ -267,18 +268,17 @@ static void LoadDevelopmentEnvironmentFile()
             continue;
         }
 
-        var separator = line.IndexOf('=');
-        if (separator <= 0)
+        var separatorIndex = line.IndexOf('=');
+        if (separatorIndex <= 0)
         {
             continue;
         }
 
-        var key = line[..separator].Trim();
-        var value = line[(separator + 1)..].Trim();
-
+        var key = line[..separatorIndex].Trim();
+        var value = line[(separatorIndex + 1)..].Trim();
         if (value.Length >= 2 &&
-            ((value[0] == '"' && value[^1] == '"') ||
-             (value[0] == '\'' && value[^1] == '\'')))
+            ((value.StartsWith('"') && value.EndsWith('"')) ||
+             (value.StartsWith('\'') && value.EndsWith('\''))))
         {
             value = value[1..^1];
         }
