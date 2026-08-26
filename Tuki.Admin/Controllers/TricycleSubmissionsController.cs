@@ -42,9 +42,12 @@ public sealed class TricycleSubmissionsController(
                 TotalCount = result.Value.TotalCount
             });
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            return RedirectToAction("Login", "Account", new { returnUrl = Url.Action(nameof(Index), "TricycleSubmissions") });
+            return RedirectToAction(
+                "Login",
+                "Account",
+                new { returnUrl = Url.Action(nameof(Index), "TricycleSubmissions") });
         }
     }
 
@@ -63,8 +66,10 @@ public sealed class TricycleSubmissionsController(
             return RedirectToAction(nameof(Index));
         }
 
-        var model = TricycleSubmissionReviewViewModel.From(result.Value);
-        model = model withMessages(TempData["AdminError"] as string, TempData["AdminSuccess"] as string);
+        var model = TricycleSubmissionReviewViewModel.From(result.Value)
+            .WithMessages(
+                TempData["AdminError"] as string,
+                TempData["AdminSuccess"] as string);
         return View(model);
     }
 
@@ -201,7 +206,7 @@ public sealed class TricycleSubmissionsController(
 
 internal static class TricycleSubmissionReviewViewModelExtensions
 {
-    public static TricycleSubmissionReviewViewModel withMessages(
+    public static TricycleSubmissionReviewViewModel WithMessages(
         this TricycleSubmissionReviewViewModel model,
         string? error,
         string? success) => new()
