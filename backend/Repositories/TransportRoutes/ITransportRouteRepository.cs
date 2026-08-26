@@ -36,4 +36,6 @@ public interface ITransportRouteRepository
     Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default);
 
     Task<bool> DeactivateAsync(long routeId, CancellationToken cancellationToken = default);
+
+    Task<bool> ActivateAsync(long routeId, CancellationToken cancellationToken = default);
 }
