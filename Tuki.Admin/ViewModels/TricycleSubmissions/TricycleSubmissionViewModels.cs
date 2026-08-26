@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Tuki.Admin.Models.TricycleSubmissions;
 
 namespace Tuki.Admin.ViewModels.TricycleSubmissions;
@@ -18,6 +20,10 @@ public sealed class TricycleSubmissionQueueViewModel
 
 public sealed class TricycleSubmissionReviewViewModel
 {
+    // Loaded by the controller for GET/rendering only. It is intentionally excluded
+    // from POST model binding/validation because the review form does not post the
+    // complete submission object back to the server.
+    [BindNever, ValidateNever]
     public AdminTricycleSubmission Submission { get; init; } = null!;
 
     [Required]
@@ -44,22 +50,42 @@ public sealed class TricycleSubmissionReviewViewModel
     [StringLength(1000)]
     public string? AdminNotes { get; set; }
 
+    [ValidateNever]
     public string? ErrorMessage { get; init; }
+
+    [ValidateNever]
     public string? SuccessMessage { get; init; }
 
-    public decimal OriginalLatitude => Submission.Latitude;
-    public decimal OriginalLongitude => Submission.Longitude;
-    public bool HasAdminCoordinateCorrection =>
-        Submission.AdminLatitude is not null && Submission.AdminLongitude is not null;
+    // Display-only properties must remain safe while MVC is binding a POST model,
+    // where Submission has not yet been rehydrated by the controller.
+    [ValidateNever]
+    public decimal OriginalLatitude => Submission?.Latitude ?? Latitude ?? 0m;
 
+    [ValidateNever]
+    public decimal OriginalLongitude => Submission?.Longitude ?? Longitude ?? 0m;
+
+    [ValidateNever]
+    public bool HasAdminCoordinateCorrection =>
+        Submission?.AdminLatitude is not null && Submission?.AdminLongitude is not null;
+
+    [ValidateNever]
     public string OriginalGoogleMapsUrl => BuildGoogleMapsUrl(OriginalLatitude, OriginalLongitude);
+
+    [ValidateNever]
     public string ReviewedGoogleMapsUrl => BuildGoogleMapsUrl(
         Latitude ?? OriginalLatitude,
         Longitude ?? OriginalLongitude);
 
+    [ValidateNever]
     public string OriginalLatitudeInvariant => OriginalLatitude.ToString(CultureInfo.InvariantCulture);
+
+    [ValidateNever]
     public string OriginalLongitudeInvariant => OriginalLongitude.ToString(CultureInfo.InvariantCulture);
+
+    [ValidateNever]
     public string ReviewedLatitudeInvariant => (Latitude ?? OriginalLatitude).ToString(CultureInfo.InvariantCulture);
+
+    [ValidateNever]
     public string ReviewedLongitudeInvariant => (Longitude ?? OriginalLongitude).ToString(CultureInfo.InvariantCulture);
 
     public static TricycleSubmissionReviewViewModel From(AdminTricycleSubmission submission) => new()
