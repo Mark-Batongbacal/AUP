@@ -43,6 +43,30 @@ class NavigationHapticsTest {
     }
 
     @Test
+    fun prepareToAlight_isAutomaticWhenLocalApproachBecomesTrue() {
+        val event = navigationHapticEvent(
+            snapshot = snapshot("ON_ROUTE"),
+            preparingToAlight = true,
+            localGuidance = null
+        )
+
+        assertNotNull(event)
+        assertEquals(NavigationHapticEventType.PREPARE_TO_ALIGHT, event?.type)
+    }
+
+    @Test
+    fun alightConfirmation_hasPriorityOverPrepareHaptic() {
+        val event = navigationHapticEvent(
+            snapshot = snapshot("ApproachingAlightPoint", requiresAlightingConfirmation = true),
+            preparingToAlight = true,
+            localGuidance = null
+        )
+
+        assertNotNull(event)
+        assertEquals(NavigationHapticEventType.ALIGHT_NOW, event?.type)
+    }
+
+    @Test
     fun ordinaryGpsState_doesNotCreateHapticEvent() {
         assertNull(navigationHapticEvent(snapshot("ON_ROUTE"), false, null))
     }
@@ -67,7 +91,10 @@ class NavigationHapticsTest {
         )
     }
 
-    private fun snapshot(status: String) = NavigationSnapshotDto(
+    private fun snapshot(
+        status: String,
+        requiresAlightingConfirmation: Boolean = false
+    ) = NavigationSnapshotDto(
         sessionId = "session-1",
         state = "OnJeepney",
         currentLegIndex = 0,
@@ -80,7 +107,7 @@ class NavigationHapticsTest {
         alightInfo = null,
         landmark = null,
         requiresBoardingConfirmation = false,
-        requiresAlightingConfirmation = false,
+        requiresAlightingConfirmation = requiresAlightingConfirmation,
         rerouteRequired = false,
         status = status,
         triggeredEvents = emptyList(),

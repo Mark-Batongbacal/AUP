@@ -54,6 +54,36 @@ public sealed class LocationTrackingService(
         var match = matcher.Match(update, geometry, legStart, legEnd, session.CurrentRouteProgressMeters);
         var fullEnd = matcher.ProjectProgress(geometry, geometry[^1].Latitude, geometry[^1].Longitude);
         var expectedMatch = matcher.Match(update, geometry, legStart, fullEnd, session.CurrentRouteProgressMeters);
+
+        // Routine trip progress is intentionally kept local on the client. That means the server's
+        // previous route progress can be several kilometres behind when the client finally sends a
+        // meaningful leg-end sync. If the normal anti-jump window cannot match that fresh fix, allow
+        // a tightly bounded reacquisition only inside the final approach of the authoritative current
+        // transit leg. GPS quality, route proximity, and alight-zone proximity are still verified.
+        if (expectedMatch is null && IsTransitNavigationState(session) && NavigationTripRules.IsTransit(leg))
+        {
+            var reacquireMinimum = Math.Max(legStart,
+                legEnd - _options.PrepareToAlightDistanceMeters);
+            var reacquired = matcher.MatchWithinRange(
+                update,
+                geometry,
+                legStart,
+                reacquireMinimum,
+                legEnd);
+            var remainingAfterReacquire = reacquired is null
+                ? double.PositiveInfinity
+                : Math.Max(0, legEnd - reacquired.DistanceFromRouteStartMeters);
+            var insideTransitCorridor = reacquired is not null &&
+                reacquired.DistanceFromGeometryMeters <= _options.TransitOffRouteMeters + update.AccuracyMeters;
+
+            if (insideTransitCorridor && remainingAfterReacquire <= _options.ConfirmAlightDistanceMeters)
+            {
+                match = reacquired;
+                expectedMatch = reacquired;
+                _telemetry.Event("LegEndProgressReacquired", sessionId);
+            }
+        }
+
         if (expectedMatch is null)
         {
             if (!IsUnconfirmedAlightCandidate(session, leg))
@@ -70,7 +100,7 @@ public sealed class LocationTrackingService(
             await sessions.UpdateAsync(session, cancellationToken);
             return new(false, session.LastNavigationStatus);
         }
-        if (session.CurrentNavigationState is TripNavigationState.OnJeepney or TripNavigationState.ApproachingAlightPoint &&
+        if (session.CurrentNavigationState is TripNavigationState.OnJeepney or TripNavigationState.OnTricycle or TripNavigationState.ApproachingAlightPoint &&
             expectedMatch.DistanceFromGeometryMeters <= _options.TransitOffRouteMeters + update.AccuracyMeters &&
             expectedMatch.DistanceFromRouteStartMeters > legEnd + _options.MissedAlightDistanceMeters)
         {
@@ -216,6 +246,10 @@ public sealed class LocationTrackingService(
 
     private static bool IsWalking(RecommendationLeg leg) =>
         leg.TransportMode?.Code is "WALK" or "WALKING" or "PEDESTRIAN";
+
+    private static bool IsTransitNavigationState(TripSession session) =>
+        session.CurrentNavigationState is TripNavigationState.OnJeepney or
+            TripNavigationState.OnTricycle or TripNavigationState.ApproachingAlightPoint;
 
     private static bool IsUnconfirmedAlightCandidate(
         TripSession session,

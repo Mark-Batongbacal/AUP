@@ -5,7 +5,10 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import com.example.frontend.data.navigation.NavigationSnapshotDto
+
+private const val NavigationHapticsTag = "TukiNavigationHaptics"
 
 enum class NavigationHapticEventType {
     PREPARE_TO_ALIGHT,
@@ -51,12 +54,26 @@ class AndroidNavigationHapticPerformer(
         val vibrator = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+                    ?: run {
+                        @Suppress("DEPRECATION")
+                        context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                    }
             } else {
                 @Suppress("DEPRECATION")
                 context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             }
-        }.getOrNull() ?: return
-        if (!vibrator.hasVibrator()) return
+        }.onFailure { error ->
+            Log.w(NavigationHapticsTag, "Unable to resolve vibrator service for $type", error)
+        }.getOrNull()
+
+        if (vibrator == null) {
+            Log.w(NavigationHapticsTag, "No vibrator service available for $type")
+            return
+        }
+        if (!vibrator.hasVibrator()) {
+            Log.w(NavigationHapticsTag, "Device reports no vibrator for $type")
+            return
+        }
 
         val timings = when (type) {
             NavigationHapticEventType.PREPARE_TO_ALIGHT -> longArrayOf(0, 90, 90, 90)
@@ -66,6 +83,7 @@ class AndroidNavigationHapticPerformer(
             NavigationHapticEventType.REROUTE_SUCCEEDED -> longArrayOf(0, 70, 60, 140)
             NavigationHapticEventType.TURN_NOW -> longArrayOf(0, 120)
         }
+
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 vibrator.vibrate(VibrationEffect.createWaveform(timings, -1))
@@ -73,6 +91,10 @@ class AndroidNavigationHapticPerformer(
                 @Suppress("DEPRECATION")
                 vibrator.vibrate(timings, -1)
             }
+        }.onSuccess {
+            Log.d(NavigationHapticsTag, "Dispatched navigation haptic: $type")
+        }.onFailure { error ->
+            Log.w(NavigationHapticsTag, "Navigation haptic failed: $type", error)
         }
     }
 }

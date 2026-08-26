@@ -61,6 +61,36 @@ public sealed class LocationTrackingRecoveryTests
             fixture.Session.CurrentNavigationState);
     }
 
+    [Fact]
+    public async Task StaleServerProgress_NearLegEnd_ReacquiresAndEnablesAlightConfirmationState()
+    {
+        var fixture = Fixture();
+        fixture.Session.CurrentRouteProgressMeters = 0;
+        fixture.Matcher.Setup(item => item.Match(
+                It.IsAny<LocationUpdate>(), It.IsAny<IReadOnlyList<(double, double)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double?>()))
+            .Returns((RouteMatch?)null);
+        fixture.Matcher.Setup(item => item.MatchWithinRange(
+                It.IsAny<LocationUpdate>(), It.IsAny<IReadOnlyList<(double, double)>>(),
+                0, 600, 1_000))
+            .Returns(new RouteMatch(15, 120.0095, 5, 950, 950, 0, 0.95));
+
+        var result = await fixture.Service.ProcessAsync(
+            fixture.Session.UserId,
+            fixture.Session.TripSessionId,
+            new LocationUpdate(15, 120.0095, 5, DateTime.UtcNow));
+
+        Assert.True(result.Accepted);
+        Assert.Equal("ApproachingAlightPoint", result.Status);
+        Assert.Equal(950, fixture.Session.CurrentProgressMeters);
+        Assert.Equal(950, fixture.Session.CurrentRouteProgressMeters);
+        Assert.Equal(TripNavigationState.ApproachingAlightPoint,
+            fixture.Session.CurrentNavigationState);
+        fixture.Matcher.Verify(item => item.MatchWithinRange(
+            It.IsAny<LocationUpdate>(), It.IsAny<IReadOnlyList<(double, double)>>(),
+            0, 600, 1_000), Times.Once);
+    }
+
     private static RecoveryFixture Fixture()
     {
         var session = new TripSession
