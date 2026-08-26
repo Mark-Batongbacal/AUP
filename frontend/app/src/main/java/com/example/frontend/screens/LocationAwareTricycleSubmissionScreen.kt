@@ -48,13 +48,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.frontend.core.location.currentDeviceLocation
-import com.example.frontend.core.location.hasDeviceLocationPermission
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.contributions.CapturedTricycleSubmissionLocation
 import com.example.frontend.data.contributions.CreateTricyclePointSubmissionRequest
-import com.example.frontend.data.contributions.toCapturedTricycleSubmissionLocation
+import com.example.frontend.data.contributions.PreciseTricycleSubmissionLocationResult
+import com.example.frontend.data.contributions.acquirePreciseTricycleSubmissionLocation
+import com.example.frontend.data.contributions.hasPreciseDeviceLocationPermission
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiInk
@@ -98,16 +98,31 @@ fun LocationAwareTricycleSubmissionScreen(
     var submissionError by remember { mutableStateOf<String?>(null) }
     var submissionSucceeded by remember { mutableStateOf(false) }
 
+    fun locationFailureMessage(result: PreciseTricycleSubmissionLocationResult): String =
+        when (result) {
+            is PreciseTricycleSubmissionLocationResult.Success -> ""
+            PreciseTricycleSubmissionLocationResult.PrecisePermissionRequired ->
+                "Precise Location is required. Open TUKI's Location permission and enable Precise Location, then try again."
+            PreciseTricycleSubmissionLocationResult.LocationServicesDisabled ->
+                "Location services are turned off. Turn on Location, then try again."
+            PreciseTricycleSubmissionLocationResult.AccuracyUnavailable ->
+                "TUKI could not get a precise GPS fix within 35 meters. Move outdoors or near a window, keep Location on, then try again."
+        }
+
     fun captureLocation() {
         if (isLocating || submissionSucceeded) return
         scope.launch {
             isLocating = true
             locationError = null
-            val detected = context.currentDeviceLocation()
-                ?.toCapturedTricycleSubmissionLocation()
-            capturedLocation = detected
-            if (detected == null) {
-                locationError = "We couldn't detect a usable current location. Make sure Location is enabled, then try again."
+            when (val result = context.acquirePreciseTricycleSubmissionLocation()) {
+                is PreciseTricycleSubmissionLocationResult.Success -> {
+                    capturedLocation = result.location
+                    locationError = null
+                }
+                else -> {
+                    capturedLocation = null
+                    locationError = locationFailureMessage(result)
+                }
             }
             isLocating = false
         }
@@ -116,18 +131,18 @@ fun LocationAwareTricycleSubmissionScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
-        val granted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (granted) {
+        val preciseGranted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        if (preciseGranted) {
             captureLocation()
         } else {
             capturedLocation = null
-            locationError = "Location permission is required so TUKI can verify where this tricycle point was reported."
+            locationError =
+                "Precise Location is required. Open TUKI's Location permission and enable Precise Location, then try again."
         }
     }
 
     fun ensureLocationCapture() {
-        if (context.hasDeviceLocationPermission()) {
+        if (context.hasPreciseDeviceLocationPermission()) {
             captureLocation()
         } else {
             permissionLauncher.launch(
@@ -170,8 +185,10 @@ fun LocationAwareTricycleSubmissionScreen(
     fun submit() {
         val proof = proofImageUrl ?: return
         if (isSubmitting || isUploading || submissionSucceeded) return
-        if (!context.hasDeviceLocationPermission()) {
-            locationError = "Location permission is required before this report can be submitted."
+        if (!context.hasPreciseDeviceLocationPermission()) {
+            capturedLocation = null
+            locationError =
+                "Precise Location is required before this report can be submitted. Enable Precise Location for TUKI, then try again."
             ensureLocationCapture()
             return
         }
@@ -181,16 +198,15 @@ fun LocationAwareTricycleSubmissionScreen(
             submissionError = null
             locationError = null
 
-            // Always refresh immediately before submission so the stored coordinates represent
-            // where the passenger is at verification time rather than a stale earlier fix.
-            val freshLocation = context.currentDeviceLocation()
-                ?.toCapturedTricycleSubmissionLocation()
-
-            if (freshLocation == null) {
-                capturedLocation = null
-                locationError = "We couldn't detect a usable current location. Make sure Location is enabled, then try again."
-                isSubmitting = false
-                return@launch
+            val preciseResult = context.acquirePreciseTricycleSubmissionLocation()
+            val freshLocation = when (preciseResult) {
+                is PreciseTricycleSubmissionLocationResult.Success -> preciseResult.location
+                else -> {
+                    capturedLocation = null
+                    locationError = locationFailureMessage(preciseResult)
+                    isSubmitting = false
+                    return@launch
+                }
             }
 
             capturedLocation = freshLocation
@@ -395,26 +411,26 @@ fun LocationAwareTricycleSubmissionScreen(
             item {
                 when {
                     isLocating -> LocationSubmissionStatusCard(
-                        title = "Detecting location…",
-                        subtitle = "TUKI is securely detecting your current location for verification.",
+                        title = "Getting precise location…",
+                        subtitle = "TUKI is waiting for an accurate GPS fix. This can take several seconds, especially indoors.",
                         success = false,
                         showProgress = true
                     )
                     capturedLocation != null -> LocationSubmissionStatusCard(
-                        title = "Location detected",
-                        subtitle = "Your location is ready for verification. Coordinates are hidden from this screen.",
+                        title = "Precise location detected",
+                        subtitle = "Your location is accurate enough for administrator verification. Coordinates remain hidden from this screen.",
                         success = true
                     )
                     else -> {
                         Column {
                             LocationSubmissionStatusCard(
-                                title = "Location required",
-                                subtitle = locationError ?: "TUKI needs your current location to verify where this tricycle point was reported.",
+                                title = "Precise location required",
+                                subtitle = locationError ?: "TUKI needs an accurate current location before this report can be submitted.",
                                 success = false
                             )
                             if (selectedPhoto != null && proofImageUrl != null) {
                                 TextButton(onClick = ::ensureLocationCapture) {
-                                    Text("Try location again", color = TukiTeal)
+                                    Text("Try precise location again", color = TukiTeal)
                                 }
                             }
                         }
@@ -460,7 +476,7 @@ fun LocationAwareTricycleSubmissionScreen(
                             strokeWidth = 2.dp
                         )
                         Spacer(Modifier.width(9.dp))
-                        Text("Submitting…", fontWeight = FontWeight.Bold)
+                        Text("Confirming precise location…", fontWeight = FontWeight.Bold)
                     } else {
                         Text(
                             if (submissionSucceeded) "Submitted" else "Submit for Verification",
@@ -473,8 +489,8 @@ fun LocationAwareTricycleSubmissionScreen(
                     when {
                         submissionSucceeded -> "You can track this report from My Contributions."
                         proofImageUrl == null -> "Add a proof photo to continue."
-                        capturedLocation == null -> "Location must be detected before submission."
-                        else -> "Your detected coordinates are sent only for administrator verification."
+                        capturedLocation == null -> "A precise location must be detected before submission."
+                        else -> "TUKI rechecks the precise location before sending the report for verification."
                     },
                     modifier = Modifier.fillMaxWidth(),
                     color = TukiMuted,
