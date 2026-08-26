@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.math.BigDecimal
 
 class NavigationRerouteDispatcherTest {
     @Test
@@ -78,11 +79,45 @@ class NavigationRerouteDispatcherTest {
         assertTrue(json.contains("\"bearingDegrees\":92.0"))
     }
 
+    @Test
+    fun alreadyOff_callsOnlyExplicitAlightResolution() = runBlocking {
+        val navigation = RecordingNavigationRepository()
+        navigation.resolveResult = ApiResult.Success(snapshot("ALIGHTING_RECOVERED"))
+        var recoveries = 0
+        val dispatcher = AlightStatusRecoveryDispatcher(navigation) {
+            recoveries++
+            ApiResult.Success(snapshot("REROUTE_SUCCEEDED"))
+        }
+
+        dispatcher.resolve("session-1", alreadyOff = true)
+
+        assertEquals(listOf(true), navigation.alightResolutions)
+        assertEquals(0, recoveries)
+    }
+
+    @Test
+    fun stillRiding_resolvesStatusThenTriggersMissedAlightRecovery() = runBlocking {
+        val navigation = RecordingNavigationRepository()
+        navigation.resolveResult = ApiResult.Success(snapshot("MISSED_ALIGHT"))
+        var recoveredSession: String? = null
+        val dispatcher = AlightStatusRecoveryDispatcher(navigation) { sessionId ->
+            recoveredSession = sessionId
+            ApiResult.Success(snapshot("REROUTE_SUCCEEDED"))
+        }
+
+        dispatcher.resolve("session-1", alreadyOff = false)
+
+        assertEquals(listOf(false), navigation.alightResolutions)
+        assertEquals("session-1", recoveredSession)
+    }
+
     private class RecordingNavigationRepository : NavigationRepository {
         var locationCalls = 0
         var rerouteCalls = 0
         var rerouteSessionId: String? = null
         var rerouteRequest: NavigationRerouteRequest? = null
+        var resolveResult: ApiResult<NavigationSnapshotDto> = ApiResult.Failure(null, "Recorded")
+        val alightResolutions = mutableListOf<Boolean>()
 
         override suspend fun updateLocation(
             sessionId: String,
@@ -117,7 +152,9 @@ class NavigationRerouteDispatcherTest {
             endLatitude: Double,
             endLongitude: Double,
             mode: String,
-            routeId: Long?
+            routeId: Long?,
+            startRouteProgressMeters: Double?,
+            endRouteProgressMeters: Double?
         ): ApiResult<NavigationGeometryResponseDto> = error("Unexpected getGeometry call")
 
         override suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto> =
@@ -125,6 +162,14 @@ class NavigationRerouteDispatcherTest {
 
         override suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto> =
             error("Unexpected confirmAlighting call")
+
+        override suspend fun resolveAlightStatus(
+            sessionId: String,
+            alreadyOff: Boolean
+        ): ApiResult<NavigationSnapshotDto> {
+            alightResolutions += alreadyOff
+            return resolveResult
+        }
 
         override suspend fun cancel(sessionId: String): ApiResult<TripSessionDto> =
             error("Unexpected cancel call")
@@ -136,5 +181,28 @@ class NavigationRerouteDispatcherTest {
             error("Unexpected clearLocalActiveNavigation call")
 
         override fun clearLocalNavigation() = error("Unexpected clearLocalNavigation call")
+    }
+
+    private companion object {
+        fun snapshot(status: String) = NavigationSnapshotDto(
+            sessionId = "session-1",
+            state = "ApproachingAlightPoint",
+            currentLegIndex = 0,
+            currentLeg = null,
+            nextInstruction = null,
+            spokenInstruction = null,
+            remainingDistanceMeters = null,
+            progressMeters = 0.0,
+            boardInfo = null,
+            alightInfo = null,
+            landmark = null,
+            requiresBoardingConfirmation = false,
+            requiresAlightingConfirmation = false,
+            rerouteRequired = false,
+            status = status,
+            triggeredEvents = emptyList(),
+            approxFareSpent = BigDecimal.ZERO,
+            estimatedRemainingFare = BigDecimal.ZERO
+        )
     }
 }

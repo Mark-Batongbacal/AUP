@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
@@ -432,8 +433,9 @@ fun NavigationAiSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
                     .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextField(
@@ -441,27 +443,30 @@ fun NavigationAiSheet(
                     onValueChange = { input = it },
                     modifier = Modifier
                         .weight(1f)
-                        .focusRequester(inputFocusRequester),
+                        .focusRequester(inputFocusRequester)
+                        .padding(end = 8.dp),
                     singleLine = true,
                     enabled = !thinking && applyingRecommendationId == null,
                     placeholder = {
                         Text(
                             if (filipino) "Magtanong o mag-fine-tune…" else "Ask or fine-tune the trip…",
-                            color = NavigationAiMuted,
-                            fontSize = 13.sp
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     },
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(24.dp),
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        disabledContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = NavigationAiDark,
-                        unfocusedTextColor = NavigationAiDark
+                        disabledIndicatorColor = Color.Transparent,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                 )
-                Spacer(Modifier.width(8.dp))
                 Box(
                     Modifier
                         .size(44.dp)
@@ -469,7 +474,7 @@ fun NavigationAiSheet(
                             if (input.isNotBlank() && !thinking && applyingRecommendationId == null) {
                                 NavigationAiOrange
                             } else {
-                                NavigationAiOrange.copy(alpha = 0.4f)
+                                NavigationAiOrange.copy(alpha = 0.45f)
                             },
                             CircleShape
                         )
@@ -478,7 +483,7 @@ fun NavigationAiSheet(
                         ) { send(input) },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("➤", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("➤", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

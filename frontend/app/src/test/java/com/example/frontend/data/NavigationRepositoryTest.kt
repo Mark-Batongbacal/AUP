@@ -83,6 +83,18 @@ class NavigationRepositoryTest {
     }
 
     @Test
+    fun resolveUnknownAlight_sendsExplicitAlreadyOffDecision() = runBlocking {
+        val api = FakeNavigationApi(snapshot())
+        val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
+
+        val result = repository.resolveAlightStatus("session-1", alreadyOff = true)
+
+        assertTrue(result is ApiResult.Success)
+        assertEquals("session-1", api.resolveAlightSession)
+        assertEquals(true, api.resolveAlightRequest?.alreadyOff)
+    }
+
+    @Test
     fun repository_routineLocationUpdatesStayLocalWithoutBackendCalls() = runBlocking {
         NavigationSyncSignal.reset()
         val api = FakeNavigationApi(snapshot())
@@ -154,6 +166,8 @@ class NavigationRepositoryTest {
         var locationCalls = 0
         var boardingCalls = 0
         var alightingCalls = 0
+        var resolveAlightSession: String? = null
+        var resolveAlightRequest: ResolveAlightStatusRequest? = null
 
         override suspend fun start(request: StartNavigationRequest) = Response.success(response)
 
@@ -168,7 +182,9 @@ class NavigationRepositoryTest {
             endLatitude: Double,
             endLongitude: Double,
             mode: String,
-            routeId: Long?
+            routeId: Long?,
+            startRouteProgressMeters: Double?,
+            endRouteProgressMeters: Double?
         ): Response<NavigationGeometryResponseDto> =
             Response.success(NavigationGeometryResponseDto(emptyList()))
 
@@ -192,7 +208,11 @@ class NavigationRepositoryTest {
         override suspend fun resolveAlightStatus(
             sessionId: String,
             request: ResolveAlightStatusRequest
-        ): Response<NavigationSnapshotDto> = Response.success(response)
+        ): Response<NavigationSnapshotDto> {
+            resolveAlightSession = sessionId
+            resolveAlightRequest = request
+            return Response.success(response)
+        }
 
         override suspend fun cancel(sessionId: String): Response<TripSessionDto> = Response.success(null)
         override suspend fun reroute(sessionId: String, request: NavigationRerouteRequest) = Response.success(response)

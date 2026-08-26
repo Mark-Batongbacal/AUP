@@ -31,7 +31,10 @@ public sealed record NavigationLegSnapshot(
     double? EndLatitude,
     double? EndLongitude,
     double? DistanceMeters,
-    decimal Fare);
+    decimal Fare,
+    double? StartRouteProgressMeters = null,
+    double? EndRouteProgressMeters = null,
+    bool StartsAlreadyOnboard = false);
 
 public sealed record NavigationInstructionSnapshot(
     string Type,

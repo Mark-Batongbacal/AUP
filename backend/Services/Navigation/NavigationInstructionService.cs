@@ -93,9 +93,7 @@ public sealed class NavigationInstructionService(
         RecommendationLeg leg, IReadOnlyList<RecommendationLeg> legs)
     {
         var route = leg.Route?.RouteName ?? leg.Instructions ?? "the selected jeepney";
-        var continuingAlreadyOnboard = leg.LegOrder == 0 &&
-            leg.EstimatedFare == 0 &&
-            string.Equals(session.LastRerouteReason, "MISSED_ALIGHT", StringComparison.Ordinal);
+        var continuingAlreadyOnboard = leg.LegOrder == 0 && leg.StartsAlreadyOnboard;
         if (!continuingAlreadyOnboard)
             Add(output, session, leg, NavigationInstructionType.BoardJeepney, $"Board {route}.", true, leg.StartLatitude, leg.StartLongitude);
         Add(output, session, leg, NavigationInstructionType.Continue, $"Stay on {route}.");

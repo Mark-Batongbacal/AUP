@@ -101,6 +101,7 @@ fun TripTrackingScreen(
     var stableLegRouteKey by remember { mutableStateOf<String?>(null) }
     var optionError by remember { mutableStateOf<String?>(null) }
     var optionWorking by remember { mutableStateOf(false) }
+    var actionLaunchInFlight by remember { mutableStateOf(false) }
     var hasRerouted by remember { mutableStateOf(false) }
     var activeDestinationName by remember(destination) { mutableStateOf(destination) }
     var activeFinalDestination by remember(finalDestination) { mutableStateOf(finalDestination) }
@@ -167,7 +168,8 @@ fun TripTrackingScreen(
         markRerouted: Boolean = true,
         request: suspend () -> ApiResult<NavigationSnapshotDto>
     ) {
-        if (working) return
+        if (working || actionLaunchInFlight) return
+        actionLaunchInFlight = true
         scope.launch {
             optionWorking = true
             optionError = null
@@ -196,6 +198,7 @@ fun TripTrackingScreen(
                 is ApiResult.Failure -> optionError = result.message
             }
             optionWorking = false
+            actionLaunchInFlight = false
         }
     }
 
@@ -544,13 +547,10 @@ fun TripTrackingScreen(
                     enabled = !working,
                     onClick = {
                         applyOption {
-                            when (val resolved = options.resolveAlightStatus(
+                            options.resolveAlightStatus(
                                 snapshot.sessionId,
                                 alreadyOff = false
-                            )) {
-                                is ApiResult.Failure -> resolved
-                                is ApiResult.Success -> options.recoverMissedAlight(snapshot.sessionId)
-                            }
+                            )
                         }
                     }
                 ) { Text("No, I'm still riding", color = TripDark) }
@@ -1024,6 +1024,7 @@ private fun navigationGeometryKey(snapshot: NavigationSnapshotDto): String? {
     val leg = snapshot.currentLeg ?: return null
     return listOf(
         snapshot.sessionId,
+        snapshot.recommendationId.orEmpty(),
         leg.legIndex.toString(),
         leg.routeId?.toString().orEmpty(),
         leg.transportMode.uppercase(),
@@ -1031,7 +1032,8 @@ private fun navigationGeometryKey(snapshot: NavigationSnapshotDto): String? {
         leg.startLongitude?.toString().orEmpty(),
         leg.endLatitude?.toString().orEmpty(),
         leg.endLongitude?.toString().orEmpty(),
-        snapshot.status.uppercase()
+        leg.startRouteProgressMeters?.toString().orEmpty(),
+        leg.endRouteProgressMeters?.toString().orEmpty()
     ).joinToString(":")
 }
 

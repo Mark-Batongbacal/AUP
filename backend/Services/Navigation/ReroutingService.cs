@@ -140,6 +140,7 @@ public sealed class ReroutingService(
         var destinationLongitude = hasCompleteDestination ? request.DestinationLongitude!.Value : session.DestinationLongitude;
 
         var previousState = session.CurrentNavigationState;
+        var checkpoint = RerouteSessionCheckpoint.Capture(session);
         if (!stateMachine.CanTransition(previousState, TripNavigationState.Rerouting))
             return new(false, "INVALID_STATE_TRANSITION");
 
@@ -175,7 +176,7 @@ public sealed class ReroutingService(
                 .ToList();
             var selected = Select(eligible, preference);
             if (selected is null)
-                return await RestoreAfterFailureAsync(session, previousState,
+                return await RestoreAfterFailureAsync(session, checkpoint,
                     "NO_REROUTE_AVAILABLE", "NO_ROUTE", cancellationToken);
 
             var recommendation = await PersistAsync(session, selected, latitude, longitude,
@@ -197,7 +198,10 @@ public sealed class ReroutingService(
             }
             session.CurrentLegIndex = 0;
             session.CurrentProgressMeters = 0;
-            session.CurrentRouteProgressMeters = null;
+            var selectedFirstPlanLeg = selected.Legs.FirstOrDefault();
+            session.CurrentRouteProgressMeters = selectedFirstPlanLeg?.StartsAlreadyOnboard == true
+                ? selectedFirstPlanLeg.BoardRouteProgressMeters
+                : null;
             session.ConsecutiveStateConfirmationSamples = 0;
             session.ConsecutiveOffRouteSamples = 0;
             session.OffRouteSuspectedAt = null;
@@ -220,7 +224,6 @@ public sealed class ReroutingService(
             if (firstLeg is null)
                 throw new InvalidOperationException("Reroute produced no journey legs.");
 
-            var selectedFirstPlanLeg = selected.Legs.FirstOrDefault();
             var resumedState = selectedFirstPlanLeg?.StartsAlreadyOnboard == true
                 ? TripNavigationState.OnJeepney
                 : IsWalking(firstLeg)
@@ -238,12 +241,12 @@ public sealed class ReroutingService(
         }
         catch (RoutingValidationException exception)
         {
-            return await RestoreAfterFailureAsync(session, previousState,
+            return await RestoreAfterFailureAsync(session, checkpoint,
                 exception.ErrorCode, exception.ErrorCode, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return await RestoreAfterFailureAsync(session, previousState,
+            return await RestoreAfterFailureAsync(session, checkpoint,
                 "NO_REROUTE_AVAILABLE", "ERROR", cancellationToken);
         }
     }
@@ -389,16 +392,88 @@ public sealed class ReroutingService(
     }
 
     private async Task<RerouteResult> RestoreAfterFailureAsync(
-        TripSession session, TripNavigationState previousState, string status,
+        TripSession session, RerouteSessionCheckpoint checkpoint, string status,
         string telemetryReason, CancellationToken cancellationToken)
     {
-        if (stateMachine.CanTransition(session.CurrentNavigationState, previousState))
-            session.CurrentNavigationState = previousState;
+        checkpoint.Restore(session);
         session.LastNavigationStatus = status;
         session.UpdatedAt = DateTime.UtcNow;
         await sessions.UpdateAsync(session, cancellationToken);
+        try
+        {
+            await instructions.GenerateAsync(session, cancellationToken);
+            await landmarkPrefetch.PrefetchAsync(session, cancellationToken);
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The restored session remains authoritative if refreshing cached
+            // instructions or landmarks also fails.
+        }
         _telemetry.Event("RerouteFailed", session.TripSessionId, telemetryReason);
         return new(false, status);
+    }
+
+    private sealed record RerouteSessionCheckpoint(
+        Guid RecommendationId,
+        string? DestinationName,
+        double DestinationLatitude,
+        double DestinationLongitude,
+        decimal? OriginalBudget,
+        string? OriginalPreference,
+        int CurrentLegIndex,
+        double CurrentProgressMeters,
+        double? CurrentRouteProgressMeters,
+        int ConsecutiveStateConfirmationSamples,
+        int ConsecutiveOffRouteSamples,
+        DateTime? OffRouteSuspectedAt,
+        DateTime? LastRerouteAt,
+        string? LastRerouteReason,
+        string? LastNavigationStatus,
+        int RerouteCount,
+        decimal ApproxFareSpent,
+        TripNavigationState State)
+    {
+        public static RerouteSessionCheckpoint Capture(TripSession session) => new(
+            session.RecommendationId,
+            session.DestinationName,
+            session.DestinationLatitude,
+            session.DestinationLongitude,
+            session.OriginalBudget,
+            session.OriginalPreference,
+            session.CurrentLegIndex,
+            session.CurrentProgressMeters,
+            session.CurrentRouteProgressMeters,
+            session.ConsecutiveStateConfirmationSamples,
+            session.ConsecutiveOffRouteSamples,
+            session.OffRouteSuspectedAt,
+            session.LastRerouteAt,
+            session.LastRerouteReason,
+            session.LastNavigationStatus,
+            session.RerouteCount,
+            session.ApproxFareSpent,
+            session.CurrentNavigationState);
+
+        public void Restore(TripSession session)
+        {
+            session.RecommendationId = RecommendationId;
+            session.DestinationName = DestinationName;
+            session.DestinationLatitude = DestinationLatitude;
+            session.DestinationLongitude = DestinationLongitude;
+            session.OriginalBudget = OriginalBudget;
+            session.OriginalPreference = OriginalPreference;
+            session.CurrentLegIndex = CurrentLegIndex;
+            session.CurrentProgressMeters = CurrentProgressMeters;
+            session.CurrentRouteProgressMeters = CurrentRouteProgressMeters;
+            session.ConsecutiveStateConfirmationSamples = ConsecutiveStateConfirmationSamples;
+            session.ConsecutiveOffRouteSamples = ConsecutiveOffRouteSamples;
+            session.OffRouteSuspectedAt = OffRouteSuspectedAt;
+            session.LastRerouteAt = LastRerouteAt;
+            session.LastRerouteReason = LastRerouteReason;
+            session.LastNavigationStatus = LastNavigationStatus;
+            session.RerouteCount = RerouteCount;
+            session.ApproxFareSpent = ApproxFareSpent;
+            session.CurrentNavigationState = State;
+        }
     }
 
     private static string? NormalizePreference(string? preference)
@@ -514,6 +589,9 @@ public sealed class ReroutingService(
                 StartLongitude = leg.OriginLongitude != 0 ? leg.OriginLongitude : leg.BoardLongitude,
                 EndLatitude = leg.DestinationLatitude != 0 ? leg.DestinationLatitude : leg.AlightLatitude,
                 EndLongitude = leg.DestinationLongitude != 0 ? leg.DestinationLongitude : leg.AlightLongitude,
+                StartRouteProgressMeters = leg.BoardRouteProgressMeters,
+                EndRouteProgressMeters = leg.AlightRouteProgressMeters,
+                StartsAlreadyOnboard = leg.StartsAlreadyOnboard,
                 DistanceMeters = (decimal)leg.DistanceMeters,
                 EstimatedMinutes = (decimal)(leg.DurationSeconds / 60),
                 EstimatedFare = (decimal)leg.FarePesos,

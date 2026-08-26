@@ -194,7 +194,9 @@ class GuestPersistenceRulesTest {
             endLatitude: Double,
             endLongitude: Double,
             mode: String,
-            routeId: Long?
+            routeId: Long?,
+            startRouteProgressMeters: Double?,
+            endRouteProgressMeters: Double?
         ): Response<NavigationGeometryResponseDto> = Response.success(NavigationGeometryResponseDto(emptyList()))
         override suspend fun location(
             sessionId: String,

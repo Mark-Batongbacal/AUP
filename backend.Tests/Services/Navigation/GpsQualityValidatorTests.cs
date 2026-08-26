@@ -32,6 +32,21 @@ public sealed class GpsQualityValidatorTests
     }
 
     [Fact]
+    public void Reroute_CanReuseTheExactFixJustAcceptedByLocation()
+    {
+        var session = new TripSession
+        {
+            LastLatitude = 15.1,
+            LastLongitude = 120.5,
+            LastAccuracyMeters = 10,
+            LastLocationAt = _now
+        };
+
+        Assert.Null(Validator().ValidateForReroute(
+            new(15.1, 120.5, 10, _now), session, _now));
+    }
+
+    [Fact]
     public void ImpossibleJump_IsRejected()
     {
         var session = new TripSession

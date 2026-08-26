@@ -38,6 +38,8 @@ public sealed class NavigationController(
         [FromQuery] double endLon,
         [FromQuery] string mode,
         [FromQuery] long? routeId,
+        [FromQuery] double? startRouteProgressMeters,
+        [FromQuery] double? endRouteProgressMeters,
         CancellationToken cancellationToken)
     {
         if (!ValidCoordinate(startLat, startLon) || !ValidCoordinate(endLat, endLon))
@@ -54,8 +56,14 @@ public sealed class NavigationController(
             if (ordered.Count < 2)
                 return StatusCode(StatusCodes.Status502BadGateway, new { error = "JEEPNEY_GEOMETRY_UNAVAILABLE" });
 
-            var startIndex = ClosestIndex(ordered, startLat, startLon);
-            var endIndex = ClosestIndex(ordered, endLat, endLon);
+            var useProgressSlice = startRouteProgressMeters is >= 0 &&
+                endRouteProgressMeters > startRouteProgressMeters;
+            var startIndex = useProgressSlice
+                ? IndexAtProgress(ordered, startRouteProgressMeters!.Value, includePrevious: true)
+                : ClosestIndex(ordered, startLat, startLon);
+            var endIndex = useProgressSlice
+                ? IndexAtProgress(ordered, endRouteProgressMeters!.Value, includePrevious: false)
+                : ClosestIndex(ordered, endLat, endLon);
             var from = Math.Min(startIndex, endIndex);
             var to = Math.Max(startIndex, endIndex);
             var geometry = ordered.Skip(from).Take(to - from + 1)
@@ -139,6 +147,25 @@ public sealed class NavigationController(
             }
         }
         return bestIndex;
+    }
+
+    private static int IndexAtProgress(
+        IReadOnlyList<RoutePointDetailsDto> points,
+        double targetMeters,
+        bool includePrevious)
+    {
+        var progress = 0d;
+        for (var index = 1; index < points.Count; index++)
+        {
+            progress += Geo.DistanceMeters(
+                points[index - 1].Latitude,
+                points[index - 1].Longitude,
+                points[index].Latitude,
+                points[index].Longitude);
+            if (progress >= targetMeters)
+                return includePrevious ? index - 1 : index;
+        }
+        return points.Count - 1;
     }
 
     private Guid UserId() => Guid.TryParse(

@@ -42,8 +42,14 @@ public sealed class LocationTrackingService(
         if (leg is null) return new(false, "CURRENT_LEG_NOT_FOUND");
         var geometry = await GeometryAsync(leg, cancellationToken);
         if (geometry.Count < 2) return new(false, "LEG_GEOMETRY_UNAVAILABLE");
-        var legStart = matcher.ProjectProgress(geometry, leg.StartLatitude ?? geometry[0].Latitude, leg.StartLongitude ?? geometry[0].Longitude);
-        var legEnd = matcher.ProjectProgress(geometry, leg.EndLatitude ?? geometry[^1].Latitude, leg.EndLongitude ?? geometry[^1].Longitude);
+        var legStart = leg.StartRouteProgressMeters ?? matcher.ProjectProgress(
+            geometry,
+            leg.StartLatitude ?? geometry[0].Latitude,
+            leg.StartLongitude ?? geometry[0].Longitude);
+        var legEnd = leg.EndRouteProgressMeters ?? matcher.ProjectProgress(
+            geometry,
+            leg.EndLatitude ?? geometry[^1].Latitude,
+            leg.EndLongitude ?? geometry[^1].Longitude);
         if (legEnd < legStart) (legStart, legEnd) = (legEnd, legStart);
         var match = matcher.Match(update, geometry, legStart, legEnd, session.CurrentRouteProgressMeters);
         var fullEnd = matcher.ProjectProgress(geometry, geometry[^1].Latitude, geometry[^1].Longitude);

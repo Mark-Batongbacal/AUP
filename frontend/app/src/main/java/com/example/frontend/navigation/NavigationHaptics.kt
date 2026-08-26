@@ -113,4 +113,3 @@ internal fun navigationHapticEvent(
     }
     return NavigationHapticEvent("$base:$type:$detail", type)
 }
-

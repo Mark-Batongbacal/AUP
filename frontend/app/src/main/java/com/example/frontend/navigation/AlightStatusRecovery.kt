@@ -21,4 +21,3 @@ internal fun NavigationSnapshotDto.alightStatusPrompt(): AlightStatusPrompt? =
     } else {
         null
     }
-

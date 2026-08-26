@@ -131,7 +131,9 @@ public sealed class NavigationFacadeService(
         var selected = SelectInstruction(session, leg, allInstructions, triggered);
         var following = SelectFollowingInstruction(session, selected, allInstructions);
         var speechType = EventInstructionType(session, status, selected, progressLandmark);
-        var instructionType = speechType is "OffRoute" or "MissedAlight" or "Cancelled" or "Arrived" ? speechType : selected?.Type.ToString() ?? "Continue";
+        var instructionType = speechType is "OffRoute" or "MissedAlight" or "AlightStatusUnknown" or "Cancelled" or "Arrived"
+            ? speechType
+            : selected?.Type.ToString() ?? "Continue";
         var activeLandmark = progressLandmark is not null
             ? new NavigationLandmarkSnapshot(progressLandmark.Text.Replace("You just passed ", "", StringComparison.OrdinalIgnoreCase).TrimEnd('.'), "", "PROGRESS_REFERENCE", "ALONG_ROUTE", progressLandmark.Latitude ?? 0, progressLandmark.Longitude ?? 0, 0, progressLandmark.DistanceFromRouteStartMeters)
             : instructionType is "BoardJeepney" or "BoardTricycle" ? MapLandmark(boardLandmark)
@@ -311,7 +313,8 @@ public sealed class NavigationFacadeService(
     private static NavigationLegSnapshot? MapLeg(RecommendationLeg? leg) => leg is null ? null : new(
         leg.LegOrder, leg.TransportMode?.Code ?? "UNKNOWN", leg.RouteId, leg.Route?.RouteName,
         leg.FromName, leg.ToName, leg.StartLatitude, leg.StartLongitude, leg.EndLatitude, leg.EndLongitude,
-        (double?)leg.DistanceMeters, leg.EstimatedFare);
+        (double?)leg.DistanceMeters, leg.EstimatedFare,
+        leg.StartRouteProgressMeters, leg.EndRouteProgressMeters, leg.StartsAlreadyOnboard);
 
     private static NavigationLandmarkSnapshot? MapLandmark(TripLandmarkCandidate? item) => item is null ? null : new(
         item.Name,

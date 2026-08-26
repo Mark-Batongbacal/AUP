@@ -189,7 +189,9 @@ class NavigationPersistenceRecoveryTest {
             endLatitude: Double,
             endLongitude: Double,
             mode: String,
-            routeId: Long?
+            routeId: Long?,
+            startRouteProgressMeters: Double?,
+            endRouteProgressMeters: Double?
         ): Response<NavigationGeometryResponseDto> = geometryResponse
 
         override suspend fun location(

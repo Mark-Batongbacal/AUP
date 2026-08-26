@@ -11,6 +11,170 @@ namespace backend.Tests.Services.Navigation;
 public sealed class ReroutingServiceTests
 {
     [Fact]
+    public void OnboardRecovery_RejectsBackwardSameRouteBoarding()
+    {
+        var context = new OnboardTransitPlanningContext("X", 5_000, 75);
+        var plan = SameRoutePlan(boardProgress: 3_500);
+
+        Assert.False(ReroutingService.IsValidForOnboardRecovery(plan, context));
+    }
+
+    [Fact]
+    public void OnboardRecovery_AllowsForwardSameRouteOccurrence()
+    {
+        var context = new OnboardTransitPlanningContext("X", 5_000, 75);
+        var plan = SameRoutePlan(boardProgress: 5_100);
+
+        Assert.True(ReroutingService.IsValidForOnboardRecovery(plan, context));
+    }
+
+    [Fact]
+    public void OnboardContinuation_HasNoDuplicateBaseFare()
+    {
+        var plan = SameRoutePlan(boardProgress: 5_000, startsAlreadyOnboard: true);
+
+        Assert.Equal(0, plan.Legs[0].FarePesos);
+        Assert.Equal(0, plan.TotalFarePesos);
+    }
+
+    [Fact]
+    public async Task MissedAlight_PassesOnboardContext_RecordsOldFareOnceAndResumesOnVehicle()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var searches = new Mock<ITripSearchRepository>();
+        var recommendations = new Mock<IRouteRecommendationRepository>();
+        var recommendationLegs = new Mock<IRecommendationLegRepository>();
+        var modes = new Mock<ITransportModeRepository>();
+        var routes = new Mock<ITransportRouteRepository>();
+        var instructionService = new Mock<INavigationInstructionService>();
+        var landmarkPrefetch = new Mock<ILandmarkCorridorPrefetchService>();
+        var routing = new Mock<IRoutingService>();
+        var route = new TransportRoute
+        {
+            RouteId = 10,
+            RouteCode = "X",
+            RouteName = "Route X"
+        };
+        var jeepneyMode = new TransportMode
+        {
+            TransportModeId = 2,
+            Code = "JEEPNEY",
+            Name = "Jeepney"
+        };
+        var oldRecommendationId = Guid.NewGuid();
+        var newRecommendationId = Guid.NewGuid();
+        var session = new TripSession
+        {
+            TripSessionId = Guid.NewGuid(),
+            UserId = Guid.NewGuid(),
+            RecommendationId = oldRecommendationId,
+            CurrentNavigationState = TripNavigationState.ApproachingAlightPoint,
+            CurrentRouteProgressMeters = 5_000,
+            LastNavigationStatus = "MISSED_ALIGHT",
+            LastLatitude = 15.2,
+            LastLongitude = 120.6,
+            LastAccuracyMeters = 8,
+            LastLocationAt = DateTime.UtcNow.AddSeconds(-5),
+            DestinationLatitude = 15.3,
+            DestinationLongitude = 120.7,
+            DestinationName = "Destination"
+        };
+        var oldLeg = new RecommendationLeg
+        {
+            LegId = Guid.NewGuid(),
+            LegOrder = 0,
+            RouteId = route.RouteId,
+            Route = route,
+            TransportMode = jeepneyMode,
+            EstimatedFare = 13
+        };
+        var plan = SameRoutePlan(5_000, startsAlreadyOnboard: true);
+        plan.Legs[0] = new JeepneyTripLeg
+        {
+            Mode = AccessMode.Jeepney,
+            RouteId = "X",
+            RouteName = "Route X",
+            OriginLatitude = 15.2,
+            OriginLongitude = 120.6,
+            DestinationLatitude = 15.25,
+            DestinationLongitude = 120.65,
+            BoardRouteProgressMeters = 5_000,
+            AlightRouteProgressMeters = 6_000,
+            StartsAlreadyOnboard = true,
+            DistanceMeters = 1_000,
+            DurationSeconds = 180,
+            FarePesos = 0
+        };
+        var persistedLegs = new List<RecommendationLeg>();
+
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default))
+            .ReturnsAsync(session);
+        sessions.Setup(item => item.UpdateAsync(session, default)).ReturnsAsync(session);
+        recommendations.Setup(item => item.GetOrderedLegsAsync(oldRecommendationId, default))
+            .ReturnsAsync([oldLeg]);
+        recommendations.Setup(item => item.GetOrderedLegsAsync(newRecommendationId, default))
+            .ReturnsAsync(() => persistedLegs);
+        recommendations.Setup(item => item.AddAsync(It.IsAny<RouteRecommendation>(), default))
+            .ReturnsAsync((RouteRecommendation recommendation, CancellationToken _) =>
+            {
+                recommendation.RecommendationId = newRecommendationId;
+                return recommendation;
+            });
+        searches.Setup(item => item.AddAsync(It.IsAny<TripSearch>(), default))
+            .ReturnsAsync((TripSearch search, CancellationToken _) =>
+            {
+                search.TripSearchId = Guid.NewGuid();
+                return search;
+            });
+        recommendationLegs.Setup(item => item.AddAsync(It.IsAny<RecommendationLeg>(), default))
+            .ReturnsAsync((RecommendationLeg leg, CancellationToken _) =>
+            {
+                leg.TransportMode = jeepneyMode;
+                leg.Route = route;
+                persistedLegs.Add(leg);
+                return leg;
+            });
+        modes.Setup(item => item.GetByCodeAsync("JEEPNEY", default)).ReturnsAsync(jeepneyMode);
+        routes.Setup(item => item.GetByRouteCodeAsync("X", default)).ReturnsAsync(route);
+        instructionService.Setup(item => item.GenerateAsync(session, default)).ReturnsAsync([]);
+        landmarkPrefetch.Setup(item => item.PrefetchAsync(session, default)).Returns(Task.CompletedTask);
+        OnboardTransitPlanningContext? receivedContext = null;
+        routing.Setup(item => item.PlanTripsAsync(
+                15.2, 120.6, session.DestinationLatitude, session.DestinationLongitude,
+                It.IsAny<JourneyPlanningPreferences>(), default))
+            .Callback((double _, double _, double _, double _, JourneyPlanningPreferences preferences,
+                CancellationToken _) => receivedContext = preferences.OnboardTransit)
+            .ReturnsAsync([plan]);
+        var options = Options.Create(new NavigationOptions { RerouteCooldownSeconds = 120 });
+        var service = new ReroutingService(
+            sessions.Object, routing.Object, searches.Object, recommendations.Object,
+            recommendationLegs.Object, modes.Object, routes.Object,
+            instructionService.Object, landmarkPrefetch.Object,
+            new backend.Services.TripSessions.TripSessionStateMachine(),
+            new GpsQualityValidator(options), options);
+
+        var request = new NavigationRerouteRequest(
+            Reason: "MISSED_ALIGHT",
+            Latitude: 15.2,
+            Longitude: 120.6,
+            AccuracyMeters: 8,
+            Timestamp: DateTime.UtcNow);
+        var first = await service.RerouteAsync(
+            session.UserId, session.TripSessionId, request);
+        var second = await service.RerouteAsync(
+            session.UserId, session.TripSessionId, request);
+
+        Assert.True(first.Succeeded);
+        Assert.Equal("X", receivedContext?.RouteId);
+        Assert.Equal(5_000, receivedContext?.CurrentRouteProgressMeters);
+        Assert.Equal(13, session.ApproxFareSpent);
+        Assert.Equal(TripNavigationState.OnJeepney, session.CurrentNavigationState);
+        Assert.True(Assert.Single(persistedLegs).StartsAlreadyOnboard);
+        Assert.Equal(0, persistedLegs[0].EstimatedFare);
+        Assert.Equal("REROUTE_COOLDOWN", second.Status);
+        Assert.Equal(13, session.ApproxFareSpent);
+    }
+    [Fact]
     public async Task FreshGps_OverridesStaleSessionLocation_AndPersistsSuccessfulReroute()
     {
         var sessions = new Mock<ITripSessionRepository>();
@@ -445,6 +609,27 @@ public sealed class ReroutingServiceTests
         TotalTimeSeconds = 300,
         TotalFarePesos = 35,
         GeneralizedCostPesos = 35
+    };
+
+    private static JeepneyTripPlan SameRoutePlan(
+        double boardProgress,
+        bool startsAlreadyOnboard = false) => new()
+    {
+        OriginAccess = new JeepneyAccessSegment { Mode = AccessMode.Walk },
+        DestinationAccess = new JeepneyAccessSegment { Mode = AccessMode.Walk },
+        Legs =
+        [
+            new JeepneyTripLeg
+            {
+                Mode = AccessMode.Jeepney,
+                RouteId = "X",
+                BoardRouteProgressMeters = boardProgress,
+                AlightRouteProgressMeters = boardProgress + 1_000,
+                StartsAlreadyOnboard = startsAlreadyOnboard,
+                FarePesos = startsAlreadyOnboard ? 0 : 13
+            }
+        ],
+        TotalFarePesos = startsAlreadyOnboard ? 0 : 13
     };
 
     private static TripSession OffRouteSession() => new()

@@ -58,7 +58,10 @@ data class NavigationLegDto(
     val endLatitude: Double?,
     val endLongitude: Double?,
     val distanceMeters: Double?,
-    val fare: BigDecimal
+    val fare: BigDecimal,
+    val startRouteProgressMeters: Double? = null,
+    val endRouteProgressMeters: Double? = null,
+    val startsAlreadyOnboard: Boolean = false
 )
 
 data class NavigationInstructionSnapshotDto(
@@ -165,7 +168,9 @@ interface NavigationApi {
         @Query("endLat") endLatitude: Double,
         @Query("endLon") endLongitude: Double,
         @Query("mode") mode: String,
-        @Query("routeId") routeId: Long? = null
+        @Query("routeId") routeId: Long? = null,
+        @Query("startRouteProgressMeters") startRouteProgressMeters: Double? = null,
+        @Query("endRouteProgressMeters") endRouteProgressMeters: Double? = null
     ): Response<NavigationGeometryResponseDto>
 
     @POST("api/navigation/{sessionId}/location")
@@ -206,7 +211,9 @@ interface NavigationRepository {
         endLatitude: Double,
         endLongitude: Double,
         mode: String,
-        routeId: Long? = null
+        routeId: Long? = null,
+        startRouteProgressMeters: Double? = null,
+        endRouteProgressMeters: Double? = null
     ): ApiResult<NavigationGeometryResponseDto>
     suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto>
     suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto>
@@ -269,7 +276,9 @@ class NavigationRepositoryImpl(
         endLatitude: Double,
         endLongitude: Double,
         mode: String,
-        routeId: Long?
+        routeId: Long?,
+        startRouteProgressMeters: Double?,
+        endRouteProgressMeters: Double?
     ): ApiResult<NavigationGeometryResponseDto> {
         val cacheKey = geometryCacheKey(
             startLatitude,
@@ -277,11 +286,22 @@ class NavigationRepositoryImpl(
             endLatitude,
             endLongitude,
             mode,
-            routeId
+            routeId,
+            startRouteProgressMeters,
+            endRouteProgressMeters
         )
         return when (
             val remote = apiCall(errors) {
-                api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId)
+                api.geometry(
+                    startLatitude,
+                    startLongitude,
+                    endLatitude,
+                    endLongitude,
+                    mode,
+                    routeId,
+                    startRouteProgressMeters,
+                    endRouteProgressMeters
+                )
             }
         ) {
             is ApiResult.Success -> remote.also { localStore.saveGeometry(cacheKey, it.data) }
@@ -413,14 +433,18 @@ class NavigationRepositoryImpl(
         endLatitude: Double,
         endLongitude: Double,
         mode: String,
-        routeId: Long?
+        routeId: Long?,
+        startRouteProgressMeters: Double?,
+        endRouteProgressMeters: Double?
     ): String = listOf(
         normalizedCoordinate(startLatitude),
         normalizedCoordinate(startLongitude),
         normalizedCoordinate(endLatitude),
         normalizedCoordinate(endLongitude),
         mode.trim().uppercase(Locale.ROOT),
-        routeId?.toString().orEmpty()
+        routeId?.toString().orEmpty(),
+        startRouteProgressMeters?.toString().orEmpty(),
+        endRouteProgressMeters?.toString().orEmpty()
     ).joinToString("|")
 
     private fun normalizedCoordinate(value: Double): String =

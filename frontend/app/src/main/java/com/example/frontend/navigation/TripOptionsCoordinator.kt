@@ -67,6 +67,23 @@ internal class NavigationRerouteDispatcher(
     }
 }
 
+internal class AlightStatusRecoveryDispatcher(
+    private val navigation: NavigationRepository,
+    private val recoverMissedAlight: suspend (String) -> ApiResult<NavigationSnapshotDto>
+) {
+    suspend fun resolve(
+        sessionId: String,
+        alreadyOff: Boolean
+    ): ApiResult<NavigationSnapshotDto> {
+        val resolved = navigation.resolveAlightStatus(sessionId, alreadyOff)
+        return if (!alreadyOff && resolved is ApiResult.Success) {
+            recoverMissedAlight(sessionId)
+        } else {
+            resolved
+        }
+    }
+}
+
 class TripOptionsCoordinator(context: Context) {
     private val appContext = context.applicationContext
     private val provider = TukiDataProvider(appContext)
@@ -76,6 +93,10 @@ class TripOptionsCoordinator(context: Context) {
     private val users = provider.userRepository
     private val ai = provider.aiRepository
     private val rerouteDispatcher = NavigationRerouteDispatcher(navigation, ::currentRerouteGpsFix)
+    private val alightStatusRecovery = AlightStatusRecoveryDispatcher(
+        navigation,
+        ::recoverMissedAlight
+    )
     private val navigationAssistantConversations = mutableMapOf<String, String>()
 
     suspend fun refreshPreferredLanguage(): String =
@@ -104,7 +125,7 @@ class TripOptionsCoordinator(context: Context) {
         sessionId: String,
         alreadyOff: Boolean
     ): ApiResult<NavigationSnapshotDto> {
-        val result = navigation.resolveAlightStatus(sessionId, alreadyOff)
+        val result = alightStatusRecovery.resolve(sessionId, alreadyOff)
         if (result is ApiResult.Success) {
             NavigationSyncSignal.requestImmediateSync(samples = 1)
         }
@@ -263,7 +284,9 @@ class TripOptionsCoordinator(context: Context) {
             endLatitude = endLat,
             endLongitude = endLon,
             mode = leg.transportMode,
-            routeId = leg.routeId
+            routeId = leg.routeId,
+            startRouteProgressMeters = leg.startRouteProgressMeters,
+            endRouteProgressMeters = leg.endRouteProgressMeters
         )
     }
 
