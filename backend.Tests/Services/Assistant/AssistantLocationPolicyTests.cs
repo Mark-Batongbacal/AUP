@@ -17,7 +17,7 @@ public sealed class AssistantLocationPolicyTests
             Now);
 
         Assert.Equal(AssistantLocationPolicy.Current, result.Reliability);
-        Assert.Equal(30, result.AgeSeconds);
+        Assert.Equal(30d, result.AgeSeconds!.Value);
         Assert.True(result.CanUseForReroute);
     }
 
@@ -32,7 +32,7 @@ public sealed class AssistantLocationPolicyTests
             Now);
 
         Assert.Equal(AssistantLocationPolicy.LastKnown, result.Reliability);
-        Assert.Equal(31, result.AgeSeconds);
+        Assert.Equal(31d, result.AgeSeconds!.Value);
         Assert.False(result.CanUseForReroute);
     }
 
@@ -91,6 +91,25 @@ public sealed class AssistantLocationPolicyTests
         Assert.Equal(AssistantLocationPolicy.Unknown, result.Reliability);
         Assert.Null(result.AgeSeconds);
         Assert.False(result.CanUseForReroute);
+    }
+
+    [Fact]
+    public void PersistedUnspecifiedTimestamp_IsTreatedAsUtc()
+    {
+        var persistedTimestamp = DateTime.SpecifyKind(
+            Now.AddSeconds(-12),
+            DateTimeKind.Unspecified);
+
+        var result = AssistantLocationPolicy.Assess(
+            15.1,
+            120.5,
+            20,
+            persistedTimestamp,
+            Now);
+
+        Assert.Equal(AssistantLocationPolicy.Current, result.Reliability);
+        Assert.Equal(12d, result.AgeSeconds!.Value);
+        Assert.True(result.CanUseForReroute);
     }
 
     [Fact]
