@@ -5,6 +5,7 @@ import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.network.ApiClient
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.storage.AuthSessionStore
+import com.example.frontend.core.storage.RecentFavoritesCache
 import com.example.frontend.core.storage.SharedPreferencesAuthSessionStore
 import com.example.frontend.data.ai.AiApi
 import com.example.frontend.data.ai.AiRepository
@@ -77,6 +78,11 @@ class TukiDataProvider(
         AppLanguagePreference.update(appContext, language)
     }
 
+    val recentFavoritesCache = RecentFavoritesCache(
+        context = appContext,
+        sessions = sessionStore,
+        gson = client.gson
+    )
     val authRepository: AuthRepository = AuthRepositoryImpl(
         authApi,
         usersApi,

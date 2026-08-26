@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,8 +20,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.frontend.LocalTukiDataProvider
 import com.example.frontend.components.BottomBar
+import com.example.frontend.components.PaginationControls
 import com.example.frontend.components.TukiTab
 import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.localization.TukiInterfaceText
@@ -49,6 +49,7 @@ import com.example.frontend.ui.theme.TukiForestSurface
 import com.example.frontend.ui.theme.TukiSurfaceRaised
 
 private enum class RecentFilter { All, Completed, Cancelled }
+private const val RECENT_PAGE_SIZE = 10
 
 @Composable
 fun RecentScreen(
@@ -65,15 +66,62 @@ fun RecentScreen(
     onFavoritesClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
+    val dataProvider = LocalTukiDataProvider.current
+    val cache = remember(dataProvider) { dataProvider?.recentFavoritesCache }
+    var cachedCommutes by remember(cache) { mutableStateOf(cache?.readRecents().orEmpty()) }
+    var observedRefresh by remember { mutableStateOf(false) }
+    var refreshCompleted by remember { mutableStateOf(false) }
     var filter by rememberSaveable { mutableStateOf(RecentFilter.All) }
+    var currentPage by rememberSaveable { mutableStateOf(0) }
     var pendingFavoriteRemoval by remember { mutableStateOf<RecentCommute?>(null) }
-    val uniqueCommutes = remember(commutes) { commutes.distinctBy { it.uniqueRecentIdentity() } }
+
+    LaunchedEffect(cache, commutes, isLoading, errorMessage) {
+        if (isLoading) {
+            observedRefresh = true
+        }
+
+        if (commutes.isNotEmpty()) {
+            cachedCommutes = commutes
+            cache?.writeRecents(commutes)
+        }
+
+        if (!isLoading && observedRefresh) {
+            if (errorMessage.isNullOrBlank()) {
+                cachedCommutes = commutes
+                cache?.writeRecents(commutes)
+                refreshCompleted = true
+            }
+            observedRefresh = false
+        }
+    }
+
+    val displayCommutes = when {
+        commutes.isNotEmpty() -> commutes
+        !refreshCompleted && cachedCommutes.isNotEmpty() -> cachedCommutes
+        !errorMessage.isNullOrBlank() && cachedCommutes.isNotEmpty() -> cachedCommutes
+        else -> commutes
+    }
+    val uniqueCommutes = remember(displayCommutes) {
+        displayCommutes.distinctBy { it.uniqueRecentIdentity() }
+    }
     val filtered = remember(uniqueCommutes, filter) {
         when (filter) {
             RecentFilter.All -> uniqueCommutes
             RecentFilter.Completed -> uniqueCommutes.filter { it.status.equals("Completed", true) }
             RecentFilter.Cancelled -> uniqueCommutes.filter { it.status.equals("Cancelled", true) }
         }
+    }
+    val totalPages = if (filtered.isEmpty()) 0 else ((filtered.size - 1) / RECENT_PAGE_SIZE) + 1
+    val safePage = currentPage.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+    val pagedCommutes = remember(filtered, safePage) {
+        filtered.drop(safePage * RECENT_PAGE_SIZE).take(RECENT_PAGE_SIZE)
+    }
+
+    LaunchedEffect(filter) {
+        currentPage = 0
+    }
+    LaunchedEffect(safePage, currentPage) {
+        if (safePage != currentPage) currentPage = safePage
     }
 
     Column(Modifier.fillMaxSize().background(TukiCream)) {
@@ -97,17 +145,18 @@ fun RecentScreen(
                 Spacer(Modifier.height(6.dp))
             }
 
+            if (!errorMessage.isNullOrBlank()) item {
+                Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
+            }
+            if (!favoriteErrorMessage.isNullOrBlank()) item {
+                Text(favoriteErrorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
+            }
+
             when {
-                isLoading -> item {
+                isLoading && filtered.isEmpty() -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 60.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = TukiTeal)
                     }
-                }
-                !errorMessage.isNullOrBlank() -> item {
-                    Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
-                }
-                !favoriteErrorMessage.isNullOrBlank() -> item {
-                    Text(favoriteErrorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
                 }
                 filtered.isEmpty() -> item {
                     Surface(
@@ -116,23 +165,42 @@ fun RecentScreen(
                         shape = RoundedCornerShape(20.dp)
                     ) {
                         Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(if (isGuest) TukiInterfaceText.signInToViewJourneys else TukiInterfaceText.noTripsYet, color = TukiMuted, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (isGuest) TukiInterfaceText.signInToViewJourneys else TukiInterfaceText.noTripsYet,
+                                color = TukiMuted,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
                     }
                 }
-                else -> itemsIndexed(filtered, key = { index, commute -> commute.recentListKey(index) }) { _, commute ->
-                    val recommendationId = commute.recommendationId
-                    val isFavorite = recommendationId != null && recommendationId in favoriteRecommendationIds
-                    RecentTripCard(
-                        commute = commute,
-                        isFavorite = isFavorite,
-                        favoriteWorking = recommendationId != null && recommendationId in favoriteWorkingRecommendationIds,
-                        canFavorite = !isGuest && !recommendationId.isNullOrBlank(),
-                        onFavoriteClick = {
-                            if (isFavorite) pendingFavoriteRemoval = commute else onToggleFavorite(commute)
-                        },
-                        onClick = { onCommuteClick(commute) }
-                    )
+                else -> {
+                    itemsIndexed(
+                        pagedCommutes,
+                        key = { index, commute -> commute.recentListKey((safePage * RECENT_PAGE_SIZE) + index) }
+                    ) { _, commute ->
+                        val recommendationId = commute.recommendationId
+                        val isFavorite = recommendationId != null && recommendationId in favoriteRecommendationIds
+                        RecentTripCard(
+                            commute = commute,
+                            isFavorite = isFavorite,
+                            favoriteWorking = recommendationId != null && recommendationId in favoriteWorkingRecommendationIds,
+                            canFavorite = !isGuest && !recommendationId.isNullOrBlank(),
+                            onFavoriteClick = {
+                                if (isFavorite) pendingFavoriteRemoval = commute else onToggleFavorite(commute)
+                            },
+                            onClick = { onCommuteClick(commute) }
+                        )
+                    }
+
+                    if (totalPages > 1) {
+                        item(key = "recent-pagination") {
+                            PaginationControls(
+                                currentPage = safePage,
+                                totalPages = totalPages,
+                                onPageChange = { currentPage = it }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -167,7 +235,11 @@ fun RecentScreen(
                         onToggleFavorite(commute)
                     }
                 ) {
-                    Text(if (filipino) "Alisin" else "Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (filipino) "Alisin" else "Remove",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
@@ -197,7 +269,11 @@ private fun RecentTabs(selected: RecentFilter, onSelected: (RecentFilter) -> Uni
                 color = if (selected == item) TukiDeepTeal else Color.Transparent
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(label, color = if (selected == item) Color.White else TukiInk, style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        label,
+                        color = if (selected == item) Color.White else TukiInk,
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             }
         }
@@ -274,8 +350,11 @@ private fun RecentTripCard(
                 modifier = Modifier.size(40.dp).clickable(enabled = canFavorite && !favoriteWorking, onClick = onFavoriteClick),
                 contentAlignment = Alignment.Center
             ) {
-                if (favoriteWorking) CircularProgressIndicator(Modifier.size(18.dp), color = TukiTeal, strokeWidth = 2.dp)
-                else Text(if (isFavorite) "★" else "☆", color = TukiOrange, style = MaterialTheme.typography.titleLarge)
+                if (favoriteWorking) {
+                    CircularProgressIndicator(Modifier.size(18.dp), color = TukiTeal, strokeWidth = 2.dp)
+                } else {
+                    Text(if (isFavorite) "★" else "☆", color = TukiOrange, style = MaterialTheme.typography.titleLarge)
+                }
             }
             Text(
                 "›",
