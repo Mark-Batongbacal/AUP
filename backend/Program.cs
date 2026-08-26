@@ -106,6 +106,7 @@ builder.Services.AddScoped<ITripLandmarkCandidateRepository, TripLandmarkCandida
 builder.Services.AddScoped<ITransferConnectionRepository, TransferConnectionRepository>();
 builder.Services.AddScoped<ITricyclePointRepository, TricyclePointRepository>();
 builder.Services.AddScoped<ITricyclePointSubmissionRepository, TricyclePointSubmissionRepository>();
+builder.Services.AddScoped<ITricyclePointSubmissionPublishingRepository, TricyclePointSubmissionPublishingRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddScoped<IApiKeyService, SqlServerApiKeyService>();
 builder.Services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
@@ -153,6 +154,7 @@ builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
 builder.Services.AddScoped<ITricyclePointSubmissionService, TricyclePointSubmissionService>();
 builder.Services.AddScoped<IAdminTricyclePointSubmissionService, AdminTricyclePointSubmissionService>();
+builder.Services.AddScoped<ITricyclePointSubmissionPublishingService, TricyclePointSubmissionPublishingService>();
 builder.Services.AddSingleton<ITricycleProofStorage, FileSystemTricycleProofStorage>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
