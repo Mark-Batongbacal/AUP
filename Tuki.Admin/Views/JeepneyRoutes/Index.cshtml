@@ -1,0 +1,94 @@
+@model Tuki.Admin.ViewModels.JeepneyRoutes.JeepneyRouteListViewModel
+@{
+    ViewData["Title"] = "Jeepney Routes";
+}
+
+<div class="review-page-header">
+    <div>
+        <a asp-controller="Dashboard" asp-action="Index" class="review-back-link">← Back to dashboard</a>
+        <p class="eyebrow">JEEPNEY ROUTES</p>
+        <h1>Route management foundation</h1>
+        <p>Create route metadata as inactive drafts. Geometry plotting and publishing are handled by later route-management workflows.</p>
+    </div>
+    <a asp-action="Create" class="btn btn-tuki">Create route draft</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
+}
+
+<form method="get" class="d-flex flex-wrap gap-3 align-items-center mb-3">
+    <label class="d-flex gap-2 align-items-center">
+        <input type="checkbox" name="includeDrafts" value="true" @(Model.IncludeDrafts ? "checked" : null) /> Drafts
+        <input type="hidden" name="includeDrafts" value="false" />
+    </label>
+    <label class="d-flex gap-2 align-items-center">
+        <input type="checkbox" name="includeActive" value="true" @(Model.IncludeActive ? "checked" : null) /> Published
+        <input type="hidden" name="includeActive" value="false" />
+    </label>
+    <button type="submit" class="btn btn-outline-tuki">Apply filter</button>
+</form>
+
+@if (Model.Routes.Count == 0)
+{
+    <div class="empty-review-state">
+        <h2>No jeepney routes found</h2>
+        <p>Create an inactive route draft to begin defining verified jeepney data.</p>
+    </div>
+}
+else
+{
+    <div class="admin-table-card">
+        <table class="table mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Route</th>
+                    <th>Origin → Destination</th>
+                    <th>Status</th>
+                    <th>Geometry</th>
+                    <th>Fare</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var route in Model.Routes)
+            {
+                <tr>
+                    <td>
+                        <strong>@route.RouteName</strong><br />
+                        <span class="text-muted small">@route.RouteCode</span>
+                    </td>
+                    <td>@route.OriginName → @route.DestinationName</td>
+                    <td>
+                        <span class="status-pill @(route.IsActive ? "status-active" : "status-archived")">
+                            @(route.IsActive ? "Published" : "Draft")
+                        </span>
+                    </td>
+                    <td>
+                        @route.PointCount points
+                        @if (route.HasPolyline)
+                        {
+                            <span class="d-block text-muted small">Polyline ready</span>
+                        }
+                        else
+                        {
+                            <span class="d-block text-muted small">No plotted geometry</span>
+                        }
+                    </td>
+                    <td>@(route.BaseFare is null ? "Not set" : $"₱{route.BaseFare:0.00}")</td>
+                    <td class="text-end">
+                        <a asp-action="Edit" asp-route-id="@route.RouteId" class="btn btn-outline-tuki btn-sm">
+                            @(route.IsActive ? "View" : "Edit draft")
+                        </a>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

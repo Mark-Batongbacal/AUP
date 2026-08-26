@@ -1,0 +1,113 @@
+@model Tuki.Admin.ViewModels.JeepneyRoutes.JeepneyRouteEditViewModel
+@{
+    ViewData["Title"] = Model.IsCreate ? "Create Jeepney Route Draft" : $"Jeepney Route #{Model.RouteId}";
+    var canEdit = Model.CanEdit;
+}
+
+<div class="review-detail-header">
+    <div>
+        <a asp-action="Index" class="review-back-link">← Back to jeepney routes</a>
+        <p class="eyebrow">JEEPNEY ROUTE</p>
+        <h1>@(Model.IsCreate ? "Create route draft" : Model.Route?.RouteName ?? "Route draft")</h1>
+        <p>Define verified route metadata first. Plotting geometry, advanced editing, and publishing are intentionally separated into later workflows.</p>
+    </div>
+    @if (Model.Route is not null)
+    {
+        <span class="status-pill @(Model.Route.IsActive ? "status-active" : "status-archived")">
+            @(Model.Route.IsActive ? "Published" : "Draft")
+        </span>
+    }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
+}
+<div asp-validation-summary="ModelOnly" class="review-alert review-alert-error"></div>
+
+@if (Model.Route is not null)
+{
+    <section class="review-panel mb-3">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">ROUTE READINESS</span>
+                <h2>Geometry status</h2>
+            </div>
+        </div>
+        <div class="review-meta-grid">
+            <div><dt>Route points</dt><dd>@Model.Route.PointCount</dd></div>
+            <div><dt>Waypoints</dt><dd>@Model.Route.WaypointCount</dd></div>
+            <div><dt>Polyline</dt><dd>@(Model.Route.HasPolyline ? "Available" : "Not plotted yet")</dd></div>
+            <div><dt>Passenger visibility</dt><dd>@(Model.Route.IsActive ? "Published / active" : "Hidden draft")</dd></div>
+        </div>
+        @if (!Model.Route.IsActive)
+        {
+            <div class="review-alert review-alert-success mt-3 mb-0">
+                This draft is inactive, so it is excluded from the existing passenger active-route endpoint.
+            </div>
+        }
+    </section>
+}
+
+<section class="review-panel review-form-panel">
+    <div class="panel-heading">
+        <div>
+            <span class="card-kicker">ROUTE METADATA</span>
+            <h2>@(canEdit ? "Draft details" : "Published route details")</h2>
+            <p>@(canEdit ? "Save the core route information before plotting its ordered geometry." : "Published routes are read-only in this foundation workflow.")</p>
+        </div>
+    </div>
+
+    <form asp-action="@(Model.IsCreate ? "Create" : "Edit")" asp-route-id="@Model.RouteId" method="post">
+        <div class="review-form-grid">
+            <div class="field-group">
+                <label asp-for="Request.RouteCode">Route code</label>
+                <input asp-for="Request.RouteCode" class="form-control" readonly="@(!canEdit)" placeholder="e.g. XEVERA-TO-ASTRO" />
+                <span asp-validation-for="Request.RouteCode" class="field-error"></span>
+            </div>
+            <div class="field-group">
+                <label asp-for="Request.RouteName">Route name</label>
+                <input asp-for="Request.RouteName" class="form-control" readonly="@(!canEdit)" />
+                <span asp-validation-for="Request.RouteName" class="field-error"></span>
+            </div>
+            <div class="field-group">
+                <label asp-for="Request.OriginName">Origin</label>
+                <input asp-for="Request.OriginName" class="form-control" readonly="@(!canEdit)" />
+                <span asp-validation-for="Request.OriginName" class="field-error"></span>
+            </div>
+            <div class="field-group">
+                <label asp-for="Request.DestinationName">Destination</label>
+                <input asp-for="Request.DestinationName" class="form-control" readonly="@(!canEdit)" />
+                <span asp-validation-for="Request.DestinationName" class="field-error"></span>
+            </div>
+            <div class="field-group">
+                <label asp-for="Request.DirectionName">Direction</label>
+                <input asp-for="Request.DirectionName" class="form-control" readonly="@(!canEdit)" placeholder="Optional" />
+            </div>
+            <div class="field-group">
+                <label asp-for="Request.OperatorName">Operator</label>
+                <input asp-for="Request.OperatorName" class="form-control" readonly="@(!canEdit)" placeholder="Optional" />
+            </div>
+            <div class="field-group">
+                <label asp-for="Request.BaseFare">Base fare</label>
+                <input asp-for="Request.BaseFare" class="form-control" inputmode="decimal" readonly="@(!canEdit)" />
+                <span asp-validation-for="Request.BaseFare" class="field-error"></span>
+            </div>
+            <div class="field-group review-form-wide">
+                <label asp-for="Request.Description">Description</label>
+                <textarea asp-for="Request.Description" class="form-control" rows="4" readonly="@(!canEdit)"></textarea>
+            </div>
+        </div>
+
+        @if (canEdit)
+        {
+            <button type="submit" class="btn btn-tuki">
+                @(Model.IsCreate ? "Create inactive draft" : "Save draft metadata")
+            </button>
+        }
+    </form>
+</section>

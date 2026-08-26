@@ -1,0 +1,24 @@
+using backend.Models.JeepneyRouteManagement;
+
+namespace backend.Services.Transportation;
+
+public interface IAdminJeepneyRouteManagementService
+{
+    Task<IReadOnlyList<AdminJeepneyRouteResponse>> GetAllAsync(
+        bool includeActive = true,
+        bool includeDrafts = true,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRouteResponse?> GetByIdAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRouteMutationResult> CreateDraftAsync(
+        AdminJeepneyRouteMutationRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRouteMutationResult> UpdateDraftAsync(
+        long routeId,
+        AdminJeepneyRouteMutationRequest request,
+        CancellationToken cancellationToken = default);
+}

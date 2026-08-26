@@ -25,4 +25,11 @@
         <p>Create, edit, archive, restore, and check possible duplicate TODA points used by TUKI passengers.</p>
         <a asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true" class="btn btn-tuki mt-2">Manage official points</a>
     </article>
+
+    <article class="dashboard-card">
+        <span class="card-kicker">ROUTE MANAGEMENT</span>
+        <h2>Jeepney routes</h2>
+        <p>Create inactive route drafts and maintain verified route metadata before plotting and publishing geometry.</p>
+        <a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-tuki mt-2">Manage jeepney routes</a>
+    </article>
 </div>
