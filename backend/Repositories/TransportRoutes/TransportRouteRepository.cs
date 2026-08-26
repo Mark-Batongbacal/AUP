@@ -175,4 +175,18 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }
+
+    public async Task<bool> ActivateAsync(long routeId, CancellationToken cancellationToken = default)
+    {
+        var Route = await _context.TransportRoutes.FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
+        if (Route is null)
+        {
+            return false;
+        }
+
+        Route.IsActive = true;
+        Route.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
 }
