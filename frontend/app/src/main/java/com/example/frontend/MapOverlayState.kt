@@ -27,6 +27,9 @@ object TukiMapOverlayState {
     var selectedJourneyJeepneyRoutes by mutableStateOf<List<TransitRouteOverlay>>(emptyList())
         private set
 
+    var routeReplacementInFlight by mutableStateOf(false)
+        private set
+
     private var todaLoadInProgress = false
     private var todaLoaded = false
 
@@ -38,6 +41,17 @@ object TukiMapOverlayState {
     fun clearJourneyJeepneyRoutes() {
         selectedJourneyJeepneyRouteIds = emptySet()
         selectedJourneyJeepneyRoutes = emptyList()
+    }
+
+    fun beginRouteReplacement() {
+        routeReplacementInFlight = true
+    }
+
+    fun finishRouteReplacement(clearPreviousJourneyRoutes: Boolean) {
+        if (clearPreviousJourneyRoutes) {
+            clearJourneyJeepneyRoutes()
+        }
+        routeReplacementInFlight = false
     }
 
     suspend fun ensureSelectedJeepneyRoutes(dataProvider: TukiDataProvider?) {
