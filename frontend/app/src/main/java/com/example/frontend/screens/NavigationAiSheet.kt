@@ -47,14 +47,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.core.location.NavigationSyncSignal
+import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.ai.ActiveTripAssistantRequest
 import com.example.frontend.data.ai.AssistantDestinationCandidateDto
 import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantResponseDto
+import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.places.DestinationSearchResultDto
+import java.time.Instant
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -93,25 +96,25 @@ fun NavigationAiSheet(
     val filipino = language.equals("Filipino", ignoreCase = true)
     val quickPrompts = if (filipino) {
         listOf(
-            "Tama pa ba yung route natin?",
-            "Saan ako bababa?",
-            "₱30 na lang pera ko",
-            "Ayoko mag-trike",
-            "Pagod na ako, less walking sana"
+            "Mas kaunting lakad, maximum 1800 meters",
+            "Normal na lakad, maximum 2150 meters",
+            "Okay lang mas maraming lakad, maximum 2500 meters",
+            "Iwasan ang tricycle",
+            "Iwasan ang jeepney"
         )
     } else {
         listOf(
-            "Am I still on the right route?",
-            "Where do I get off?",
-            "I only have ₱30 left",
-            "I don't want to take a tricycle",
-            "I'm tired, less walking please"
+            "Less walking, maximum 1800 meters",
+            "Normal walking, maximum 2150 meters",
+            "More walking is okay, maximum 2500 meters",
+            "Avoid tricycles",
+            "Avoid jeepneys"
         )
     }
     val intro = if (filipino) {
-        "Magtanong ka lang tungkol sa active trip natin. Kung may gusto kang baguhin, ipapakita ko muna yung bagong route bago natin palitan yung current trip."
+        "Sabihin mo ang walking preference mo o kung anong sasakyan ang gusto mong iwasan. Kapag may valid na ibang route, awtomatikong ire-reroute ni TUKI ang natitirang biyahe."
     } else {
-        "Ask me anything about this active trip. If you want to change something, I’ll show the replacement route first before changing the current trip."
+        "Tell me your walking preference or which vehicle you want to avoid. If another valid route is available, TUKI will automatically reroute the rest of your trip."
     }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -158,6 +161,26 @@ fun NavigationAiSheet(
         )
     }
 
+    suspend fun syncCurrentLocationForAssistant() {
+        val location = context.currentDeviceLocation() ?: return
+        val active = provider.navigationRepository.getActiveNavigation()
+        if (active !is ApiResult.Success) return
+
+        val timestampMillis = if (location.time > 0L) location.time else System.currentTimeMillis()
+        NavigationSyncSignal.requestImmediateSync(samples = 1)
+        provider.navigationRepository.updateLocation(
+            active.data.sessionId,
+            NavigationLocationUpdate(
+                latitude = location.latitude,
+                longitude = location.longitude,
+                accuracyMeters = location.accuracy.toDouble(),
+                timestamp = Instant.ofEpochMilli(timestampMillis).toString(),
+                speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null,
+                bearingDegrees = if (location.hasBearing()) location.bearing.toDouble() else null
+            )
+        )
+    }
+
     fun send(text: String, destinationId: String? = null) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || thinking || applyingRecommendationId != null) return
@@ -169,8 +192,23 @@ fun NavigationAiSheet(
         input = ""
         thinking = true
         scope.launch {
+            // Routine navigation fixes are cached locally for efficiency. A
+            // preference-driven reroute needs the backend TripSession to own a
+            // fresh location, so force one normal navigation location update
+            // before asking the active-trip assistant.
+            syncCurrentLocationForAssistant()
+
             when (val result = ask(trimmed, destinationId)) {
-                is ApiResult.Success -> appendAssistantResponse(result.data, trimmed)
+                is ApiResult.Success -> {
+                    appendAssistantResponse(result.data, trimmed)
+                    if (result.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true)) {
+                        NavigationSyncSignal.requestImmediateSync(samples = 1)
+                        when (val refreshed = provider.navigationRepository.getActiveNavigation()) {
+                            is ApiResult.Success -> onReplanApplied(refreshed.data)
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                }
                 is ApiResult.Failure -> {
                     messages = messages + NavigationAiMessage(
                         id = System.currentTimeMillis() + 1,
@@ -199,6 +237,7 @@ fun NavigationAiSheet(
         )
         thinking = true
         scope.launch {
+            syncCurrentLocationForAssistant()
             when (val result = provider.aiRepository.askTrip(
                 sessionId,
                 ActiveTripAssistantRequest(
@@ -207,7 +246,16 @@ fun NavigationAiSheet(
                     conversationId = message.conversationId
                 )
             )) {
-                is ApiResult.Success -> appendAssistantResponse(result.data, requestText)
+                is ApiResult.Success -> {
+                    appendAssistantResponse(result.data, requestText)
+                    if (result.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true)) {
+                        NavigationSyncSignal.requestImmediateSync(samples = 1)
+                        when (val refreshed = provider.navigationRepository.getActiveNavigation()) {
+                            is ApiResult.Success -> onReplanApplied(refreshed.data)
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                }
                 is ApiResult.Failure -> {
                     messages = messages + NavigationAiMessage(
                         id = System.currentTimeMillis() + 1,
@@ -293,7 +341,7 @@ fun NavigationAiSheet(
                 Column {
                     Text("Ask TUKI", color = NavigationAiDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                     Text(
-                        if (filipino) "Tanong at fine-tuning para sa active trip" else "Questions and fine-tuning for this active trip",
+                        if (filipino) "Preferences para sa automatic live reroute" else "Preferences for automatic live rerouting",
                         color = NavigationAiMuted,
                         fontSize = 12.sp
                     )
@@ -349,6 +397,9 @@ fun NavigationAiSheet(
                             }
                         }
 
+                        // Compatibility for older backend responses. The current
+                        // active-trip endpoint auto-applies preference reroutes and
+                        // therefore returns no route cards on success.
                         if (!message.fromUser && message.journeys.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
                             message.journeys.forEachIndexed { index, journey ->
@@ -377,7 +428,7 @@ fun NavigationAiSheet(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (filipino) "Tinitingnan ni TUKI yung trip natin…" else "TUKI is checking your trip…",
+                                if (filipino) "Tinitingnan ni TUKI yung bagong route…" else "TUKI is checking a new route…",
                                 color = NavigationAiMuted,
                                 fontSize = 12.sp
                             )
@@ -418,9 +469,9 @@ fun NavigationAiSheet(
                 item {
                     Text(
                         if (filipino) {
-                            "Hindi awtomatikong papalitan ni TUKI ang active route. Kapag meaningful yung pagbabago, pipili ka muna ng exact route proposal."
+                            "Pwede mong pindutin ang preference sa taas o i-type ito sa chat. Kapag walang ibang valid na route para sa preference mo, hindi gagalawin ni TUKI ang current trip."
                         } else {
-                            "TUKI will not silently replace your active route. For meaningful changes, you choose the exact route proposal first."
+                            "Use a preference button above or type it naturally. If no other valid route matches your preference, TUKI keeps the current trip unchanged."
                         },
                         modifier = Modifier.padding(top = 3.dp, bottom = 5.dp),
                         color = NavigationAiMuted,
@@ -449,7 +500,7 @@ fun NavigationAiSheet(
                     enabled = !thinking && applyingRecommendationId == null,
                     placeholder = {
                         Text(
-                            if (filipino) "Magtanong o mag-fine-tune…" else "Ask or fine-tune the trip…",
+                            if (filipino) "I-type ang walking o vehicle preference…" else "Type a walking or vehicle preference…",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyMedium
                         )
