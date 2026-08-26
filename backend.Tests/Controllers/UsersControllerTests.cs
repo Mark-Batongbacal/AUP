@@ -24,7 +24,8 @@ public sealed class UsersControllerTests
         var response = await controller.GetCurrent(CancellationToken.None);
 
         var ok = Assert.IsType<OkObjectResult>(response.Result);
-        Assert.Same(profile, ok.Value);
+        var actual = Assert.IsType<UserProfileResponse>(ok.Value);
+        Assert.Equal(profile, actual);
     }
 
     [Fact]
