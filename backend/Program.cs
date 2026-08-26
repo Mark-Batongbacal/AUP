@@ -220,14 +220,16 @@ app.UseCors("Frontend");
 app.Use(async (context, next) =>
 {
     var stopwatch = Stopwatch.StartNew();
-    await next();
-    stopwatch.Stop();
-
-    if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
+    try
     {
-        context.RequestServices.GetRequiredService<ITukiTelemetry>().TrackRequest(
-            context.Request.Method,
-            context.Request.Path.Value ?? string.Empty,
+        await next();
+    }
+    finally
+    {
+        stopwatch.Stop();
+        var telemetry = context.RequestServices.GetRequiredService<ITukiTelemetry>();
+        telemetry.RecordRequest(
+            context.Request.Path,
             context.Response.StatusCode,
             stopwatch.Elapsed.TotalMilliseconds);
     }
