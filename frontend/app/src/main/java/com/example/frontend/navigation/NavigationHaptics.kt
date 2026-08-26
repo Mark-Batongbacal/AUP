@@ -9,6 +9,8 @@ import android.util.Log
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 
 private const val NavigationHapticsTag = "TukiNavigationHaptics"
+private const val HapticOffAmplitude = 0
+private const val HapticMaxAmplitude = 255
 
 enum class NavigationHapticEventType {
     PREPARE_TO_ALIGHT,
@@ -22,6 +24,11 @@ enum class NavigationHapticEventType {
 data class NavigationHapticEvent(
     val key: String,
     val type: NavigationHapticEventType
+)
+
+internal data class NavigationHapticPattern(
+    val timings: LongArray,
+    val amplitudes: IntArray
 )
 
 fun interface NavigationHapticPerformer {
@@ -75,21 +82,19 @@ class AndroidNavigationHapticPerformer(
             return
         }
 
-        val timings = when (type) {
-            NavigationHapticEventType.PREPARE_TO_ALIGHT -> longArrayOf(0, 90, 90, 90)
-            NavigationHapticEventType.ALIGHT_NOW -> longArrayOf(0, 180, 80, 180)
-            NavigationHapticEventType.MISSED_ALIGHT -> longArrayOf(0, 260, 100, 260, 100, 260)
-            NavigationHapticEventType.ALIGHT_STATUS_UNKNOWN -> longArrayOf(0, 140, 90, 140, 90, 140)
-            NavigationHapticEventType.REROUTE_SUCCEEDED -> longArrayOf(0, 70, 60, 140)
-            NavigationHapticEventType.TURN_NOW -> longArrayOf(0, 120)
-        }
-
+        val pattern = navigationHapticPattern(type)
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createWaveform(timings, -1))
+                vibrator.vibrate(
+                    VibrationEffect.createWaveform(
+                        pattern.timings,
+                        pattern.amplitudes,
+                        -1
+                    )
+                )
             } else {
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(timings, -1)
+                vibrator.vibrate(pattern.timings, -1)
             }
         }.onSuccess {
             Log.d(NavigationHapticsTag, "Dispatched navigation haptic: $type")
@@ -97,6 +102,47 @@ class AndroidNavigationHapticPerformer(
             Log.w(NavigationHapticsTag, "Navigation haptic failed: $type", error)
         }
     }
+}
+
+internal fun navigationHapticPattern(type: NavigationHapticEventType): NavigationHapticPattern =
+    when (type) {
+        // This is intentionally the old ALIGHT_NOW pattern: prepare should be clearly noticeable,
+        // but still short enough not to feel urgent yet.
+        NavigationHapticEventType.PREPARE_TO_ALIGHT -> patternOf(
+            0, 180, 80, 180
+        )
+
+        // Incoming-call style alarm: two long maximum-strength pulses followed by a pause,
+        // repeated for roughly ten seconds. It is intentionally bounded rather than an infinite
+        // vibration so a dropped UI/network state can never leave the motor running forever.
+        NavigationHapticEventType.ALIGHT_NOW -> patternOf(
+            0,
+            520, 180, 520, 720,
+            520, 180, 520, 720,
+            520, 180, 520, 720,
+            520, 180, 520, 720,
+            520, 180, 520, 720
+        )
+
+        NavigationHapticEventType.MISSED_ALIGHT -> patternOf(
+            0, 260, 100, 260, 100, 260
+        )
+        NavigationHapticEventType.ALIGHT_STATUS_UNKNOWN -> patternOf(
+            0, 140, 90, 140, 90, 140
+        )
+        NavigationHapticEventType.REROUTE_SUCCEEDED -> patternOf(
+            0, 70, 60, 140
+        )
+        NavigationHapticEventType.TURN_NOW -> patternOf(
+            0, 120
+        )
+    }
+
+private fun patternOf(vararg timings: Long): NavigationHapticPattern {
+    val amplitudes = IntArray(timings.size) { index ->
+        if (index % 2 == 0) HapticOffAmplitude else HapticMaxAmplitude
+    }
+    return NavigationHapticPattern(timings, amplitudes)
 }
 
 internal fun navigationHapticEvent(
