@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Tuki.Admin.Repositories.AdminAuth;
 using Tuki.Admin.Repositories.Common;
+using Tuki.Admin.Repositories.JeepneyRoutes;
 using Tuki.Admin.Repositories.TricyclePoints;
 using Tuki.Admin.Repositories.TricycleSubmissions;
 using Tuki.Admin.Services.AdminAuth;
@@ -52,6 +53,7 @@ builder.Services.AddHttpClient(BackendApiClientNames.TukiBackend, (serviceProvid
 builder.Services.AddScoped<IAdminAuthRepository, AdminAuthRepository>();
 builder.Services.AddScoped<IAdminTricycleSubmissionRepository, AdminTricycleSubmissionRepository>();
 builder.Services.AddScoped<IAdminTricyclePointRepository, AdminTricyclePointRepository>();
+builder.Services.AddScoped<IAdminJeepneyRouteRepository, AdminJeepneyRouteRepository>();
 builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
 
 var app = builder.Build();

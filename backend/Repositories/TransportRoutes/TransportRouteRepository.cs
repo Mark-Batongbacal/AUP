@@ -28,10 +28,51 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
             .OrderBy(route => route.RouteName)
             .ToListAsync(cancellationToken);
 
+    public Task<List<TransportRoute>> GetAllByTransportModeCodeForAdminAsync(
+        string transportModeCode,
+        bool includeActive,
+        bool includeInactive,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.TransportRoutes
+            .AsNoTracking()
+            .Include(route => route.TransportMode)
+            .Include(route => route.RoutePoints.OrderBy(point => point.PointOrder))
+            .Include(route => route.RouteWaypoints.OrderBy(point => point.WaypointOrder))
+            .Where(route => route.TransportMode.Code == transportModeCode);
+
+        if (!includeActive)
+            query = query.Where(route => !route.IsActive);
+        else if (!includeInactive)
+            query = query.Where(route => route.IsActive);
+
+        return query
+            .OrderBy(route => route.RouteName)
+            .ThenBy(route => route.RouteCode)
+            .ToListAsync(cancellationToken);
+    }
+
     public Task<TransportRoute?> GetByIdAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
+
+    public Task<TransportRoute?> GetByIdWithPointsForAdminAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
+            .AsNoTracking()
+            .Include(route => route.TransportMode)
+            .Include(route => route.RoutePoints.OrderBy(point => point.PointOrder))
+            .Include(route => route.RouteWaypoints.OrderBy(point => point.WaypointOrder))
+            .FirstOrDefaultAsync(route => route.RouteId == routeId, cancellationToken);
+
+    public Task<TransportRoute?> GetTrackedByIdAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
+            .Include(route => route.TransportMode)
+            .FirstOrDefaultAsync(route => route.RouteId == routeId, cancellationToken);
 
     public Task<TransportRoute?> GetByRouteCodeAsync(string routeCode, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
@@ -53,19 +94,12 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
             .OrderBy(Route => Route.RouteName)
             .ToListAsync(cancellationToken);
 
-    /// <summary>
-    /// Includes the Route's start Stop, end Stop, and transport mode.
-    /// </summary>
     public Task<TransportRoute?> GetWithEndpointsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .Include(Route => Route.TransportMode)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    /// <summary>
-    /// Includes Route-Stop rows and each Stop. Use GetOrderedRouteStopsAsync when ordered sequence
-    /// materialization is required.
-    /// </summary>
     public Task<TransportRoute?> GetWithRouteStopsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
@@ -73,9 +107,6 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
                 .ThenInclude(routeStop => routeStop.Stop)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    /// <summary>
-    /// Includes Route-Stop rows and stops ordered by StopOrder.
-    /// </summary>
     public Task<TransportRoute?> GetWithOrderedRouteStopsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
@@ -91,9 +122,6 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
             .OrderBy(routeStop => routeStop.StopOrder)
             .ToListAsync(cancellationToken);
 
-    /// <summary>
-    /// Includes active Route segments and their from/to stops ordered by SegmentOrder.
-    /// </summary>
     public Task<TransportRoute?> GetWithRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
@@ -105,9 +133,6 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
                     .ThenInclude(routeStop => routeStop.Stop)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    /// <summary>
-    /// Returns active Route segments and their from/to stops ordered by SegmentOrder.
-    /// </summary>
     public Task<List<RouteSegment>> GetOrderedRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.RouteSegments
             .AsNoTracking()
