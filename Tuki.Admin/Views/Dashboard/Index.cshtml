@@ -13,16 +13,16 @@
 
 <div class="dashboard-grid">
     <article class="dashboard-card">
-        <span class="card-kicker">NEXT MODULE</span>
+        <span class="card-kicker">REVIEW QUEUE</span>
         <h2>Tricycle point submissions</h2>
-        <p>Review user-submitted locations and proof before publishing them to TUKI.</p>
-        <span class="status-pill">Not implemented yet</span>
+        <p>Review passenger-submitted proof, verify the detected map location, and correct official point details.</p>
+        <a asp-controller="TricycleSubmissions" asp-action="Index" asp-route-status="Pending" class="btn btn-tuki mt-2">Review submissions</a>
     </article>
 
     <article class="dashboard-card">
         <span class="card-kicker">DATA MANAGEMENT</span>
         <h2>Official tricycle points</h2>
         <p>Approved points will eventually be managed from this portal without changing the passenger app.</p>
-        <span class="status-pill">Not implemented yet</span>
+        <span class="status-pill">Coming next</span>
     </article>
 </div>
