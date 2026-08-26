@@ -152,6 +152,7 @@ builder.Services.AddScoped<ILocalAuthenticationService, LocalAuthenticationServi
 builder.Services.AddScoped<IRoutePointService, RoutePointService>();
 builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
+builder.Services.AddScoped<IAdminTricyclePointManagementService, AdminTricyclePointManagementService>();
 builder.Services.AddScoped<ITricyclePointSubmissionService, TricyclePointSubmissionService>();
 builder.Services.AddScoped<IAdminTricyclePointSubmissionService, AdminTricyclePointSubmissionService>();
 builder.Services.AddScoped<ITricyclePointSubmissionPublishingService, TricyclePointSubmissionPublishingService>();
