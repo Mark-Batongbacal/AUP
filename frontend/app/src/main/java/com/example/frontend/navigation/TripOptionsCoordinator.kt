@@ -1,6 +1,7 @@
 package com.example.frontend.navigation
 
 import android.content.Context
+import com.example.frontend.TukiMapOverlayState
 import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.location.LocationDetectionFailureMessage
 import com.example.frontend.core.location.NavigationSyncSignal
@@ -290,8 +291,23 @@ class TripOptionsCoordinator(context: Context) {
         )
     }
 
-    private suspend fun reroute(sessionId: String, request: NavigationRerouteRequest): ApiResult<NavigationSnapshotDto> {
-        return rerouteDispatcher.reroute(sessionId, request)
+    private suspend fun reroute(
+        sessionId: String,
+        request: NavigationRerouteRequest
+    ): ApiResult<NavigationSnapshotDto> {
+        TukiMapOverlayState.beginRouteReplacement()
+        var succeeded = false
+        return try {
+            rerouteDispatcher.reroute(sessionId, request).also { result ->
+                succeeded = result is ApiResult.Success
+            }
+        } finally {
+            // Failed reroutes restore the existing overlays. Successful reroutes discard the old
+            // journey highlights so no stale route can survive underneath the replacement geometry.
+            TukiMapOverlayState.finishRouteReplacement(
+                clearPreviousJourneyRoutes = succeeded
+            )
+        }
     }
 
     private suspend fun currentRerouteGpsFix(): RerouteGpsFix? {
