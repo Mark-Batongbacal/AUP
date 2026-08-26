@@ -155,21 +155,24 @@ a { color: var(--tuki-teal); }
 .status-pending { background: #fff0c9; color: #775314; }
 .status-needschanges { background: #e7f2ff; color: #245a86; }
 .status-rejected { background: #fde8e5; color: #9b332b; }
-.status-approved { background: #dff5e8; color: #256840; }
+.status-approved, .status-active { background: #dff5e8; color: #256840; }
+.status-archived { background: #ece9e0; color: #5d6665; }
 .review-alert { padding: 14px 16px; border-radius: 14px; margin-bottom: 16px; }
 .review-alert-error { background: #fde8e5; color: #8d3028; }
 .review-alert-success { background: #dff5e8; color: #256840; }
-.empty-review-state, .review-panel, .review-action-card, .submission-table-wrap {
+.empty-review-state, .review-panel, .review-action-card, .submission-table-wrap, .admin-table-card {
   background: white;
   border: 1px solid var(--tuki-border);
   border-radius: 20px;
 }
 .empty-review-state { padding: 34px; text-align: center; }
-.submission-table-wrap { overflow-x: auto; }
+.submission-table-wrap, .admin-table-card { overflow-x: auto; }
 .submission-table { width: 100%; border-collapse: collapse; }
 .submission-table th, .submission-table td { padding: 16px; border-bottom: 1px solid var(--tuki-border); vertical-align: middle; white-space: nowrap; }
 .submission-table th { color: var(--tuki-muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; }
 .submission-table tr:last-child td { border-bottom: 0; }
+.admin-table-card .table > :not(caption) > * > * { padding: 16px; border-color: var(--tuki-border); }
+.admin-table-card thead th { color: var(--tuki-muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; }
 .review-pagination { margin-top: 18px; }
 .review-detail-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 20px; margin-bottom: 20px; }
 .review-panel { padding: 22px; min-width: 0; }
@@ -190,6 +193,11 @@ a { color: var(--tuki-teal); }
 .review-action-card h3 { color: var(--tuki-deep); font-weight: 800; }
 .review-action-card textarea { margin: 14px 0; }
 .review-action-danger { border-color: #efc9c5; }
+.duplicate-warning-box { display: grid; gap: 10px; }
+.duplicate-clear { padding: 14px; border-radius: 12px; background: #eef8f2; color: #256840; }
+.duplicate-warning-title { font-weight: 800; color: #8a5a12; }
+.duplicate-warning-item { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid #efd9a8; border-radius: 12px; background: #fff8e8; }
+.duplicate-warning-item span { color: var(--tuki-muted); font-size: .86rem; }
 
 @media (max-width: 850px) {
   .review-detail-grid, .review-actions-grid { grid-template-columns: 1fr; }

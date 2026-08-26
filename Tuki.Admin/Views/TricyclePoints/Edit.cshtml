@@ -1,0 +1,196 @@
+@model Tuki.Admin.ViewModels.TricyclePoints.TricyclePointEditViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = Model.Title;
+    var hasCoordinates = Model.Request.Latitude.HasValue && Model.Request.Longitude.HasValue;
+    var startLat = Model.Request.Latitude?.ToString(CultureInfo.InvariantCulture) ?? "15.145000";
+    var startLng = Model.Request.Longitude?.ToString(CultureInfo.InvariantCulture) ?? "120.588000";
+}
+
+@section Scripts {
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        (() => {
+            const mapNode = document.getElementById('point-map');
+            const latInput = document.getElementById('Request_Latitude');
+            const lngInput = document.getElementById('Request_Longitude');
+            const warningsNode = document.getElementById('duplicate-warnings');
+            if (!mapNode || !latInput || !lngInput || typeof L === 'undefined') return;
+
+            const fallback = [15.145, 120.588];
+            const currentLat = Number.parseFloat(latInput.value);
+            const currentLng = Number.parseFloat(lngInput.value);
+            const hasInitial = Number.isFinite(currentLat) && Number.isFinite(currentLng);
+            const initial = hasInitial ? [currentLat, currentLng] : fallback;
+            const map = L.map('point-map').setView(initial, hasInitial ? 18 : 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            let marker = hasInitial ? L.marker(initial, { draggable: true }).addTo(map) : null;
+            const duplicateUrl = '@Url.Action("Duplicates", "TricyclePoints")';
+            const excludeId = '@(Model.TricyclePointId?.ToString(CultureInfo.InvariantCulture) ?? "")';
+            let timer;
+
+            const renderWarnings = (items) => {
+                if (!warningsNode) return;
+                if (!items || items.length === 0) {
+                    warningsNode.innerHTML = '<div class="duplicate-clear">No official point found within 75 m.</div>';
+                    return;
+                }
+                warningsNode.innerHTML = '<div class="duplicate-warning-title">Possible duplicate nearby</div>' +
+                    items.map(item => `<div class="duplicate-warning-item"><strong>${item.pointName}</strong> <code>${item.pointCode}</code><span>${item.distanceMeters.toFixed(1)} m · ${item.isActive ? 'Active' : 'Archived'}</span></div>`).join('');
+            };
+
+            const checkDuplicates = () => {
+                const lat = Number.parseFloat(latInput.value);
+                const lng = Number.parseFloat(lngInput.value);
+                if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+                clearTimeout(timer);
+                timer = setTimeout(async () => {
+                    const params = new URLSearchParams({ latitude: lat, longitude: lng });
+                    if (excludeId) params.set('excludeId', excludeId);
+                    try {
+                        const response = await fetch(`${duplicateUrl}?${params.toString()}`, { credentials: 'same-origin' });
+                        if (response.ok) renderWarnings(await response.json());
+                    } catch { }
+                }, 250);
+            };
+
+            const setLocation = (latlng) => {
+                latInput.value = latlng.lat.toFixed(6);
+                lngInput.value = latlng.lng.toFixed(6);
+                if (!marker) {
+                    marker = L.marker(latlng, { draggable: true }).addTo(map);
+                    marker.on('dragend', event => setLocation(event.target.getLatLng()));
+                } else {
+                    marker.setLatLng(latlng);
+                }
+                checkDuplicates();
+            };
+
+            if (marker) marker.on('dragend', event => setLocation(event.target.getLatLng()));
+            map.on('click', event => setLocation(event.latlng));
+            latInput.addEventListener('change', () => {
+                const lat = Number.parseFloat(latInput.value), lng = Number.parseFloat(lngInput.value);
+                if (Number.isFinite(lat) && Number.isFinite(lng)) { setLocation({ lat, lng }); map.setView([lat, lng], 18); }
+            });
+            lngInput.addEventListener('change', () => {
+                const lat = Number.parseFloat(latInput.value), lng = Number.parseFloat(lngInput.value);
+                if (Number.isFinite(lat) && Number.isFinite(lng)) { setLocation({ lat, lng }); map.setView([lat, lng], 18); }
+            });
+            if (hasInitial) checkDuplicates();
+        })();
+    </script>
+}
+
+<div class="review-detail-header">
+    <div>
+        <a asp-action="Index" class="review-back-link">← Back to official points</a>
+        <p class="eyebrow">OFFICIAL TRANSPORT DATA</p>
+        <h1>@Model.Title</h1>
+        <p>Changes here affect the verified TODA points available to TUKI passengers.</p>
+    </div>
+    @if (Model.IsEdit)
+    {
+        <span class="status-pill @(Model.Request.IsActive ? "status-active" : "status-archived")">@(Model.Request.IsActive ? "Active" : "Archived")</span>
+    }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+<div asp-validation-summary="ModelOnly" class="review-alert review-alert-error"></div>
+
+<div class="review-detail-grid">
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">MAP LOCATION</span>
+                <h2>Pickup point location</h2>
+                <p>Click the map or drag the marker. Coordinates are stored separately from the service radius.</p>
+            </div>
+        </div>
+        <div id="point-map" class="review-map"></div>
+    </section>
+
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">DUPLICATE CHECK</span>
+                <h2>Nearby official points</h2>
+                <p>This is a warning only. A nearby point never blocks saving automatically.</p>
+            </div>
+        </div>
+        <div id="duplicate-warnings" class="duplicate-warning-box">
+            @if (Model.DuplicateWarnings.Count == 0)
+            {
+                <div class="duplicate-clear">@(hasCoordinates ? "No official point found within 75 m." : "Choose a map location to check nearby points.")</div>
+            }
+            else
+            {
+                <div class="duplicate-warning-title">Possible duplicate nearby</div>
+                @foreach (var warning in Model.DuplicateWarnings)
+                {
+                    <div class="duplicate-warning-item">
+                        <strong>@warning.PointName</strong> <code>@warning.PointCode</code>
+                        <span>@warning.DistanceMeters.ToString("0.0") m · @(warning.IsActive ? "Active" : "Archived")</span>
+                    </div>
+                }
+            }
+        </div>
+    </section>
+</div>
+
+<section class="review-panel review-form-panel">
+    <form asp-action="@(Model.IsEdit ? "Edit" : "Create")" asp-route-id="@Model.TricyclePointId" method="post" class="review-form">
+        <input asp-for="Request.IsActive" type="hidden" />
+        <div class="review-form-grid">
+            <div class="field-group"><label asp-for="Request.PointCode">Point code</label><input asp-for="Request.PointCode" class="form-control" /><span asp-validation-for="Request.PointCode" class="field-error"></span></div>
+            <div class="field-group"><label asp-for="Request.PointName">Point name</label><input asp-for="Request.PointName" class="form-control" /><span asp-validation-for="Request.PointName" class="field-error"></span></div>
+            <div class="field-group"><label asp-for="Request.OperatorName">Operator / TODA name</label><input asp-for="Request.OperatorName" class="form-control" /></div>
+            <div class="field-group"><label asp-for="Request.StopId">Transport stop ID (optional)</label><input asp-for="Request.StopId" class="form-control" /></div>
+            <div class="field-group review-form-wide"><label asp-for="Request.Address">Address</label><input asp-for="Request.Address" class="form-control" /></div>
+            <div class="field-group"><label asp-for="Request.Latitude">Latitude</label><input asp-for="Request.Latitude" class="form-control" inputmode="decimal" /><span asp-validation-for="Request.Latitude" class="field-error"></span></div>
+            <div class="field-group"><label asp-for="Request.Longitude">Longitude</label><input asp-for="Request.Longitude" class="form-control" inputmode="decimal" /><span asp-validation-for="Request.Longitude" class="field-error"></span></div>
+            <div class="field-group"><label asp-for="Request.RadiusMeters">Service radius (meters)</label><input asp-for="Request.RadiusMeters" class="form-control" /></div>
+            <div class="field-group"><label asp-for="Request.AverageWaitingTimeSeconds">Average wait (seconds)</label><input asp-for="Request.AverageWaitingTimeSeconds" class="form-control" /></div>
+            <div class="field-group"><label asp-for="Request.BaseFare">Base fare</label><input asp-for="Request.BaseFare" class="form-control" inputmode="decimal" /></div>
+            <div class="field-group"><label asp-for="Request.FarePerKilometer">Fare per kilometer</label><input asp-for="Request.FarePerKilometer" class="form-control" inputmode="decimal" /></div>
+            <div class="field-group"><label asp-for="Request.ServiceStartTime">Service start</label><input asp-for="Request.ServiceStartTime" type="time" class="form-control" /></div>
+            <div class="field-group"><label asp-for="Request.ServiceEndTime">Service end</label><input asp-for="Request.ServiceEndTime" type="time" class="form-control" /></div>
+            <div class="field-group review-form-wide"><label asp-for="Request.Description">Description</label><textarea asp-for="Request.Description" class="form-control" rows="3"></textarea></div>
+        </div>
+        <button type="submit" class="btn btn-tuki">@(Model.IsEdit ? "Save official point" : "Create official point")</button>
+    </form>
+</section>
+
+@if (Model.IsEdit)
+{
+    <section class="review-panel mt-3">
+        <span class="card-kicker">AVAILABILITY</span>
+        @if (Model.Request.IsActive)
+        {
+            <h2>Archive this point</h2>
+            <p>Archived points remain in the database and Admin history but disappear from active passenger TODA data.</p>
+            <form asp-action="Archive" asp-route-id="@Model.TricyclePointId" method="post">
+                <button type="submit" class="btn btn-danger" onclick="return confirm('Archive this official tricycle point?');">Archive point</button>
+            </form>
+        }
+        else
+        {
+            <h2>Restore this point</h2>
+            <p>Restoring makes this TODA point active and available to the passenger app again.</p>
+            <form asp-action="Restore" asp-route-id="@Model.TricyclePointId" method="post">
+                <button type="submit" class="btn btn-tuki">Restore point</button>
+            </form>
+        }
+    </section>
+}
