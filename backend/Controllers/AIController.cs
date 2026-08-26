@@ -79,9 +79,8 @@ public sealed class AIController(
         return AssistantResult(response);
     }
 
-    // Kept for backwards compatibility with older clients. Current Live Trip AI
-    // applies preference-driven reroutes automatically and no longer requires a
-    // route-card confirmation step.
+    // Kept for backwards compatibility with older clients and with active-trip
+    // changes outside the two auto-reroute preference families requested here.
     [HttpPost("trip/{sessionId:guid}/replan/{recommendationId:guid}/confirm")]
     public async Task<IActionResult> ConfirmActiveTripReplan(
         Guid sessionId,
@@ -124,13 +123,19 @@ public sealed class AIController(
         AssistantResponse response,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(response.Status, "REPLAN_PROPOSAL", StringComparison.OrdinalIgnoreCase) ||
+        var action = response.Action;
+        var isRequestedAutoReroutePreference =
+            action?.MaxWalkingMeters is not null ||
+            action?.AvoidTransportModes is { Count: > 0 };
+
+        if (!isRequestedAutoReroutePreference ||
+            !string.Equals(response.Status, "REPLAN_PROPOSAL", StringComparison.OrdinalIgnoreCase) ||
             response.Journeys is not { Count: > 0 })
             return response;
 
-        // The assistant's active-trip planner already filters and orders these
-        // journeys using the interpreted walking/mode preference. The first
-        // eligible journey is therefore the deterministic replacement to apply.
+        // The active-trip assistant already filters and orders these journeys
+        // using the interpreted walking/mode constraints. Apply the first valid
+        // replacement only for the two requested auto-reroute preference families.
         var selected = response.Journeys[0];
         var result = await rerouting.ApplyRecommendationAsync(
             userId,
