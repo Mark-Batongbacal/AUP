@@ -5,16 +5,18 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
 import androidx.core.content.ContextCompat
+import com.google.android.gms.location.CurrentLocationRequest
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
-private const val FreshLocationTimeoutMillis = 1_500L
-private const val ImmediateCachedLocationMaxAgeMillis = 2_000L
-private const val CachedLocationMaxAgeMillis = 10_000L
+private const val CurrentLocationRequestDurationMillis = 12_000L
+private const val CachedLocationMaxAgeMillis = 25_000L
 
 fun Context.hasDeviceLocationPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -24,49 +26,79 @@ fun Context.hasDeviceLocationPermission(): Boolean =
 suspend fun Context.currentDeviceLocation(): Location? {
     if (!hasDeviceLocationPermission()) return null
 
-    val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    val providers = manager.getProviders(true)
-    val provider = when {
-        manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-        manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-        else -> providers.firstOrNull()
-    } ?: return null
+    val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    if (!locationManager.hasEnabledLocationProvider()) return null
 
+    val fusedClient = LocationServices.getFusedLocationProviderClient(this)
     val now = System.currentTimeMillis()
-    val cached = providers
-        .mapNotNull { candidate -> runCatching { manager.getLastKnownLocation(candidate) }.getOrNull() }
-        .filter { it.time > 0L }
-        .maxByOrNull { it.time }
+    val cached = fusedClient.awaitLastLocation()
 
-    if (cached != null && now - cached.time <= ImmediateCachedLocationMaxAgeMillis) {
+    if (cached.isRecentEnough(now, CachedLocationMaxAgeMillis)) {
         return cached
     }
 
-    val fresh = withTimeoutOrNull(FreshLocationTimeoutMillis) {
-        manager.awaitFreshLocation(provider)
-    }
-    if (fresh != null) return fresh
+    val request = CurrentLocationRequest.Builder()
+        .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+        .setMaxUpdateAgeMillis(CachedLocationMaxAgeMillis)
+        .setDurationMillis(CurrentLocationRequestDurationMillis)
+        .build()
 
-    return cached?.takeIf { now - it.time <= CachedLocationMaxAgeMillis }
+    return fusedClient.awaitCurrentLocation(request)
+        ?: cached?.takeIf { it.isRecentEnough(System.currentTimeMillis(), CachedLocationMaxAgeMillis) }
+}
+
+private fun LocationManager.hasEnabledLocationProvider(): Boolean =
+    runCatching {
+        isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+            isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+    }.getOrDefault(false)
+
+private fun Location?.isRecentEnough(nowEpochMillis: Long, maxAgeMillis: Long): Boolean =
+    this != null && isLocationTimestampRecent(time, nowEpochMillis, maxAgeMillis)
+
+internal fun isLocationTimestampRecent(
+    locationEpochMillis: Long,
+    nowEpochMillis: Long,
+    maxAgeMillis: Long
+): Boolean {
+    if (locationEpochMillis <= 0L || nowEpochMillis <= 0L || maxAgeMillis < 0L) return false
+    val ageMillis = nowEpochMillis - locationEpochMillis
+    return ageMillis in 0L..maxAgeMillis
 }
 
 @SuppressLint("MissingPermission")
-private suspend fun LocationManager.awaitFreshLocation(provider: String): Location? =
+private suspend fun FusedLocationProviderClient.awaitLastLocation(): Location? =
     suspendCancellableCoroutine { continuation ->
-        lateinit var listener: LocationListener
-        listener = LocationListener { location ->
-            removeUpdates(listener)
+        lastLocation
+            .addOnSuccessListener { location ->
+                if (continuation.isActive) continuation.resume(location)
+            }
+            .addOnFailureListener {
+                if (continuation.isActive) continuation.resume(null)
+            }
+            .addOnCanceledListener {
+                if (continuation.isActive) continuation.resume(null)
+            }
+    }
+
+@SuppressLint("MissingPermission")
+private suspend fun FusedLocationProviderClient.awaitCurrentLocation(
+    request: CurrentLocationRequest
+): Location? = suspendCancellableCoroutine { continuation ->
+    val cancellationTokenSource = CancellationTokenSource()
+
+    getCurrentLocation(request, cancellationTokenSource.token)
+        .addOnSuccessListener { location ->
             if (continuation.isActive) continuation.resume(location)
         }
-
-        runCatching {
-            requestSingleUpdate(provider, listener, null)
-        }.onFailure {
-            removeUpdates(listener)
+        .addOnFailureListener {
+            if (continuation.isActive) continuation.resume(null)
+        }
+        .addOnCanceledListener {
             if (continuation.isActive) continuation.resume(null)
         }
 
-        continuation.invokeOnCancellation {
-            runCatching { removeUpdates(listener) }
-        }
+    continuation.invokeOnCancellation {
+        cancellationTokenSource.cancel()
     }
+}
