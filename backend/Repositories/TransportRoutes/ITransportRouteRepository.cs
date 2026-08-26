@@ -54,6 +54,22 @@ public interface ITransportRouteRepository
         string encodedPolyline,
         CancellationToken cancellationToken = default);
 
+    Task<TransportRoute?> UpdateJeepneyDraftMetadataAsync(
+        long routeId,
+        string routeCode,
+        string routeName,
+        string originName,
+        string destinationName,
+        string? directionName,
+        string? operatorName,
+        string? description,
+        decimal? baseFare,
+        CancellationToken cancellationToken = default);
+
+    Task<TransportRoute?> PublishReadyJeepneyDraftAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
     Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default);
 
     Task<bool> DeactivateAsync(long routeId, CancellationToken cancellationToken = default);

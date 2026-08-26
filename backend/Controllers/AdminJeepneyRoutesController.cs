@@ -46,6 +46,15 @@ public sealed class AdminJeepneyRoutesController(
         return geometry is null ? NotFound() : Ok(geometry);
     }
 
+    [HttpGet("{routeId:long}/publish-readiness")]
+    public async Task<ActionResult<AdminJeepneyRoutePublishReadinessResponse>> GetPublishReadiness(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        var readiness = await managementService.GetPublishReadinessAsync(routeId, cancellationToken);
+        return readiness is null ? NotFound() : Ok(readiness);
+    }
+
     [HttpPost]
     public async Task<ActionResult<AdminJeepneyRouteResponse>> CreateDraft(
         [FromBody] AdminJeepneyRouteMutationRequest request,
@@ -84,6 +93,17 @@ public sealed class AdminJeepneyRoutesController(
         var result = await managementService.ReplaceDraftGeometryAsync(routeId, request, cancellationToken);
         return result.Succeeded && result.Geometry is not null
             ? Ok(result.Geometry)
+            : Failure(result);
+    }
+
+    [HttpPost("{routeId:long}/publish")]
+    public async Task<ActionResult<AdminJeepneyRouteResponse>> Publish(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await managementService.PublishDraftAsync(routeId, cancellationToken);
+        return result.Succeeded && result.Route is not null
+            ? Ok(result.Route)
             : Failure(result);
     }
 

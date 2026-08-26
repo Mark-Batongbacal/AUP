@@ -74,25 +74,58 @@ public sealed class AdminJeepneyRouteManagementServiceTests
     {
         var routeRepository = new Mock<ITransportRouteRepository>();
         var modeRepository = new Mock<ITransportModeRepository>();
+        var active = DraftRoute(12);
+        active.IsActive = true;
         routeRepository
-            .Setup(repository => repository.GetTrackedByIdAsync(12, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new TransportRoute
-            {
-                RouteId = 12,
-                RouteCode = "XEVERA-ASTRO",
-                RouteName = "Published",
-                OriginName = "Xevera",
-                DestinationName = "Astro",
-                IsActive = true,
-                TransportMode = new TransportMode { Code = "JEEPNEY", Name = "Jeepney" }
-            });
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(12, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(active);
 
         var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
         var result = await service.UpdateDraftAsync(12, Request());
 
         Assert.Equal(AdminJeepneyRouteMutationStatus.ActiveRouteLocked, result.Status);
-        routeRepository.Verify(repository => repository.UpdateAsync(
-            It.IsAny<TransportRoute>(), It.IsAny<CancellationToken>()), Times.Never);
+        routeRepository.Verify(repository => repository.UpdateJeepneyDraftMetadataAsync(
+            It.IsAny<long>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<string?>(),
+            It.IsAny<decimal?>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateDraftAsync_DraftPublishedDuringSave_ReturnsLocked()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(12, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DraftRoute(12));
+        routeRepository
+            .Setup(repository => repository.GetByRouteCodeAsync("XEVERA-ASTRO", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TransportRoute { RouteId = 12, RouteCode = "XEVERA-ASTRO" });
+        routeRepository
+            .Setup(repository => repository.UpdateJeepneyDraftMetadataAsync(
+                12,
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<decimal?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TransportRoute?)null);
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.UpdateDraftAsync(12, Request());
+
+        Assert.Equal(AdminJeepneyRouteMutationStatus.ActiveRouteLocked, result.Status);
     }
 
     [Fact]
@@ -229,6 +262,109 @@ public sealed class AdminJeepneyRouteManagementServiceTests
         Assert.Equal(AdminJeepneyRouteMutationStatus.ActiveRouteLocked, result.Status);
     }
 
+    [Fact]
+    public async Task GetPublishReadinessAsync_IncompleteDraft_ReportsFailedGeometryChecks()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DraftRoute(44));
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.GetPublishReadinessAsync(44);
+
+        Assert.NotNull(result);
+        Assert.False(result!.CanPublish);
+        Assert.Contains(result.Checks, check => check.Code == "metadata" && check.IsReady);
+        Assert.Contains(result.Checks, check => check.Code == "points" && !check.IsReady);
+        Assert.Contains(result.Checks, check => check.Code == "waypoints" && !check.IsReady);
+        Assert.Contains(result.Checks, check => check.Code == "polyline" && !check.IsReady);
+    }
+
+    [Fact]
+    public async Task PublishDraftAsync_ReadyDraft_PublishesAndReturnsActiveRoute()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        var readyDraft = ReadyDraft(44);
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(readyDraft);
+        routeRepository
+            .Setup(repository => repository.PublishReadyJeepneyDraftAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var published = ReadyDraft(44);
+                published.IsActive = true;
+                return published;
+            });
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.PublishDraftAsync(44);
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(result.Route);
+        Assert.True(result.Route!.IsActive);
+        routeRepository.Verify(repository => repository.PublishReadyJeepneyDraftAsync(
+            44, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task PublishDraftAsync_IncompleteDraft_ReturnsValidationWithoutActivating()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DraftRoute(44));
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.PublishDraftAsync(44);
+
+        Assert.Equal(AdminJeepneyRouteMutationStatus.ValidationFailed, result.Status);
+        Assert.NotEmpty(result.Errors);
+        routeRepository.Verify(repository => repository.PublishReadyJeepneyDraftAsync(
+            It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PublishDraftAsync_AlreadyPublished_ReturnsConflictWithoutActivatingAgain()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        var active = ReadyDraft(44);
+        active.IsActive = true;
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(active);
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.PublishDraftAsync(44);
+
+        Assert.Equal(AdminJeepneyRouteMutationStatus.Conflict, result.Status);
+        routeRepository.Verify(repository => repository.PublishReadyJeepneyDraftAsync(
+            It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PublishDraftAsync_AtomicPublishFails_ReturnsConflict()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ReadyDraft(44));
+        routeRepository
+            .Setup(repository => repository.PublishReadyJeepneyDraftAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TransportRoute?)null);
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.PublishDraftAsync(44);
+
+        Assert.Equal(AdminJeepneyRouteMutationStatus.Conflict, result.Status);
+    }
+
     private static AdminJeepneyRouteMutationRequest Request() => new()
     {
         RouteCode = " XEVERA-ASTRO ",
@@ -262,4 +398,21 @@ public sealed class AdminJeepneyRouteManagementServiceTests
         CreatedAt = DateTime.UtcNow,
         TransportMode = new TransportMode { Code = "JEEPNEY", Name = "Jeepney" }
     };
+
+    private static TransportRoute ReadyDraft(long routeId)
+    {
+        var route = DraftRoute(routeId);
+        route.EncodedPolyline = "encoded-polyline6";
+        route.RoutePoints =
+        [
+            new RoutePoint { PointOrder = 1, Latitude = 15.154, Longitude = 120.591 },
+            new RoutePoint { PointOrder = 2, Latitude = 15.151, Longitude = 120.598 }
+        ];
+        route.RouteWaypoints =
+        [
+            new RouteWaypoint { WaypointOrder = 1, Latitude = 15.154, Longitude = 120.591 },
+            new RouteWaypoint { WaypointOrder = 2, Latitude = 15.151, Longitude = 120.598 }
+        ];
+        return route;
+    }
 }

@@ -17,6 +17,10 @@ public interface IAdminJeepneyRouteManagementService
         long routeId,
         CancellationToken cancellationToken = default);
 
+    Task<AdminJeepneyRoutePublishReadinessResponse?> GetPublishReadinessAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
     Task<AdminJeepneyRouteMutationResult> CreateDraftAsync(
         AdminJeepneyRouteMutationRequest request,
         CancellationToken cancellationToken = default);
@@ -29,5 +33,9 @@ public interface IAdminJeepneyRouteManagementService
     Task<AdminJeepneyRouteGeometryMutationResult> ReplaceDraftGeometryAsync(
         long routeId,
         AdminJeepneyRouteGeometryRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRouteMutationResult> PublishDraftAsync(
+        long routeId,
         CancellationToken cancellationToken = default);
 }

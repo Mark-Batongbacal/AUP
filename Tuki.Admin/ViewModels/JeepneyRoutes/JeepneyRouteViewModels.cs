@@ -16,6 +16,7 @@ public sealed class JeepneyRouteEditViewModel
     public long? RouteId { get; init; }
     public AdminJeepneyRouteRequest Request { get; init; } = new();
     public AdminJeepneyRoute? Route { get; init; }
+    public AdminJeepneyRoutePublishReadiness? PublishReadiness { get; init; }
     public string? ErrorMessage { get; init; }
     public string? SuccessMessage { get; init; }
     public bool IsCreate => RouteId is null;

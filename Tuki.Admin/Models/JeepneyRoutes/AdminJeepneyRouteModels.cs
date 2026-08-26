@@ -73,6 +73,18 @@ public sealed class AdminJeepneyRouteGeometryPointRequest
     public double Longitude { get; set; }
 }
 
+public sealed record AdminJeepneyRouteReadinessCheck(
+    string Code,
+    string Label,
+    bool IsReady,
+    string Message);
+
+public sealed record AdminJeepneyRoutePublishReadiness(
+    long RouteId,
+    bool IsActive,
+    bool CanPublish,
+    IReadOnlyList<AdminJeepneyRouteReadinessCheck> Checks);
+
 public sealed record AdminJeepneyBackendError(IReadOnlyList<string> Errors);
 
 public sealed record AdminJeepneyRepositoryResult<T>(

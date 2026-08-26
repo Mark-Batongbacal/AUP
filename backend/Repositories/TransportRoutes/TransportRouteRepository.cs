@@ -212,6 +212,71 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
         return route;
     }
 
+    public async Task<TransportRoute?> UpdateJeepneyDraftMetadataAsync(
+        long routeId,
+        string routeCode,
+        string routeName,
+        string originName,
+        string destinationName,
+        string? directionName,
+        string? operatorName,
+        string? description,
+        decimal? baseFare,
+        CancellationToken cancellationToken = default)
+    {
+        var updatedAt = DateTime.UtcNow;
+        var affected = await _context.TransportRoutes
+            .Where(route =>
+                route.RouteId == routeId &&
+                !route.IsActive &&
+                route.TransportMode.Code == "JEEPNEY")
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(route => route.RouteCode, routeCode)
+                .SetProperty(route => route.RouteName, routeName)
+                .SetProperty(route => route.OriginName, originName)
+                .SetProperty(route => route.DestinationName, destinationName)
+                .SetProperty(route => route.DirectionName, directionName)
+                .SetProperty(route => route.OperatorName, operatorName)
+                .SetProperty(route => route.RouteDescription, description)
+                .SetProperty(route => route.BaseFare, baseFare)
+                .SetProperty(route => route.UpdatedAt, updatedAt),
+                cancellationToken);
+
+        if (affected != 1)
+            return null;
+
+        return await GetByIdWithPointsForAdminAsync(routeId, cancellationToken);
+    }
+
+    public async Task<TransportRoute?> PublishReadyJeepneyDraftAsync(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        var publishedAt = DateTime.UtcNow;
+        var affected = await _context.TransportRoutes
+            .Where(route =>
+                route.RouteId == routeId &&
+                !route.IsActive &&
+                route.TransportMode.Code == "JEEPNEY" &&
+                route.RouteCode != "" &&
+                route.RouteName != "" &&
+                route.OriginName != "" &&
+                route.DestinationName != "" &&
+                route.EncodedPolyline != null &&
+                route.EncodedPolyline != "" &&
+                route.RoutePoints.Count >= 2 &&
+                route.RouteWaypoints.Count >= 2)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(route => route.IsActive, true)
+                .SetProperty(route => route.UpdatedAt, publishedAt),
+                cancellationToken);
+
+        if (affected != 1)
+            return null;
+
+        return await GetByIdWithPointsForAdminAsync(routeId, cancellationToken);
+    }
+
     public async Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default)
     {
         _context.TransportRoutes.Update(Route);
