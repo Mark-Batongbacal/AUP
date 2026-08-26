@@ -23,18 +23,13 @@ LoadDevelopmentEnvironmentFile();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Some container platforms assign the listening port through PORT. The
-// Docker image otherwise uses ASPNETCORE_HTTP_PORTS=8080.
 if (int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var port))
 {
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
 
-// Add services to the container.
-
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
@@ -110,6 +105,7 @@ builder.Services.AddScoped<INavigationInstructionRepository, NavigationInstructi
 builder.Services.AddScoped<ITripLandmarkCandidateRepository, TripLandmarkCandidateRepository>();
 builder.Services.AddScoped<ITransferConnectionRepository, TransferConnectionRepository>();
 builder.Services.AddScoped<ITricyclePointRepository, TricyclePointRepository>();
+builder.Services.AddScoped<ITricyclePointSubmissionRepository, TricyclePointSubmissionRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddScoped<IApiKeyService, SqlServerApiKeyService>();
 builder.Services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
@@ -155,6 +151,7 @@ builder.Services.AddScoped<ILocalAuthenticationService, LocalAuthenticationServi
 builder.Services.AddScoped<IRoutePointService, RoutePointService>();
 builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
+builder.Services.AddScoped<ITricyclePointSubmissionService, TricyclePointSubmissionService>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
 builder.Services.AddScoped<IAssistantIntentExtractor, NemotronIntentExtractor>();
@@ -207,13 +204,11 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous();
 }
 
-// Render terminates HTTPS at its proxy and forwards requests to this container over HTTP.
 if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
@@ -287,7 +282,6 @@ static void LoadDevelopmentEnvironmentFile()
             value = value[1..^1];
         }
 
-        // Real process environment variables take precedence over .env values.
         if (Environment.GetEnvironmentVariable(key) is null)
         {
             Environment.SetEnvironmentVariable(key, value);
