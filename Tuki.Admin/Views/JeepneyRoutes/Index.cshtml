@@ -34,7 +34,7 @@
     <button type="submit" class="btn btn-outline-tuki">Apply filter</button>
 </form>
 
-@if (Model.Routes.Count == 0)
+@if (Model.Routes.Count == 0 && string.IsNullOrWhiteSpace(Model.ErrorMessage))
 {
     <div class="empty-review-state">
         <h2>No jeepney routes found</h2>
