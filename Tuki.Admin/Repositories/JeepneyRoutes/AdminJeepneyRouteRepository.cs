@@ -1,5 +1,7 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Tuki.Admin.Models.JeepneyRoutes;
 using Tuki.Admin.Repositories.Common;
 
@@ -113,28 +115,62 @@ public sealed class AdminJeepneyRouteRepository(
         CancellationToken cancellationToken)
     {
         var client = httpClientFactory.CreateClient(BackendApiClientNames.TukiBackend);
-        using var response = await client.SendAsync(request, cancellationToken);
-
-        if (response.IsSuccessStatusCode)
-        {
-            var value = await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken);
-            return value is null
-                ? AdminJeepneyRepositoryResult<T>.Failure((int)response.StatusCode, "The backend returned an empty response.")
-                : AdminJeepneyRepositoryResult<T>.Success(value, (int)response.StatusCode);
-        }
 
         try
         {
-            var error = await response.Content.ReadFromJsonAsync<AdminJeepneyBackendError>(cancellationToken: cancellationToken);
-            if (error?.Errors is { Count: > 0 })
-                return AdminJeepneyRepositoryResult<T>.Failure((int)response.StatusCode, string.Join(" ", error.Errors));
-        }
-        catch
-        {
-        }
+            using var response = await client.SendAsync(request, cancellationToken);
 
-        return AdminJeepneyRepositoryResult<T>.Failure(
-            (int)response.StatusCode,
-            $"Backend request failed with status {(int)response.StatusCode}.");
+            if (response.IsSuccessStatusCode)
+            {
+                try
+                {
+                    var value = await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken);
+                    return value is null
+                        ? AdminJeepneyRepositoryResult<T>.Failure(
+                            (int)HttpStatusCode.BadGateway,
+                            "The backend returned an empty response.")
+                        : AdminJeepneyRepositoryResult<T>.Success(value, (int)response.StatusCode);
+                }
+                catch (JsonException)
+                {
+                    return AdminJeepneyRepositoryResult<T>.Failure(
+                        (int)HttpStatusCode.BadGateway,
+                        "The backend returned an invalid response. Please try again.");
+                }
+            }
+
+            try
+            {
+                var error = await response.Content.ReadFromJsonAsync<AdminJeepneyBackendError>(cancellationToken: cancellationToken);
+                if (error?.Errors is { Count: > 0 })
+                    return AdminJeepneyRepositoryResult<T>.Failure((int)response.StatusCode, string.Join(" ", error.Errors));
+            }
+            catch (JsonException)
+            {
+                // Fall back to a status-based message below when an upstream error body is not JSON.
+            }
+
+            return AdminJeepneyRepositoryResult<T>.Failure(
+                (int)response.StatusCode,
+                $"Backend request failed with status {(int)response.StatusCode}.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return AdminJeepneyRepositoryResult<T>.Failure(
+                (int)HttpStatusCode.GatewayTimeout,
+                "The backend took too long to respond. Make sure the TUKI backend is running, then try again.");
+        }
+        catch (HttpRequestException)
+        {
+            return AdminJeepneyRepositoryResult<T>.Failure(
+                (int)HttpStatusCode.BadGateway,
+                "The Admin portal could not reach the TUKI backend. Make sure the backend is running and try again.");
+        }
+        catch (IOException)
+        {
+            return AdminJeepneyRepositoryResult<T>.Failure(
+                (int)HttpStatusCode.BadGateway,
+                "The backend connection ended unexpectedly. Please try again.");
+        }
     }
 }
