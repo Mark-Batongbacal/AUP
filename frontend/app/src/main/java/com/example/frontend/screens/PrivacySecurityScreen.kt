@@ -17,11 +17,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,18 +32,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
-import androidx.compose.material3.MaterialTheme
-import com.example.frontend.ui.theme.TukiTeal
-import com.example.frontend.ui.theme.TukiOrange
+import com.example.frontend.core.network.ApiResult
+import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiDanger
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDanger
 import com.example.frontend.ui.theme.TukiSurfaceRaised
+import com.example.frontend.ui.theme.TukiTeal
+import java.time.Duration
+import java.time.Instant
+import kotlinx.coroutines.launch
 
 private val PrivacyIconInk = Color(0xFF153E4B)
 private val PrivacyIconSurface = Color(0xFFFFF0D5)
@@ -53,7 +58,6 @@ sealed interface DeleteAccountResult {
 
 @Composable
 fun PrivacySecurityScreen(
-    lastPasswordChange: String = "Last changed 3 months ago",
     initial2FAEnabled: Boolean = false,
     onBack: () -> Unit = {},
     onChangePasswordClick: () -> Unit = {},
@@ -63,11 +67,29 @@ fun PrivacySecurityScreen(
     },
     onAccountDeleted: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val dataProvider = remember(context) { TukiDataProvider(context.applicationContext) }
     var is2FAEnabled by remember { mutableStateOf(initial2FAEnabled) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
     var deleteError by remember { mutableStateOf<String?>(null) }
+    var passwordMetadataLoaded by remember { mutableStateOf(false) }
+    var lastPasswordChangedAt by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        when (val result = dataProvider.userRepository.getCurrentUser()) {
+            is ApiResult.Success -> lastPasswordChangedAt = result.data.lastPasswordChangedAt
+            is ApiResult.Failure -> lastPasswordChangedAt = null
+        }
+        passwordMetadataLoaded = true
+    }
+
+    val lastPasswordChange = when {
+        !passwordMetadataLoaded -> "Checking password activity…"
+        lastPasswordChangedAt == null -> "No local password change recorded"
+        else -> lastPasswordChangeLabel(lastPasswordChangedAt)
+    }
 
     fun confirmDelete() {
         if (isDeleting) return
@@ -212,6 +234,34 @@ fun PrivacySecurityScreen(
             containerColor = TukiSurfaceRaised
         )
     }
+}
+
+internal fun lastPasswordChangeLabel(
+    timestamp: String?,
+    now: Instant = Instant.now()
+): String {
+    val changedAt = timestamp
+        ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        ?: return "Last change unavailable"
+    val elapsed = Duration.between(changedAt, now)
+    if (elapsed.isNegative || elapsed.seconds < 60) return "Last changed just now"
+
+    val minutes = elapsed.toMinutes()
+    if (minutes < 60) return "Last changed $minutes ${if (minutes == 1L) "minute" else "minutes"} ago"
+
+    val hours = elapsed.toHours()
+    if (hours < 24) return "Last changed $hours ${if (hours == 1L) "hour" else "hours"} ago"
+
+    val days = elapsed.toDays()
+    if (days < 30) return "Last changed $days ${if (days == 1L) "day" else "days"} ago"
+
+    if (days < 365) {
+        val months = (days / 30).coerceAtLeast(1)
+        return "Last changed $months ${if (months == 1L) "month" else "months"} ago"
+    }
+
+    val years = (days / 365).coerceAtLeast(1)
+    return "Last changed $years ${if (years == 1L) "year" else "years"} ago"
 }
 
 @Composable
