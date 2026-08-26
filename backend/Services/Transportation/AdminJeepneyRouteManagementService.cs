@@ -48,6 +48,17 @@ public sealed class AdminJeepneyRouteManagementService(
         return MapGeometry(route);
     }
 
+    public async Task<AdminJeepneyRoutePublishReadinessResponse?> GetPublishReadinessAsync(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (routeId <= 0) return null;
+
+        var route = await routeRepository.GetByIdWithPointsForAdminAsync(routeId, cancellationToken);
+        if (route is null || !IsJeepney(route)) return null;
+        return BuildReadiness(route);
+    }
+
     public async Task<AdminJeepneyRouteMutationResult> CreateDraftAsync(
         AdminJeepneyRouteMutationRequest request,
         CancellationToken cancellationToken = default)
@@ -113,7 +124,7 @@ public sealed class AdminJeepneyRouteManagementService(
                 AdminJeepneyRouteMutationStatus.ValidationFailed,
                 errors.ToArray());
 
-        var route = await routeRepository.GetTrackedByIdAsync(routeId, cancellationToken);
+        var route = await routeRepository.GetByIdWithPointsForAdminAsync(routeId, cancellationToken);
         if (route is null || !IsJeepney(route))
             return AdminJeepneyRouteMutationResult.Failure(
                 AdminJeepneyRouteMutationStatus.NotFound,
@@ -122,7 +133,7 @@ public sealed class AdminJeepneyRouteManagementService(
         if (route.IsActive)
             return AdminJeepneyRouteMutationResult.Failure(
                 AdminJeepneyRouteMutationStatus.ActiveRouteLocked,
-                "Published jeepney routes cannot be edited by the draft foundation. Use the route editor workflow.");
+                "Published jeepney routes cannot be edited by the draft workflow.");
 
         var code = request.RouteCode!.Trim();
         var codeOwner = await routeRepository.GetByRouteCodeAsync(code, cancellationToken);
@@ -131,20 +142,24 @@ public sealed class AdminJeepneyRouteManagementService(
                 AdminJeepneyRouteMutationStatus.Conflict,
                 $"Route code '{code}' is already in use.");
 
-        route.RouteCode = code;
-        route.RouteName = request.RouteName!.Trim();
-        route.OriginName = request.OriginName!.Trim();
-        route.DestinationName = request.DestinationName!.Trim();
-        route.DirectionName = Normalize(request.DirectionName);
-        route.OperatorName = Normalize(request.OperatorName);
-        route.RouteDescription = Normalize(request.Description);
-        route.BaseFare = request.BaseFare;
-        route.UpdatedAt = DateTime.UtcNow;
+        var saved = await routeRepository.UpdateJeepneyDraftMetadataAsync(
+            routeId,
+            code,
+            request.RouteName!.Trim(),
+            request.OriginName!.Trim(),
+            request.DestinationName!.Trim(),
+            Normalize(request.DirectionName),
+            Normalize(request.OperatorName),
+            Normalize(request.Description),
+            request.BaseFare,
+            cancellationToken);
 
-        var saved = await routeRepository.UpdateAsync(route, cancellationToken);
-        var withPoints = await routeRepository.GetByIdWithPointsForAdminAsync(saved.RouteId, cancellationToken)
-            ?? saved;
-        return AdminJeepneyRouteMutationResult.Success(Map(withPoints));
+        if (saved is null)
+            return AdminJeepneyRouteMutationResult.Failure(
+                AdminJeepneyRouteMutationStatus.ActiveRouteLocked,
+                "The route is no longer an editable draft. Refresh its details before saving again.");
+
+        return AdminJeepneyRouteMutationResult.Success(Map(saved));
     }
 
     public async Task<AdminJeepneyRouteGeometryMutationResult> ReplaceDraftGeometryAsync(
@@ -206,8 +221,105 @@ public sealed class AdminJeepneyRouteManagementService(
         return AdminJeepneyRouteGeometryMutationResult.Success(MapGeometry(saved));
     }
 
+    public async Task<AdminJeepneyRouteMutationResult> PublishDraftAsync(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        if (routeId <= 0)
+            return AdminJeepneyRouteMutationResult.Failure(
+                AdminJeepneyRouteMutationStatus.NotFound,
+                "Jeepney route was not found.");
+
+        var route = await routeRepository.GetByIdWithPointsForAdminAsync(routeId, cancellationToken);
+        if (route is null || !IsJeepney(route))
+            return AdminJeepneyRouteMutationResult.Failure(
+                AdminJeepneyRouteMutationStatus.NotFound,
+                "Jeepney route was not found.");
+
+        if (route.IsActive)
+            return AdminJeepneyRouteMutationResult.Failure(
+                AdminJeepneyRouteMutationStatus.Conflict,
+                "This jeepney route is already published.");
+
+        var readiness = BuildReadiness(route);
+        if (!readiness.CanPublish)
+            return AdminJeepneyRouteMutationResult.Failure(
+                AdminJeepneyRouteMutationStatus.ValidationFailed,
+                readiness.Checks.Where(check => !check.IsReady).Select(check => check.Message).ToArray());
+
+        var published = await routeRepository.PublishReadyJeepneyDraftAsync(routeId, cancellationToken);
+        if (published is null)
+            return AdminJeepneyRouteMutationResult.Failure(
+                AdminJeepneyRouteMutationStatus.Conflict,
+                "The route changed or is no longer publishable. Refresh its details and verify readiness again.");
+
+        return AdminJeepneyRouteMutationResult.Success(Map(published));
+    }
+
     private static bool IsJeepney(TransportRoute route) =>
         string.Equals(route.TransportMode?.Code, "JEEPNEY", StringComparison.OrdinalIgnoreCase);
+
+    private static AdminJeepneyRoutePublishReadinessResponse BuildReadiness(TransportRoute route)
+    {
+        var metadataReady =
+            !string.IsNullOrWhiteSpace(route.RouteCode) &&
+            !string.IsNullOrWhiteSpace(route.RouteName) &&
+            !string.IsNullOrWhiteSpace(route.OriginName) &&
+            !string.IsNullOrWhiteSpace(route.DestinationName);
+        var pointsReady = route.RoutePoints.Count >= 2 && route.RoutePoints.All(point =>
+            double.IsFinite(point.Latitude) && point.Latitude is >= -90 and <= 90 &&
+            double.IsFinite(point.Longitude) && point.Longitude is >= -180 and <= 180);
+        var pointOrderReady = route.RoutePoints
+            .OrderBy(point => point.PointOrder)
+            .Select((point, index) => point.PointOrder == index + 1)
+            .All(value => value);
+        var waypointsReady = route.RouteWaypoints.Count >= 2 && route.RouteWaypoints.All(point =>
+            double.IsFinite(point.Latitude) && point.Latitude is >= -90 and <= 90 &&
+            double.IsFinite(point.Longitude) && point.Longitude is >= -180 and <= 180);
+        var waypointOrderReady = route.RouteWaypoints
+            .OrderBy(point => point.WaypointOrder)
+            .Select((point, index) => point.WaypointOrder == index + 1)
+            .All(value => value);
+        var polylineReady = !string.IsNullOrWhiteSpace(route.EncodedPolyline);
+
+        var checks = new[]
+        {
+            new AdminJeepneyRouteReadinessCheckResponse(
+                "metadata",
+                "Route metadata",
+                metadataReady,
+                metadataReady
+                    ? "Route code, name, origin, and destination are complete."
+                    : "Complete the route code, route name, origin, and destination before publishing."),
+            new AdminJeepneyRouteReadinessCheckResponse(
+                "points",
+                "Ordered route points",
+                pointsReady && pointOrderReady,
+                pointsReady && pointOrderReady
+                    ? $"{route.RoutePoints.Count} valid ordered route points are stored."
+                    : "Store at least two valid route points with continuous PointOrder values starting at 1."),
+            new AdminJeepneyRouteReadinessCheckResponse(
+                "waypoints",
+                "Ordered waypoints",
+                waypointsReady && waypointOrderReady,
+                waypointsReady && waypointOrderReady
+                    ? $"{route.RouteWaypoints.Count} valid ordered waypoints are stored."
+                    : "Store at least two valid route waypoints with continuous WaypointOrder values starting at 1."),
+            new AdminJeepneyRouteReadinessCheckResponse(
+                "polyline",
+                "Encoded route polyline",
+                polylineReady,
+                polylineReady
+                    ? "Encoded Polyline6 geometry is available."
+                    : "Save route geometry so an encoded polyline is generated before publishing.")
+        };
+
+        return new AdminJeepneyRoutePublishReadinessResponse(
+            route.RouteId,
+            route.IsActive,
+            !route.IsActive && checks.All(check => check.IsReady),
+            checks);
+    }
 
     private static List<string> Validate(AdminJeepneyRouteMutationRequest request)
     {

@@ -9,7 +9,7 @@
         <a asp-action="Index" class="review-back-link">← Back to jeepney routes</a>
         <p class="eyebrow">JEEPNEY ROUTE</p>
         <h1>@(Model.IsCreate ? "Create route draft" : Model.Route?.RouteName ?? "Route draft")</h1>
-        <p>Define verified route metadata, then plot and refine its ordered geometry before publishing.</p>
+        <p>Define verified route metadata, plot and refine its geometry, then publish it when every readiness check passes.</p>
     </div>
     @if (Model.Route is not null)
     {
@@ -34,8 +34,8 @@
     <section class="review-panel mb-3">
         <div class="panel-heading">
             <div>
-                <span class="card-kicker">ROUTE READINESS</span>
-                <h2>Geometry status</h2>
+                <span class="card-kicker">ROUTE STATUS</span>
+                <h2>Geometry and visibility</h2>
             </div>
         </div>
         <div class="review-meta-grid">
@@ -49,13 +49,72 @@
                 @(Model.Route.IsActive ? "View route geometry" : Model.Route.HasPolyline ? "Open geometry editor" : "Plot route geometry")
             </a>
         </div>
-        @if (!Model.Route.IsActive)
-        {
-            <div class="review-alert review-alert-success mt-3 mb-0">
-                This draft is inactive, so metadata and geometry edits stay hidden from the passenger active-route endpoint until the later publishing workflow activates it.
-            </div>
-        }
     </section>
+
+    @if (!Model.Route.IsActive)
+    {
+        <section class="review-panel mb-3">
+            <div class="panel-heading">
+                <div>
+                    <span class="card-kicker">PUBLISHING</span>
+                    <h2>Route readiness</h2>
+                    <p>Publishing makes this route available to the active passenger routing data. Review every check before activation.</p>
+                </div>
+            </div>
+
+            @if (Model.PublishReadiness is null)
+            {
+                <div class="review-alert review-alert-error mb-0">Unable to load route publishing readiness. Refresh before publishing.</div>
+            }
+            else
+            {
+                <div class="d-grid gap-2 mb-3">
+                    @foreach (var check in Model.PublishReadiness.Checks)
+                    {
+                        <div class="border rounded p-3 d-flex justify-content-between align-items-start gap-3">
+                            <div>
+                                <strong>@check.Label</strong>
+                                <div class="small text-muted mt-1">@check.Message</div>
+                            </div>
+                            <span class="status-pill @(check.IsReady ? "status-active" : "status-archived")">
+                                @(check.IsReady ? "Ready" : "Needs attention")
+                            </span>
+                        </div>
+                    }
+                </div>
+
+                @if (Model.PublishReadiness.CanPublish)
+                {
+                    <div class="review-alert review-alert-success">
+                        All required route checks pass. Publishing will activate this exact saved route for passenger routing.
+                    </div>
+                    <form asp-action="Publish" asp-route-id="@Model.Route.RouteId" method="post">
+                        <button type="submit"
+                                class="btn btn-tuki"
+                                onclick="return confirm('Publish this jeepney route? It will become active and available to passenger routing.');">
+                            Publish route
+                        </button>
+                    </form>
+                }
+                else
+                {
+                    <div class="review-alert review-alert-error mb-0">
+                        Complete the failed readiness checks before publishing. The draft remains hidden from passenger routing.
+                    </div>
+                }
+            }
+        </section>
+    }
+    else
+    {
+        <section class="review-panel mb-3">
+            <span class="card-kicker">PUBLISHING</span>
+            <h2>Route is active</h2>
+            <div class="review-alert review-alert-success mb-0">
+                This jeepney route is published and available to active passenger routing. Metadata and geometry are read-only in this workflow.
+            </div>
+        </section>
+    }
 }
 
 <section class="review-panel review-form-panel">
@@ -63,7 +122,7 @@
         <div>
             <span class="card-kicker">ROUTE METADATA</span>
             <h2>@(canEdit ? "Draft details" : "Published route details")</h2>
-            <p>@(canEdit ? "Maintain the draft metadata here and use the geometry editor for ordered route points." : "Published routes remain read-only in this draft workflow.")</p>
+            <p>@(canEdit ? "Maintain the draft metadata here and use the geometry editor for ordered route points." : "Published routes remain read-only after activation.")</p>
         </div>
     </div>
 

@@ -74,6 +74,18 @@ public sealed record AdminJeepneyRouteGeometryResponse(
     IReadOnlyList<AdminJeepneyRouteGeometryPointResponse> Points,
     DateTime? UpdatedAt);
 
+public sealed record AdminJeepneyRouteReadinessCheckResponse(
+    string Code,
+    string Label,
+    bool IsReady,
+    string Message);
+
+public sealed record AdminJeepneyRoutePublishReadinessResponse(
+    long RouteId,
+    bool IsActive,
+    bool CanPublish,
+    IReadOnlyList<AdminJeepneyRouteReadinessCheckResponse> Checks);
+
 public enum AdminJeepneyRouteMutationStatus
 {
     Success,

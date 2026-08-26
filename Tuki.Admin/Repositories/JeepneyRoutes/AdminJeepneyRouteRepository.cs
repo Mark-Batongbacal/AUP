@@ -33,6 +33,13 @@ public sealed class AdminJeepneyRouteRepository(
             CreateRequest(HttpMethod.Get, $"api/admin/jeepney-routes/{routeId}/geometry"),
             cancellationToken);
 
+    public Task<AdminJeepneyRepositoryResult<AdminJeepneyRoutePublishReadiness>> GetPublishReadinessAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<AdminJeepneyRoutePublishReadiness>(
+            CreateRequest(HttpMethod.Get, $"api/admin/jeepney-routes/{routeId}/publish-readiness"),
+            cancellationToken);
+
     public Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> CreateDraftAsync(
         AdminJeepneyRouteRequest request,
         CancellationToken cancellationToken = default) =>
@@ -54,6 +61,14 @@ public sealed class AdminJeepneyRouteRepository(
             request,
             cancellationToken);
 
+    public Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> PublishAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        SendWithoutBodyAsync<AdminJeepneyRoute>(
+            HttpMethod.Post,
+            $"api/admin/jeepney-routes/{routeId}/publish",
+            cancellationToken);
+
     private Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> SendMutationAsync(
         HttpMethod method,
         string path,
@@ -71,6 +86,12 @@ public sealed class AdminJeepneyRouteRepository(
         message.Content = JsonContent.Create(request);
         return await SendJsonAsync<TResponse>(message, cancellationToken);
     }
+
+    private Task<AdminJeepneyRepositoryResult<TResponse>> SendWithoutBodyAsync<TResponse>(
+        HttpMethod method,
+        string path,
+        CancellationToken cancellationToken) =>
+        SendJsonAsync<TResponse>(CreateRequest(method, path), cancellationToken);
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {

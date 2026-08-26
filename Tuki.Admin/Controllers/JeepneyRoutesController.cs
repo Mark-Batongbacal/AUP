@@ -57,13 +57,15 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
         if (result.StatusCode == StatusCodes.Status404NotFound || result.Value is null)
             return NotFound();
 
+        var readinessResult = await repository.GetPublishReadinessAsync(id, cancellationToken);
         var route = result.Value;
         return View(new JeepneyRouteEditViewModel
         {
             RouteId = route.RouteId,
             Route = route,
+            PublishReadiness = readinessResult.Value,
             Request = MapRequest(route),
-            ErrorMessage = TempData["JeepneyRouteError"] as string,
+            ErrorMessage = TempData["JeepneyRouteError"] as string ?? (!readinessResult.Succeeded ? readinessResult.ErrorMessage : null),
             SuccessMessage = TempData["JeepneyRouteSuccess"] as string
         });
     }
@@ -76,14 +78,19 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
         CancellationToken cancellationToken = default)
     {
         if (!ModelState.IsValid)
-            return View(model.WithId(id));
+        {
+            var current = await repository.GetByIdAsync(id, cancellationToken);
+            var readiness = await repository.GetPublishReadinessAsync(id, cancellationToken);
+            return View(model.WithId(id, current.Value, readiness.Value));
+        }
 
         var result = await repository.UpdateDraftAsync(id, model.Request, cancellationToken);
         if (!result.Succeeded || result.Value is null)
         {
             ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Unable to update the jeepney route draft.");
             var current = await repository.GetByIdAsync(id, cancellationToken);
-            return View(model.WithId(id, current.Value));
+            var readiness = await repository.GetPublishReadinessAsync(id, cancellationToken);
+            return View(model.WithId(id, current.Value, readiness.Value));
         }
 
         TempData["JeepneyRouteSuccess"] = "Jeepney route draft metadata updated.";
@@ -154,6 +161,21 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
         return RedirectToAction(nameof(Plot), new { id });
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Publish(long id, CancellationToken cancellationToken = default)
+    {
+        var result = await repository.PublishAsync(id, cancellationToken);
+        if (!result.Succeeded || result.Value is null)
+        {
+            TempData["JeepneyRouteError"] = result.ErrorMessage ?? "Unable to publish the jeepney route.";
+            return RedirectToAction(nameof(Edit), new { id });
+        }
+
+        TempData["JeepneyRouteSuccess"] = "Jeepney route published successfully. It is now available to active passenger routing.";
+        return RedirectToAction(nameof(Edit), new { id });
+    }
+
     private static AdminJeepneyRouteRequest MapRequest(AdminJeepneyRoute route) => new()
     {
         RouteCode = route.RouteCode,
@@ -172,10 +194,12 @@ internal static class JeepneyRouteEditViewModelExtensions
     public static JeepneyRouteEditViewModel WithId(
         this JeepneyRouteEditViewModel model,
         long id,
-        AdminJeepneyRoute? route = null) => new()
+        AdminJeepneyRoute? route = null,
+        AdminJeepneyRoutePublishReadiness? publishReadiness = null) => new()
     {
         RouteId = id,
         Route = route ?? model.Route,
+        PublishReadiness = publishReadiness ?? model.PublishReadiness,
         Request = model.Request,
         ErrorMessage = model.ErrorMessage,
         SuccessMessage = model.SuccessMessage
