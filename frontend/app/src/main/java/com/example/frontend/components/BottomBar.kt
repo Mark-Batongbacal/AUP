@@ -32,7 +32,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.frontend.LocalTukiDataProvider
 import com.example.frontend.R
 import com.example.frontend.core.localization.TukiInterfaceText
-import com.example.frontend.screens.ContributionsHost
+import com.example.frontend.screens.LocationAwareContributionsHost
 import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiSurfaceRaised
 import com.example.frontend.ui.theme.TukiTeal
@@ -118,7 +118,7 @@ fun BottomBar(
             )
         ) {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                ContributionsHost(
+                LocationAwareContributionsHost(
                     dataProvider = dataProvider,
                     onDismiss = { showContributions = false },
                     onHomeClick = onHomeClick,
