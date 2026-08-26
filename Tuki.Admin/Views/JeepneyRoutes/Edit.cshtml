@@ -9,7 +9,7 @@
         <a asp-action="Index" class="review-back-link">← Back to jeepney routes</a>
         <p class="eyebrow">JEEPNEY ROUTE</p>
         <h1>@(Model.IsCreate ? "Create route draft" : Model.Route?.RouteName ?? "Route draft")</h1>
-        <p>Define verified route metadata, then plot its ordered geometry before publishing.</p>
+        <p>Define verified route metadata, then plot and refine its ordered geometry before publishing.</p>
     </div>
     @if (Model.Route is not null)
     {
@@ -46,13 +46,13 @@
         </div>
         <div class="d-flex gap-2 flex-wrap mt-3">
             <a asp-action="Plot" asp-route-id="@Model.Route.RouteId" class="btn btn-tuki">
-                @(Model.Route.IsActive ? "View route geometry" : Model.Route.HasPolyline ? "Edit plotted geometry" : "Plot route geometry")
+                @(Model.Route.IsActive ? "View route geometry" : Model.Route.HasPolyline ? "Open geometry editor" : "Plot route geometry")
             </a>
         </div>
         @if (!Model.Route.IsActive)
         {
             <div class="review-alert review-alert-success mt-3 mb-0">
-                This draft is inactive, so plotting or editing its geometry will not expose it to the passenger active-route endpoint.
+                This draft is inactive, so metadata and geometry edits stay hidden from the passenger active-route endpoint until the later publishing workflow activates it.
             </div>
         }
     </section>
@@ -63,7 +63,7 @@
         <div>
             <span class="card-kicker">ROUTE METADATA</span>
             <h2>@(canEdit ? "Draft details" : "Published route details")</h2>
-            <p>@(canEdit ? "Maintain the route information here and use the plotter for ordered geometry." : "Published routes remain read-only in this draft workflow.")</p>
+            <p>@(canEdit ? "Maintain the draft metadata here and use the geometry editor for ordered route points." : "Published routes remain read-only in this draft workflow.")</p>
         </div>
     </div>
 
@@ -71,40 +71,54 @@
         <div class="review-form-grid">
             <div class="field-group">
                 <label asp-for="Request.RouteCode">Route code</label>
-                <input asp-for="Request.RouteCode" class="form-control" readonly="@(!canEdit)" placeholder="e.g. XEVERA-TO-ASTRO" />
+                @if (canEdit)
+                {
+                    <input asp-for="Request.RouteCode" class="form-control" placeholder="e.g. XEVERA-TO-ASTRO" />
+                }
+                else
+                {
+                    <input asp-for="Request.RouteCode" class="form-control" readonly />
+                }
                 <span asp-validation-for="Request.RouteCode" class="field-error"></span>
             </div>
             <div class="field-group">
                 <label asp-for="Request.RouteName">Route name</label>
-                <input asp-for="Request.RouteName" class="form-control" readonly="@(!canEdit)" />
+                @if (canEdit) { <input asp-for="Request.RouteName" class="form-control" /> }
+                else { <input asp-for="Request.RouteName" class="form-control" readonly /> }
                 <span asp-validation-for="Request.RouteName" class="field-error"></span>
             </div>
             <div class="field-group">
                 <label asp-for="Request.OriginName">Origin</label>
-                <input asp-for="Request.OriginName" class="form-control" readonly="@(!canEdit)" />
+                @if (canEdit) { <input asp-for="Request.OriginName" class="form-control" /> }
+                else { <input asp-for="Request.OriginName" class="form-control" readonly /> }
                 <span asp-validation-for="Request.OriginName" class="field-error"></span>
             </div>
             <div class="field-group">
                 <label asp-for="Request.DestinationName">Destination</label>
-                <input asp-for="Request.DestinationName" class="form-control" readonly="@(!canEdit)" />
+                @if (canEdit) { <input asp-for="Request.DestinationName" class="form-control" /> }
+                else { <input asp-for="Request.DestinationName" class="form-control" readonly /> }
                 <span asp-validation-for="Request.DestinationName" class="field-error"></span>
             </div>
             <div class="field-group">
                 <label asp-for="Request.DirectionName">Direction</label>
-                <input asp-for="Request.DirectionName" class="form-control" readonly="@(!canEdit)" placeholder="Optional" />
+                @if (canEdit) { <input asp-for="Request.DirectionName" class="form-control" placeholder="Optional" /> }
+                else { <input asp-for="Request.DirectionName" class="form-control" readonly /> }
             </div>
             <div class="field-group">
                 <label asp-for="Request.OperatorName">Operator</label>
-                <input asp-for="Request.OperatorName" class="form-control" readonly="@(!canEdit)" placeholder="Optional" />
+                @if (canEdit) { <input asp-for="Request.OperatorName" class="form-control" placeholder="Optional" /> }
+                else { <input asp-for="Request.OperatorName" class="form-control" readonly /> }
             </div>
             <div class="field-group">
                 <label asp-for="Request.BaseFare">Base fare</label>
-                <input asp-for="Request.BaseFare" class="form-control" inputmode="decimal" readonly="@(!canEdit)" />
+                @if (canEdit) { <input asp-for="Request.BaseFare" class="form-control" inputmode="decimal" /> }
+                else { <input asp-for="Request.BaseFare" class="form-control" inputmode="decimal" readonly /> }
                 <span asp-validation-for="Request.BaseFare" class="field-error"></span>
             </div>
             <div class="field-group review-form-wide">
                 <label asp-for="Request.Description">Description</label>
-                <textarea asp-for="Request.Description" class="form-control" rows="4" readonly="@(!canEdit)"></textarea>
+                @if (canEdit) { <textarea asp-for="Request.Description" class="form-control" rows="4"></textarea> }
+                else { <textarea asp-for="Request.Description" class="form-control" rows="4" readonly></textarea> }
             </div>
         </div>
 
