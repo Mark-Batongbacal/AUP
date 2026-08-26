@@ -1,0 +1,167 @@
+@model Tuki.Admin.ViewModels.TricycleSubmissions.TricycleSubmissionReviewViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = $"Review Submission #{Model.Submission.TricyclePointSubmissionId}";
+    var canReview = Model.Submission.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
+                    || Model.Submission.Status.Equals("NeedsChanges", StringComparison.OrdinalIgnoreCase);
+    var lat = Model.Latitude?.ToString(CultureInfo.InvariantCulture) ?? "0";
+    var lng = Model.Longitude?.ToString(CultureInfo.InvariantCulture) ?? "0";
+}
+
+@section Scripts {
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        (() => {
+            const latInput = document.getElementById('Latitude');
+            const lngInput = document.getElementById('Longitude');
+            const mapNode = document.getElementById('review-map');
+            if (!latInput || !lngInput || !mapNode || typeof L === 'undefined') return;
+
+            const startLat = Number.parseFloat(latInput.value);
+            const startLng = Number.parseFloat(lngInput.value);
+            if (!Number.isFinite(startLat) || !Number.isFinite(startLng)) return;
+
+            const map = L.map('review-map').setView([startLat, startLng], 18);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            const marker = L.marker([startLat, startLng], { draggable: @canReview.ToString().ToLowerInvariant() }).addTo(map);
+            const updateFields = (latlng) => {
+                latInput.value = latlng.lat.toFixed(6);
+                lngInput.value = latlng.lng.toFixed(6);
+                const mapsLink = document.getElementById('google-maps-link');
+                if (mapsLink) mapsLink.href = `https://www.google.com/maps/search/?api=1&query=${latlng.lat},${latlng.lng}`;
+            };
+            marker.on('dragend', event => updateFields(event.target.getLatLng()));
+            if (@canReview.ToString().ToLowerInvariant()) {
+                map.on('click', event => {
+                    marker.setLatLng(event.latlng);
+                    updateFields(event.latlng);
+                });
+            }
+        })();
+    </script>
+}
+
+<div class="review-detail-header">
+    <div>
+        <a asp-action="Index" asp-route-status="@Model.Submission.Status" class="review-back-link">← Back to submissions</a>
+        <p class="eyebrow">SUBMISSION #@Model.Submission.TricyclePointSubmissionId</p>
+        <h1>Verify tricycle point</h1>
+        <p>Compare the passenger proof, detected GPS location, and external map information before taking action.</p>
+    </div>
+    <span class="status-pill status-@Model.Submission.Status.ToLowerInvariant()">@Model.Submission.Status</span>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
+}
+<div asp-validation-summary="ModelOnly" class="review-alert review-alert-error"></div>
+
+<div class="review-detail-grid">
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">PASSENGER PROOF</span>
+                <h2>Submitted photo</h2>
+            </div>
+        </div>
+        <img class="proof-image" src="@Url.Action("Proof", "TricycleSubmissions", new { id = Model.Submission.TricyclePointSubmissionId })" alt="Passenger proof for submission @Model.Submission.TricyclePointSubmissionId" />
+        <dl class="review-meta-grid">
+            <div><dt>Suggested TODA</dt><dd>@(Model.Submission.SuggestedTodaName ?? "Not provided")</dd></div>
+            <div><dt>Suggested landmark</dt><dd>@(Model.Submission.SuggestedLandmark ?? "Not provided")</dd></div>
+            <div><dt>GPS accuracy</dt><dd>@(Model.Submission.AccuracyMeters is null ? "Unknown" : $"±{Model.Submission.AccuracyMeters:0.#} m")</dd></div>
+            <div><dt>Captured</dt><dd>@Model.Submission.LocationCapturedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</dd></div>
+        </dl>
+    </section>
+
+    <section class="review-panel">
+        <div class="panel-heading map-heading">
+            <div>
+                <span class="card-kicker">LOCATION VERIFICATION</span>
+                <h2>Detected location</h2>
+                <p>@(canReview ? "Drag the marker or click the map to correct the coordinates." : "This finalized review is read-only.")</p>
+            </div>
+            <a id="google-maps-link" href="@Model.GoogleMapsUrl" target="_blank" rel="noopener noreferrer" class="btn btn-outline-tuki">Open in Google Maps</a>
+        </div>
+        <div id="review-map" class="review-map" aria-label="Submission location map"></div>
+    </section>
+</div>
+
+<section class="review-panel review-form-panel">
+    <div class="panel-heading">
+        <div>
+            <span class="card-kicker">VERIFIED DETAILS</span>
+            <h2>Official point information</h2>
+            <p>These fields are Admin-reviewed values. Approval/publishing will be handled separately.</p>
+        </div>
+    </div>
+
+    <form asp-action="SaveReview" asp-route-id="@Model.Submission.TricyclePointSubmissionId" method="post" class="review-form">
+        <div class="review-form-grid">
+            <div class="field-group">
+                <label asp-for="PointName">Point name</label>
+                <input asp-for="PointName" class="form-control" disabled="@(!canReview)" />
+                <span asp-validation-for="PointName" class="field-error"></span>
+            </div>
+            <div class="field-group">
+                <label asp-for="OperatorName">Operator name</label>
+                <input asp-for="OperatorName" class="form-control" disabled="@(!canReview)" />
+            </div>
+            <div class="field-group review-form-wide">
+                <label asp-for="Address">Address</label>
+                <input asp-for="Address" class="form-control" disabled="@(!canReview)" />
+            </div>
+            <div class="field-group review-form-wide">
+                <label asp-for="Landmark">Landmark</label>
+                <input asp-for="Landmark" class="form-control" disabled="@(!canReview)" />
+            </div>
+            <div class="field-group">
+                <label asp-for="Latitude">Latitude</label>
+                <input asp-for="Latitude" class="form-control" inputmode="decimal" readonly="@(!canReview)" />
+            </div>
+            <div class="field-group">
+                <label asp-for="Longitude">Longitude</label>
+                <input asp-for="Longitude" class="form-control" inputmode="decimal" readonly="@(!canReview)" />
+            </div>
+            <div class="field-group review-form-wide">
+                <label asp-for="Description">Description</label>
+                <textarea asp-for="Description" class="form-control" rows="3" disabled="@(!canReview)"></textarea>
+            </div>
+            <div class="field-group review-form-wide">
+                <label asp-for="AdminNotes">Admin notes</label>
+                <textarea asp-for="AdminNotes" class="form-control" rows="3" disabled="@(!canReview)"></textarea>
+            </div>
+        </div>
+        @if (canReview)
+        {
+            <button type="submit" class="btn btn-tuki">Save review changes</button>
+        }
+    </form>
+</section>
+
+@if (canReview)
+{
+    <section class="review-actions-grid">
+        <form asp-action="NeedsChanges" asp-route-id="@Model.Submission.TricyclePointSubmissionId" method="post" class="review-action-card">
+            <h3>Needs changes</h3>
+            <p>Return the contribution for correction while preserving the submission.</p>
+            <textarea name="Reason" class="form-control" rows="3" required minlength="3" maxlength="1000" placeholder="Explain what needs to be corrected"></textarea>
+            <button type="submit" class="btn btn-outline-tuki">Mark needs changes</button>
+        </form>
+        <form asp-action="Reject" asp-route-id="@Model.Submission.TricyclePointSubmissionId" method="post" class="review-action-card review-action-danger">
+            <h3>Reject submission</h3>
+            <p>Reject duplicates, invalid locations, insufficient proof, or unrecognized points.</p>
+            <textarea name="Reason" class="form-control" rows="3" required minlength="3" maxlength="1000" placeholder="Enter rejection reason"></textarea>
+            <button type="submit" class="btn btn-danger">Reject submission</button>
+        </form>
+    </section>
+}
