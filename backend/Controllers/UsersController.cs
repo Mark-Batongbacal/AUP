@@ -3,6 +3,7 @@ using backend.Authentication;
 using backend.Models.Users;
 using backend.Repositories;
 using backend.Services;
+using backend.Services.Authentication.Login;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,7 +17,8 @@ public sealed class UsersController(
     ITripSessionRepository? tripSessionRepository = null,
     IFavoriteTripRepository? favoriteTripRepository = null,
     IWebHostEnvironment? hostingEnvironment = null,
-    IConfiguration? configuration = null) : ControllerBase
+    IConfiguration? configuration = null,
+    ILocalAuthenticationService? localAuthenticationService = null) : ControllerBase
 {
     private const string GuestRole = "Guest";
     private const long MaxProfileImageBytes = 5 * 1024 * 1024;
@@ -38,13 +40,23 @@ public sealed class UsersController(
             return NotFound(Error($"User profile {userId} was not found."));
         }
 
+        var lastPasswordChangedAt = localAuthenticationService is null
+            ? null
+            : await localAuthenticationService.GetCredentialUpdatedAtAsync(userId, cancellationToken);
+        var profileWithSecurityMetadata = profile with
+        {
+            LastPasswordChangedAt = lastPasswordChangedAt is { } timestamp
+                ? DateTime.SpecifyKind(timestamp, DateTimeKind.Utc)
+                : null,
+        };
+
         // Direct controller unit tests construct this controller with only the profile service.
-        // Normal application DI supplies all three repositories below.
+        // Normal application DI supplies all repositories/services below.
         if (userProfileRepository is null ||
             tripSessionRepository is null ||
             favoriteTripRepository is null)
         {
-            return Ok(profile);
+            return Ok(profileWithSecurityMetadata);
         }
 
         var storedProfile = await userProfileRepository.GetActiveByUserIdAsync(userId, cancellationToken);
@@ -56,7 +68,7 @@ public sealed class UsersController(
         var tripsTaken = await tripSessionRepository.CountCompletedByUserAsync(userId, cancellationToken);
         var favorites = await favoriteTripRepository.GetByUserAsync(userId, cancellationToken);
 
-        return Ok(profile with
+        return Ok(profileWithSecurityMetadata with
         {
             Email = storedProfile.Email,
             TripsTaken = tripsTaken,
