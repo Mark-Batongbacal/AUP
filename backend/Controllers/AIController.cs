@@ -37,6 +37,11 @@ public sealed class AIController(
                     request.ConversationId,
                     request.OperationId),
                 cancellationToken);
+            response = await AutoApplyActiveTripPreferenceAsync(
+                userId,
+                sessionId,
+                response,
+                cancellationToken);
         }
         else
         {
@@ -66,12 +71,17 @@ public sealed class AIController(
             sessionId,
             request,
             cancellationToken);
+        response = await AutoApplyActiveTripPreferenceAsync(
+            userId,
+            sessionId,
+            response,
+            cancellationToken);
         return AssistantResult(response);
     }
 
-    // A route proposed by the active-trip assistant is inert until the passenger
-    // selects that exact recommendation card. The metadata stamp prevents a recent
-    // planning-screen recommendation from being applied to an unrelated live trip.
+    // Kept for backwards compatibility with older clients. Current Live Trip AI
+    // applies preference-driven reroutes automatically and no longer requires a
+    // route-card confirmation step.
     [HttpPost("trip/{sessionId:guid}/replan/{recommendationId:guid}/confirm")]
     public async Task<IActionResult> ConfirmActiveTripReplan(
         Guid sessionId,
@@ -106,6 +116,49 @@ public sealed class AIController(
         return result.Status is "TRIP_SESSION_NOT_FOUND" or "REPLAN_PROPOSAL_NOT_FOUND"
             ? NotFound(new { error = result.Status })
             : Conflict(new { error = result.Status });
+    }
+
+    private async Task<AssistantResponse> AutoApplyActiveTripPreferenceAsync(
+        Guid userId,
+        Guid sessionId,
+        AssistantResponse response,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(response.Status, "REPLAN_PROPOSAL", StringComparison.OrdinalIgnoreCase) ||
+            response.Journeys is not { Count: > 0 })
+            return response;
+
+        // The assistant's active-trip planner already filters and orders these
+        // journeys using the interpreted walking/mode preference. The first
+        // eligible journey is therefore the deterministic replacement to apply.
+        var selected = response.Journeys[0];
+        var result = await rerouting.ApplyRecommendationAsync(
+            userId,
+            sessionId,
+            selected.JourneyId,
+            cancellationToken);
+
+        if (!result.Succeeded)
+        {
+            var message = result.Status == "NO_REROUTE_AVAILABLE"
+                ? "There is no other available route for that preference. Your current trip stays unchanged."
+                : $"I couldn't apply that preference right now ({result.Status}). Your current trip stays unchanged.";
+            return response with
+            {
+                Status = result.Status,
+                Message = message,
+                Journeys = null,
+                Action = null
+            };
+        }
+
+        return response with
+        {
+            Status = "REROUTE_SUCCEEDED",
+            Message = "Done. I rerouted your active trip using that preference.",
+            Journeys = null,
+            Action = null
+        };
     }
 
     private IActionResult AssistantResult(AssistantResponse response) =>
