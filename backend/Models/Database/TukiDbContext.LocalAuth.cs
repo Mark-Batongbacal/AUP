@@ -36,6 +36,8 @@ public partial class TukiDbContext
             entity.Property(e => e.ProofImageUrl).HasMaxLength(1000);
             entity.Property(e => e.Latitude).HasColumnType("decimal(9, 6)");
             entity.Property(e => e.Longitude).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.AdminLatitude).HasColumnType("decimal(9, 6)");
+            entity.Property(e => e.AdminLongitude).HasColumnType("decimal(9, 6)");
             entity.Property(e => e.AccuracyMeters).HasColumnType("decimal(8, 2)");
             entity.Property(e => e.LocationCapturedAt).HasColumnType("datetimeoffset(7)");
             entity.Property(e => e.SuggestedTodaName).HasMaxLength(200);

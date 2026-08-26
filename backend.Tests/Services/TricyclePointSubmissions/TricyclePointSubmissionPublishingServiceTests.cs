@@ -9,23 +9,14 @@ namespace backend.Tests.Services.TricyclePointSubmissions;
 public sealed class TricyclePointSubmissionPublishingServiceTests
 {
     [Fact]
-    public async Task PublishAsync_PendingReviewedSubmission_BuildsOfficialPointDraft()
+    public async Task PublishAsync_PendingReviewedSubmission_BuildsOfficialPointDraftFromOriginalWhenUnchanged()
     {
         var submission = Submission("Pending");
         var submissions = new Mock<ITricyclePointSubmissionRepository>();
         submissions.Setup(item => item.GetByIdAsync(17, It.IsAny<CancellationToken>()))
             .ReturnsAsync(submission);
 
-        var publishing = new Mock<ITricyclePointSubmissionPublishingRepository>();
-        publishing.Setup(item => item.PublishAsync(
-                17,
-                It.IsAny<Guid>(),
-                It.IsAny<TricyclePointPublicationDraft>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync((long id, Guid adminId, TricyclePointPublicationDraft draft, CancellationToken _) =>
-                TricyclePointSubmissionPublishResult.Success(new(
-                    id, 88, draft.PointCode, draft.PointName, "Approved", adminId, DateTimeOffset.UtcNow)));
-
+        var publishing = PublishingRepository();
         var service = new TricyclePointSubmissionPublishingService(submissions.Object, publishing.Object);
         var result = await service.PublishAsync(Guid.NewGuid(), 17);
 
@@ -40,6 +31,55 @@ public sealed class TricyclePointSubmissionPublishingServiceTests
                 draft.Latitude == 15.123456 &&
                 draft.Longitude == 120.654321),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task PublishAsync_AdminCorrectedCoordinates_PublishesReviewedPairAndPreservesOriginal()
+    {
+        var submission = Submission("Pending");
+        submission.AdminLatitude = 15.222222m;
+        submission.AdminLongitude = 120.555555m;
+        var originalLatitude = submission.Latitude;
+        var originalLongitude = submission.Longitude;
+
+        var submissions = new Mock<ITricyclePointSubmissionRepository>();
+        submissions.Setup(item => item.GetByIdAsync(17, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(submission);
+
+        var publishing = PublishingRepository();
+        var service = new TricyclePointSubmissionPublishingService(submissions.Object, publishing.Object);
+        var result = await service.PublishAsync(Guid.NewGuid(), 17);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(originalLatitude, submission.Latitude);
+        Assert.Equal(originalLongitude, submission.Longitude);
+        publishing.Verify(item => item.PublishAsync(
+            17,
+            It.IsAny<Guid>(),
+            It.Is<TricyclePointPublicationDraft>(draft =>
+                draft.Latitude == 15.222222 &&
+                draft.Longitude == 120.555555),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task PublishAsync_IncompleteAdminCoordinatePair_ReturnsValidationError()
+    {
+        var submission = Submission("Pending");
+        submission.AdminLatitude = 15.2m;
+        submission.AdminLongitude = null;
+
+        var submissions = new Mock<ITricyclePointSubmissionRepository>();
+        submissions.Setup(item => item.GetByIdAsync(17, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(submission);
+        var publishing = new Mock<ITricyclePointSubmissionPublishingRepository>();
+
+        var service = new TricyclePointSubmissionPublishingService(submissions.Object, publishing.Object);
+        var result = await service.PublishAsync(Guid.NewGuid(), 17);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("Reviewed coordinates are incomplete and must be corrected before approval.", result.Errors);
+        publishing.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -92,6 +132,20 @@ public sealed class TricyclePointSubmissionPublishingServiceTests
 
         Assert.True(result.Conflict);
         publishing.VerifyNoOtherCalls();
+    }
+
+    private static Mock<ITricyclePointSubmissionPublishingRepository> PublishingRepository()
+    {
+        var publishing = new Mock<ITricyclePointSubmissionPublishingRepository>();
+        publishing.Setup(item => item.PublishAsync(
+                17,
+                It.IsAny<Guid>(),
+                It.IsAny<TricyclePointPublicationDraft>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((long id, Guid adminId, TricyclePointPublicationDraft draft, CancellationToken _) =>
+                TricyclePointSubmissionPublishResult.Success(new(
+                    id, 88, draft.PointCode, draft.PointName, "Approved", adminId, DateTimeOffset.UtcNow)));
+        return publishing;
     }
 
     private static TricyclePointSubmission Submission(string status) => new()

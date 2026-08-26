@@ -12,6 +12,8 @@ public sealed class TricyclePointSubmission
     public string? SuggestedTodaName { get; set; }
     public string? SuggestedLandmark { get; set; }
     public string Status { get; set; } = "Pending";
+    public decimal? AdminLatitude { get; set; }
+    public decimal? AdminLongitude { get; set; }
     public string? AdminPointName { get; set; }
     public string? AdminOperatorName { get; set; }
     public string? AdminAddress { get; set; }

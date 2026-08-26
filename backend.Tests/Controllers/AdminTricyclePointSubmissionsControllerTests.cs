@@ -150,6 +150,8 @@ public sealed class AdminTricyclePointSubmissionsControllerTests
         "/api/tricycle-point-submissions/proof/proof.jpg",
         15.1m,
         120.5m,
+        null,
+        null,
         5m,
         DateTimeOffset.UtcNow,
         "Suggested TODA",
