@@ -10,6 +10,190 @@ namespace backend.Tests.Services.Navigation;
 
 public sealed class ReroutingServiceTests
 {
+    [Fact]
+    public async Task FreshGps_OverridesStaleSessionLocation_AndPersistsSuccessfulReroute()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var searches = new Mock<ITripSearchRepository>();
+        var recommendations = new Mock<IRouteRecommendationRepository>();
+        var recommendationLegs = new Mock<IRecommendationLegRepository>();
+        var modes = new Mock<ITransportModeRepository>();
+        var instructionService = new Mock<INavigationInstructionService>();
+        var landmarkPrefetch = new Mock<ILandmarkCorridorPrefetchService>();
+        var session = OffRouteSession();
+        var oldRecommendationId = Guid.NewGuid();
+        session.RecommendationId = oldRecommendationId;
+        session.CurrentLegIndex = 3;
+        session.CurrentProgressMeters = 825;
+        session.CurrentRouteProgressMeters = 1_250;
+        session.ConsecutiveOffRouteSamples = 4;
+        session.OffRouteSuspectedAt = DateTime.UtcNow.AddMinutes(-2);
+        session.LastLocationAt = DateTime.UtcNow.AddHours(-1);
+        var currentFixAt = DateTime.UtcNow;
+        const double newLatitude = 15.25;
+        const double newLongitude = 120.75;
+        var newRecommendationId = Guid.NewGuid();
+        var searchId = Guid.NewGuid();
+        var walkingMode = new TransportMode { TransportModeId = 1, Code = "WALK", Name = "Walk" };
+        var persistedLeg = new RecommendationLeg
+        {
+            LegOrder = 0,
+            TransportMode = walkingMode,
+            StartLatitude = newLatitude,
+            StartLongitude = newLongitude,
+            EndLatitude = session.DestinationLatitude,
+            EndLongitude = session.DestinationLongitude
+        };
+
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default))
+            .ReturnsAsync(session);
+        sessions.Setup(item => item.UpdateAsync(session, default)).ReturnsAsync(session);
+        searches.Setup(item => item.AddAsync(It.IsAny<TripSearch>(), default))
+            .ReturnsAsync((TripSearch search, CancellationToken _) =>
+            {
+                search.TripSearchId = searchId;
+                return search;
+            });
+        recommendations.Setup(item => item.AddAsync(It.IsAny<RouteRecommendation>(), default))
+            .ReturnsAsync((RouteRecommendation recommendation, CancellationToken _) =>
+            {
+                recommendation.RecommendationId = newRecommendationId;
+                return recommendation;
+            });
+        recommendations.Setup(item => item.GetOrderedLegsAsync(newRecommendationId, default))
+            .ReturnsAsync([persistedLeg]);
+        recommendationLegs.Setup(item => item.AddAsync(It.IsAny<RecommendationLeg>(), default))
+            .ReturnsAsync((RecommendationLeg leg, CancellationToken _) => leg);
+        modes.Setup(item => item.GetByCodeAsync("WALK", default)).ReturnsAsync(walkingMode);
+        instructionService.Setup(item => item.GenerateAsync(session, default))
+            .ReturnsAsync([]);
+        landmarkPrefetch.Setup(item => item.PrefetchAsync(session, default))
+            .Returns(Task.CompletedTask);
+
+        var routing = new Mock<IRoutingService>();
+        routing.Setup(item => item.PlanTripsAsync(newLatitude, newLongitude,
+                session.DestinationLatitude, session.DestinationLongitude, default))
+            .ReturnsAsync([WalkOnlyPlan(newLatitude, newLongitude,
+                session.DestinationLatitude, session.DestinationLongitude)]);
+        var options = Options.Create(new NavigationOptions { RerouteCooldownSeconds = 120 });
+        var service = new ReroutingService(
+            sessions.Object, routing.Object, searches.Object, recommendations.Object,
+            recommendationLegs.Object, modes.Object, Mock.Of<ITransportRouteRepository>(),
+            instructionService.Object, landmarkPrefetch.Object,
+            new backend.Services.TripSessions.TripSessionStateMachine(),
+            new GpsQualityValidator(options), options);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest(
+                Reason: "OFF_ROUTE",
+                Latitude: newLatitude,
+                Longitude: newLongitude,
+                AccuracyMeters: 8,
+                Timestamp: currentFixAt,
+                SpeedMetersPerSecond: 2,
+                BearingDegrees: 90));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("REROUTE_SUCCEEDED", result.Status);
+        Assert.Equal(newRecommendationId, session.RecommendationId);
+        Assert.Equal(newLatitude, session.LastLatitude);
+        Assert.Equal(newLongitude, session.LastLongitude);
+        Assert.Equal(8, session.LastAccuracyMeters);
+        Assert.Equal(currentFixAt, session.LastLocationAt);
+        Assert.Equal(0, session.CurrentLegIndex);
+        Assert.Equal(0, session.CurrentProgressMeters);
+        Assert.Null(session.CurrentRouteProgressMeters);
+        Assert.Equal(0, session.ConsecutiveOffRouteSamples);
+        Assert.Null(session.OffRouteSuspectedAt);
+        Assert.Equal(1, session.RerouteCount);
+        Assert.Equal("OFF_ROUTE", session.LastRerouteReason);
+        Assert.NotNull(session.LastRerouteAt);
+        Assert.Equal(TripNavigationState.WalkingToDestination, session.CurrentNavigationState);
+        routing.Verify(item => item.PlanTripsAsync(newLatitude, newLongitude,
+            session.DestinationLatitude, session.DestinationLongitude, default), Times.Once);
+        searches.Verify(item => item.AddAsync(It.Is<TripSearch>(search =>
+            search.OriginLatitude == newLatitude && search.OriginLongitude == newLongitude), default), Times.Once);
+        instructionService.Verify(item => item.GenerateAsync(session, default), Times.Once);
+        landmarkPrefetch.Verify(item => item.PrefetchAsync(session, default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidOffRouteGps_DoesNotRequireMatchingTheOldRoute()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        session.LastLocationAt = DateTime.UtcNow.AddDays(-1);
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default))
+            .ReturnsAsync(session);
+        sessions.Setup(item => item.UpdateAsync(session, default)).ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+        const double farLatitude = 14.5;
+        const double farLongitude = 121.1;
+        routing.Setup(item => item.PlanTripsAsync(farLatitude, farLongitude,
+                session.DestinationLatitude, session.DestinationLongitude, default))
+            .ReturnsAsync([]);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest(
+                Reason: "MANUAL",
+                Latitude: farLatitude,
+                Longitude: farLongitude,
+                AccuracyMeters: 10,
+                Timestamp: DateTime.UtcNow));
+
+        Assert.Equal("NO_REROUTE_AVAILABLE", result.Status);
+        routing.Verify(item => item.PlanTripsAsync(farLatitude, farLongitude,
+            session.DestinationLatitude, session.DestinationLongitude, default), Times.Once);
+        Assert.Equal(farLatitude, session.LastLatitude);
+        Assert.Equal(farLongitude, session.LastLongitude);
+    }
+
+    [Theory]
+    [InlineData(91, 120.5, 10, "INVALID_LOCATION")]
+    [InlineData(15.1, -181, 10, "INVALID_LOCATION")]
+    [InlineData(15.1, 120.5, 100, "POOR_ACCURACY")]
+    public async Task InvalidOrUnreliableSuppliedGps_IsRejected(
+        double latitude, double longitude, double accuracy, string expectedStatus)
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default))
+            .ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest(
+                Latitude: latitude,
+                Longitude: longitude,
+                AccuracyMeters: accuracy,
+                Timestamp: DateTime.UtcNow));
+
+        Assert.Equal(expectedStatus, result.Status);
+        routing.Verify(item => item.PlanTripsAsync(It.IsAny<double>(), It.IsAny<double>(),
+            It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task MissingSuppliedGps_FallsBackToSessionLocation()
+    {
+        var sessions = new Mock<ITripSessionRepository>();
+        var session = OffRouteSession();
+        sessions.Setup(item => item.GetOwnedAsync(session.TripSessionId, session.UserId, default))
+            .ReturnsAsync(session);
+        sessions.Setup(item => item.UpdateAsync(session, default)).ReturnsAsync(session);
+        var (service, routing) = Create(sessions);
+        routing.Setup(item => item.PlanTripsAsync(session.LastLatitude!.Value, session.LastLongitude!.Value,
+                session.DestinationLatitude, session.DestinationLongitude, default))
+            .ReturnsAsync([]);
+
+        var result = await service.RerouteAsync(session.UserId, session.TripSessionId,
+            new NavigationRerouteRequest("PREFERENCE_CHANGED", "fastest"));
+
+        Assert.Equal("NO_REROUTE_AVAILABLE", result.Status);
+        routing.Verify(item => item.PlanTripsAsync(session.LastLatitude!.Value, session.LastLongitude!.Value,
+            session.DestinationLatitude, session.DestinationLongitude, default), Times.Once);
+    }
+
     [Theory]
     [InlineData("OFF_ROUTE")]
     [InlineData("MISSED_ALIGHT")]
@@ -209,14 +393,40 @@ public sealed class ReroutingServiceTests
         Mock<ITripSessionRepository> sessions)
     {
         var routing = new Mock<IRoutingService>();
+        var options = Options.Create(new NavigationOptions { RerouteCooldownSeconds = 120 });
         return (new ReroutingService(sessions.Object, routing.Object,
             Mock.Of<ITripSearchRepository>(), Mock.Of<IRouteRecommendationRepository>(),
             Mock.Of<IRecommendationLegRepository>(), Mock.Of<ITransportModeRepository>(),
             Mock.Of<ITransportRouteRepository>(), Mock.Of<INavigationInstructionService>(),
             Mock.Of<ILandmarkCorridorPrefetchService>(),
             new backend.Services.TripSessions.TripSessionStateMachine(),
-            Options.Create(new NavigationOptions { RerouteCooldownSeconds = 120 })), routing);
+            new GpsQualityValidator(options), options), routing);
     }
+
+    private static JeepneyTripPlan WalkOnlyPlan(
+        double originLatitude, double originLongitude,
+        double destinationLatitude, double destinationLongitude) => new()
+    {
+        OriginAccess = new JeepneyAccessSegment { Mode = AccessMode.Walk },
+        DestinationAccess = new JeepneyAccessSegment { Mode = AccessMode.Walk },
+        Legs =
+        [
+            new JeepneyTripLeg
+            {
+                Mode = AccessMode.Walk,
+                OriginLatitude = originLatitude,
+                OriginLongitude = originLongitude,
+                DestinationLatitude = destinationLatitude,
+                DestinationLongitude = destinationLongitude,
+                DistanceMeters = 1_000,
+                DurationSeconds = 720,
+                FarePesos = 0
+            }
+        ],
+        TotalTimeSeconds = 720,
+        TotalFarePesos = 0,
+        GeneralizedCostPesos = 12
+    };
 
     private static JeepneyTripPlan TricycleOnlyPlan() => new()
     {

@@ -25,7 +25,13 @@ data class NavigationRerouteRequest(
     val destinationName: String? = null,
     val destinationLatitude: Double? = null,
     val destinationLongitude: Double? = null,
-    val avoidTransportMode: String? = null
+    val avoidTransportMode: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val accuracyMeters: Double? = null,
+    val timestamp: String? = null,
+    val speedMetersPerSecond: Double? = null,
+    val bearingDegrees: Double? = null
 )
 data class NavigationGeometryPointDto(val latitude: Double, val longitude: Double)
 data class NavigationGeometryResponseDto(val points: List<NavigationGeometryPointDto>)

@@ -30,6 +30,7 @@ public sealed class ReroutingService(
     ITransportRouteRepository routes, INavigationInstructionService instructions,
     ILandmarkCorridorPrefetchService landmarkPrefetch,
     backend.Services.TripSessions.ITripSessionStateMachine stateMachine,
+    IGpsQualityValidator gpsValidator,
     IOptions<NavigationOptions> options,
     IOptions<RoutingOptions>? routingOptions = null,
     ITukiTelemetry? telemetry = null) : IReroutingService
@@ -59,8 +60,42 @@ public sealed class ReroutingService(
         if (automaticRecovery && session.LastRerouteAt is { } last &&
             last.AddSeconds(_options.RerouteCooldownSeconds) > DateTime.UtcNow)
             return new(false, "REROUTE_COOLDOWN");
-        if (session.LastLatitude is not { } latitude || session.LastLongitude is not { } longitude)
+        var hasAnyCurrentLocationField = request.Latitude is not null ||
+            request.Longitude is not null || request.AccuracyMeters is not null ||
+            request.Timestamp is not null || request.SpeedMetersPerSecond is not null ||
+            request.BearingDegrees is not null;
+        var hasCompleteCurrentLocation = request.Latitude is not null &&
+            request.Longitude is not null && request.AccuracyMeters is not null &&
+            request.Timestamp is not null;
+        if (hasAnyCurrentLocationField && !hasCompleteCurrentLocation)
+            return new(false, "INVALID_LOCATION");
+
+        LocationUpdate? suppliedLocation = null;
+        double latitude;
+        double longitude;
+        if (hasCompleteCurrentLocation)
+        {
+            suppliedLocation = new LocationUpdate(
+                request.Latitude!.Value,
+                request.Longitude!.Value,
+                request.AccuracyMeters!.Value,
+                request.Timestamp!.Value,
+                request.SpeedMetersPerSecond,
+                request.BearingDegrees);
+            var qualityError = gpsValidator.Validate(suppliedLocation, session, DateTime.UtcNow);
+            if (qualityError is not null) return new(false, qualityError);
+            latitude = suppliedLocation.Latitude;
+            longitude = suppliedLocation.Longitude;
+        }
+        else if (session.LastLatitude is { } lastLatitude && session.LastLongitude is { } lastLongitude)
+        {
+            latitude = lastLatitude;
+            longitude = lastLongitude;
+        }
+        else
+        {
             return new(false, "NO_RELIABLE_LOCATION");
+        }
 
         var preference = NormalizePreference(request.Preference ?? session.OriginalPreference);
         if (request.Preference is not null && preference is null)
@@ -90,6 +125,13 @@ public sealed class ReroutingService(
 
         session.CurrentNavigationState = TripNavigationState.Rerouting;
         session.LastNavigationStatus = "REROUTING";
+        if (suppliedLocation is not null)
+        {
+            session.LastLatitude = suppliedLocation.Latitude;
+            session.LastLongitude = suppliedLocation.Longitude;
+            session.LastAccuracyMeters = suppliedLocation.AccuracyMeters;
+            session.LastLocationAt = suppliedLocation.Timestamp;
+        }
         session.UpdatedAt = DateTime.UtcNow;
         _telemetry.Event("RerouteStarted", sessionId, normalizedReason);
         await sessions.UpdateAsync(session, cancellationToken);

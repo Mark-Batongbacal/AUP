@@ -10,7 +10,13 @@ public sealed record NavigationRerouteRequest(
     string? DestinationName = null,
     double? DestinationLatitude = null,
     double? DestinationLongitude = null,
-    string? AvoidTransportMode = null);
+    string? AvoidTransportMode = null,
+    double? Latitude = null,
+    double? Longitude = null,
+    double? AccuracyMeters = null,
+    DateTime? Timestamp = null,
+    double? SpeedMetersPerSecond = null,
+    double? BearingDegrees = null);
 
 public sealed record NavigationLegSnapshot(
     int LegIndex,
