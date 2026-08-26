@@ -46,6 +46,33 @@ public sealed class AdminJeepneyRouteRequest
     public decimal? BaseFare { get; set; }
 }
 
+public sealed record AdminJeepneyRouteGeometryPoint(
+    int PointOrder,
+    double Latitude,
+    double Longitude);
+
+public sealed record AdminJeepneyRouteGeometry(
+    long RouteId,
+    string RouteCode,
+    string RouteName,
+    string OriginName,
+    string DestinationName,
+    bool IsActive,
+    string? EncodedPolyline,
+    IReadOnlyList<AdminJeepneyRouteGeometryPoint> Points,
+    DateTime? UpdatedAt);
+
+public sealed class AdminJeepneyRouteGeometryRequest
+{
+    public List<AdminJeepneyRouteGeometryPointRequest> Points { get; set; } = [];
+}
+
+public sealed class AdminJeepneyRouteGeometryPointRequest
+{
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+}
+
 public sealed record AdminJeepneyBackendError(IReadOnlyList<string> Errors);
 
 public sealed record AdminJeepneyRepositoryResult<T>(

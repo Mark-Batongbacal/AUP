@@ -21,3 +21,17 @@ public sealed class JeepneyRouteEditViewModel
     public bool IsCreate => RouteId is null;
     public bool CanEdit => Route is null || !Route.IsActive;
 }
+
+public sealed class JeepneyRoutePlotViewModel
+{
+    public AdminJeepneyRoute Route { get; init; } = null!;
+    public AdminJeepneyRouteGeometry Geometry { get; init; } = null!;
+    public string? ErrorMessage { get; init; }
+    public string? SuccessMessage { get; init; }
+    public bool CanEdit => !Route.IsActive;
+}
+
+public sealed class JeepneyRoutePlotPostModel
+{
+    public string PointsJson { get; set; } = "[]";
+}

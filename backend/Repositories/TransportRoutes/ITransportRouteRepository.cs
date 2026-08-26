@@ -47,6 +47,13 @@ public interface ITransportRouteRepository
 
     Task<TransportRoute> ReplaceAsync(long routeId, TransportRoute replacement, CancellationToken cancellationToken = default);
 
+    Task<TransportRoute?> ReplaceDraftGeometryAsync(
+        long routeId,
+        IReadOnlyList<RoutePoint> routePoints,
+        IReadOnlyList<RouteWaypoint> routeWaypoints,
+        string encodedPolyline,
+        CancellationToken cancellationToken = default);
+
     Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default);
 
     Task<bool> DeactivateAsync(long routeId, CancellationToken cancellationToken = default);

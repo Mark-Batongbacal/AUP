@@ -1,0 +1,262 @@
+@model Tuki.Admin.ViewModels.JeepneyRoutes.JeepneyRoutePlotViewModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = $"Plot {Model.Route.RouteName}";
+    var initialPointsJson = JsonSerializer.Serialize(Model.Geometry.Points.Select(point => new
+    {
+        latitude = point.Latitude,
+        longitude = point.Longitude
+    }));
+}
+
+@section Scripts {
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        (() => {
+            const mapNode = document.getElementById('jeepney-route-map');
+            const pointsInput = document.getElementById('PointsJson');
+            const pointList = document.getElementById('route-point-list');
+            const pointCount = document.getElementById('route-point-count');
+            const saveButton = document.getElementById('save-route-geometry');
+            const undoButton = document.getElementById('undo-route-point');
+            const clearButton = document.getElementById('clear-route-points');
+            const fitButton = document.getElementById('fit-route-points');
+            if (!mapNode || !pointsInput || typeof L === 'undefined') return;
+
+            const canEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+            const fallback = [15.145, 120.588];
+            let points = @Html.Raw(initialPointsJson);
+            let markers = [];
+            let routeLine = null;
+
+            const map = L.map(mapNode).setView(fallback, 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            const serialize = () => {
+                pointsInput.value = JSON.stringify(points.map(point => ({
+                    latitude: point.latitude,
+                    longitude: point.longitude
+                })));
+            };
+
+            const fitRoute = () => {
+                if (points.length === 0) return;
+                if (points.length === 1) {
+                    map.setView([points[0].latitude, points[0].longitude], 18);
+                    return;
+                }
+                map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [30, 30] });
+            };
+
+            const movePoint = (index, offset) => {
+                const target = index + offset;
+                if (!canEdit || target < 0 || target >= points.length) return;
+                [points[index], points[target]] = [points[target], points[index]];
+                render();
+            };
+
+            const removePoint = (index) => {
+                if (!canEdit) return;
+                points.splice(index, 1);
+                render();
+            };
+
+            const renderList = () => {
+                if (!pointList) return;
+                if (points.length === 0) {
+                    pointList.innerHTML = '<div class="duplicate-clear">No route points yet. Click the map to add the first point.</div>';
+                    return;
+                }
+
+                pointList.innerHTML = '';
+                points.forEach((point, index) => {
+                    const row = document.createElement('div');
+                    row.className = 'duplicate-warning-item';
+
+                    const info = document.createElement('div');
+                    const title = document.createElement('strong');
+                    title.textContent = `Point ${index + 1}`;
+                    const coordinates = document.createElement('span');
+                    coordinates.textContent = `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`;
+                    info.append(title, coordinates);
+                    row.appendChild(info);
+
+                    if (canEdit) {
+                        const controls = document.createElement('div');
+                        controls.className = 'd-flex gap-1 flex-wrap';
+                        const actions = [
+                            ['↑', -1, index === 0],
+                            ['↓', 1, index === points.length - 1]
+                        ];
+                        actions.forEach(([label, offset, disabled]) => {
+                            const button = document.createElement('button');
+                            button.type = 'button';
+                            button.className = 'btn btn-sm btn-outline-secondary';
+                            button.textContent = label;
+                            button.disabled = disabled;
+                            button.addEventListener('click', () => movePoint(index, offset));
+                            controls.appendChild(button);
+                        });
+                        const remove = document.createElement('button');
+                        remove.type = 'button';
+                        remove.className = 'btn btn-sm btn-outline-danger';
+                        remove.textContent = 'Remove';
+                        remove.addEventListener('click', () => removePoint(index));
+                        controls.appendChild(remove);
+                        row.appendChild(controls);
+                    }
+
+                    pointList.appendChild(row);
+                });
+            };
+
+            const render = () => {
+                markers.forEach(marker => map.removeLayer(marker));
+                markers = [];
+                if (routeLine) {
+                    map.removeLayer(routeLine);
+                    routeLine = null;
+                }
+
+                points.forEach((point, index) => {
+                    const marker = L.marker([point.latitude, point.longitude], { draggable: canEdit }).addTo(map);
+                    marker.bindTooltip(String(index + 1), { permanent: true, direction: 'top', offset: [0, -10] });
+                    if (canEdit) {
+                        marker.on('dragend', event => {
+                            const position = event.target.getLatLng();
+                            points[index] = { latitude: position.lat, longitude: position.lng };
+                            render();
+                        });
+                    }
+                    markers.push(marker);
+                });
+
+                if (points.length >= 2) {
+                    routeLine = L.polyline(
+                        points.map(point => [point.latitude, point.longitude]),
+                        { weight: 5, opacity: 0.85 }
+                    ).addTo(map);
+                }
+
+                serialize();
+                renderList();
+                if (pointCount) pointCount.textContent = String(points.length);
+                if (saveButton) saveButton.disabled = !canEdit || points.length < 2;
+                if (undoButton) undoButton.disabled = !canEdit || points.length === 0;
+                if (clearButton) clearButton.disabled = !canEdit || points.length === 0;
+                if (fitButton) fitButton.disabled = points.length === 0;
+            };
+
+            if (canEdit) {
+                map.on('click', event => {
+                    points.push({ latitude: event.latlng.lat, longitude: event.latlng.lng });
+                    render();
+                });
+            }
+
+            if (undoButton) undoButton.addEventListener('click', () => {
+                if (points.length > 0) {
+                    points.pop();
+                    render();
+                }
+            });
+            if (clearButton) clearButton.addEventListener('click', () => {
+                if (points.length > 0 && confirm('Clear every plotted point from this unsaved map?')) {
+                    points = [];
+                    render();
+                }
+            });
+            if (fitButton) fitButton.addEventListener('click', fitRoute);
+
+            render();
+            if (points.length > 0) fitRoute();
+        })();
+    </script>
+}
+
+<div class="review-detail-header">
+    <div>
+        <a asp-action="Edit" asp-route-id="@Model.Route.RouteId" class="review-back-link">← Back to route details</a>
+        <p class="eyebrow">JEEPNEY ROUTE PLOTTER</p>
+        <h1>@Model.Route.RouteName</h1>
+        <p>@Model.Route.OriginName → @Model.Route.DestinationName · <code>@Model.Route.RouteCode</code></p>
+    </div>
+    <span class="status-pill @(Model.Route.IsActive ? "status-active" : "status-archived")">
+        @(Model.Route.IsActive ? "Published · read only" : "Draft · editable")
+    </span>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
+}
+
+@if (!Model.CanEdit)
+{
+    <div class="review-alert review-alert-error">
+        This route is already published. Its geometry is view-only in the draft plotter and cannot be changed here.
+    </div>
+}
+else
+{
+    <div class="review-alert review-alert-success">
+        Click the map to add points in travel order. Drag markers to correct them, then save when at least two points are plotted. Saving geometry does not publish the route.
+    </div>
+}
+
+<div class="review-detail-grid">
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">MAP</span>
+                <h2>Plot route geometry</h2>
+                <p>The line follows the exact point order shown in the list.</p>
+            </div>
+        </div>
+        <div id="jeepney-route-map" class="review-map" style="min-height: 560px;"></div>
+        <div class="d-flex gap-2 flex-wrap mt-3">
+            <button id="fit-route-points" type="button" class="btn btn-outline-secondary">Fit route</button>
+            @if (Model.CanEdit)
+            {
+                <button id="undo-route-point" type="button" class="btn btn-outline-secondary">Undo last</button>
+                <button id="clear-route-points" type="button" class="btn btn-outline-danger">Clear unsaved</button>
+            }
+        </div>
+    </section>
+
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">ORDERED GEOMETRY</span>
+                <h2><span id="route-point-count">@Model.Geometry.Points.Count</span> route points</h2>
+                <p>Point 1 is the start of the plotted path; the final point is the end.</p>
+            </div>
+        </div>
+        <div id="route-point-list" class="d-grid gap-2"></div>
+    </section>
+</div>
+
+@if (Model.CanEdit)
+{
+    <section class="review-panel mt-3">
+        <form asp-action="Plot" asp-route-id="@Model.Route.RouteId" method="post">
+            <input id="PointsJson" name="PointsJson" type="hidden" value="[]" />
+            <div class="panel-heading">
+                <div>
+                    <span class="card-kicker">SAVE DRAFT</span>
+                    <h2>Store plotted geometry</h2>
+                    <p>This replaces the draft's existing ordered points, waypoints, and encoded polyline together. It does not activate the route.</p>
+                </div>
+            </div>
+            <button id="save-route-geometry" type="submit" class="btn btn-tuki">Save route geometry</button>
+        </form>
+    </section>
+}

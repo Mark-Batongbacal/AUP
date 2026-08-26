@@ -26,6 +26,13 @@ public sealed class AdminJeepneyRouteRepository(
             CreateRequest(HttpMethod.Get, $"api/admin/jeepney-routes/{routeId}"),
             cancellationToken);
 
+    public Task<AdminJeepneyRepositoryResult<AdminJeepneyRouteGeometry>> GetGeometryAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<AdminJeepneyRouteGeometry>(
+            CreateRequest(HttpMethod.Get, $"api/admin/jeepney-routes/{routeId}/geometry"),
+            cancellationToken);
+
     public Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> CreateDraftAsync(
         AdminJeepneyRouteRequest request,
         CancellationToken cancellationToken = default) =>
@@ -37,15 +44,32 @@ public sealed class AdminJeepneyRouteRepository(
         CancellationToken cancellationToken = default) =>
         SendMutationAsync(HttpMethod.Put, $"api/admin/jeepney-routes/{routeId}", request, cancellationToken);
 
-    private async Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> SendMutationAsync(
+    public Task<AdminJeepneyRepositoryResult<AdminJeepneyRouteGeometry>> ReplaceDraftGeometryAsync(
+        long routeId,
+        AdminJeepneyRouteGeometryRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendMutationAsync<AdminJeepneyRouteGeometryRequest, AdminJeepneyRouteGeometry>(
+            HttpMethod.Put,
+            $"api/admin/jeepney-routes/{routeId}/geometry",
+            request,
+            cancellationToken);
+
+    private Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> SendMutationAsync(
         HttpMethod method,
         string path,
         AdminJeepneyRouteRequest request,
+        CancellationToken cancellationToken) =>
+        SendMutationAsync<AdminJeepneyRouteRequest, AdminJeepneyRoute>(method, path, request, cancellationToken);
+
+    private async Task<AdminJeepneyRepositoryResult<TResponse>> SendMutationAsync<TRequest, TResponse>(
+        HttpMethod method,
+        string path,
+        TRequest request,
         CancellationToken cancellationToken)
     {
         using var message = CreateRequest(method, path);
         message.Content = JsonContent.Create(request);
-        return await SendJsonAsync<AdminJeepneyRoute>(message, cancellationToken);
+        return await SendJsonAsync<TResponse>(message, cancellationToken);
     }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)

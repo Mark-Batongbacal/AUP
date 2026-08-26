@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Tuki.Admin.Models.JeepneyRoutes;
@@ -45,7 +46,7 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
             return View("Edit", model);
         }
 
-        TempData["JeepneyRouteSuccess"] = "Jeepney route draft created. Add route geometry in the route plotter before publishing.";
+        TempData["JeepneyRouteSuccess"] = "Jeepney route draft created. Add route geometry before publishing.";
         return RedirectToAction(nameof(Edit), new { id = result.Value.RouteId });
     }
 
@@ -87,6 +88,70 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
 
         TempData["JeepneyRouteSuccess"] = "Jeepney route draft metadata updated.";
         return RedirectToAction(nameof(Edit), new { id });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> Plot(long id, CancellationToken cancellationToken = default)
+    {
+        var routeResult = await repository.GetByIdAsync(id, cancellationToken);
+        var geometryResult = await repository.GetGeometryAsync(id, cancellationToken);
+        if (routeResult.Value is null || geometryResult.Value is null)
+        {
+            if (routeResult.StatusCode == StatusCodes.Status404NotFound ||
+                geometryResult.StatusCode == StatusCodes.Status404NotFound)
+                return NotFound();
+
+            TempData["JeepneyRouteError"] = routeResult.ErrorMessage ?? geometryResult.ErrorMessage ?? "Unable to load route geometry.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        return View(new JeepneyRoutePlotViewModel
+        {
+            Route = routeResult.Value,
+            Geometry = geometryResult.Value,
+            ErrorMessage = TempData["JeepneyRouteError"] as string,
+            SuccessMessage = TempData["JeepneyRouteSuccess"] as string
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Plot(
+        long id,
+        JeepneyRoutePlotPostModel model,
+        CancellationToken cancellationToken = default)
+    {
+        List<AdminJeepneyRouteGeometryPointRequest>? points;
+        try
+        {
+            points = JsonSerializer.Deserialize<List<AdminJeepneyRouteGeometryPointRequest>>(
+                model.PointsJson,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (JsonException)
+        {
+            points = null;
+        }
+
+        if (points is null || points.Count < 2)
+        {
+            TempData["JeepneyRouteError"] = "Plot at least two valid route points before saving.";
+            return RedirectToAction(nameof(Plot), new { id });
+        }
+
+        var result = await repository.ReplaceDraftGeometryAsync(
+            id,
+            new AdminJeepneyRouteGeometryRequest { Points = points },
+            cancellationToken);
+
+        if (!result.Succeeded || result.Value is null)
+        {
+            TempData["JeepneyRouteError"] = result.ErrorMessage ?? "Unable to save route geometry.";
+            return RedirectToAction(nameof(Plot), new { id });
+        }
+
+        TempData["JeepneyRouteSuccess"] = $"Route geometry saved with {result.Value.Points.Count} ordered points. The route remains an inactive draft.";
+        return RedirectToAction(nameof(Plot), new { id });
     }
 
     private static AdminJeepneyRouteRequest MapRequest(AdminJeepneyRoute route) => new()
