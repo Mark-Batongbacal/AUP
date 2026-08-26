@@ -108,6 +108,127 @@ public sealed class AdminJeepneyRouteManagementServiceTests
         routeRepository.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task ReplaceDraftGeometryAsync_ValidDraft_SavesOrderedGeometryAndPolyline()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DraftRoute(44));
+        routeRepository
+            .Setup(repository => repository.ReplaceDraftGeometryAsync(
+                44,
+                It.IsAny<IReadOnlyList<RoutePoint>>(),
+                It.IsAny<IReadOnlyList<RouteWaypoint>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((
+                long routeId,
+                IReadOnlyList<RoutePoint> routePoints,
+                IReadOnlyList<RouteWaypoint> routeWaypoints,
+                string polyline,
+                CancellationToken _) =>
+            {
+                var route = DraftRoute(routeId);
+                route.RoutePoints = routePoints.ToList();
+                route.RouteWaypoints = routeWaypoints.ToList();
+                route.EncodedPolyline = polyline;
+                return route;
+            });
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.ReplaceDraftGeometryAsync(44, GeometryRequest());
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(result.Geometry);
+        Assert.Equal(3, result.Geometry!.Points.Count);
+        Assert.Equal([1, 2, 3], result.Geometry.Points.Select(point => point.PointOrder));
+        Assert.False(string.IsNullOrWhiteSpace(result.Geometry.EncodedPolyline));
+        routeRepository.Verify(repository => repository.ReplaceDraftGeometryAsync(
+            44,
+            It.Is<IReadOnlyList<RoutePoint>>(points =>
+                points.Count == 3 &&
+                points[0].PointOrder == 1 &&
+                points[1].PointOrder == 2 &&
+                points[2].PointOrder == 3),
+            It.Is<IReadOnlyList<RouteWaypoint>>(points =>
+                points.Count == 3 &&
+                points[0].WaypointOrder == 1 &&
+                points[2].WaypointOrder == 3),
+            It.Is<string>(polyline => !string.IsNullOrWhiteSpace(polyline)),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplaceDraftGeometryAsync_ActiveRoute_ReturnsLockedWithoutSaving()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        var activeRoute = DraftRoute(44);
+        activeRoute.IsActive = true;
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(activeRoute);
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.ReplaceDraftGeometryAsync(44, GeometryRequest());
+
+        Assert.Equal(AdminJeepneyRouteMutationStatus.ActiveRouteLocked, result.Status);
+        routeRepository.Verify(repository => repository.ReplaceDraftGeometryAsync(
+            It.IsAny<long>(),
+            It.IsAny<IReadOnlyList<RoutePoint>>(),
+            It.IsAny<IReadOnlyList<RouteWaypoint>>(),
+            It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ReplaceDraftGeometryAsync_InvalidCoordinate_ReturnsValidationWithoutQueryingRepository()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        var request = new AdminJeepneyRouteGeometryRequest
+        {
+            Points =
+            [
+                new() { Latitude = 100, Longitude = 120.5 },
+                new() { Latitude = 15.1, Longitude = 120.6 }
+            ]
+        };
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.ReplaceDraftGeometryAsync(44, request);
+
+        Assert.Equal(AdminJeepneyRouteMutationStatus.ValidationFailed, result.Status);
+        Assert.Contains(result.Errors, error => error.Contains("latitude", StringComparison.OrdinalIgnoreCase));
+        routeRepository.VerifyNoOtherCalls();
+        modeRepository.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ReplaceDraftGeometryAsync_DraftPublishedDuringSave_ReturnsLocked()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        routeRepository
+            .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DraftRoute(44));
+        routeRepository
+            .Setup(repository => repository.ReplaceDraftGeometryAsync(
+                44,
+                It.IsAny<IReadOnlyList<RoutePoint>>(),
+                It.IsAny<IReadOnlyList<RouteWaypoint>>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((TransportRoute?)null);
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.ReplaceDraftGeometryAsync(44, GeometryRequest());
+
+        Assert.Equal(AdminJeepneyRouteMutationStatus.ActiveRouteLocked, result.Status);
+    }
+
     private static AdminJeepneyRouteMutationRequest Request() => new()
     {
         RouteCode = " XEVERA-ASTRO ",
@@ -118,5 +239,27 @@ public sealed class AdminJeepneyRouteManagementServiceTests
         OperatorName = "Verified Operator",
         Description = "Draft route metadata",
         BaseFare = 13m
+    };
+
+    private static AdminJeepneyRouteGeometryRequest GeometryRequest() => new()
+    {
+        Points =
+        [
+            new() { Latitude = 15.154, Longitude = 120.591 },
+            new() { Latitude = 15.151, Longitude = 120.598 },
+            new() { Latitude = 15.147, Longitude = 120.605 }
+        ]
+    };
+
+    private static TransportRoute DraftRoute(long routeId) => new()
+    {
+        RouteId = routeId,
+        RouteCode = "XEVERA-ASTRO",
+        RouteName = "Xevera to Astro",
+        OriginName = "Xevera",
+        DestinationName = "Astro",
+        IsActive = false,
+        CreatedAt = DateTime.UtcNow,
+        TransportMode = new TransportMode { Code = "JEEPNEY", Name = "Jeepney" }
     };
 }

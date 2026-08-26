@@ -37,6 +37,15 @@ public sealed class AdminJeepneyRoutesController(
         return route is null ? NotFound() : Ok(route);
     }
 
+    [HttpGet("{routeId:long}/geometry")]
+    public async Task<ActionResult<AdminJeepneyRouteGeometryResponse>> GetGeometry(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        var geometry = await managementService.GetGeometryAsync(routeId, cancellationToken);
+        return geometry is null ? NotFound() : Ok(geometry);
+    }
+
     [HttpPost]
     public async Task<ActionResult<AdminJeepneyRouteResponse>> CreateDraft(
         [FromBody] AdminJeepneyRouteMutationRequest request,
@@ -66,6 +75,18 @@ public sealed class AdminJeepneyRoutesController(
             : Failure(result);
     }
 
+    [HttpPut("{routeId:long}/geometry")]
+    public async Task<ActionResult<AdminJeepneyRouteGeometryResponse>> ReplaceDraftGeometry(
+        long routeId,
+        [FromBody] AdminJeepneyRouteGeometryRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await managementService.ReplaceDraftGeometryAsync(routeId, request, cancellationToken);
+        return result.Succeeded && result.Geometry is not null
+            ? Ok(result.Geometry)
+            : Failure(result);
+    }
+
     private ActionResult<AdminJeepneyRouteResponse> Failure(AdminJeepneyRouteMutationResult result)
     {
         var error = new { errors = result.Errors };
@@ -76,6 +97,18 @@ public sealed class AdminJeepneyRoutesController(
             AdminJeepneyRouteMutationStatus.ActiveRouteLocked => Conflict(error),
             AdminJeepneyRouteMutationStatus.JeepneyModeNotFound =>
                 StatusCode(StatusCodes.Status503ServiceUnavailable, error),
+            _ => BadRequest(error)
+        };
+    }
+
+    private ActionResult<AdminJeepneyRouteGeometryResponse> Failure(AdminJeepneyRouteGeometryMutationResult result)
+    {
+        var error = new { errors = result.Errors };
+        return result.Status switch
+        {
+            AdminJeepneyRouteMutationStatus.NotFound => NotFound(error),
+            AdminJeepneyRouteMutationStatus.Conflict => Conflict(error),
+            AdminJeepneyRouteMutationStatus.ActiveRouteLocked => Conflict(error),
             _ => BadRequest(error)
         };
     }

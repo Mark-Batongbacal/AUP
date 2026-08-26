@@ -180,6 +180,38 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
         return existing;
     }
 
+    public async Task<TransportRoute?> ReplaceDraftGeometryAsync(
+        long routeId,
+        IReadOnlyList<RoutePoint> routePoints,
+        IReadOnlyList<RouteWaypoint> routeWaypoints,
+        string encodedPolyline,
+        CancellationToken cancellationToken = default)
+    {
+        var route = await _context.TransportRoutes
+            .Include(item => item.TransportMode)
+            .Include(item => item.RoutePoints)
+            .Include(item => item.RouteWaypoints)
+            .SingleOrDefaultAsync(
+                item => item.RouteId == routeId &&
+                        !item.IsActive &&
+                        item.TransportMode.Code == "JEEPNEY",
+                cancellationToken);
+
+        if (route is null)
+            return null;
+
+        _context.RoutePoints.RemoveRange(route.RoutePoints);
+        _context.RouteWaypoints.RemoveRange(route.RouteWaypoints);
+
+        route.RoutePoints = routePoints.ToList();
+        route.RouteWaypoints = routeWaypoints.ToList();
+        route.EncodedPolyline = encodedPolyline;
+        route.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return route;
+    }
+
     public async Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default)
     {
         _context.TransportRoutes.Update(Route);

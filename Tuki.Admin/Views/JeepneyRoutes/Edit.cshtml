@@ -9,7 +9,7 @@
         <a asp-action="Index" class="review-back-link">← Back to jeepney routes</a>
         <p class="eyebrow">JEEPNEY ROUTE</p>
         <h1>@(Model.IsCreate ? "Create route draft" : Model.Route?.RouteName ?? "Route draft")</h1>
-        <p>Define verified route metadata first. Plotting geometry, advanced editing, and publishing are intentionally separated into later workflows.</p>
+        <p>Define verified route metadata, then plot its ordered geometry before publishing.</p>
     </div>
     @if (Model.Route is not null)
     {
@@ -44,10 +44,15 @@
             <div><dt>Polyline</dt><dd>@(Model.Route.HasPolyline ? "Available" : "Not plotted yet")</dd></div>
             <div><dt>Passenger visibility</dt><dd>@(Model.Route.IsActive ? "Published / active" : "Hidden draft")</dd></div>
         </div>
+        <div class="d-flex gap-2 flex-wrap mt-3">
+            <a asp-action="Plot" asp-route-id="@Model.Route.RouteId" class="btn btn-tuki">
+                @(Model.Route.IsActive ? "View route geometry" : Model.Route.HasPolyline ? "Edit plotted geometry" : "Plot route geometry")
+            </a>
+        </div>
         @if (!Model.Route.IsActive)
         {
             <div class="review-alert review-alert-success mt-3 mb-0">
-                This draft is inactive, so it is excluded from the existing passenger active-route endpoint.
+                This draft is inactive, so plotting or editing its geometry will not expose it to the passenger active-route endpoint.
             </div>
         }
     </section>
@@ -58,7 +63,7 @@
         <div>
             <span class="card-kicker">ROUTE METADATA</span>
             <h2>@(canEdit ? "Draft details" : "Published route details")</h2>
-            <p>@(canEdit ? "Save the core route information before plotting its ordered geometry." : "Published routes are read-only in this foundation workflow.")</p>
+            <p>@(canEdit ? "Maintain the route information here and use the plotter for ordered geometry." : "Published routes remain read-only in this draft workflow.")</p>
         </div>
     </div>
 
