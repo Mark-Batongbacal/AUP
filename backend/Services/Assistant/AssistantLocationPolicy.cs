@@ -29,7 +29,6 @@ public static class AssistantLocationPolicy
             return new(Unavailable, null, false);
 
         if (locationAt is null ||
-            locationAt.Value.Kind == DateTimeKind.Unspecified ||
             accuracyMeters is null ||
             !double.IsFinite(accuracyMeters.Value) ||
             accuracyMeters.Value < 0)
@@ -37,10 +36,21 @@ public static class AssistantLocationPolicy
             return new(Unknown, null, false);
         }
 
-        var timestampUtc = locationAt.Value.ToUniversalTime();
-        var nowUtc = utcNow.Kind == DateTimeKind.Utc
-            ? utcNow
-            : utcNow.ToUniversalTime();
+        // SQL Server datetime2 values are commonly materialized with DateTimeKind.Unspecified.
+        // LastLocationAt is written from a validated UTC navigation timestamp, so preserve that
+        // contract when the persisted session is loaded back from the database.
+        var timestampUtc = locationAt.Value.Kind switch
+        {
+            DateTimeKind.Utc => locationAt.Value,
+            DateTimeKind.Local => locationAt.Value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(locationAt.Value, DateTimeKind.Utc)
+        };
+        var nowUtc = utcNow.Kind switch
+        {
+            DateTimeKind.Utc => utcNow,
+            DateTimeKind.Local => utcNow.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(utcNow, DateTimeKind.Utc)
+        };
         var ageSeconds = (nowUtc - timestampUtc).TotalSeconds;
 
         // Navigation's GPS validator permits a small amount of clock skew into the future,
