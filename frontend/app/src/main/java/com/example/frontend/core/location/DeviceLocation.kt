@@ -22,6 +22,9 @@ fun Context.hasDeviceLocationPermission(): Boolean =
     ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
         ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+fun Context.hasPreciseDeviceLocationPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
 @SuppressLint("MissingPermission")
 suspend fun Context.currentDeviceLocation(): Location? {
     if (!hasDeviceLocationPermission()) return null
