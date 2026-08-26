@@ -13,7 +13,20 @@ class DeviceLocationTest {
             isLocationTimestampRecent(
                 locationEpochMillis = 80_000L,
                 nowEpochMillis = now,
-                maxAgeMillis = 25_000L
+                maxAgeMillis = 30_000L
+            )
+        )
+    }
+
+    @Test
+    fun locationExactlyAtFallbackBoundary_isAccepted() {
+        val now = 100_000L
+
+        assertTrue(
+            isLocationTimestampRecent(
+                locationEpochMillis = 70_000L,
+                nowEpochMillis = now,
+                maxAgeMillis = 30_000L
             )
         )
     }
@@ -24,9 +37,9 @@ class DeviceLocationTest {
 
         assertFalse(
             isLocationTimestampRecent(
-                locationEpochMillis = 70_000L,
+                locationEpochMillis = 69_999L,
                 nowEpochMillis = now,
-                maxAgeMillis = 25_000L
+                maxAgeMillis = 30_000L
             )
         )
     }
@@ -39,15 +52,15 @@ class DeviceLocationTest {
             isLocationTimestampRecent(
                 locationEpochMillis = 100_001L,
                 nowEpochMillis = now,
-                maxAgeMillis = 25_000L
+                maxAgeMillis = 30_000L
             )
         )
     }
 
     @Test
     fun invalidTimestampInputs_areRejected() {
-        assertFalse(isLocationTimestampRecent(0L, 100_000L, 25_000L))
-        assertFalse(isLocationTimestampRecent(80_000L, 0L, 25_000L))
+        assertFalse(isLocationTimestampRecent(0L, 100_000L, 30_000L))
+        assertFalse(isLocationTimestampRecent(80_000L, 0L, 30_000L))
         assertFalse(isLocationTimestampRecent(80_000L, 100_000L, -1L))
     }
 }
