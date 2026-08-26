@@ -1,12 +1,15 @@
 package com.example.frontend.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -54,7 +58,12 @@ fun BottomBar(
         shadowElevation = 8.dp
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 13.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(64.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             BottomBarItem(
                 R.drawable.home,
@@ -72,7 +81,7 @@ fun BottomBar(
             )
             BottomBarItem(
                 R.drawable.ic_contributions,
-                "Contributions",
+                "Contribute",
                 selectedTab == TukiTab.CONTRIBUTIONS,
                 {
                     if (onContributionsClick != null) {
@@ -131,22 +140,29 @@ private fun BottomBarItem(
     modifier: Modifier = Modifier
 ) {
     val tint = if (selected) TukiTeal else TukiMuted
+
     Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier.clickable(onClick = onClick).padding(vertical = 2.dp)
+        verticalArrangement = Arrangement.Center
     ) {
         Icon(
             painter = painterResource(iconRes),
             contentDescription = label,
             tint = tint,
-            modifier = Modifier.size(23.dp)
+            modifier = Modifier.size(22.dp)
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            label,
+            text = label,
             color = tint,
             style = MaterialTheme.typography.labelSmall,
-            maxLines = 1
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }
