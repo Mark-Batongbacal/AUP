@@ -28,4 +28,24 @@ public sealed class TransportRouteDeactivationController(
 
         return NoContent();
     }
+
+    [HttpPatch("{routeId:long}/activate")]
+    [Authorize]
+    public async Task<IActionResult> ActivateRoute(
+        [FromRoute] long routeId,
+        CancellationToken cancellationToken)
+    {
+        if (routeId <= 0)
+        {
+            return BadRequest(new RoutePointErrorResponseDto(["Route id must be greater than zero."]));
+        }
+
+        var activated = await transportRouteRepository.ActivateAsync(routeId, cancellationToken);
+        if (!activated)
+        {
+            return NotFound(new RoutePointErrorResponseDto(["Transport route was not found."]));
+        }
+
+        return NoContent();
+    }
 }
