@@ -54,6 +54,7 @@ import com.example.frontend.data.contributions.CapturedTricycleSubmissionLocatio
 import com.example.frontend.data.contributions.CreateTricyclePointSubmissionRequest
 import com.example.frontend.data.contributions.PreciseTricycleSubmissionLocationResult
 import com.example.frontend.data.contributions.acquirePreciseTricycleSubmissionLocation
+import com.example.frontend.data.contributions.areTricycleSubmissionLocationsConsistent
 import com.example.frontend.data.contributions.hasPreciseDeviceLocationPermission
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiDeepTeal
@@ -106,7 +107,7 @@ fun LocationAwareTricycleSubmissionScreen(
             PreciseTricycleSubmissionLocationResult.LocationServicesDisabled ->
                 "Location services are turned off. Turn on Location, then try again."
             PreciseTricycleSubmissionLocationResult.AccuracyUnavailable ->
-                "TUKI could not get a precise GPS fix within 35 meters. Move outdoors or near a window, keep Location on, then try again."
+                "TUKI couldn't detect a usable current location. Keep Location on and try again."
         }
 
     fun captureLocation() {
@@ -193,20 +194,37 @@ fun LocationAwareTricycleSubmissionScreen(
             return
         }
 
+        val initialLocation = capturedLocation
+        if (initialLocation == null) {
+            locationError = "Detect your current location before submitting this report."
+            ensureLocationCapture()
+            return
+        }
+
         scope.launch {
             isSubmitting = true
             submissionError = null
             locationError = null
 
-            val preciseResult = context.acquirePreciseTricycleSubmissionLocation()
-            val freshLocation = when (preciseResult) {
-                is PreciseTricycleSubmissionLocationResult.Success -> preciseResult.location
+            // Use the same one-shot current-location path as HomeScreen again immediately
+            // before submission, then reject a sudden large jump instead of storing it.
+            val locationResult = context.acquirePreciseTricycleSubmissionLocation()
+            val freshLocation = when (locationResult) {
+                is PreciseTricycleSubmissionLocationResult.Success -> locationResult.location
                 else -> {
                     capturedLocation = null
-                    locationError = locationFailureMessage(preciseResult)
+                    locationError = locationFailureMessage(locationResult)
                     isSubmitting = false
                     return@launch
                 }
+            }
+
+            if (!areTricycleSubmissionLocationsConsistent(initialLocation, freshLocation)) {
+                capturedLocation = null
+                locationError =
+                    "Your location changed unexpectedly while verifying this report. Detect your current location again before submitting."
+                isSubmitting = false
+                return@launch
             }
 
             capturedLocation = freshLocation
@@ -411,26 +429,26 @@ fun LocationAwareTricycleSubmissionScreen(
             item {
                 when {
                     isLocating -> LocationSubmissionStatusCard(
-                        title = "Getting precise location…",
-                        subtitle = "TUKI is waiting for an accurate GPS fix. This can take several seconds, especially indoors.",
+                        title = "Detecting location…",
+                        subtitle = "TUKI is using the same current-location source as Home.",
                         success = false,
                         showProgress = true
                     )
                     capturedLocation != null -> LocationSubmissionStatusCard(
-                        title = "Precise location detected",
-                        subtitle = "Your location is accurate enough for administrator verification. Coordinates remain hidden from this screen.",
+                        title = "Location detected",
+                        subtitle = "Your current location is ready for administrator verification. Coordinates remain hidden from this screen.",
                         success = true
                     )
                     else -> {
                         Column {
                             LocationSubmissionStatusCard(
-                                title = "Precise location required",
-                                subtitle = locationError ?: "TUKI needs an accurate current location before this report can be submitted.",
+                                title = "Location required",
+                                subtitle = locationError ?: "TUKI needs your current location before this report can be submitted.",
                                 success = false
                             )
                             if (selectedPhoto != null && proofImageUrl != null) {
                                 TextButton(onClick = ::ensureLocationCapture) {
-                                    Text("Try precise location again", color = TukiTeal)
+                                    Text("Try location again", color = TukiTeal)
                                 }
                             }
                         }
@@ -476,7 +494,7 @@ fun LocationAwareTricycleSubmissionScreen(
                             strokeWidth = 2.dp
                         )
                         Spacer(Modifier.width(9.dp))
-                        Text("Confirming precise location…", fontWeight = FontWeight.Bold)
+                        Text("Confirming location…", fontWeight = FontWeight.Bold)
                     } else {
                         Text(
                             if (submissionSucceeded) "Submitted" else "Submit for Verification",
@@ -489,8 +507,8 @@ fun LocationAwareTricycleSubmissionScreen(
                     when {
                         submissionSucceeded -> "You can track this report from My Contributions."
                         proofImageUrl == null -> "Add a proof photo to continue."
-                        capturedLocation == null -> "A precise location must be detected before submission."
-                        else -> "TUKI rechecks the precise location before sending the report for verification."
+                        capturedLocation == null -> "Location must be detected before submission."
+                        else -> "TUKI rechecks the same Home location source before sending the report."
                     },
                     modifier = Modifier.fillMaxWidth(),
                     color = TukiMuted,

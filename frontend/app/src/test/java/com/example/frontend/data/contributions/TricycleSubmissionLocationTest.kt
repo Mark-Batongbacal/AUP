@@ -1,8 +1,11 @@
 package com.example.frontend.data.contributions
 
+import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TricycleSubmissionLocationTest {
@@ -24,7 +27,7 @@ class TricycleSubmissionLocationTest {
     }
 
     @Test
-    fun lowAccuracyLocation_isPreservedForAdminVerification() {
+    fun reportedAccuracy_isPreservedForAdminVerification() {
         val now = 1_800_000_000_000L
         val result = validateTricycleSubmissionLocation(
             latitude = 15.2145,
@@ -88,4 +91,40 @@ class TricycleSubmissionLocationTest {
 
         assertNull(result)
     }
+
+    @Test
+    fun nearbyInitialAndFinalLocations_areConsistent() {
+        val initial = captured(15.214500, 120.589100)
+        val final = captured(15.214560, 120.589140)
+
+        assertTrue(areTricycleSubmissionLocationsConsistent(initial, final))
+    }
+
+    @Test
+    fun severalBlockLocationJump_isRejected() {
+        val initial = captured(15.214500, 120.589100)
+        val final = captured(15.217500, 120.592100)
+
+        assertFalse(areTricycleSubmissionLocationsConsistent(initial, final))
+    }
+
+    @Test
+    fun distanceCalculation_returnsExpectedApproximateMeters() {
+        val distance = distanceMeters(
+            latitude1 = 15.214500,
+            longitude1 = 120.589100,
+            latitude2 = 15.214590,
+            longitude2 = 120.589100
+        )
+
+        assertTrue(distance in 9.0..11.0)
+    }
+
+    private fun captured(latitude: Double, longitude: Double) =
+        CapturedTricycleSubmissionLocation(
+            latitude = latitude,
+            longitude = longitude,
+            accuracyMeters = 10.0,
+            capturedAt = Instant.ofEpochMilli(1_800_000_000_000L)
+        )
 }

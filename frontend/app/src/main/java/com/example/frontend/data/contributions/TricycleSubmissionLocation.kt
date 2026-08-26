@@ -2,10 +2,16 @@ package com.example.frontend.data.contributions
 
 import android.location.Location
 import java.time.Instant
+import kotlin.math.asin
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 private const val MaxSubmissionLocationAgeMillis = 30_000L
 private const val MaxSubmissionLocationFutureSkewMillis = 10_000L
 private const val MaxSupportedAccuracyMeters = 100_000.0
+private const val MaxSubmissionLocationJumpMeters = 100.0
+private const val EarthRadiusMeters = 6_371_000.0
 
 data class CapturedTricycleSubmissionLocation(
     val latitude: Double,
@@ -54,4 +60,35 @@ internal fun validateTricycleSubmissionLocation(
         accuracyMeters = normalizedAccuracy,
         capturedAt = Instant.ofEpochMilli(capturedAtEpochMillis)
     )
+}
+
+internal fun areTricycleSubmissionLocationsConsistent(
+    initial: CapturedTricycleSubmissionLocation,
+    final: CapturedTricycleSubmissionLocation,
+    maxJumpMeters: Double = MaxSubmissionLocationJumpMeters
+): Boolean {
+    if (!maxJumpMeters.isFinite() || maxJumpMeters < 0.0) return false
+    return distanceMeters(
+        initial.latitude,
+        initial.longitude,
+        final.latitude,
+        final.longitude
+    ) <= maxJumpMeters
+}
+
+internal fun distanceMeters(
+    latitude1: Double,
+    longitude1: Double,
+    latitude2: Double,
+    longitude2: Double
+): Double {
+    val lat1 = Math.toRadians(latitude1)
+    val lat2 = Math.toRadians(latitude2)
+    val deltaLat = Math.toRadians(latitude2 - latitude1)
+    val deltaLon = Math.toRadians(longitude2 - longitude1)
+
+    val a = sin(deltaLat / 2.0) * sin(deltaLat / 2.0) +
+        cos(lat1) * cos(lat2) * sin(deltaLon / 2.0) * sin(deltaLon / 2.0)
+    val c = 2.0 * asin(sqrt(a.coerceIn(0.0, 1.0)))
+    return EarthRadiusMeters * c
 }
