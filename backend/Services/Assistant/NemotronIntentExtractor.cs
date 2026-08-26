@@ -37,12 +37,7 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
                 Endpoint = new Uri(
                     configuration["Qwen:BaseUrl"] ??
                     "https://generativelanguage.googleapis.com/v1beta/openai/"),
-                // Intent extraction has its own bounded request timeout. The SDK's
-                // default Retry-After handling can otherwise spend that entire
-                // budget waiting between attempts after a 429 response.
                 RetryPolicy = new ClientRetryPolicy(0),
-                // Make the SDK's process-wide reusable HttpClient transport
-                // explicit even though it is also the System.ClientModel default.
                 Transport = HttpClientPipelineTransport.Shared
             });
     }
@@ -182,10 +177,10 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
                 - Use NavigationQuestion for questions about the current/next instruction, stop, route correctness, remaining fare/distance, or current trip state.
                 - Use Lost when the passenger says they are lost, went the wrong way, missed a stop, or asks whether they have gone past their stop.
                 - Use ExplainRoute when the passenger asks why this route or recommendation was chosen.
-                - Use UpdateTripConstraints for explicit remaining-trip changes such as a new budget, less walking, avoiding a transport mode, or a changed optimization preference.
+                - Use UpdateTripConstraints for explicit remaining-trip changes such as a walking preference, avoiding a transport mode, or a changed optimization preference.
                 - Use ChangeDestination only when the passenger explicitly says they want to change the active trip destination.
                 - A place mention by itself is NOT a destination change.
-                - Never silently approve or commit a route change. Constraint/destination changes are proposals that require backend confirmation.
+                - Preference changes on this surface are intended to reroute the remaining active trip automatically after the backend validates the result.
                 - Use CancelTrip when the passenger explicitly asks to end/cancel the active trip.
                 """
             : """
@@ -198,18 +193,37 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
                 - Use GeneralChat for harmless small talk that does not require routing.
                 """;
 
+        var walkingRules = surface == AssistantSurface.ActiveTrip
+            ? """
+                ACTIVE-TRIP WALKING PREFERENCE RULES:
+                - Walking preference is a hard maximum for the remaining rerouted journey.
+                - LESS / "less walking" / "I don't like walking" / "pagod ako" => walkingPreference=LESS and maxWalkingMeters=1800.
+                - NORMAL / neutral or normal walking preference => walkingPreference=NORMAL and maxWalkingMeters=2150.
+                - MORE / "I prefer walking" / "I don't mind walking farther" / "okay lang maglakad" => walkingPreference=MORE and maxWalkingMeters=2500.
+                - If the passenger gives an explicit walking-distance limit, use that exact non-negative number instead of 1800/2150/2500.
+                """
+            : """
+                PLANNING WALKING PREFERENCE RULES:
+                - A numeric walking distance is a hard maxWalkingMeters.
+                - "Okay lang maglakad" and "I don't mind walking farther" mean walkingPreference=MORE with maxWalkingMeters=null.
+                - "Pagod ako" and "I don't want to walk much" mean walkingPreference=LESS with maxWalkingMeters=null.
+                - Do not invent an exact maxWalkingMeters from a vague walking phrase on the planning surface.
+                """;
+
         return $$"""
             You are the intent interpreter for Tuki, a Philippine commute assistant.
             Return exactly ONE JSON object and no prose. The backend owns routing, GPS, fares, turns, boarding/alighting, persistence, and rerouting. You only interpret the passenger's language.
 
             {{surfaceRules}}
 
+            {{walkingRules}}
+
             GENERAL RULES:
             - Do not calculate routes, fares, ETA, coordinates, or distances.
-            - Do not invent missing values. Vague phrases such as "pagod ako" may imply a soft less-walking preference, but must NOT invent an exact maxWalkingMeters.
             - A numeric budget is a hard maximum only when the passenger explicitly gives a money amount. "I'm kinda broke" means preference=cheapest and budgetPesos=null.
-            - An explicit walking distance is a hard maxWalkingMeters. "Okay lang maglakad" and "I don't mind walking farther" mean walkingPreference=MORE with maxWalkingMeters=null. "Pagod ako" and "I don't want to walk much" mean walkingPreference=LESS with maxWalkingMeters=null.
             - Avoid modes may only contain WALK, TRICYCLE, or JEEPNEY.
+            - "trike", "tricycle", and "TODA" avoidance normalize to TRICYCLE. "jeep" and "jeepney" avoidance normalize to JEEPNEY.
+            - Vehicle avoidance is a hard constraint. If the passenger asks to avoid a mode, include it in avoidTransportModes; do not weaken it because another route seems cheaper or faster.
             - preference may only be fastest, cheapest, or efficient.
             - If the current message depends on prior conversation, use the supplied Conversation.RecentTurns and LastDestinationQuery rather than guessing.
             - Ask no question yourself; return the action and extracted values and let the deterministic backend decide whether clarification is needed.
