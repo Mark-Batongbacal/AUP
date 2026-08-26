@@ -17,7 +17,7 @@ public sealed class AdminJeepneyRouteManagementService(
         if (!includeActive && !includeDrafts)
             return [];
 
-        var routes = await routeRepository.GetAllByTransportModeCodeForAdminAsync(
+        var routes = await routeRepository.GetAdminSummariesByTransportModeCodeAsync(
             "JEEPNEY",
             includeActive,
             includeDrafts,
@@ -399,6 +399,23 @@ public sealed class AdminJeepneyRouteManagementService(
         route.RoutePoints?.Count ?? 0,
         route.RouteWaypoints?.Count ?? 0,
         !string.IsNullOrWhiteSpace(route.EncodedPolyline),
+        route.CreatedAt,
+        route.UpdatedAt);
+
+    private static AdminJeepneyRouteResponse Map(TransportRouteAdminSummary route) => new(
+        route.RouteId,
+        route.RouteCode,
+        route.RouteName,
+        route.OriginName,
+        route.DestinationName,
+        route.DirectionName,
+        route.OperatorName,
+        route.RouteDescription,
+        route.BaseFare,
+        route.IsActive,
+        route.PointCount,
+        route.WaypointCount,
+        route.HasPolyline,
         route.CreatedAt,
         route.UpdatedAt);
 

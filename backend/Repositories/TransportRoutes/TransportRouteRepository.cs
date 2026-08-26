@@ -28,7 +28,7 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
             .OrderBy(route => route.RouteName)
             .ToListAsync(cancellationToken);
 
-    public Task<List<TransportRoute>> GetAllByTransportModeCodeForAdminAsync(
+    public Task<List<TransportRouteAdminSummary>> GetAdminSummariesByTransportModeCodeAsync(
         string transportModeCode,
         bool includeActive,
         bool includeInactive,
@@ -36,9 +36,6 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
     {
         var query = _context.TransportRoutes
             .AsNoTracking()
-            .Include(route => route.TransportMode)
-            .Include(route => route.RoutePoints.OrderBy(point => point.PointOrder))
-            .Include(route => route.RouteWaypoints.OrderBy(point => point.WaypointOrder))
             .Where(route => route.TransportMode.Code == transportModeCode);
 
         if (!includeActive)
@@ -49,6 +46,22 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
         return query
             .OrderBy(route => route.RouteName)
             .ThenBy(route => route.RouteCode)
+            .Select(route => new TransportRouteAdminSummary(
+                route.RouteId,
+                route.RouteCode,
+                route.RouteName,
+                route.OriginName,
+                route.DestinationName,
+                route.DirectionName,
+                route.OperatorName,
+                route.RouteDescription,
+                route.BaseFare,
+                route.IsActive,
+                route.RoutePoints.Count(),
+                route.RouteWaypoints.Count(),
+                route.EncodedPolyline != null && route.EncodedPolyline != "",
+                route.CreatedAt,
+                route.UpdatedAt))
             .ToListAsync(cancellationToken);
     }
 

@@ -9,7 +9,7 @@ public interface ITransportRouteRepository
     Task<List<TransportRoute>> GetAllActiveWithOrderedPointsAsync(
         CancellationToken cancellationToken = default);
 
-    Task<List<TransportRoute>> GetAllByTransportModeCodeForAdminAsync(
+    Task<List<TransportRouteAdminSummary>> GetAdminSummariesByTransportModeCodeAsync(
         string transportModeCode,
         bool includeActive,
         bool includeInactive,
