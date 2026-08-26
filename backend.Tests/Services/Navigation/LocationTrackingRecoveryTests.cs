@@ -162,6 +162,11 @@ public sealed class LocationTrackingRecoveryTests
         matcher.Setup(item => item.ProjectProgress(
                 It.IsAny<IReadOnlyList<(double, double)>>(), It.IsAny<double>(), It.IsAny<double>()))
             .Returns(10_000);
+        var landmarkService = new Mock<ILandmarkService>();
+        landmarkService.Setup(item => item.EvaluateAsync(
+                It.IsAny<TripSession>(), It.IsAny<RecommendationLeg>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<NavigationInstruction>());
         var offRoute = new Mock<IOffRouteDetector>();
         offRoute.Setup(item => item.Evaluate(
                 session, leg, It.IsAny<double>(), It.IsAny<double>(), It.IsAny<DateTime>()))
@@ -174,7 +179,7 @@ public sealed class LocationTrackingRecoveryTests
             Mock.Of<IValhallaService>(),
             gps.Object,
             matcher.Object,
-            Mock.Of<ILandmarkService>(),
+            landmarkService.Object,
             offRoute.Object,
             new TripSessionStateMachine(),
             options);
