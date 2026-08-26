@@ -10,6 +10,12 @@ private struct IOSNavigationRerouteRequest: Encodable {
     let destinationName: String?
     let destinationLatitude: Double?
     let destinationLongitude: Double?
+    let latitude: Double?
+    let longitude: Double?
+    let accuracyMeters: Double?
+    let timestamp: String?
+    let speedMetersPerSecond: Double?
+    let bearingDegrees: Double?
 }
 
 private struct IOSNavigationErrorEnvelope: Decodable {
@@ -128,7 +134,7 @@ final class TukiTripOptionsModel: ObservableObject {
         clearBudget: Bool = false,
         destination: TukiPlace? = nil
     ) async {
-        guard let platform, let client, let sessionId = activeSnapshot?.sessionId else { return }
+        guard let client, let sessionId = activeSnapshot?.sessionId else { return }
         isWorking = true
         errorMessage = nil
 
@@ -137,20 +143,6 @@ final class TukiTripOptionsModel: ObservableObject {
             isWorking = false
             return
         }
-        let update = TukiNavigationLocationUpdate(
-            latitude: current.coordinate.latitude,
-            longitude: current.coordinate.longitude,
-            accuracyMeters: max(0, current.horizontalAccuracy),
-            timestamp: ISO8601DateFormatter().string(from: current.timestamp),
-            speedMetersPerSecond: current.speed >= 0 ? current.speed : nil,
-            bearingDegrees: current.course >= 0 ? current.course : nil
-        )
-        if case .failure(let error) = await platform.updateLocation(sessionId: sessionId, update: update) {
-            errorMessage = error.message
-            isWorking = false
-            return
-        }
-
         let request = IOSNavigationRerouteRequest(
             reason: reason,
             preference: preference,
@@ -158,7 +150,13 @@ final class TukiTripOptionsModel: ObservableObject {
             clearBudget: clearBudget,
             destinationName: destination?.name,
             destinationLatitude: destination?.latitude,
-            destinationLongitude: destination?.longitude
+            destinationLongitude: destination?.longitude,
+            latitude: current.coordinate.latitude,
+            longitude: current.coordinate.longitude,
+            accuracyMeters: current.horizontalAccuracy,
+            timestamp: ISO8601DateFormatter().string(from: current.timestamp),
+            speedMetersPerSecond: current.speed >= 0 ? current.speed : nil,
+            bearingDegrees: current.course >= 0 ? current.course : nil
         )
         switch await client.reroute(sessionId: sessionId, request: request) {
         case .success(let snapshot):

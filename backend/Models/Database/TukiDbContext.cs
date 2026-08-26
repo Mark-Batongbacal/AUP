@@ -868,6 +868,8 @@ public partial class TukiDbContext : DbContext
             entity.Property(e => e.DistanceMeters).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.EstimatedMinutes).HasColumnType("decimal(10, 2)");
             entity.Property(e => e.EstimatedFare).HasColumnType("decimal(10, 2)");
+            entity.Property(e => e.StartRouteProgressMeters).HasColumnType("float");
+            entity.Property(e => e.EndRouteProgressMeters).HasColumnType("float");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
 
             entity.HasOne(e => e.Recommendation)

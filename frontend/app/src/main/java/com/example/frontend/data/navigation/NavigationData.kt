@@ -17,6 +17,7 @@ import java.math.BigDecimal
 import java.util.Locale
 
 data class StartNavigationRequest(val recommendationId: String)
+data class ResolveAlightStatusRequest(val alreadyOff: Boolean)
 data class NavigationRerouteRequest(
     val reason: String = "MANUAL",
     val preference: String? = null,
@@ -25,7 +26,13 @@ data class NavigationRerouteRequest(
     val destinationName: String? = null,
     val destinationLatitude: Double? = null,
     val destinationLongitude: Double? = null,
-    val avoidTransportMode: String? = null
+    val avoidTransportMode: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val accuracyMeters: Double? = null,
+    val timestamp: String? = null,
+    val speedMetersPerSecond: Double? = null,
+    val bearingDegrees: Double? = null
 )
 data class NavigationGeometryPointDto(val latitude: Double, val longitude: Double)
 data class NavigationGeometryResponseDto(val points: List<NavigationGeometryPointDto>)
@@ -51,7 +58,10 @@ data class NavigationLegDto(
     val endLatitude: Double?,
     val endLongitude: Double?,
     val distanceMeters: Double?,
-    val fare: BigDecimal
+    val fare: BigDecimal,
+    val startRouteProgressMeters: Double? = null,
+    val endRouteProgressMeters: Double? = null,
+    val startsAlreadyOnboard: Boolean = false
 )
 
 data class NavigationInstructionSnapshotDto(
@@ -129,7 +139,8 @@ data class NavigationSnapshotDto(
     val tripSummary: NavigationTripSummaryDto? = null,
     val spokenInstructionTemplate: String? = null,
     val currentLegInstructions: List<NavigationInstructionDetailDto> = emptyList(),
-    val currentLegLandmarks: List<NavigationLandmarkDto> = emptyList()
+    val currentLegLandmarks: List<NavigationLandmarkDto> = emptyList(),
+    val recommendationId: String? = null
 ) {
     fun displayInstruction(): String? = spokenInstruction?.takeIf { it.isNotBlank() }
 
@@ -157,7 +168,9 @@ interface NavigationApi {
         @Query("endLat") endLatitude: Double,
         @Query("endLon") endLongitude: Double,
         @Query("mode") mode: String,
-        @Query("routeId") routeId: Long? = null
+        @Query("routeId") routeId: Long? = null,
+        @Query("startRouteProgressMeters") startRouteProgressMeters: Double? = null,
+        @Query("endRouteProgressMeters") endRouteProgressMeters: Double? = null
     ): Response<NavigationGeometryResponseDto>
 
     @POST("api/navigation/{sessionId}/location")
@@ -171,6 +184,12 @@ interface NavigationApi {
 
     @POST("api/navigation/{sessionId}/alighting")
     suspend fun alighting(@Path("sessionId") sessionId: String): Response<NavigationSnapshotDto>
+
+    @POST("api/navigation/{sessionId}/alight-status")
+    suspend fun resolveAlightStatus(
+        @Path("sessionId") sessionId: String,
+        @Body request: ResolveAlightStatusRequest
+    ): Response<NavigationSnapshotDto>
 
     @POST("api/tripsessions/{sessionId}/cancel")
     suspend fun cancel(@Path("sessionId") sessionId: String): Response<TripSessionDto>
@@ -192,11 +211,18 @@ interface NavigationRepository {
         endLatitude: Double,
         endLongitude: Double,
         mode: String,
-        routeId: Long? = null
+        routeId: Long? = null,
+        startRouteProgressMeters: Double? = null,
+        endRouteProgressMeters: Double? = null
     ): ApiResult<NavigationGeometryResponseDto>
     suspend fun updateLocation(sessionId: String, update: NavigationLocationUpdate): ApiResult<NavigationSnapshotDto>
     suspend fun confirmBoarding(sessionId: String): ApiResult<NavigationSnapshotDto>
     suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto>
+    suspend fun resolveAlightStatus(
+        sessionId: String,
+        alreadyOff: Boolean
+    ): ApiResult<NavigationSnapshotDto> =
+        ApiResult.Failure(null, "Alight-status recovery is unavailable.")
     suspend fun cancel(sessionId: String): ApiResult<TripSessionDto>
     suspend fun reroute(
         sessionId: String,
@@ -250,7 +276,9 @@ class NavigationRepositoryImpl(
         endLatitude: Double,
         endLongitude: Double,
         mode: String,
-        routeId: Long?
+        routeId: Long?,
+        startRouteProgressMeters: Double?,
+        endRouteProgressMeters: Double?
     ): ApiResult<NavigationGeometryResponseDto> {
         val cacheKey = geometryCacheKey(
             startLatitude,
@@ -258,11 +286,22 @@ class NavigationRepositoryImpl(
             endLatitude,
             endLongitude,
             mode,
-            routeId
+            routeId,
+            startRouteProgressMeters,
+            endRouteProgressMeters
         )
         return when (
             val remote = apiCall(errors) {
-                api.geometry(startLatitude, startLongitude, endLatitude, endLongitude, mode, routeId)
+                api.geometry(
+                    startLatitude,
+                    startLongitude,
+                    endLatitude,
+                    endLongitude,
+                    mode,
+                    routeId,
+                    startRouteProgressMeters,
+                    endRouteProgressMeters
+                )
             }
         ) {
             is ApiResult.Success -> remote.also { localStore.saveGeometry(cacheKey, it.data) }
@@ -307,6 +346,15 @@ class NavigationRepositoryImpl(
 
     override suspend fun confirmAlighting(sessionId: String): ApiResult<NavigationSnapshotDto> =
         cacheSnapshot(call { api.alighting(sessionId) }, resetSyncSignal = true)
+
+    override suspend fun resolveAlightStatus(
+        sessionId: String,
+        alreadyOff: Boolean
+    ): ApiResult<NavigationSnapshotDto> =
+        cacheSnapshot(
+            call { api.resolveAlightStatus(sessionId, ResolveAlightStatusRequest(alreadyOff)) },
+            resetSyncSignal = true
+        )
 
     override suspend fun cancel(sessionId: String): ApiResult<TripSessionDto> {
         val result = call { api.cancel(sessionId) }
@@ -385,14 +433,18 @@ class NavigationRepositoryImpl(
         endLatitude: Double,
         endLongitude: Double,
         mode: String,
-        routeId: Long?
+        routeId: Long?,
+        startRouteProgressMeters: Double?,
+        endRouteProgressMeters: Double?
     ): String = listOf(
         normalizedCoordinate(startLatitude),
         normalizedCoordinate(startLongitude),
         normalizedCoordinate(endLatitude),
         normalizedCoordinate(endLongitude),
         mode.trim().uppercase(Locale.ROOT),
-        routeId?.toString().orEmpty()
+        routeId?.toString().orEmpty(),
+        startRouteProgressMeters?.toString().orEmpty(),
+        endRouteProgressMeters?.toString().orEmpty()
     ).joinToString("|")
 
     private fun normalizedCoordinate(value: Double): String =

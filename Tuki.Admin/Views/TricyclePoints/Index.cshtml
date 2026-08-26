@@ -1,0 +1,73 @@
+@model Tuki.Admin.ViewModels.TricyclePoints.TricyclePointListViewModel
+@{
+    ViewData["Title"] = "Official Tricycle Points";
+}
+
+<section class="dashboard-header d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <p class="eyebrow">DATA MANAGEMENT</p>
+        <h1>Official tricycle points</h1>
+        <p>Manage verified TODA and tricycle pickup points used by the passenger app.</p>
+    </div>
+    <a asp-action="Create" class="btn btn-tuki">Create official point</a>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+    <div class="btn-group" role="group" aria-label="Point filters">
+        <a asp-action="Index" asp-route-includeArchived="false" class="btn @(Model.IncludeArchived ? "btn-outline-secondary" : "btn-tuki")">Active only</a>
+        <a asp-action="Index" asp-route-includeArchived="true" class="btn @(Model.IncludeArchived ? "btn-tuki" : "btn-outline-secondary")">Active + archived</a>
+    </div>
+    <span class="text-muted">@Model.Points.Count point(s)</span>
+</div>
+
+<div class="table-responsive admin-table-card">
+    <table class="table align-middle mb-0">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Code</th>
+                <th>Operator</th>
+                <th>Radius</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        @if (Model.Points.Count == 0)
+        {
+            <tr><td colspan="6" class="text-center py-5 text-muted">No official tricycle points found.</td></tr>
+        }
+        else
+        {
+            @foreach (var point in Model.Points)
+            {
+                <tr>
+                    <td>
+                        <strong>@point.PointName</strong>
+                        @if (!string.IsNullOrWhiteSpace(point.Address))
+                        {
+                            <div class="small text-muted">@point.Address</div>
+                        }
+                    </td>
+                    <td><code>@point.PointCode</code></td>
+                    <td>@(point.OperatorName ?? "—")</td>
+                    <td>@point.RadiusMeters m</td>
+                    <td>
+                        <span class="status-pill @(point.IsActive ? "status-active" : "status-archived")">
+                            @(point.IsActive ? "Active" : "Archived")
+                        </span>
+                    </td>
+                    <td class="text-end">
+                        <a asp-action="Edit" asp-route-id="@point.TricyclePointId" class="btn btn-outline-tuki btn-sm">Manage</a>
+                    </td>
+                </tr>
+            }
+        }
+        </tbody>
+    </table>
+</div>

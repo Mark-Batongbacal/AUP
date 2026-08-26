@@ -417,6 +417,9 @@ BEGIN TRY
             StartLongitude float NULL,
             EndLatitude float NULL,
             EndLongitude float NULL,
+            StartRouteProgressMeters float NULL,
+            EndRouteProgressMeters float NULL,
+            StartsAlreadyOnboard bit NOT NULL CONSTRAINT DF_RecommendationLegs_StartsAlreadyOnboard DEFAULT (0),
             DistanceMeters decimal(12, 2) NULL,
             EstimatedMinutes decimal(10, 2) NOT NULL CONSTRAINT DF_RecommendationLegs_EstimatedMinutes DEFAULT (0),
             EstimatedFare decimal(10, 2) NOT NULL CONSTRAINT DF_RecommendationLegs_EstimatedFare DEFAULT (0),
@@ -425,6 +428,14 @@ BEGIN TRY
             CONSTRAINT PK_RecommendationLegs PRIMARY KEY (LegId)
         );
     END;
+
+    IF COL_LENGTH(N'dbo.RecommendationLegs', N'StartRouteProgressMeters') IS NULL
+        ALTER TABLE dbo.RecommendationLegs ADD StartRouteProgressMeters float NULL;
+    IF COL_LENGTH(N'dbo.RecommendationLegs', N'EndRouteProgressMeters') IS NULL
+        ALTER TABLE dbo.RecommendationLegs ADD EndRouteProgressMeters float NULL;
+    IF COL_LENGTH(N'dbo.RecommendationLegs', N'StartsAlreadyOnboard') IS NULL
+        ALTER TABLE dbo.RecommendationLegs ADD StartsAlreadyOnboard bit NOT NULL
+            CONSTRAINT DF_RecommendationLegs_StartsAlreadyOnboard DEFAULT (0);
 
     IF OBJECT_ID(N'dbo.PassengerTrips', N'U') IS NULL
     BEGIN

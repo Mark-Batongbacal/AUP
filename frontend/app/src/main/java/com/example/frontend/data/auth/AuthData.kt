@@ -85,7 +85,7 @@ interface AuthApi {
     @POST("api/auth/facebook") suspend fun facebook(@Body request: FacebookLoginRequest): Response<LoginResponseDto>
     @POST("api/auth/facebook/oidc") suspend fun facebookOidc(@Body request: FacebookOidcLoginRequest): Response<LoginResponseDto>
     @GET("api/auth/me") suspend fun me(): Response<AuthIdentityDto>
-    @POST("api/auth/forgot-password") suspend fun forgotPassword(
+    @POST("api/auth/forgot-password/request") suspend fun forgotPassword(
         @Body request: ForgotPasswordRequest
     ): Response<MessageResponseDto>
     @POST("api/auth/forgot-password/verify-otp") suspend fun verifyPasswordResetOtp(

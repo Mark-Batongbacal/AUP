@@ -1,0 +1,452 @@
+@model Tuki.Admin.ViewModels.JeepneyRoutes.JeepneyRoutePlotViewModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = Model.Geometry.Points.Count > 0
+        ? $"Edit {Model.Route.RouteName}"
+        : $"Plot {Model.Route.RouteName}";
+    var initialPointsJson = JsonSerializer.Serialize(Model.Geometry.Points.Select(point => new
+    {
+        latitude = point.Latitude,
+        longitude = point.Longitude
+    }));
+}
+
+@section Scripts {
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script>
+        (() => {
+            const mapNode = document.getElementById('jeepney-route-map');
+            const pointsInput = document.getElementById('PointsJson');
+            const pointList = document.getElementById('route-point-list');
+            const pointCount = document.getElementById('route-point-count');
+            const saveButton = document.getElementById('save-route-geometry');
+            const undoButton = document.getElementById('undo-route-point');
+            const clearButton = document.getElementById('clear-route-points');
+            const fitButton = document.getElementById('fit-route-points');
+            const restoreButton = document.getElementById('restore-saved-route');
+            const importButton = document.getElementById('import-route-points');
+            const importMode = document.getElementById('coordinate-import-mode');
+            const importText = document.getElementById('coordinate-import-text');
+            const editorStatus = document.getElementById('route-editor-status');
+            const geometryForm = document.getElementById('route-geometry-form');
+            if (!mapNode || !pointsInput || typeof L === 'undefined') return;
+
+            const canEdit = @Model.CanEdit.ToString().ToLowerInvariant();
+            const fallback = [15.145, 120.588];
+            const savedPoints = @Html.Raw(initialPointsJson);
+            let points = savedPoints.map(point => ({ ...point }));
+            let markers = [];
+            let routeLine = null;
+            let dirty = false;
+            let submitting = false;
+
+            const map = L.map(mapNode).setView(fallback, 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            const sameAsSaved = () => {
+                if (points.length !== savedPoints.length) return false;
+                return points.every((point, index) =>
+                    Math.abs(point.latitude - savedPoints[index].latitude) < 0.0000001 &&
+                    Math.abs(point.longitude - savedPoints[index].longitude) < 0.0000001);
+            };
+
+            const updateDirtyState = () => {
+                dirty = canEdit && !sameAsSaved();
+                if (!editorStatus) return;
+                editorStatus.textContent = dirty ? 'Unsaved changes' : 'Saved geometry';
+                editorStatus.className = dirty
+                    ? 'status-pill status-pending'
+                    : 'status-pill status-active';
+            };
+
+            const serialize = () => {
+                pointsInput.value = JSON.stringify(points.map(point => ({
+                    latitude: point.latitude,
+                    longitude: point.longitude
+                })));
+            };
+
+            const fitRoute = () => {
+                if (points.length === 0) return;
+                if (points.length === 1) {
+                    map.setView([points[0].latitude, points[0].longitude], 18);
+                    return;
+                }
+                map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [30, 30] });
+            };
+
+            const focusPoint = (index) => {
+                const point = points[index];
+                if (!point) return;
+                map.setView([point.latitude, point.longitude], Math.max(map.getZoom(), 18));
+                markers[index]?.openTooltip();
+            };
+
+            const movePoint = (index, offset) => {
+                const target = index + offset;
+                if (!canEdit || target < 0 || target >= points.length) return;
+                [points[index], points[target]] = [points[target], points[index]];
+                render();
+            };
+
+            const removePoint = (index) => {
+                if (!canEdit) return;
+                points.splice(index, 1);
+                render();
+            };
+
+            const insertBetween = (index) => {
+                if (!canEdit || index < 0 || index >= points.length - 1) return;
+                const first = points[index];
+                const second = points[index + 1];
+                points.splice(index + 1, 0, {
+                    latitude: (first.latitude + second.latitude) / 2,
+                    longitude: (first.longitude + second.longitude) / 2
+                });
+                render();
+                focusPoint(index + 1);
+            };
+
+            const updateCoordinate = (index, field, rawValue, input) => {
+                if (!canEdit) return;
+                const value = Number.parseFloat(rawValue);
+                const valid = Number.isFinite(value) &&
+                    (field === 'latitude' ? value >= -90 && value <= 90 : value >= -180 && value <= 180);
+                input.classList.toggle('is-invalid', !valid);
+                if (!valid) return;
+                points[index] = { ...points[index], [field]: value };
+                render();
+            };
+
+            const coordinateInput = (index, field, value) => {
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.step = '0.000001';
+                input.inputMode = 'decimal';
+                input.className = 'form-control form-control-sm';
+                input.value = value.toFixed(6);
+                input.setAttribute('aria-label', `Point ${index + 1} ${field}`);
+                input.addEventListener('change', () => updateCoordinate(index, field, input.value, input));
+                return input;
+            };
+
+            const renderList = () => {
+                if (!pointList) return;
+                if (points.length === 0) {
+                    pointList.innerHTML = '<div class="duplicate-clear">No route points yet. Click the map to add the first point.</div>';
+                    return;
+                }
+
+                pointList.innerHTML = '';
+                points.forEach((point, index) => {
+                    const row = document.createElement('div');
+                    row.className = 'border rounded-3 p-2 bg-body';
+
+                    const header = document.createElement('div');
+                    header.className = 'd-flex justify-content-between align-items-center gap-2 mb-2';
+                    const title = document.createElement('strong');
+                    title.textContent = `Point ${index + 1}`;
+                    header.appendChild(title);
+
+                    const jump = document.createElement('button');
+                    jump.type = 'button';
+                    jump.className = 'btn btn-sm btn-outline-secondary';
+                    jump.textContent = 'Show';
+                    jump.addEventListener('click', () => focusPoint(index));
+                    header.appendChild(jump);
+                    row.appendChild(header);
+
+                    if (canEdit) {
+                        const coordinateGrid = document.createElement('div');
+                        coordinateGrid.className = 'row g-2 mb-2';
+
+                        const latColumn = document.createElement('div');
+                        latColumn.className = 'col-6';
+                        const latLabel = document.createElement('label');
+                        latLabel.className = 'form-label small mb-1';
+                        latLabel.textContent = 'Latitude';
+                        latColumn.append(latLabel, coordinateInput(index, 'latitude', point.latitude));
+
+                        const lngColumn = document.createElement('div');
+                        lngColumn.className = 'col-6';
+                        const lngLabel = document.createElement('label');
+                        lngLabel.className = 'form-label small mb-1';
+                        lngLabel.textContent = 'Longitude';
+                        lngColumn.append(lngLabel, coordinateInput(index, 'longitude', point.longitude));
+
+                        coordinateGrid.append(latColumn, lngColumn);
+                        row.appendChild(coordinateGrid);
+
+                        const controls = document.createElement('div');
+                        controls.className = 'd-flex gap-1 flex-wrap';
+                        const actions = [
+                            ['↑ Move up', -1, index === 0],
+                            ['↓ Move down', 1, index === points.length - 1]
+                        ];
+                        actions.forEach(([label, offset, disabled]) => {
+                            const button = document.createElement('button');
+                            button.type = 'button';
+                            button.className = 'btn btn-sm btn-outline-secondary';
+                            button.textContent = label;
+                            button.disabled = disabled;
+                            button.addEventListener('click', () => movePoint(index, offset));
+                            controls.appendChild(button);
+                        });
+                        const remove = document.createElement('button');
+                        remove.type = 'button';
+                        remove.className = 'btn btn-sm btn-outline-danger';
+                        remove.textContent = 'Remove';
+                        remove.addEventListener('click', () => removePoint(index));
+                        controls.appendChild(remove);
+                        row.appendChild(controls);
+                    } else {
+                        const coordinates = document.createElement('div');
+                        coordinates.className = 'small text-muted';
+                        coordinates.textContent = `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`;
+                        row.appendChild(coordinates);
+                    }
+
+                    pointList.appendChild(row);
+
+                    if (canEdit && index < points.length - 1) {
+                        const insertRow = document.createElement('div');
+                        insertRow.className = 'text-center my-1';
+                        const insert = document.createElement('button');
+                        insert.type = 'button';
+                        insert.className = 'btn btn-sm btn-outline-primary';
+                        insert.textContent = `＋ Insert between ${index + 1} and ${index + 2}`;
+                        insert.addEventListener('click', () => insertBetween(index));
+                        insertRow.appendChild(insert);
+                        pointList.appendChild(insertRow);
+                    }
+                });
+            };
+
+            const render = () => {
+                markers.forEach(marker => map.removeLayer(marker));
+                markers = [];
+                if (routeLine) {
+                    map.removeLayer(routeLine);
+                    routeLine = null;
+                }
+
+                points.forEach((point, index) => {
+                    const marker = L.marker([point.latitude, point.longitude], { draggable: canEdit }).addTo(map);
+                    marker.bindTooltip(String(index + 1), { permanent: true, direction: 'top', offset: [0, -10] });
+                    if (canEdit) {
+                        marker.on('dragend', event => {
+                            const position = event.target.getLatLng();
+                            points[index] = { latitude: position.lat, longitude: position.lng };
+                            render();
+                        });
+                    }
+                    markers.push(marker);
+                });
+
+                if (points.length >= 2) {
+                    routeLine = L.polyline(
+                        points.map(point => [point.latitude, point.longitude]),
+                        { weight: 5, opacity: 0.85 }
+                    ).addTo(map);
+                }
+
+                serialize();
+                renderList();
+                updateDirtyState();
+                if (pointCount) pointCount.textContent = String(points.length);
+                if (saveButton) saveButton.disabled = !canEdit || points.length < 2 || !dirty;
+                if (undoButton) undoButton.disabled = !canEdit || points.length === 0;
+                if (clearButton) clearButton.disabled = !canEdit || points.length === 0;
+                if (restoreButton) restoreButton.disabled = !canEdit || !dirty;
+                if (fitButton) fitButton.disabled = points.length === 0;
+            };
+
+            const parseImportedCoordinates = (text) => {
+                const parsed = [];
+                const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+                for (let index = 0; index < lines.length; index++) {
+                    const pieces = lines[index].split(/[\s,;]+/).filter(Boolean);
+                    if (pieces.length !== 2) throw new Error(`Line ${index + 1} must contain latitude and longitude.`);
+                    const latitude = Number.parseFloat(pieces[0]);
+                    const longitude = Number.parseFloat(pieces[1]);
+                    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90)
+                        throw new Error(`Line ${index + 1} has an invalid latitude.`);
+                    if (!Number.isFinite(longitude) || longitude < -180 || longitude > 180)
+                        throw new Error(`Line ${index + 1} has an invalid longitude.`);
+                    parsed.push({ latitude, longitude });
+                }
+                if (parsed.length === 0) throw new Error('Paste at least one coordinate pair.');
+                return parsed;
+            };
+
+            if (canEdit) {
+                map.on('click', event => {
+                    points.push({ latitude: event.latlng.lat, longitude: event.latlng.lng });
+                    render();
+                });
+            }
+
+            if (undoButton) undoButton.addEventListener('click', () => {
+                if (points.length > 0) {
+                    points.pop();
+                    render();
+                }
+            });
+            if (clearButton) clearButton.addEventListener('click', () => {
+                if (points.length > 0 && confirm('Clear every plotted point from this unsaved map?')) {
+                    points = [];
+                    render();
+                }
+            });
+            if (restoreButton) restoreButton.addEventListener('click', () => {
+                if (!dirty || !confirm('Discard all unsaved geometry changes and restore the last saved route?')) return;
+                points = savedPoints.map(point => ({ ...point }));
+                render();
+                if (points.length > 0) fitRoute();
+            });
+            if (importButton) importButton.addEventListener('click', () => {
+                if (!canEdit || !importText) return;
+                try {
+                    const imported = parseImportedCoordinates(importText.value);
+                    points = importMode?.value === 'append' ? [...points, ...imported] : imported;
+                    importText.classList.remove('is-invalid');
+                    render();
+                    fitRoute();
+                } catch (error) {
+                    importText.classList.add('is-invalid');
+                    alert(error.message || 'Unable to import coordinates.');
+                }
+            });
+            if (fitButton) fitButton.addEventListener('click', fitRoute);
+            if (geometryForm) geometryForm.addEventListener('submit', () => {
+                submitting = true;
+            });
+            window.addEventListener('beforeunload', event => {
+                if (!dirty || submitting) return;
+                event.preventDefault();
+                event.returnValue = '';
+            });
+
+            render();
+            if (points.length > 0) fitRoute();
+            window.requestAnimationFrame(() => map.invalidateSize());
+            if (typeof ResizeObserver !== 'undefined') {
+                new ResizeObserver(() => map.invalidateSize()).observe(mapNode);
+            }
+        })();
+    </script>
+}
+
+<div class="review-detail-header">
+    <div>
+        <a asp-action="Edit" asp-route-id="@Model.Route.RouteId" class="review-back-link">← Back to route details</a>
+        <p class="eyebrow">JEEPNEY ROUTE @(Model.Geometry.Points.Count > 0 ? "EDITOR" : "PLOTTER")</p>
+        <h1>@Model.Route.RouteName</h1>
+        <p>@Model.Route.OriginName → @Model.Route.DestinationName · <code>@Model.Route.RouteCode</code></p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <span id="route-editor-status" class="status-pill status-active">Saved geometry</span>
+        <span class="status-pill @(Model.Route.IsActive ? "status-active" : "status-archived")">
+            @(Model.Route.IsActive ? "Published · read only" : "Draft · editable")
+        </span>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
+}
+
+@if (!Model.CanEdit)
+{
+    <div class="review-alert review-alert-error">
+        This route is already published. Its geometry is view-only here and cannot be changed until a dedicated published-route workflow is used.
+    </div>
+}
+else
+{
+    <div class="review-alert review-alert-success">
+        Edit this inactive draft precisely: click to add points, drag markers, edit coordinates directly, insert between points, or import coordinate pairs. Changes remain local until you save.
+    </div>
+}
+
+<div class="review-detail-grid">
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">MAP</span>
+                <h2>@(Model.Geometry.Points.Count > 0 ? "Edit route geometry" : "Plot route geometry")</h2>
+                <p>The line follows the exact point order shown in the editor.</p>
+            </div>
+        </div>
+        <div id="jeepney-route-map" class="review-map" style="min-height: 560px;"></div>
+        <div class="d-flex gap-2 flex-wrap mt-3">
+            <button id="fit-route-points" type="button" class="btn btn-outline-secondary">Fit route</button>
+            @if (Model.CanEdit)
+            {
+                <button id="undo-route-point" type="button" class="btn btn-outline-secondary">Undo last</button>
+                <button id="restore-saved-route" type="button" class="btn btn-outline-secondary">Restore saved</button>
+                <button id="clear-route-points" type="button" class="btn btn-outline-danger">Clear unsaved</button>
+            }
+        </div>
+    </section>
+
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">ORDERED GEOMETRY</span>
+                <h2><span id="route-point-count">@Model.Geometry.Points.Count</span> route points</h2>
+                <p>Edit exact coordinates or change the order. Point 1 is the route start.</p>
+            </div>
+        </div>
+        <div id="route-point-list" class="d-grid gap-2"></div>
+    </section>
+</div>
+
+@if (Model.CanEdit)
+{
+    <section class="review-panel mt-3">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">BULK COORDINATE EDITOR</span>
+                <h2>Import route points</h2>
+                <p>Paste one <code>latitude, longitude</code> pair per line. Use Replace for a complete route or Append to extend the current route.</p>
+            </div>
+        </div>
+        <div class="row g-2 align-items-start">
+            <div class="col-md-8">
+                <textarea id="coordinate-import-text" class="form-control" rows="6" placeholder="15.187197, 120.587297&#10;15.187350, 120.587900"></textarea>
+            </div>
+            <div class="col-md-4 d-grid gap-2">
+                <select id="coordinate-import-mode" class="form-select" aria-label="Coordinate import mode">
+                    <option value="replace">Replace current points</option>
+                    <option value="append">Append to current points</option>
+                </select>
+                <button id="import-route-points" type="button" class="btn btn-outline-primary">Apply imported coordinates</button>
+                <small class="text-muted">Imported points are still unsaved until you press Save route geometry.</small>
+            </div>
+        </div>
+    </section>
+
+    <section class="review-panel mt-3">
+        <form id="route-geometry-form" asp-action="Plot" asp-route-id="@Model.Route.RouteId" method="post">
+            <input id="PointsJson" name="PointsJson" type="hidden" value="[]" />
+            <div class="panel-heading">
+                <div>
+                    <span class="card-kicker">SAVE DRAFT</span>
+                    <h2>Save edited geometry</h2>
+                    <p>The backend atomically replaces the draft's ordered points, waypoints, and Polyline6. This does not activate or publish the route.</p>
+                </div>
+            </div>
+            <button id="save-route-geometry" type="submit" class="btn btn-tuki">Save route geometry</button>
+        </form>
+    </section>
+}

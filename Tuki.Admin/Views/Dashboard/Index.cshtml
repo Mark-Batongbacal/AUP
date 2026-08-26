@@ -1,0 +1,35 @@
+@model Tuki.Admin.ViewModels.DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<section class="dashboard-header">
+    <div>
+        <p class="eyebrow">ADMIN DASHBOARD</p>
+        <h1>Transport data control center</h1>
+        <p>Signed in as <strong>@Model.AdminUserName</strong>.</p>
+    </div>
+</section>
+
+<div class="dashboard-grid">
+    <article class="dashboard-card">
+        <span class="card-kicker">REVIEW QUEUE</span>
+        <h2>Tricycle point submissions</h2>
+        <p>Review passenger-submitted proof, verify the detected map location, and correct official point details.</p>
+        <a asp-controller="TricycleSubmissions" asp-action="Index" asp-route-status="Pending" class="btn btn-tuki mt-2">Review submissions</a>
+    </article>
+
+    <article class="dashboard-card">
+        <span class="card-kicker">DATA MANAGEMENT</span>
+        <h2>Official tricycle points</h2>
+        <p>Create, edit, archive, restore, and check possible duplicate TODA points used by TUKI passengers.</p>
+        <a asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true" class="btn btn-tuki mt-2">Manage official points</a>
+    </article>
+
+    <article class="dashboard-card">
+        <span class="card-kicker">ROUTE MANAGEMENT</span>
+        <h2>Jeepney routes</h2>
+        <p>Create inactive route drafts and maintain verified route metadata before plotting and publishing geometry.</p>
+        <a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-tuki mt-2">Manage jeepney routes</a>
+    </article>
+</div>

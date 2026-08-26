@@ -5,6 +5,7 @@ import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.network.ApiClient
 import com.example.frontend.core.network.ApiErrorParser
 import com.example.frontend.core.storage.AuthSessionStore
+import com.example.frontend.core.storage.RecentFavoritesCache
 import com.example.frontend.core.storage.SharedPreferencesAuthSessionStore
 import com.example.frontend.data.ai.AiApi
 import com.example.frontend.data.ai.AiRepository
@@ -12,6 +13,9 @@ import com.example.frontend.data.ai.AiRepositoryImpl
 import com.example.frontend.data.auth.AuthApi
 import com.example.frontend.data.auth.AuthRepository
 import com.example.frontend.data.auth.AuthRepositoryImpl
+import com.example.frontend.data.contributions.TricycleSubmissionRepository
+import com.example.frontend.data.contributions.TricycleSubmissionRepositoryImpl
+import com.example.frontend.data.contributions.TricycleSubmissionsApi
 import com.example.frontend.data.drivers.DriverRepository
 import com.example.frontend.data.drivers.DriverRepositoryImpl
 import com.example.frontend.data.drivers.DriversApi
@@ -74,6 +78,11 @@ class TukiDataProvider(
         AppLanguagePreference.update(appContext, language)
     }
 
+    val recentFavoritesCache = RecentFavoritesCache(
+        context = appContext,
+        sessions = sessionStore,
+        gson = client.gson
+    )
     val authRepository: AuthRepository = AuthRepositoryImpl(
         authApi,
         usersApi,
@@ -99,6 +108,11 @@ class TukiDataProvider(
     )
     val transportRouteRepository: TransportRouteRepository = TransportRouteRepositoryImpl(api(TransportRoutesApi::class.java), sessionStore, errors)
     val tricycleRepository: TricycleRepository = TricycleRepositoryImpl(api(TricyclePointsApi::class.java), sessionStore, errors)
+    val tricycleSubmissionRepository: TricycleSubmissionRepository = TricycleSubmissionRepositoryImpl(
+        api(TricycleSubmissionsApi::class.java),
+        sessionStore,
+        errors
+    )
     val rideMatchingRepository: RideMatchingRepository = RideMatchingRepositoryImpl(api(RideMatchingApi::class.java), sessionStore, errors)
     val driverRepository: DriverRepository = DriverRepositoryImpl(api(DriversApi::class.java), sessionStore, errors)
     val aiRepository: AiRepository = AiRepositoryImpl(api(AiApi::class.java), sessionStore, errors)

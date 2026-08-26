@@ -5,10 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,10 +22,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,20 +38,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.core.location.NavigationSyncSignal
+import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.ai.ActiveTripAssistantRequest
 import com.example.frontend.data.ai.AssistantDestinationCandidateDto
 import com.example.frontend.data.ai.AssistantJourneyDto
 import com.example.frontend.data.ai.AssistantResponseDto
+import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.places.DestinationSearchResultDto
+import java.time.Instant
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -84,28 +96,31 @@ fun NavigationAiSheet(
     val filipino = language.equals("Filipino", ignoreCase = true)
     val quickPrompts = if (filipino) {
         listOf(
-            "Tama pa ba yung route natin?",
-            "Saan ako bababa?",
-            "₱30 na lang pera ko",
-            "Ayoko mag-trike",
-            "Pagod na ako, less walking sana"
+            "Mas kaunting lakad, maximum 1800 meters",
+            "Normal na lakad, maximum 2150 meters",
+            "Okay lang mas maraming lakad, maximum 2500 meters",
+            "Iwasan ang tricycle",
+            "Iwasan ang jeepney"
         )
     } else {
         listOf(
-            "Am I still on the right route?",
-            "Where do I get off?",
-            "I only have ₱30 left",
-            "I don't want to take a tricycle",
-            "I'm tired, less walking please"
+            "Less walking, maximum 1800 meters",
+            "Normal walking, maximum 2150 meters",
+            "More walking is okay, maximum 2500 meters",
+            "Avoid tricycles",
+            "Avoid jeepneys"
         )
     }
     val intro = if (filipino) {
-        "Magtanong ka lang tungkol sa active trip natin. Kung may gusto kang baguhin, ipapakita ko muna yung bagong route bago natin palitan yung current trip."
+        "Sabihin mo ang walking preference mo o kung anong sasakyan ang gusto mong iwasan. Kapag may valid na ibang route, awtomatikong ire-reroute ni TUKI ang natitirang biyahe."
     } else {
-        "Ask me anything about this active trip. If you want to change something, I’ll show the replacement route first before changing the current trip."
+        "Tell me your walking preference or which vehicle you want to avoid. If another valid route is available, TUKI will automatically reroute the rest of your trip."
     }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val inputFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
     var input by remember { mutableStateOf("") }
     var thinking by remember { mutableStateOf(false) }
     var applyingRecommendationId by remember { mutableStateOf<String?>(null) }
@@ -125,6 +140,13 @@ fun NavigationAiSheet(
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
+    LaunchedEffect(sheetState.currentValue) {
+        if (sheetState.currentValue == SheetValue.Expanded) {
+            inputFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
+    }
+
     fun appendAssistantResponse(response: AssistantResponseDto, requestText: String) {
         messages = messages + NavigationAiMessage(
             id = System.currentTimeMillis() + 1,
@@ -139,6 +161,26 @@ fun NavigationAiSheet(
         )
     }
 
+    suspend fun syncCurrentLocationForAssistant() {
+        val location = context.currentDeviceLocation() ?: return
+        val active = provider.navigationRepository.getActiveNavigation()
+        if (active !is ApiResult.Success) return
+
+        val timestampMillis = if (location.time > 0L) location.time else System.currentTimeMillis()
+        NavigationSyncSignal.requestImmediateSync(samples = 1)
+        provider.navigationRepository.updateLocation(
+            active.data.sessionId,
+            NavigationLocationUpdate(
+                latitude = location.latitude,
+                longitude = location.longitude,
+                accuracyMeters = location.accuracy.toDouble(),
+                timestamp = Instant.ofEpochMilli(timestampMillis).toString(),
+                speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null,
+                bearingDegrees = if (location.hasBearing()) location.bearing.toDouble() else null
+            )
+        )
+    }
+
     fun send(text: String, destinationId: String? = null) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || thinking || applyingRecommendationId != null) return
@@ -150,8 +192,23 @@ fun NavigationAiSheet(
         input = ""
         thinking = true
         scope.launch {
+            // Routine navigation fixes are cached locally for efficiency. A
+            // preference-driven reroute needs the backend TripSession to own a
+            // fresh location, so force one normal navigation location update
+            // before asking the active-trip assistant.
+            syncCurrentLocationForAssistant()
+
             when (val result = ask(trimmed, destinationId)) {
-                is ApiResult.Success -> appendAssistantResponse(result.data, trimmed)
+                is ApiResult.Success -> {
+                    appendAssistantResponse(result.data, trimmed)
+                    if (result.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true)) {
+                        NavigationSyncSignal.requestImmediateSync(samples = 1)
+                        when (val refreshed = provider.navigationRepository.getActiveNavigation()) {
+                            is ApiResult.Success -> onReplanApplied(refreshed.data)
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                }
                 is ApiResult.Failure -> {
                     messages = messages + NavigationAiMessage(
                         id = System.currentTimeMillis() + 1,
@@ -180,6 +237,7 @@ fun NavigationAiSheet(
         )
         thinking = true
         scope.launch {
+            syncCurrentLocationForAssistant()
             when (val result = provider.aiRepository.askTrip(
                 sessionId,
                 ActiveTripAssistantRequest(
@@ -188,7 +246,16 @@ fun NavigationAiSheet(
                     conversationId = message.conversationId
                 )
             )) {
-                is ApiResult.Success -> appendAssistantResponse(result.data, requestText)
+                is ApiResult.Success -> {
+                    appendAssistantResponse(result.data, requestText)
+                    if (result.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true)) {
+                        NavigationSyncSignal.requestImmediateSync(samples = 1)
+                        when (val refreshed = provider.navigationRepository.getActiveNavigation()) {
+                            is ApiResult.Success -> onReplanApplied(refreshed.data)
+                            is ApiResult.Failure -> Unit
+                        }
+                    }
+                }
                 is ApiResult.Failure -> {
                     messages = messages + NavigationAiMessage(
                         id = System.currentTimeMillis() + 1,
@@ -249,6 +316,7 @@ fun NavigationAiSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = NavigationAiSurface,
         contentColor = NavigationAiDark,
         shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)
@@ -256,10 +324,13 @@ fun NavigationAiSheet(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 18.dp)
+                .weight(1f)
+                .imePadding()
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
                     Modifier.size(42.dp).background(NavigationAiTeal.copy(alpha = 0.14f), CircleShape),
                     contentAlignment = Alignment.Center
@@ -270,7 +341,7 @@ fun NavigationAiSheet(
                 Column {
                     Text("Ask TUKI", color = NavigationAiDark, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                     Text(
-                        if (filipino) "Tanong at fine-tuning para sa active trip" else "Questions and fine-tuning for this active trip",
+                        if (filipino) "Preferences para sa automatic live reroute" else "Preferences for automatic live rerouting",
                         color = NavigationAiMuted,
                         fontSize = 12.sp
                     )
@@ -281,7 +352,10 @@ fun NavigationAiSheet(
 
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().height(360.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 items(messages, key = { it.id }) { message ->
@@ -323,6 +397,9 @@ fun NavigationAiSheet(
                             }
                         }
 
+                        // Compatibility for older backend responses. The current
+                        // active-trip endpoint auto-applies preference reroutes and
+                        // therefore returns no route cards on success.
                         if (!message.fromUser && message.journeys.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
                             message.journeys.forEachIndexed { index, journey ->
@@ -351,77 +428,96 @@ fun NavigationAiSheet(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (filipino) "Tinitingnan ni TUKI yung trip natin…" else "TUKI is checking your trip…",
+                                if (filipino) "Tinitingnan ni TUKI yung bagong route…" else "TUKI is checking a new route…",
                                 color = NavigationAiMuted,
                                 fontSize = 12.sp
                             )
                         }
                     }
                 }
-            }
 
-            if (messages.size == 1) {
-                Spacer(Modifier.height(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    quickPrompts.forEach { prompt ->
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .background(NavigationAiTeal.copy(alpha = 0.09f), RoundedCornerShape(14.dp))
-                                .clickable(enabled = !thinking && applyingRecommendationId == null) {
-                                    send(prompt)
+                if (messages.size == 1) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            quickPrompts.forEach { prompt ->
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            NavigationAiTeal.copy(alpha = 0.09f),
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                        .clickable(
+                                            enabled = !thinking && applyingRecommendationId == null
+                                        ) {
+                                            send(prompt)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                                ) {
+                                    Text(
+                                        prompt,
+                                        color = NavigationAiDark,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
-                                .padding(horizontal = 12.dp, vertical = 9.dp)
-                        ) {
-                            Text(
-                                prompt,
-                                color = NavigationAiDark,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            }
                         }
                     }
                 }
+
+                item {
+                    Text(
+                        if (filipino) {
+                            "Pwede mong pindutin ang preference sa taas o i-type ito sa chat. Kapag walang ibang valid na route para sa preference mo, hindi gagalawin ni TUKI ang current trip."
+                        } else {
+                            "Use a preference button above or type it naturally. If no other valid route matches your preference, TUKI keeps the current trip unchanged."
+                        },
+                        modifier = Modifier.padding(top = 3.dp, bottom = 5.dp),
+                        color = NavigationAiMuted,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
             }
 
-            Spacer(Modifier.height(12.dp))
-            Text(
-                if (filipino) {
-                    "Hindi awtomatikong papalitan ni TUKI ang active route. Kapag meaningful yung pagbabago, pipili ka muna ng exact route proposal."
-                } else {
-                    "TUKI will not silently replace your active route. For meaningful changes, you choose the exact route proposal first."
-                },
-                color = NavigationAiMuted,
-                fontSize = 11.sp,
-                lineHeight = 15.sp
-            )
-            Spacer(Modifier.height(9.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 TextField(
                     value = input,
                     onValueChange = { input = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(inputFocusRequester)
+                        .padding(end = 8.dp),
                     singleLine = true,
                     enabled = !thinking && applyingRecommendationId == null,
                     placeholder = {
                         Text(
-                            if (filipino) "Magtanong o mag-fine-tune…" else "Ask or fine-tune the trip…",
-                            color = NavigationAiMuted,
-                            fontSize = 13.sp
+                            if (filipino) "I-type ang walking o vehicle preference…" else "Type a walking or vehicle preference…",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
                         )
                     },
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(24.dp),
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.White,
-                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        disabledContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = NavigationAiDark,
-                        unfocusedTextColor = NavigationAiDark
+                        disabledIndicatorColor = Color.Transparent,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                 )
-                Spacer(Modifier.width(8.dp))
                 Box(
                     Modifier
                         .size(44.dp)
@@ -429,7 +525,7 @@ fun NavigationAiSheet(
                             if (input.isNotBlank() && !thinking && applyingRecommendationId == null) {
                                 NavigationAiOrange
                             } else {
-                                NavigationAiOrange.copy(alpha = 0.4f)
+                                NavigationAiOrange.copy(alpha = 0.45f)
                             },
                             CircleShape
                         )
@@ -438,7 +534,7 @@ fun NavigationAiSheet(
                         ) { send(input) },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("➤", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("➤", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

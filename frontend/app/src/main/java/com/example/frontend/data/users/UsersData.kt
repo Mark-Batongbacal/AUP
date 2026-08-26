@@ -36,7 +36,8 @@ data class UserProfileDto(
     val email: String? = null,
     val tripsTaken: Int = 0,
     val favoritesCount: Int = 0,
-    val preferredLanguage: String = "English"
+    val preferredLanguage: String = "English",
+    val lastPasswordChangedAt: String? = null
 )
 
 interface UsersApi {

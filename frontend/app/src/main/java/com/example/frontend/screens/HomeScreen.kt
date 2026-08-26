@@ -33,6 +33,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -134,6 +135,8 @@ fun HomeScreen(
     var originLongitude by remember { mutableStateOf<Double?>(null) }
     var isLocating by remember { mutableStateOf(true) }
     var locateRequest by remember { mutableIntStateOf(0) }
+    var refreshRequest by remember { mutableIntStateOf(0) }
+    var isRefreshing by remember { mutableStateOf(false) }
     var selectedDestination by remember { mutableStateOf<DestinationSearchResultDto?>(null) }
     var recentPlaces by remember { mutableStateOf<List<RecentCommute>>(emptyList()) }
     var recentPlacesLoading by remember { mutableStateOf(false) }
@@ -248,7 +251,7 @@ fun HomeScreen(
         isLocating = false
     }
 
-    LaunchedEffect(isGuest) {
+    LaunchedEffect(isGuest, refreshRequest) {
         if (isGuest || inPreview) {
             recentPlaces = emptyList()
             recentPlacesLoading = false
@@ -264,6 +267,12 @@ fun HomeScreen(
             is ApiResult.Failure -> emptyList()
         }
         recentPlacesLoading = false
+    }
+
+    LaunchedEffect(isRefreshing, isLocating, recentPlacesLoading) {
+        if (isRefreshing && !isLocating && !recentPlacesLoading) {
+            isRefreshing = false
+        }
     }
 
     LaunchedEffect(showMapPicker, mapSearchText, originLatitude, originLongitude) {
@@ -321,105 +330,119 @@ fun HomeScreen(
     val focusManager = LocalFocusManager.current
 
     Box(Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(HomeBg)
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                if (!showMapPicker && !isRefreshing) {
+                    isRefreshing = true
+                    isLocating = true
+                    recentPlacesLoading = !isGuest
+                    locateRequest += 1
+                    refreshRequest += 1
+                }
+            },
+            modifier = Modifier.fillMaxSize()
         ) {
             Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 18.dp)
+                    .fillMaxSize()
+                    .background(HomeBg)
             ) {
-                Spacer(Modifier.height(10.dp))
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 18.dp)
+                ) {
+                    Spacer(Modifier.height(10.dp))
 
-                HomeHeader()
+                    HomeHeader()
 
-                Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(12.dp))
 
-                Text(
-                    text = "${TukiInterfaceText.hello}, ${userName.ifBlank { "TUKI rider" }} 👋",
-                    color = HomeDark,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = TukiInterfaceText.whereToToday,
-                    color = HomeDark,
-                    fontSize = 34.sp,
-                    lineHeight = 37.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
-                )
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    text = TukiInterfaceText.planTripOrAskAi,
-                    color = HomeMuted,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                    Text(
+                        text = "${TukiInterfaceText.hello}, ${userName.ifBlank { "TUKI rider" }} 👋",
+                        color = HomeDark,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = TukiInterfaceText.whereToToday,
+                        color = HomeDark,
+                        fontSize = 34.sp,
+                        lineHeight = 37.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        text = TukiInterfaceText.planTripOrAskAi,
+                        color = HomeMuted,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
 
-                Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(14.dp))
 
-                if (activeTripDescription.isNullOrBlank()) {
-                    CurrentLocationCard(
-                        currentLocationLabel = currentLocationLabel,
-                        areaLabel = currentAreaLabel,
-                        isLocating = isLocating,
-                        onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
+                    if (activeTripDescription.isNullOrBlank()) {
+                        CurrentLocationCard(
+                            currentLocationLabel = currentLocationLabel,
+                            areaLabel = currentAreaLabel,
+                            isLocating = isLocating,
+                            onChangeClick = { openMapPicker(HomeMapPickMode.Origin) }
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+
+                        DestinationCard(
+                            selectedDestination = selectedDestination,
+                            canFindRoutes = selectedDestination != null && originLatitude != null && originLongitude != null,
+                            onClick = { openMapPicker(HomeMapPickMode.Destination) },
+                            onFindRoutesClick = ::submitRoute
+                        )
+                    } else {
+                        ActiveTripCard(
+                            description = activeTripDescription,
+                            onResumeClick = onResumeActiveTrip
+                        )
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    RecentPlacesSection(
+                        recentPlaces = recentPlaces,
+                        isLoading = recentPlacesLoading,
+                        onViewAllClick = onRecentClick,
+                        onPlaceClick = onCommuteClick,
+                        onAddShortcutClick = { openMapPicker(HomeMapPickMode.Destination) }
                     )
 
                     Spacer(Modifier.height(12.dp))
 
-                    DestinationCard(
-                        selectedDestination = selectedDestination,
-                        canFindRoutes = selectedDestination != null && originLatitude != null && originLongitude != null,
-                        onClick = { openMapPicker(HomeMapPickMode.Destination) },
-                        onFindRoutesClick = ::submitRoute
-                    )
-                } else {
-                    ActiveTripCard(
-                        description = activeTripDescription,
-                        onResumeClick = onResumeActiveTrip
+                    AskTukiAiCard(
+                        onClick = {
+                            PlanningOriginContext.update(
+                                currentLocationLabel.routeOriginLabel(),
+                                originLatitude,
+                                originLongitude
+                            )
+                            onAskAiClick()
+                        }
                     )
                 }
 
-                Spacer(Modifier.height(14.dp))
-
-                RecentPlacesSection(
-                    recentPlaces = recentPlaces,
-                    isLoading = recentPlacesLoading,
-                    onViewAllClick = onRecentClick,
-                    onPlaceClick = onCommuteClick,
-                    onAddShortcutClick = { openMapPicker(HomeMapPickMode.Destination) }
-                )
-
-                Spacer(Modifier.height(12.dp))
-
-                AskTukiAiCard(
-                    onClick = {
-                        PlanningOriginContext.update(
-                            currentLocationLabel.routeOriginLabel(),
-                            originLatitude,
-                            originLongitude
-                        )
-                        onAskAiClick()
-                    }
+                BottomBar(
+                    selectedTab = TukiTab.HOME,
+                    onHomeClick = {},
+                    onRecentClick = onRecentClick,
+                    onFavoritesClick = onFavoritesClick,
+                    onProfileClick = onProfileClick
                 )
             }
-
-            BottomBar(
-                selectedTab = TukiTab.HOME,
-                onHomeClick = {},
-                onRecentClick = onRecentClick,
-                onFavoritesClick = onFavoritesClick,
-                onProfileClick = onProfileClick
-            )
         }
 
         if (showMapPicker) {

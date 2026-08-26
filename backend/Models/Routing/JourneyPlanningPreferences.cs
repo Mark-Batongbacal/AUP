@@ -10,7 +10,25 @@ public sealed record JourneyPlanningPreferences(
     double? MaxWalkingMeters = null,
     JourneyWalkingPreference WalkingPreference = JourneyWalkingPreference.Normal,
     JourneyOptimizationPreference? OptimizationPreference = null,
-    IReadOnlySet<AccessMode>? AvoidTransportModes = null);
+    IReadOnlySet<AccessMode>? AvoidTransportModes = null,
+    OnboardTransitPlanningContext? OnboardTransit = null);
+
+/// <summary>
+/// Recovery context for a passenger who is already riding a route. Progress is
+/// authoritative full-route progress, so loops and retraced coordinates remain
+/// distinct occurrences.
+/// </summary>
+public sealed record OnboardTransitPlanningContext(
+    string RouteId,
+    double CurrentRouteProgressMeters,
+    double ProgressToleranceMeters = 75)
+{
+    public bool IsMateriallyBehind(double boardProgressMeters) =>
+        boardProgressMeters < CurrentRouteProgressMeters - ProgressToleranceMeters;
+
+    public bool IsCurrentOccurrence(double boardProgressMeters) =>
+        Math.Abs(boardProgressMeters - CurrentRouteProgressMeters) <= ProgressToleranceMeters;
+}
 
 public enum JourneyWalkingPreference
 {

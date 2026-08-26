@@ -1,10 +1,6 @@
 package com.example.frontend.screens
 
 import android.location.Location
-import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateContentSize
@@ -46,7 +42,11 @@ import com.example.frontend.navigation.LocalLegProximity
 import com.example.frontend.navigation.LocalNavigationEngine
 import com.example.frontend.navigation.LocalNavigationSpeech
 import com.example.frontend.navigation.LocalServerSyncReason
+import com.example.frontend.navigation.AndroidNavigationHapticPerformer
+import com.example.frontend.navigation.NavigationHapticEventConsumer
 import com.example.frontend.navigation.TripOptionsCoordinator
+import com.example.frontend.navigation.alightStatusPrompt
+import com.example.frontend.navigation.navigationHapticEvent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -101,6 +101,7 @@ fun TripTrackingScreen(
     var stableLegRouteKey by remember { mutableStateOf<String?>(null) }
     var optionError by remember { mutableStateOf<String?>(null) }
     var optionWorking by remember { mutableStateOf(false) }
+    var actionLaunchInFlight by remember { mutableStateOf(false) }
     var hasRerouted by remember { mutableStateOf(false) }
     var activeDestinationName by remember(destination) { mutableStateOf(destination) }
     var activeFinalDestination by remember(finalDestination) { mutableStateOf(finalDestination) }
@@ -110,6 +111,8 @@ fun TripTrackingScreen(
     var legOverviewRequestKey by remember { mutableStateOf(0) }
     var localLandmarkNotice by remember { mutableStateOf<String?>(null) }
     var navigationLanguage by remember { mutableStateOf(AppLanguagePreference.current()) }
+    var lastAutomaticRecoveryKey by remember { mutableStateOf<String?>(null) }
+    val hapticPerformer = remember(context) { AndroidNavigationHapticPerformer(context.applicationContext) }
 
     val tts = remember(context) {
         TextToSpeech(context) { status -> ttsReady = status == TextToSpeech.SUCCESS }
@@ -117,11 +120,16 @@ fun TripTrackingScreen(
     DisposableEffect(tts) { onDispose { tts.stop(); tts.shutdown() } }
 
     val snapshot = optionSnapshot ?: navigationSnapshot
+    val hapticConsumer = remember(snapshot?.sessionId) { NavigationHapticEventConsumer() }
     val working = isNavigationActionInProgress || optionWorking
     val currentLegIndex = (snapshot?.currentLegIndex ?: 0).coerceAtLeast(0)
     val geometryKey = snapshot?.let(::navigationGeometryKey)
     val serverRerouted = snapshot?.status.equals("REROUTE_SUCCEEDED", true)
     val effectiveRerouted = hasRerouted || serverRerouted
+
+    LaunchedEffect(snapshot?.sessionId, serverRerouted) {
+        if (serverRerouted) hasRerouted = true
+    }
 
     LaunchedEffect(snapshot?.sessionId) {
         navigationLanguage = options.refreshPreferredLanguage()
@@ -157,15 +165,21 @@ fun TripTrackingScreen(
 
     fun applyOption(
         destinationUpdate: DestinationSearchResultDto? = null,
+        markRerouted: Boolean = true,
         request: suspend () -> ApiResult<NavigationSnapshotDto>
     ) {
-        if (working) return
+        if (working || actionLaunchInFlight) return
+        actionLaunchInFlight = true
         scope.launch {
             optionWorking = true
             optionError = null
             when (val result = request()) {
                 is ApiResult.Success -> {
-                    hasRerouted = true
+                    if (markRerouted) hasRerouted = true
+                    // Do not let progress from the previous route survive while the replacement
+                    // geometry is loading. Until then the reroute snapshot's server distance wins.
+                    stableLegRoute = emptyList()
+                    stableLegRouteKey = null
                     optionSnapshot = result.data
                     destinationUpdate?.let {
                         activeDestinationName = it.name
@@ -184,6 +198,7 @@ fun TripTrackingScreen(
                 is ApiResult.Failure -> optionError = result.message
             }
             optionWorking = false
+            actionLaunchInFlight = false
         }
     }
 
@@ -199,7 +214,7 @@ fun TripTrackingScreen(
 
     val baseRoute = stableLegRoute
         .takeIf { stableLegRouteKey == geometryKey && it.size >= 2 }
-        ?: routePoints
+        ?: if (effectiveRerouted) emptyList() else routePoints
     val routeCoordinates = remember(baseRoute) {
         baseRoute.map { RouteCoordinate(it.latitude, it.longitude) }
     }
@@ -213,6 +228,10 @@ fun TripTrackingScreen(
         snapshot?.currentLegInstructions,
         snapshot?.currentLegLandmarks
     ) {
+        // produceState retains its previous value while keyed work restarts. Clear it explicitly so
+        // an old route cannot temporarily (or, on an empty replacement route, indefinitely)
+        // override the new reroute snapshot's remaining distance.
+        value = null
         val location = liveDeviceLocation ?: return@produceState
         value = localEngine.update(
             raw = RouteCoordinate(location.latitude, location.longitude),
@@ -232,10 +251,31 @@ fun TripTrackingScreen(
         val sessionId = snapshot?.sessionId ?: return@LaunchedEffect
         if (sessionId.startsWith("guest-")) return@LaunchedEffect
         when (reason) {
+            LocalServerSyncReason.OFF_ROUTE -> applyOption {
+                options.rerouteNow(sessionId, reason = "OFF_ROUTE")
+            }
             LocalServerSyncReason.MISSED_LEG_TARGET -> applyOption {
                 options.recoverMissedLegTarget(sessionId)
             }
             else -> NavigationSyncSignal.requestImmediateSync()
+        }
+    }
+
+    LaunchedEffect(snapshot?.sessionId, snapshot?.recommendationId, snapshot?.status) {
+        val current = snapshot ?: return@LaunchedEffect
+        if (current.sessionId.startsWith("guest-")) return@LaunchedEffect
+        val reason = current.status.uppercase().takeIf {
+            it == "OFF_ROUTE" || it == "MISSED_ALIGHT"
+        } ?: return@LaunchedEffect
+        val recoveryKey = "${current.sessionId}:${current.recommendationId}:${current.currentLegIndex}:$reason"
+        if (lastAutomaticRecoveryKey == recoveryKey) return@LaunchedEffect
+        lastAutomaticRecoveryKey = recoveryKey
+        applyOption {
+            if (reason == "MISSED_ALIGHT") {
+                options.recoverMissedAlight(current.sessionId)
+            } else {
+                options.rerouteNow(current.sessionId, reason = reason)
+            }
         }
     }
 
@@ -313,6 +353,21 @@ fun TripTrackingScreen(
         localProgress?.legProximity != LocalLegProximity.NORMAL
     val preparingToAlight = (snapshot?.state.equals("ApproachingAlightPoint", true) && !requiresAlighting) ||
         (transitMode && localApproachingEnd && !requiresAlighting)
+    val hapticEvent = remember(
+        snapshot?.sessionId,
+        snapshot?.recommendationId,
+        snapshot?.currentLegIndex,
+        snapshot?.status,
+        requiresAlighting,
+        preparingToAlight,
+        localGuidance?.sequence,
+        localGuidance?.stage
+    ) {
+        navigationHapticEvent(snapshot, preparingToAlight, localGuidance)
+    }
+    LaunchedEffect(hapticEvent?.key) {
+        hapticConsumer.consume(hapticEvent, hapticPerformer)
+    }
     val canParaPo = requiresAlighting ||
         snapshot?.nextInstruction?.type?.contains("alight", true) == true ||
         (transitMode && localApproachingEnd)
@@ -435,7 +490,12 @@ fun TripTrackingScreen(
                 collapsed = instructionCollapsed,
                 onCollapsedChange = { instructionCollapsed = it },
                 onSpeak = {
-                    if (ttsReady) tts.speak(instruction, TextToSpeech.QUEUE_FLUSH, null, "tuki-navigation")
+                    if (ttsReady) tts.speak(
+                        instruction,
+                        TextToSpeech.QUEUE_FLUSH,
+                        null,
+                        hapticEvent?.key ?: "tuki-navigation"
+                    )
                 },
                 onParaPo = { showParaPo = true },
                 onBoard = onConfirmBoarding,
@@ -464,6 +524,38 @@ fun TripTrackingScreen(
             Modifier.fillMaxSize().background(TripDark.copy(alpha = 0.4f)).clickable { showParaPo = false },
             contentAlignment = Alignment.Center
         ) { ParaPoOverlay(onDismiss = { showParaPo = false }) }
+    }
+
+    snapshot?.alightStatusPrompt()?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(prompt.message) },
+            text = { Text("Your answer keeps the next directions and fare accurate.") },
+            confirmButton = {
+                Button(
+                    enabled = !working,
+                    onClick = {
+                        applyOption(markRerouted = false) {
+                            options.resolveAlightStatus(snapshot.sessionId, alreadyOff = true)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TripTeal)
+                ) { Text("Yes, I'm off") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !working,
+                    onClick = {
+                        applyOption {
+                            options.resolveAlightStatus(
+                                snapshot.sessionId,
+                                alreadyOff = false
+                            )
+                        }
+                    }
+                ) { Text("No, I'm still riding", color = TripDark) }
+            }
+        )
     }
 
     if (showOptions && snapshot != null) {
@@ -931,13 +1023,17 @@ private fun SummaryRow(label: String, value: String) {
 private fun navigationGeometryKey(snapshot: NavigationSnapshotDto): String? {
     val leg = snapshot.currentLeg ?: return null
     return listOf(
+        snapshot.sessionId,
+        snapshot.recommendationId.orEmpty(),
         leg.legIndex.toString(),
         leg.routeId?.toString().orEmpty(),
         leg.transportMode.uppercase(),
         leg.startLatitude?.toString().orEmpty(),
         leg.startLongitude?.toString().orEmpty(),
         leg.endLatitude?.toString().orEmpty(),
-        leg.endLongitude?.toString().orEmpty()
+        leg.endLongitude?.toString().orEmpty(),
+        leg.startRouteProgressMeters?.toString().orEmpty(),
+        leg.endRouteProgressMeters?.toString().orEmpty()
     ).joinToString(":")
 }
 

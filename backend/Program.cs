@@ -23,18 +23,13 @@ LoadDevelopmentEnvironmentFile();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Some container platforms assign the listening port through PORT. The
-// Docker image otherwise uses ASPNETCORE_HTTP_PORTS=8080.
 if (int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var port))
 {
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 }
 
-// Add services to the container.
-
 builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy =>
@@ -110,6 +105,8 @@ builder.Services.AddScoped<INavigationInstructionRepository, NavigationInstructi
 builder.Services.AddScoped<ITripLandmarkCandidateRepository, TripLandmarkCandidateRepository>();
 builder.Services.AddScoped<ITransferConnectionRepository, TransferConnectionRepository>();
 builder.Services.AddScoped<ITricyclePointRepository, TricyclePointRepository>();
+builder.Services.AddScoped<ITricyclePointSubmissionRepository, TricyclePointSubmissionRepository>();
+builder.Services.AddScoped<ITricyclePointSubmissionPublishingRepository, TricyclePointSubmissionPublishingRepository>();
 builder.Services.AddScoped<IUserProfileRepository, UserProfileRepository>();
 builder.Services.AddScoped<IApiKeyService, SqlServerApiKeyService>();
 builder.Services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
@@ -155,6 +152,12 @@ builder.Services.AddScoped<ILocalAuthenticationService, LocalAuthenticationServi
 builder.Services.AddScoped<IRoutePointService, RoutePointService>();
 builder.Services.AddScoped<ITransferConnectionService, TransferConnectionService>();
 builder.Services.AddScoped<ITricyclePointService, TricyclePointService>();
+builder.Services.AddScoped<IAdminTricyclePointManagementService, AdminTricyclePointManagementService>();
+builder.Services.AddScoped<IAdminJeepneyRouteManagementService, AdminJeepneyRouteManagementService>();
+builder.Services.AddScoped<ITricyclePointSubmissionService, TricyclePointSubmissionService>();
+builder.Services.AddScoped<IAdminTricyclePointSubmissionService, AdminTricyclePointSubmissionService>();
+builder.Services.AddScoped<ITricyclePointSubmissionPublishingService, TricyclePointSubmissionPublishingService>();
+builder.Services.AddSingleton<ITricycleProofStorage, FileSystemTricycleProofStorage>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
 builder.Services.AddScoped<IAssistantIntentExtractor, NemotronIntentExtractor>();
@@ -207,13 +210,11 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous();
 }
 
-// Render terminates HTTPS at its proxy and forwards requests to this container over HTTP.
 if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
@@ -239,7 +240,9 @@ app.Use(async (context, next) =>
 });
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
+
 app.Run();
 
 static void LoadDevelopmentEnvironmentFile()
@@ -254,16 +257,16 @@ static void LoadDevelopmentEnvironmentFile()
     {
         Path.Combine(Directory.GetCurrentDirectory(), ".env"),
         Path.Combine(Directory.GetCurrentDirectory(), "backend", ".env"),
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../.env")),
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".env"))
     };
 
-    var envPath = candidates.FirstOrDefault(File.Exists);
-    if (envPath is null)
+    var path = candidates.FirstOrDefault(File.Exists);
+    if (path is null)
     {
         return;
     }
 
-    foreach (var rawLine in File.ReadLines(envPath))
+    foreach (var rawLine in File.ReadLines(path))
     {
         var line = rawLine.Trim();
         if (line.Length == 0 || line.StartsWith('#'))
@@ -271,23 +274,21 @@ static void LoadDevelopmentEnvironmentFile()
             continue;
         }
 
-        var separator = line.IndexOf('=');
-        if (separator <= 0)
+        var separatorIndex = line.IndexOf('=');
+        if (separatorIndex <= 0)
         {
             continue;
         }
 
-        var key = line[..separator].Trim();
-        var value = line[(separator + 1)..].Trim();
-
+        var key = line[..separatorIndex].Trim();
+        var value = line[(separatorIndex + 1)..].Trim();
         if (value.Length >= 2 &&
-            ((value[0] == '"' && value[^1] == '"') ||
-             (value[0] == '\'' && value[^1] == '\'')))
+            ((value.StartsWith('"') && value.EndsWith('"')) ||
+             (value.StartsWith('\'') && value.EndsWith('\''))))
         {
             value = value[1..^1];
         }
 
-        // Real process environment variables take precedence over .env values.
         if (Environment.GetEnvironmentVariable(key) is null)
         {
             Environment.SetEnvironmentVariable(key, value);

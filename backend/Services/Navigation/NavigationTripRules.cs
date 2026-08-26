@@ -22,9 +22,11 @@ public static class NavigationTripRules
 
     public static bool IsPaidTransport(RecommendationLeg leg)
     {
-        var mode = leg.TransportMode?.Code?.ToUpperInvariant();
-        return (mode is "JEEPNEY" or "TRICYCLE" or "TRIKE") && leg.EstimatedFare > 0;
+        return IsTransit(leg) && leg.EstimatedFare > 0;
     }
+
+    public static bool IsTransit(RecommendationLeg leg) =>
+        leg.TransportMode?.Code?.ToUpperInvariant() is "JEEPNEY" or "TRICYCLE" or "TRIKE";
 
     public static decimal EstimatedRemainingFare(
         TripSession session,
