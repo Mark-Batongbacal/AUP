@@ -1,9 +1,9 @@
 using Tuki.Admin.Models.Auth;
-using Tuki.Admin.Services.BackendApiClient;
+using Tuki.Admin.Repositories.AdminAuth;
 
 namespace Tuki.Admin.Services.AdminAuth;
 
-public sealed class AdminAuthService(IBackendApiClientService backendApiClient) : IAdminAuthService
+public sealed class AdminAuthService(IAdminAuthRepository adminAuthRepository) : IAdminAuthService
 {
     public async Task<AdminAuthenticationResult> AuthenticateAsync(
         string userName,
@@ -15,7 +15,7 @@ public sealed class AdminAuthService(IBackendApiClientService backendApiClient) 
         LoginResponse? login;
         try
         {
-            login = await backendApiClient.LoginAsync(
+            login = await adminAuthRepository.LoginAsync(
                 new LoginRequest
                 {
                     UserName = normalizedUserName,
