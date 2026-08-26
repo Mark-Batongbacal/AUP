@@ -91,6 +91,36 @@ public sealed class LocationTrackingRecoveryTests
             0, 600, 1_000), Times.Once);
     }
 
+    [Fact]
+    public async Task RangeMatchFails_InsideConfirmedAlightZone_ReacquiresAtLegEndpoint()
+    {
+        var fixture = Fixture();
+        fixture.Session.CurrentRouteProgressMeters = 0;
+        fixture.Matcher.Setup(item => item.Match(
+                It.IsAny<LocationUpdate>(), It.IsAny<IReadOnlyList<(double, double)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double?>()))
+            .Returns((RouteMatch?)null);
+        fixture.Matcher.Setup(item => item.MatchWithinRange(
+                It.IsAny<LocationUpdate>(), It.IsAny<IReadOnlyList<(double, double)>>(),
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
+            .Returns((RouteMatch?)null);
+
+        // The 1,000 m leg endpoint on this eastbound test geometry is around 120.0090 longitude.
+        // This fix is physically inside the 100 m confirmation zone even though route-progress
+        // matching is deliberately made to fail.
+        var result = await fixture.Service.ProcessAsync(
+            fixture.Session.UserId,
+            fixture.Session.TripSessionId,
+            new LocationUpdate(15, 120.0090, 5, DateTime.UtcNow));
+
+        Assert.True(result.Accepted);
+        Assert.Equal("ApproachingAlightPoint", result.Status);
+        Assert.Equal(1_000, fixture.Session.CurrentProgressMeters);
+        Assert.Equal(1_000, fixture.Session.CurrentRouteProgressMeters);
+        Assert.Equal(TripNavigationState.ApproachingAlightPoint,
+            fixture.Session.CurrentNavigationState);
+    }
+
     private static RecoveryFixture Fixture()
     {
         var session = new TripSession
