@@ -27,6 +27,7 @@ public sealed class NavigationOptions
     public int MinimumOffRouteSamples { get; init; } = 2;
     public int RerouteCooldownSeconds { get; init; } = 45;
     public double MissedAlightDistanceMeters { get; init; } = 150;
+    public double SameRouteReboardingProgressToleranceMeters { get; init; } = 75;
 
     public bool IsValid() => MaxGpsAccuracyMeters > 0 && MaxLocationAgeSeconds > 0 &&
         MaxPlausibleSpeedMetersPerSecond > 0 && MaxBackwardProgressMeters >= 0 &&
@@ -41,5 +42,6 @@ public sealed class NavigationOptions
         !string.IsNullOrWhiteSpace(TricycleRoadCosting) &&
         WalkingOffRouteMeters > 0 && TransitOffRouteMeters > 0 &&
         OffRouteDurationSeconds >= 0 && MinimumOffRouteSamples >= 2 &&
-        RerouteCooldownSeconds >= 0 && MissedAlightDistanceMeters > 0;
+        RerouteCooldownSeconds >= 0 && MissedAlightDistanceMeters > 0 &&
+        SameRouteReboardingProgressToleranceMeters >= 0;
 }

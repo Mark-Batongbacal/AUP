@@ -13,6 +13,7 @@ public interface INavigationFacadeService
     Task<NavigationOperation> UpdateLocationAsync(Guid userId, Guid sessionId, LocationUpdate update, CancellationToken cancellationToken = default);
     Task<NavigationOperation> ConfirmBoardingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<NavigationOperation> ConfirmAlightingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
+    Task<NavigationOperation> ResolveAlightStatusAsync(Guid userId, Guid sessionId, bool alreadyOff, CancellationToken cancellationToken = default);
     Task<NavigationOperation> CancelAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
     Task<NavigationOperation> RerouteAsync(Guid userId, Guid sessionId, NavigationRerouteRequest request, CancellationToken cancellationToken = default);
 }
@@ -62,17 +63,7 @@ public sealed class NavigationFacadeService(
         var result = await locationTracking.ProcessAsync(userId, sessionId, update, cancellationToken);
         var session = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken);
         if (session is null) return Fail("TRIP_SESSION_NOT_FOUND");
-        var status = result.Status;
-        if (result.Accepted && result.Status is "OFF_ROUTE" or "MISSED_ALIGHT")
-        {
-            var reroute = await rerouting.RerouteAsync(userId, sessionId, new NavigationRerouteRequest(result.Status), cancellationToken);
-            if (reroute.Succeeded)
-            {
-                status = "REROUTE_SUCCEEDED";
-                session = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken) ?? session;
-            }
-        }
-        return await BuildAsync(userId, session, status, result.TriggeredInstructions ?? [], cancellationToken);
+        return await BuildAsync(userId, session, result.Status, result.TriggeredInstructions ?? [], cancellationToken);
     }
 
     public async Task<NavigationOperation> ConfirmBoardingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default) =>
@@ -80,6 +71,17 @@ public sealed class NavigationFacadeService(
 
     public async Task<NavigationOperation> ConfirmAlightingAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default) =>
         await FromSessionOperationAsync(userId, await tripSessions.ConfirmAlightingAsync(userId, sessionId, cancellationToken), "ALIGHTING_CONFIRMED", cancellationToken);
+
+    public async Task<NavigationOperation> ResolveAlightStatusAsync(
+        Guid userId,
+        Guid sessionId,
+        bool alreadyOff,
+        CancellationToken cancellationToken = default) =>
+        await FromSessionOperationAsync(
+            userId,
+            await tripSessions.ResolveAlightStatusAsync(userId, sessionId, alreadyOff, cancellationToken),
+            alreadyOff ? "ALIGHTING_RECOVERED" : "MISSED_ALIGHT",
+            cancellationToken);
 
     public async Task<NavigationOperation> CancelAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default) =>
         await FromSessionOperationAsync(userId, await tripSessions.CancelAsync(userId, sessionId, cancellationToken), "CANCELLED", cancellationToken);
@@ -129,7 +131,9 @@ public sealed class NavigationFacadeService(
         var selected = SelectInstruction(session, leg, allInstructions, triggered);
         var following = SelectFollowingInstruction(session, selected, allInstructions);
         var speechType = EventInstructionType(session, status, selected, progressLandmark);
-        var instructionType = speechType is "OffRoute" or "MissedAlight" or "Cancelled" or "Arrived" ? speechType : selected?.Type.ToString() ?? "Continue";
+        var instructionType = speechType is "OffRoute" or "MissedAlight" or "AlightStatusUnknown" or "Cancelled" or "Arrived"
+            ? speechType
+            : selected?.Type.ToString() ?? "Continue";
         var activeLandmark = progressLandmark is not null
             ? new NavigationLandmarkSnapshot(progressLandmark.Text.Replace("You just passed ", "", StringComparison.OrdinalIgnoreCase).TrimEnd('.'), "", "PROGRESS_REFERENCE", "ALONG_ROUTE", progressLandmark.Latitude ?? 0, progressLandmark.Longitude ?? 0, 0, progressLandmark.DistanceFromRouteStartMeters)
             : instructionType is "BoardJeepney" or "BoardTricycle" ? MapLandmark(boardLandmark)
@@ -186,7 +190,8 @@ public sealed class NavigationFacadeService(
             followingSnapshot, BuildTripSummary(session, legs),
             SpokenInstructionTemplate: spokenTemplate,
             CurrentLegInstructions: legInstructions,
-            CurrentLegLandmarks: legLandmarkPackage);
+            CurrentLegLandmarks: legLandmarkPackage,
+            RecommendationId: session.RecommendationId);
         return new(snapshot);
     }
 
@@ -296,6 +301,7 @@ public sealed class NavigationFacadeService(
     private static string EventInstructionType(TripSession session, string status, NavigationInstruction? selected, NavigationInstruction? progress) => status switch
     {
         "MISSED_ALIGHT" => "MissedAlight",
+        "ALIGHT_STATUS_UNKNOWN" => "AlightStatusUnknown",
         "OFF_ROUTE" => "OffRoute",
         "REROUTE_SUCCEEDED" => "Rerouted",
         _ when progress is not null => "LandmarkNotice",
@@ -307,7 +313,8 @@ public sealed class NavigationFacadeService(
     private static NavigationLegSnapshot? MapLeg(RecommendationLeg? leg) => leg is null ? null : new(
         leg.LegOrder, leg.TransportMode?.Code ?? "UNKNOWN", leg.RouteId, leg.Route?.RouteName,
         leg.FromName, leg.ToName, leg.StartLatitude, leg.StartLongitude, leg.EndLatitude, leg.EndLongitude,
-        (double?)leg.DistanceMeters, leg.EstimatedFare);
+        (double?)leg.DistanceMeters, leg.EstimatedFare,
+        leg.StartRouteProgressMeters, leg.EndRouteProgressMeters, leg.StartsAlreadyOnboard);
 
     private static NavigationLandmarkSnapshot? MapLandmark(TripLandmarkCandidate? item) => item is null ? null : new(
         item.Name,
@@ -326,7 +333,7 @@ public sealed class NavigationFacadeService(
         var events = triggered.Select(item => new NavigationTriggeredEvent(item.Type.ToString(),
             item.Type == NavigationInstructionType.LandmarkNotice
                 ? item.Text.Replace("You just passed ", "", StringComparison.OrdinalIgnoreCase).TrimEnd('.') : null)).ToList();
-        if (status is "MISSED_ALIGHT" or "OFF_ROUTE" or "REROUTE_SUCCEEDED" || speechType is "Arrived" or "Cancelled")
+        if (status is "MISSED_ALIGHT" or "ALIGHT_STATUS_UNKNOWN" or "OFF_ROUTE" or "REROUTE_SUCCEEDED" || speechType is "Arrived" or "Cancelled")
             events.Add(new NavigationTriggeredEvent(speechType));
         return events;
     }

@@ -77,6 +77,9 @@ public sealed class JeepneyTripLeg
     public double? TrikeTimeSeconds { get; init; }
     public double? JeepneyDistanceMeters { get; init; }
     public double? JeepneyTimeSeconds { get; init; }
+    public double? BoardRouteProgressMeters { get; init; }
+    public double? AlightRouteProgressMeters { get; init; }
+    public bool StartsAlreadyOnboard { get; init; }
     public string? TrikePointId { get; init; }
     public string? TrikePointName { get; init; }
     public List<RouteGeometryPoint> Geometry { get; set; } = [];

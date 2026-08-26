@@ -15,9 +15,11 @@ Android should use `NavigationRepository` for an active journey. Each operation 
 | Confirm boarding | `POST api/navigation/{sessionId}/boarding` | `confirmBoarding(sessionId)` |
 | Confirm alighting | `POST api/navigation/{sessionId}/alighting` | `confirmAlighting(sessionId)` |
 | Cancel | `POST api/navigation/{sessionId}/cancel` | `cancel(sessionId)` |
-| Explicit reroute (normally automatic after a deterministic off-route decision) | `POST api/navigation/{sessionId}/reroute` | `reroute(sessionId, reason)` |
+| Explicit reroute from the device's current GPS | `POST api/navigation/{sessionId}/reroute` | `reroute(sessionId, request)` |
 
 `NavigationSnapshotDto.state`, `nextInstruction`, confirmation flags, distances, leg data, and landmark role/relation are authoritative. `spokenInstruction` is presentation text produced by the backend and may be absent; clients must never parse it to determine state. Landmark wire roles are `BOARD_REFERENCE`, `ALIGHT_REFERENCE`, and `PROGRESS_REFERENCE`; relevant relations are `NEAR_BOARD_POINT`, `BEFORE_ALIGHT`, and `ALONG_ROUTE`.
+
+Live-navigation reroute requests send `latitude`, `longitude`, `accuracyMeters`, `timestamp`, and optional `speedMetersPerSecond`/`bearingDegrees` directly to `/reroute`. The backend validates and persists that fix and uses the same coordinates as the replacement route origin; an explicit reroute does not require a preceding `/location` request. Callers without supplied GPS retain the legacy session-location fallback.
 
 Use `RoutingRepository.planJourneys` for the mobile flow. Authenticated requests return persisted recommendation IDs that can be passed to `startNavigation`; guest requests return transient in-memory recommendation IDs for route inspection and local guest tracking only. Guest clients must not call authenticated persistence endpoints for recents, favorites, or backend navigation sessions.
 

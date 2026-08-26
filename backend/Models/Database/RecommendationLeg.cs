@@ -31,6 +31,12 @@ public partial class RecommendationLeg
 
     public double? EndLongitude { get; set; }
 
+    public double? StartRouteProgressMeters { get; set; }
+
+    public double? EndRouteProgressMeters { get; set; }
+
+    public bool StartsAlreadyOnboard { get; set; }
+
     public decimal? DistanceMeters { get; set; }
 
     public decimal EstimatedMinutes { get; set; }

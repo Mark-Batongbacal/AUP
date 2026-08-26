@@ -14,6 +14,7 @@ import com.example.frontend.data.navigation.NavigationGeometryResponseDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRepositoryImpl
 import com.example.frontend.data.navigation.NavigationRerouteRequest
+import com.example.frontend.data.navigation.ResolveAlightStatusRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.navigation.StartNavigationRequest
 import com.example.frontend.data.routing.JeepneyAccessSegmentDto
@@ -193,7 +194,9 @@ class GuestPersistenceRulesTest {
             endLatitude: Double,
             endLongitude: Double,
             mode: String,
-            routeId: Long?
+            routeId: Long?,
+            startRouteProgressMeters: Double?,
+            endRouteProgressMeters: Double?
         ): Response<NavigationGeometryResponseDto> = Response.success(NavigationGeometryResponseDto(emptyList()))
         override suspend fun location(
             sessionId: String,
@@ -201,6 +204,10 @@ class GuestPersistenceRulesTest {
         ): Response<NavigationSnapshotDto> = error("not used")
         override suspend fun boarding(sessionId: String): Response<NavigationSnapshotDto> = error("not used")
         override suspend fun alighting(sessionId: String): Response<NavigationSnapshotDto> = error("not used")
+        override suspend fun resolveAlightStatus(
+            sessionId: String,
+            request: ResolveAlightStatusRequest
+        ): Response<NavigationSnapshotDto> = error("not used")
         override suspend fun cancel(sessionId: String): Response<TripSessionDto> {
             cancelCalled = true
             return error("not used")
