@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -146,10 +146,7 @@ fun OnboardingScreen(
                         finishOnboarding()
                     } else {
                         coroutineScope.launch {
-                            pagerState.animateScrollToPage(
-                                pagerState.currentPage + 1,
-                                animationSpec = tween(430)
-                            )
+                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
                         }
                     }
                 }
@@ -239,7 +236,7 @@ private fun OnboardingControls(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(7.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             repeat(ONBOARDING_PAGE_COUNT) { index ->
