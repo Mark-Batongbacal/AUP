@@ -15,5 +15,8 @@ public sealed record TransportRouteAdminSummary(
     int WaypointCount,
     bool HasPolyline,
     DateTime CreatedAt,
-    DateTime? UpdatedAt,
-    DateTime? ArchivedAt);
+    DateTime? UpdatedAt)
+{
+    public DateTime? ArchivedAt { get; init; }
+    public bool IsArchived => ArchivedAt.HasValue;
+}
