@@ -19,9 +19,9 @@
 
 <section data-paginated-list>
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
-        <div class="btn-group" role="group" aria-label="Point filters">
-            <a asp-action="Index" asp-route-includeArchived="false" class="btn @(Model.IncludeArchived ? "btn-outline-secondary" : "btn-tuki")">Active only</a>
-            <a asp-action="Index" asp-route-includeArchived="true" class="btn @(Model.IncludeArchived ? "btn-tuki" : "btn-outline-secondary")">Active + archived</a>
+        <div class="btn-group" role="group" aria-label="Point status filters">
+            <a asp-action="Index" asp-route-status="active" class="btn @(Model.Status == "active" ? "btn-tuki" : "btn-outline-secondary")">Active</a>
+            <a asp-action="Index" asp-route-status="archived" class="btn @(Model.Status == "archived" ? "btn-tuki" : "btn-outline-secondary")">Archived</a>
         </div>
 
         <div style="min-width: min(100%, 320px);">
