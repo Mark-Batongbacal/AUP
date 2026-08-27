@@ -165,7 +165,7 @@ builder.Services.AddScoped<IAssistantPlaceResolver, GoogleAssistantPlaceResolver
 builder.Services.AddScoped<ITukiAssistantService, TukiAssistantService>();
 builder.Services.AddScoped<IJourneyPlanPersistenceService, JourneyPlanPersistenceService>();
 builder.Services.AddSingleton<ITukiTelemetry, TukiTelemetry>();
-builder.Services.AddScoped<IRoutingService, RoutingService>();
+builder.Services.AddScoped<IRoutingService, TransferFallbackRoutingService>();
 builder.Services.AddScoped<IJourneyPlanningFacadeService, JourneyPlanningFacadeService>();
 builder.Services.AddSingleton<ITripSessionStateMachine, TripSessionStateMachine>();
 builder.Services.AddScoped<ITripSessionService, TripSessionService>();
