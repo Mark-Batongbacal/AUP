@@ -162,6 +162,54 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
         return RedirectToAction(nameof(Plot), new { id });
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> VerifySavedGeometry(
+        long id,
+        CancellationToken cancellationToken = default)
+    {
+        var geometryResult = await repository.GetGeometryAsync(id, cancellationToken);
+        if (!geometryResult.Succeeded || geometryResult.Value is null)
+        {
+            var statusCode = geometryResult.StatusCode > 0
+                ? geometryResult.StatusCode
+                : StatusCodes.Status502BadGateway;
+            return StatusCode(statusCode, new
+            {
+                error = geometryResult.ErrorMessage ?? "Unable to load the saved route geometry for Valhalla verification."
+            });
+        }
+
+        var geometry = geometryResult.Value;
+        if (geometry.IsActive)
+            return Conflict(new { error = "Published routes are read-only and cannot be regenerated with Valhalla." });
+
+        var orderedPoints = geometry.Points
+            .OrderBy(point => point.PointOrder)
+            .ToArray();
+        if (orderedPoints.Length < 2)
+            return BadRequest(new { error = "Save at least two route geometry points before verifying with Valhalla." });
+
+        var waypoints = BuildVerificationWaypoints(orderedPoints);
+        var result = await repository.PreviewValhallaAsync(
+            id,
+            new AdminJeepneyValhallaRequest { Waypoints = waypoints },
+            cancellationToken);
+
+        if (!result.Succeeded || result.Value is null)
+            return StatusCode(result.StatusCode, new
+            {
+                error = result.ErrorMessage ?? "Unable to generate a Valhalla comparison from the saved route geometry."
+            });
+
+        return Json(new
+        {
+            savedPointCount = orderedPoints.Length,
+            sampledWaypointCount = waypoints.Count,
+            preview = result.Value
+        });
+    }
+
     [HttpGet]
     public Task<IActionResult> Valhalla(long id, CancellationToken cancellationToken = default) =>
         RenderValhallaAsync(
@@ -261,6 +309,37 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
             ErrorMessage = errorMessage,
             SuccessMessage = successMessage
         });
+    }
+
+    private static List<AdminJeepneyRouteGeometryPointRequest> BuildVerificationWaypoints(
+        IReadOnlyList<AdminJeepneyRouteGeometryPoint> orderedPoints)
+    {
+        const int maxWaypoints = 100;
+        if (orderedPoints.Count <= maxWaypoints)
+        {
+            return orderedPoints
+                .Select(point => new AdminJeepneyRouteGeometryPointRequest
+                {
+                    Latitude = point.Latitude,
+                    Longitude = point.Longitude
+                })
+                .ToList();
+        }
+
+        var result = new List<AdminJeepneyRouteGeometryPointRequest>(maxWaypoints);
+        var lastIndex = orderedPoints.Count - 1;
+        for (var sampleIndex = 0; sampleIndex < maxWaypoints; sampleIndex++)
+        {
+            var pointIndex = (int)Math.Round(sampleIndex * lastIndex / (double)(maxWaypoints - 1));
+            var point = orderedPoints[pointIndex];
+            result.Add(new AdminJeepneyRouteGeometryPointRequest
+            {
+                Latitude = point.Latitude,
+                Longitude = point.Longitude
+            });
+        }
+
+        return result;
     }
 
     private static bool TryParseWaypoints(
