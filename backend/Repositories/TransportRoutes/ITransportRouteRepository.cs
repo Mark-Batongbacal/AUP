@@ -15,6 +15,10 @@ public interface ITransportRouteRepository
         bool includeInactive,
         CancellationToken cancellationToken = default);
 
+    Task<List<TransportRouteAdminSummary>> GetArchivedAdminSummariesByTransportModeCodeAsync(
+        string transportModeCode,
+        CancellationToken cancellationToken = default);
+
     Task<TransportRoute?> GetByIdAsync(long routeId, CancellationToken cancellationToken = default);
 
     Task<TransportRoute?> GetByIdWithPointsForAdminAsync(
@@ -71,6 +75,10 @@ public interface ITransportRouteRepository
         CancellationToken cancellationToken = default);
 
     Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default);
+
+    Task<bool> ArchiveRouteAsync(long routeId, CancellationToken cancellationToken = default);
+
+    Task<bool> RestoreArchivedRouteAsync(long routeId, CancellationToken cancellationToken = default);
 
     Task<bool> DeactivateAsync(long routeId, CancellationToken cancellationToken = default);
 
