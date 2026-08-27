@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -176,7 +176,7 @@ private fun RouteChoiceCard(route: RoutePreview, featured: Boolean) {
 
             Spacer(modifier = Modifier.width(13.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.fillMaxWidth(0.74f)) {
                 Text(
                     text = route.label,
                     color = TukiInk,
@@ -190,6 +190,8 @@ private fun RouteChoiceCard(route: RoutePreview, featured: Boolean) {
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
 
             Text(
                 text = route.badge,
@@ -259,7 +261,7 @@ private fun ParaPoDemo(active: Boolean) {
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.fillMaxWidth(0.72f)) {
                     Text(
                         text = "LIVE TRIP",
                         color = TukiTeal,
@@ -520,7 +522,7 @@ private fun ChatPreview(active: Boolean) {
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         color = TukiTeal.copy(alpha = 0.10f),
                         shape = RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp)
                     ) {
@@ -550,7 +552,7 @@ private fun ChatPreview(active: Boolean) {
                         modifier = Modifier.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.fillMaxWidth(0.68f)) {
                             Text(
                                 text = "BALANCED ROUTE",
                                 color = TukiInk,
@@ -562,6 +564,7 @@ private fun ChatPreview(active: Boolean) {
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                         Column(horizontalAlignment = Alignment.End) {
                             Text("₱42", color = TukiDeepTeal, style = MaterialTheme.typography.titleLarge)
                             Text("29 min", color = TukiInk.copy(alpha = 0.58f), style = MaterialTheme.typography.bodySmall)
