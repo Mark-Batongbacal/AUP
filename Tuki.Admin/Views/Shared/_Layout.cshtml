@@ -5,9 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#076773" />
     <title>@ViewData["Title"] - TUKI Admin</title>
+    <link rel="icon" type="image/png" href="~/images/tuki_logo.png" />
+    <link rel="apple-touch-icon" href="~/images/tuki_logo.png" />
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/admin-enhancements.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/admin-branding.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/tricycle-review.css" asp-append-version="true" />
 </head>
 <body>
@@ -20,7 +23,7 @@
         <aside class="admin-sidebar" id="adminSidebar">
             <div class="sidebar-brand-wrap">
                 <a class="admin-brand" asp-controller="Dashboard" asp-action="Index" aria-label="TUKI Admin dashboard">
-                    <span class="brand-mark brand-mark-small">T</span>
+                    <img class="admin-brand-logo" src="~/images/tuki_logo.png" alt="" />
                     <span class="brand-copy"><strong>TUKI</strong><small>Admin</small></span>
                 </a>
                 <button class="sidebar-close" type="button" data-sidebar-close aria-label="Close navigation">×</button>
@@ -54,7 +57,7 @@
                     <div class="mobile-brand-row">
                         <button class="mobile-menu-button" type="button" data-sidebar-open aria-label="Open navigation">☰</button>
                         <a class="admin-brand mobile-brand" asp-controller="Dashboard" asp-action="Index">
-                            <span class="brand-mark brand-mark-small">T</span>
+                            <img class="admin-brand-logo admin-brand-logo-mobile" src="~/images/tuki_logo.png" alt="" />
                             <span>TUKI Admin</span>
                         </a>
                     </div>

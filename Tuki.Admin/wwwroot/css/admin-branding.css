@@ -1,0 +1,116 @@
+.admin-brand-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex: 0 0 40px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.1);
+  padding: 2px;
+}
+.admin-brand-logo-mobile {
+  width: 34px;
+  height: 34px;
+  flex-basis: 34px;
+  background: transparent;
+}
+
+.auth-brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.auth-logo {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  border-radius: 20px;
+  background: var(--tuki-cream);
+  padding: 4px;
+  box-shadow: 0 10px 24px rgba(17,46,54,.08);
+}
+.auth-brand-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+.auth-brand-copy strong {
+  color: var(--tuki-deep);
+  font-size: 1.55rem;
+  font-weight: 900;
+  letter-spacing: -.05em;
+}
+.auth-brand-copy span {
+  margin-top: 4px;
+  color: var(--tuki-muted);
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.dashboard-header-branded {
+  position: relative;
+  align-items: center;
+}
+.dashboard-brand-mark {
+  width: 86px;
+  height: 86px;
+  flex: 0 0 86px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--tuki-border);
+  border-radius: 24px;
+  background: rgba(255,255,255,.78);
+  box-shadow: var(--shadow-sm);
+}
+.dashboard-brand-mark img {
+  width: 70px;
+  height: 70px;
+  object-fit: contain;
+}
+
+@media (max-width: 820px) {
+  .admin-brand-logo {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+  .admin-brand-logo-mobile {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+  }
+}
+
+@media (max-width: 620px) {
+  .auth-logo {
+    width: 64px;
+    height: 64px;
+  }
+  .dashboard-brand-mark {
+    width: 64px;
+    height: 64px;
+    flex-basis: 64px;
+    border-radius: 18px;
+  }
+  .dashboard-brand-mark img {
+    width: 52px;
+    height: 52px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-header-branded {
+    align-items: flex-start;
+  }
+  .dashboard-brand-mark {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+  }
+  .dashboard-brand-mark img {
+    width: 46px;
+    height: 46px;
+  }
+}
