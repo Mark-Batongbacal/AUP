@@ -1,0 +1,92 @@
+@model Tuki.Admin.ViewModels.JeepneyRoutes.JeepneyRouteListViewModel
+@{
+    ViewData["Title"] = "Archived Jeepney Routes";
+}
+
+<div class="review-page-header">
+    <div>
+        <a asp-controller="JeepneyRoutes" asp-action="Index" class="review-back-link">← Back to jeepney routes</a>
+        <p class="eyebrow">JEEPNEY ROUTES</p>
+        <h1>Archived routes</h1>
+        <p>Restore soft-deleted jeepney routes without losing their geometry or previous published/draft state.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
+}
+
+<section data-paginated-list>
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+        <div style="min-width: min(100%, 320px);">
+            <label for="archivedJeepneySearch" class="form-label small text-muted mb-1">Search archived routes</label>
+            <input id="archivedJeepneySearch"
+                   type="search"
+                   class="form-control"
+                   placeholder="Name, code, origin, destination, operator"
+                   data-list-search />
+        </div>
+        <span class="text-muted small">10 routes per page</span>
+    </div>
+
+    <div class="mb-2 text-muted small" data-list-summary></div>
+
+    <div class="table-responsive admin-table-card">
+        <table class="table mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Route</th>
+                    <th>Origin → Destination</th>
+                    <th>Previous state</th>
+                    <th>Archived</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var route in Model.Routes)
+            {
+                var searchText = $"{route.RouteName} {route.RouteCode} {route.OriginName} {route.DestinationName} {route.DirectionName} {route.OperatorName}";
+                <tr data-search-text="@searchText">
+                    <td>
+                        <strong>@route.RouteName</strong><br />
+                        <span class="text-muted small">@route.RouteCode</span>
+                    </td>
+                    <td>@route.OriginName → @route.DestinationName</td>
+                    <td>
+                        <span class="status-pill @(route.IsActive ? "status-active" : "status-archived")">
+                            @(route.IsActive ? "Published" : "Draft")
+                        </span>
+                    </td>
+                    <td>
+                        @(route.ArchivedAt?.ToLocalTime().ToString("MMM d, yyyy h:mm tt") ?? "—")
+                    </td>
+                    <td class="text-end">
+                        <form asp-controller="JeepneyRouteArchive"
+                              asp-action="Restore"
+                              asp-route-id="@route.RouteId"
+                              method="post"
+                              class="d-inline"
+                              onsubmit="return confirm('Restore this jeepney route?');">
+                            <button type="submit" class="btn btn-tuki btn-sm">Restore</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+                <tr data-list-empty hidden>
+                    <td colspan="5" class="text-center py-5 text-muted">No archived jeepney routes match the current search.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex flex-wrap justify-content-center gap-2 mt-3" data-list-pagination aria-label="Archived jeepney route pages"></div>
+</section>
+
+@section Scripts {
+    <script src="~/js/admin-list-pagination.js" asp-append-version="true"></script>
+}
