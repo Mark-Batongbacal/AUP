@@ -7,7 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -46,7 +45,6 @@ import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiTeal
 import kotlinx.coroutines.delay
 import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.sin
 
 /**
@@ -92,9 +90,6 @@ fun TukiFlightIntro(
             )
         )
         beginHandoff()
-        delay(440)
-        finished = true
-        onFinished()
     }
 
     LaunchedEffect(handingOff) {
