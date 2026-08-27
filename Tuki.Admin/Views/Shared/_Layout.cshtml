@@ -3,34 +3,83 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#076773" />
     <title>@ViewData["Title"] - TUKI Admin</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/tricycle-review.css" asp-append-version="true" />
 </head>
 <body>
-    @if (User.Identity?.IsAuthenticated == true)
-    {
-        <header class="admin-header">
-            <div class="admin-header-inner">
-                <a class="admin-brand" asp-controller="Dashboard" asp-action="Index">
+@{
+    var controller = ViewContext.RouteData.Values["controller"]?.ToString() ?? string.Empty;
+}
+@if (User.Identity?.IsAuthenticated == true)
+{
+    <div class="admin-app-shell">
+        <aside class="admin-sidebar" id="adminSidebar">
+            <div class="sidebar-brand-wrap">
+                <a class="admin-brand" asp-controller="Dashboard" asp-action="Index" aria-label="TUKI Admin dashboard">
                     <span class="brand-mark brand-mark-small">T</span>
-                    <span>TUKI Admin</span>
+                    <span class="brand-copy"><strong>TUKI</strong><small>Admin</small></span>
                 </a>
+                <button class="sidebar-close" type="button" data-sidebar-close aria-label="Close navigation">×</button>
+            </div>
+
+            <nav class="sidebar-nav" aria-label="Admin navigation">
+                <span class="sidebar-label">Workspace</span>
+                <a class="sidebar-link @(controller == "Dashboard" ? "active" : "")" asp-controller="Dashboard" asp-action="Index"><span class="nav-icon">⌂</span><span>Dashboard</span></a>
+                <a class="sidebar-link @((controller == "TricyclePoints" || controller == "TricycleSubmissions") ? "active" : "")" asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true"><span class="nav-icon">●</span><span>Tricycle points</span></a>
+                <a class="sidebar-link @(controller == "JeepneyRoutes" ? "active" : "")" asp-controller="JeepneyRoutes" asp-action="Index"><span class="nav-icon">▣</span><span>Jeepney routes</span></a>
+
+                <span class="sidebar-label sidebar-label-spaced">Tools</span>
+                <a class="sidebar-link" asp-controller="JeepneyRoutes" asp-action="Index"><span class="nav-icon">↯</span><span>Valhalla testing</span></a>
+                <span class="sidebar-link sidebar-link-disabled" title="Reserved for the upcoming server dashboard"><span class="nav-icon">⌁</span><span>Server & performance</span><span class="coming-soon">Soon</span></span>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-user">
+                    <span class="user-avatar">A</span>
+                    <span><strong>@(User.Identity?.Name ?? "tuki.admin")</strong><small>Administrator</small></span>
+                </div>
                 <form asp-controller="Account" asp-action="Logout" method="post">
-                    <button type="submit" class="btn btn-outline-tuki">Sign out</button>
+                    <button type="submit" class="sidebar-signout">↪ <span>Sign out</span></button>
                 </form>
             </div>
-        </header>
-    }
+        </aside>
+        <div class="sidebar-backdrop" data-sidebar-close></div>
 
-    <main class="admin-main" role="main">
-        @RenderBody()
-    </main>
+        <div class="admin-workspace">
+            <header class="admin-header">
+                <div class="admin-header-inner">
+                    <div class="mobile-brand-row">
+                        <button class="mobile-menu-button" type="button" data-sidebar-open aria-label="Open navigation">☰</button>
+                        <a class="admin-brand mobile-brand" asp-controller="Dashboard" asp-action="Index">
+                            <span class="brand-mark brand-mark-small">T</span>
+                            <span>TUKI Admin</span>
+                        </a>
+                    </div>
+                    <div class="header-status"><span class="status-dot"></span><span>Admin workspace</span></div>
+                </div>
+            </header>
+            <main class="admin-main" role="main">@RenderBody()</main>
+        </div>
+    </div>
+}
+else
+{
+    <main class="admin-main auth-main" role="main">@RenderBody()</main>
+}
 
-    <script src="~/lib/jquery/dist/jquery.min.js"></script>
-    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="~/js/site.js" asp-append-version="true"></script>
-    @await RenderSectionAsync("Scripts", required: false)
+<script src="~/lib/jquery/dist/jquery.min.js"></script>
+<script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+<script src="~/js/site.js" asp-append-version="true"></script>
+<script>
+(() => {
+    const body = document.body;
+    document.querySelectorAll('[data-sidebar-open]').forEach(btn => btn.addEventListener('click', () => body.classList.add('sidebar-open')));
+    document.querySelectorAll('[data-sidebar-close]').forEach(btn => btn.addEventListener('click', () => body.classList.remove('sidebar-open')));
+})();
+</script>
+@await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
