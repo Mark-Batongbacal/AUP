@@ -5,10 +5,10 @@ namespace Tuki.Admin.ViewModels.JeepneyRoutes;
 public sealed class JeepneyRouteListViewModel
 {
     public IReadOnlyList<AdminJeepneyRoute> Routes { get; init; } = [];
-    public string Status { get; init; } = "published";
-    public bool IncludeActive => Status == "published";
-    public bool IncludeDrafts => Status == "draft";
-    public bool IncludeArchived => Status == "archived";
+    public bool IncludeActive { get; init; } = true;
+    public bool IncludeDrafts { get; init; } = true;
+    public bool IncludeArchived { get; init; }
+    public string Status => IncludeArchived ? "archived" : IncludeActive && !IncludeDrafts ? "published" : !IncludeActive && IncludeDrafts ? "draft" : "all";
     public string Search { get; init; } = string.Empty;
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 10;
