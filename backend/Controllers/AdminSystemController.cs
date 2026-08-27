@@ -46,7 +46,9 @@ public sealed class AdminSystemController(
 
         var requestSnapshot = TukiRequestMetricsStore.Snapshot(TimeSpan.FromHours(24));
         var resourceSnapshot = resourceMetricsSampler.Sample();
-        var uptime = DateTimeOffset.UtcNow - Process.GetCurrentProcess().StartTime.ToUniversalTime();
+        using var process = Process.GetCurrentProcess();
+        var processStartedAt = new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero);
+        var uptime = DateTimeOffset.UtcNow - processStartedAt;
         var overallStatus = services.All(service => service.Status == "Healthy")
             ? "Healthy"
             : services.Any(service => service.Status == "Unhealthy")
