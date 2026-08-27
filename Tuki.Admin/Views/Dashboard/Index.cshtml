@@ -3,13 +3,15 @@
     ViewData["Title"] = "Dashboard";
 }
 
-<section class="dashboard-header">
+<section class="dashboard-header dashboard-header-branded">
     <div>
         <p class="eyebrow">ADMIN DASHBOARD</p>
         <h1>Good afternoon, @Model.AdminUserName 👋</h1>
         <p>Everything you need to manage TUKI transport data is now in one workspace.</p>
     </div>
-    <span class="status-pill status-active">● Admin workspace ready</span>
+    <div class="dashboard-brand-mark" aria-hidden="true">
+        <img src="~/images/tuki_logo.png" alt="" />
+    </div>
 </section>
 
 <section class="dashboard-summary-grid" aria-label="Admin workspace summary">
