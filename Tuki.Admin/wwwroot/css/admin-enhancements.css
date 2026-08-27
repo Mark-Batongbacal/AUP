@@ -11,10 +11,77 @@
 .tool-modal-frame { width:100%; height:100%; border:0; background:var(--tuki-cream); }
 .tool-modal-open { overflow:hidden; }
 
-/* Keep embedded Valhalla focused: its own header/sidebar remain out of the parent workflow. */
+.route-workflow {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin:-6px 0 22px;
+}
+.route-workflow-step {
+  min-width:0;
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border:1px solid var(--tuki-border);
+  border-radius:14px;
+  background:#fffdf8;
+  color:var(--tuki-muted);
+  text-decoration:none;
+  font-size:.84rem;
+  font-weight:800;
+  transition:transform .15s ease,border-color .15s ease,background .15s ease;
+}
+a.route-workflow-step:hover { transform:translateY(-1px); border-color:var(--tuki-teal); color:var(--tuki-deep); }
+.route-workflow-step.current { background:var(--tuki-deep); border-color:var(--tuki-deep); color:white; box-shadow:0 8px 18px rgba(18,63,67,.12); }
+.route-workflow-step.complete { color:var(--tuki-deep); }
+.route-workflow-step[aria-disabled="true"] { opacity:.46; cursor:not-allowed; }
+.route-workflow-number {
+  width:28px;
+  height:28px;
+  flex:0 0 28px;
+  display:grid;
+  place-items:center;
+  border-radius:999px;
+  background:#eef7f5;
+  color:var(--tuki-deep);
+  font-size:.76rem;
+  font-weight:900;
+}
+.route-workflow-step.current .route-workflow-number { background:var(--tuki-gold); color:var(--tuki-deep); }
+
+.route-valhalla-header { display:inline-flex; align-items:center; gap:6px; }
+.route-valhalla-toolbar { display:inline-flex; align-items:center; gap:6px; }
+.route-geometry-next {
+  margin-top:16px;
+  padding:14px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  border:1px solid #bee3dc;
+  border-radius:14px;
+  background:#f1faf7;
+}
+.route-geometry-next > div { display:grid; gap:3px; min-width:0; }
+.route-geometry-next strong { color:var(--tuki-deep); }
+.route-geometry-next span { color:var(--tuki-muted); font-size:.84rem; }
+
+@media (max-width: 900px) {
+  .route-workflow { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+
 @media (max-width: 820px) {
   .tool-modal { padding:0; align-items:stretch; }
   .tool-modal-dialog { width:100vw; height:100vh; max-height:none; border:0; border-radius:0; }
   .tool-modal-header { padding:12px 14px; }
   .tool-modal-header small { display:none; }
+}
+
+@media (max-width: 560px) {
+  .route-workflow { display:flex; overflow-x:auto; padding-bottom:4px; scroll-snap-type:x proximity; }
+  .route-workflow-step { min-width:165px; scroll-snap-align:start; }
+  .route-geometry-next { align-items:flex-start; flex-direction:column; }
+  .route-geometry-next .btn { width:100%; }
 }
