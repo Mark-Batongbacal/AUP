@@ -21,6 +21,12 @@ public sealed class AdminJeepneyRouteRepository(
                 $"api/admin/jeepney-routes?includeActive={includeActive.ToString().ToLowerInvariant()}&includeDrafts={includeDrafts.ToString().ToLowerInvariant()}"),
             cancellationToken);
 
+    public Task<AdminJeepneyRepositoryResult<IReadOnlyList<AdminJeepneyRoute>>> GetArchivedAsync(
+        CancellationToken cancellationToken = default) =>
+        SendJsonAsync<IReadOnlyList<AdminJeepneyRoute>>(
+            CreateRequest(HttpMethod.Get, "api/admin/jeepney-routes/archived"),
+            cancellationToken);
+
     public Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> GetByIdAsync(
         long routeId,
         CancellationToken cancellationToken = default) =>
@@ -91,6 +97,22 @@ public sealed class AdminJeepneyRouteRepository(
             $"api/admin/jeepney-routes/{routeId}/publish",
             cancellationToken);
 
+    public Task<AdminJeepneyRepositoryResult<bool>> ArchiveAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        SendStatusAsync(
+            HttpMethod.Post,
+            $"api/admin/jeepney-routes/{routeId}/archive",
+            cancellationToken);
+
+    public Task<AdminJeepneyRepositoryResult<bool>> RestoreAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        SendStatusAsync(
+            HttpMethod.Post,
+            $"api/admin/jeepney-routes/{routeId}/restore",
+            cancellationToken);
+
     private Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> SendMutationAsync(
         HttpMethod method,
         string path,
@@ -114,6 +136,48 @@ public sealed class AdminJeepneyRouteRepository(
         string path,
         CancellationToken cancellationToken) =>
         SendJsonAsync<TResponse>(CreateRequest(method, path), cancellationToken);
+
+    private async Task<AdminJeepneyRepositoryResult<bool>> SendStatusAsync(
+        HttpMethod method,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient(BackendApiClientNames.TukiBackend);
+        using var request = CreateRequest(method, path);
+
+        try
+        {
+            using var response = await client.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return AdminJeepneyRepositoryResult<bool>.Success(true, (int)response.StatusCode);
+
+            try
+            {
+                var error = await response.Content.ReadFromJsonAsync<AdminJeepneyBackendError>(cancellationToken: cancellationToken);
+                if (error?.Errors is { Count: > 0 })
+                    return AdminJeepneyRepositoryResult<bool>.Failure((int)response.StatusCode, string.Join(" ", error.Errors));
+            }
+            catch (JsonException)
+            {
+            }
+
+            return AdminJeepneyRepositoryResult<bool>.Failure(
+                (int)response.StatusCode,
+                $"Backend request failed with status {(int)response.StatusCode}.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return AdminJeepneyRepositoryResult<bool>.Failure(
+                (int)HttpStatusCode.GatewayTimeout,
+                "The backend took too long to respond.");
+        }
+        catch (HttpRequestException)
+        {
+            return AdminJeepneyRepositoryResult<bool>.Failure(
+                (int)HttpStatusCode.BadGateway,
+                "The Admin portal could not reach the TUKI backend.");
+        }
+    }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
@@ -167,7 +231,6 @@ public sealed class AdminJeepneyRouteRepository(
             }
             catch (JsonException)
             {
-                // Fall back to a status-based message below when an upstream error body is not JSON.
             }
 
             return AdminJeepneyRepositoryResult<T>.Failure(
