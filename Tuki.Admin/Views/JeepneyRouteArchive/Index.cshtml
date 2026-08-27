@@ -5,11 +5,12 @@
 
 <div class="review-page-header">
     <div>
-        <a asp-controller="JeepneyRoutes" asp-action="Index" class="review-back-link">← Back to jeepney routes</a>
+        <a asp-controller="Dashboard" asp-action="Index" class="review-back-link">← Back to dashboard</a>
         <p class="eyebrow">JEEPNEY ROUTES</p>
-        <h1>Archived routes</h1>
-        <p>Restore soft-deleted jeepney routes without losing their geometry or previous published/draft state.</p>
+        <h1>Route management</h1>
+        <p>Review archived jeepney routes and restore them without losing geometry or their previous published/draft state.</p>
     </div>
+    <a asp-controller="JeepneyRoutes" asp-action="Create" class="btn btn-tuki">Create route draft</a>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
@@ -23,18 +24,36 @@
 
 <section data-paginated-list>
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+        <div class="btn-group" role="group" aria-label="Jeepney route status filters">
+            <a asp-controller="JeepneyRoutes"
+               asp-action="Index"
+               asp-route-includeActive="true"
+               asp-route-includeDrafts="false"
+               class="btn btn-outline-secondary">Published</a>
+            <a asp-controller="JeepneyRouteArchive"
+               asp-action="Index"
+               class="btn btn-tuki">Archived</a>
+            <a asp-controller="JeepneyRoutes"
+               asp-action="Index"
+               asp-route-includeActive="false"
+               asp-route-includeDrafts="true"
+               class="btn btn-outline-secondary">Draft</a>
+        </div>
+
         <div style="min-width: min(100%, 320px);">
-            <label for="archivedJeepneySearch" class="form-label small text-muted mb-1">Search archived routes</label>
+            <label for="archivedJeepneySearch" class="form-label small text-muted mb-1">Search routes</label>
             <input id="archivedJeepneySearch"
                    type="search"
                    class="form-control"
                    placeholder="Name, code, origin, destination, operator"
                    data-list-search />
         </div>
-        <span class="text-muted small">10 routes per page</span>
     </div>
 
-    <div class="mb-2 text-muted small" data-list-summary></div>
+    <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+        <span class="text-muted small" data-list-summary></span>
+        <span class="text-muted small">10 routes per page</span>
+    </div>
 
     <div class="table-responsive admin-table-card">
         <table class="table mb-0 align-middle">
@@ -62,9 +81,7 @@
                             @(route.IsActive ? "Published" : "Draft")
                         </span>
                     </td>
-                    <td>
-                        @(route.ArchivedAt?.ToLocalTime().ToString("MMM d, yyyy h:mm tt") ?? "—")
-                    </td>
+                    <td>@(route.ArchivedAt?.ToLocalTime().ToString("MMM d, yyyy h:mm tt") ?? "—")</td>
                     <td class="text-end">
                         <form asp-controller="JeepneyRouteArchive"
                               asp-action="Restore"

@@ -8,6 +8,7 @@ public sealed class JeepneyRouteListViewModel
     public bool IncludeActive { get; init; } = true;
     public bool IncludeDrafts { get; init; } = true;
     public bool IncludeArchived { get; init; }
+    public string Status => IncludeArchived ? "archived" : IncludeActive && !IncludeDrafts ? "published" : !IncludeActive && IncludeDrafts ? "draft" : "all";
     public string Search { get; init; } = string.Empty;
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 10;
