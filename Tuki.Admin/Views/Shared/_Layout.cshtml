@@ -34,7 +34,7 @@
                 <span class="sidebar-label">Workspace</span>
                 <a class="sidebar-link @(controller == "Dashboard" ? "active" : "")" asp-controller="Dashboard" asp-action="Index"><span class="nav-icon">⌂</span><span>Dashboard</span></a>
                 <a class="sidebar-link @((controller == "TricyclePoints" || controller == "TricycleSubmissions") ? "active" : "")" asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true"><span class="nav-icon">●</span><span>Tricycle points</span></a>
-                <a class="sidebar-link @(controller == "JeepneyRoutes" ? "active" : "")" asp-controller="JeepneyRoutes" asp-action="Index"><span class="nav-icon">▣</span><span>Jeepney routes</span></a>
+                <a class="sidebar-link @((controller == "JeepneyRoutes" || controller == "JeepneyRouteArchive") ? "active" : "")" asp-controller="JeepneyRoutes" asp-action="Index"><span class="nav-icon">▣</span><span>Jeepney routes</span></a>
 
                 <span class="sidebar-label sidebar-label-spaced">Tools</span>
                 <a class="sidebar-link @(controller == "ServerPerformance" ? "active" : "")" asp-controller="ServerPerformance" asp-action="Index"><span class="nav-icon">⌁</span><span>Server & performance</span></a>

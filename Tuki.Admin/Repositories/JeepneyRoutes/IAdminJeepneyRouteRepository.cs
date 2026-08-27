@@ -9,6 +9,9 @@ public interface IAdminJeepneyRouteRepository
         bool includeDrafts = true,
         CancellationToken cancellationToken = default);
 
+    Task<AdminJeepneyRepositoryResult<IReadOnlyList<AdminJeepneyRoute>>> GetArchivedAsync(
+        CancellationToken cancellationToken = default);
+
     Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> GetByIdAsync(
         long routeId,
         CancellationToken cancellationToken = default);
@@ -46,6 +49,14 @@ public interface IAdminJeepneyRouteRepository
         CancellationToken cancellationToken = default);
 
     Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> PublishAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRepositoryResult<bool>> ArchiveAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRepositoryResult<bool>> RestoreAsync(
         long routeId,
         CancellationToken cancellationToken = default);
 }

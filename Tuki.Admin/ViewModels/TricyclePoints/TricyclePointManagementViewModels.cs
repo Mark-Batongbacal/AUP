@@ -6,6 +6,13 @@ public sealed class TricyclePointListViewModel
 {
     public IReadOnlyList<AdminTricyclePoint> Points { get; init; } = [];
     public bool IncludeArchived { get; init; } = true;
+    public string Search { get; init; } = string.Empty;
+    public int Page { get; init; } = 1;
+    public int PageSize { get; init; } = 10;
+    public int TotalItems { get; init; }
+    public int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalItems / (double)PageSize));
+    public bool HasPreviousPage => Page > 1;
+    public bool HasNextPage => Page < TotalPages;
     public string? ErrorMessage { get; init; }
 }
 

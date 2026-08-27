@@ -1,9 +1,11 @@
 using backend.Authentication;
+using backend.Models.Database;
 using backend.Models.JeepneyRouteManagement;
 using backend.Services.Authentication.ApiKey;
 using backend.Services.Transportation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace backend.Controllers;
 
@@ -13,7 +15,8 @@ namespace backend.Controllers;
     AuthenticationSchemes = ApiKeyAuthenticationHandler.SchemeName,
     Roles = "Admin")]
 public sealed class AdminJeepneyRoutesController(
-    IAdminJeepneyRouteManagementService managementService) : ControllerBase
+    IAdminJeepneyRouteManagementService managementService,
+    TukiDbContext dbContext) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<AdminJeepneyRouteResponse>>> GetAll(
@@ -26,6 +29,26 @@ public sealed class AdminJeepneyRoutesController(
             includeDrafts,
             cancellationToken);
         return Ok(routes);
+    }
+
+    [HttpGet("archived")]
+    public async Task<ActionResult<IReadOnlyList<AdminJeepneyRouteResponse>>> GetArchived(
+        CancellationToken cancellationToken = default)
+    {
+        var routes = await dbContext.TransportRoutes
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Include(route => route.TransportMode)
+            .Include(route => route.RoutePoints)
+            .Include(route => route.RouteWaypoints)
+            .Where(route =>
+                route.ArchivedAt != null &&
+                route.TransportMode.Code == "JEEPNEY")
+            .OrderBy(route => route.RouteName)
+            .ThenBy(route => route.RouteCode)
+            .ToListAsync(cancellationToken);
+
+        return Ok(routes.Select(MapArchived).ToArray());
     }
 
     [HttpGet("{routeId:long}")]
@@ -130,6 +153,73 @@ public sealed class AdminJeepneyRoutesController(
             ? Ok(result.Route)
             : Failure(result);
     }
+
+    [HttpPost("{routeId:long}/archive")]
+    public async Task<IActionResult> Archive(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        var route = await dbContext.TransportRoutes
+            .IgnoreQueryFilters()
+            .Include(item => item.TransportMode)
+            .SingleOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
+
+        if (route is null || !string.Equals(route.TransportMode.Code, "JEEPNEY", StringComparison.OrdinalIgnoreCase))
+            return NotFound(new { errors = new[] { "Jeepney route was not found." } });
+
+        if (route.ArchivedAt.HasValue)
+            return Conflict(new { errors = new[] { "This jeepney route is already archived." } });
+
+        var archivedAt = DateTime.UtcNow;
+        route.ArchivedAt = archivedAt;
+        route.UpdatedAt = archivedAt;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { routeId, archivedAt, message = "Jeepney route archived." });
+    }
+
+    [HttpPost("{routeId:long}/restore")]
+    public async Task<IActionResult> Restore(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        var route = await dbContext.TransportRoutes
+            .IgnoreQueryFilters()
+            .Include(item => item.TransportMode)
+            .SingleOrDefaultAsync(item => item.RouteId == routeId, cancellationToken);
+
+        if (route is null || !string.Equals(route.TransportMode.Code, "JEEPNEY", StringComparison.OrdinalIgnoreCase))
+            return NotFound(new { errors = new[] { "Jeepney route was not found." } });
+
+        if (!route.ArchivedAt.HasValue)
+            return Conflict(new { errors = new[] { "This jeepney route is not archived." } });
+
+        route.ArchivedAt = null;
+        route.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { routeId, isActive = route.IsActive, message = "Jeepney route restored." });
+    }
+
+    private static AdminJeepneyRouteResponse MapArchived(TransportRoute route) => new(
+        route.RouteId,
+        route.RouteCode,
+        route.RouteName,
+        route.OriginName,
+        route.DestinationName,
+        route.DirectionName,
+        route.OperatorName,
+        route.RouteDescription,
+        route.BaseFare,
+        route.IsActive,
+        route.RoutePoints.Count,
+        route.RouteWaypoints.Count,
+        !string.IsNullOrWhiteSpace(route.EncodedPolyline),
+        route.CreatedAt,
+        route.UpdatedAt)
+    {
+        ArchivedAt = route.ArchivedAt
+    };
 
     private ActionResult<AdminJeepneyRouteResponse> Failure(AdminJeepneyRouteMutationResult result)
     {

@@ -7,6 +7,14 @@ public sealed class JeepneyRouteListViewModel
     public IReadOnlyList<AdminJeepneyRoute> Routes { get; init; } = [];
     public bool IncludeActive { get; init; } = true;
     public bool IncludeDrafts { get; init; } = true;
+    public bool IncludeArchived { get; init; }
+    public string Search { get; init; } = string.Empty;
+    public int Page { get; init; } = 1;
+    public int PageSize { get; init; } = 10;
+    public int TotalItems { get; init; }
+    public int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalItems / (double)PageSize));
+    public bool HasPreviousPage => Page > 1;
+    public bool HasNextPage => Page < TotalPages;
     public string? ErrorMessage { get; init; }
     public string? SuccessMessage { get; init; }
 }
@@ -20,7 +28,7 @@ public sealed class JeepneyRouteEditViewModel
     public string? ErrorMessage { get; init; }
     public string? SuccessMessage { get; init; }
     public bool IsCreate => RouteId is null;
-    public bool CanEdit => Route is null || !Route.IsActive;
+    public bool CanEdit => Route is null || (!Route.IsActive && !Route.IsArchived);
 }
 
 public sealed class JeepneyRoutePlotViewModel
@@ -29,7 +37,7 @@ public sealed class JeepneyRoutePlotViewModel
     public AdminJeepneyRouteGeometry Geometry { get; init; } = null!;
     public string? ErrorMessage { get; init; }
     public string? SuccessMessage { get; init; }
-    public bool CanEdit => !Route.IsActive;
+    public bool CanEdit => !Route.IsActive && !Route.IsArchived;
 }
 
 public sealed class JeepneyRoutePlotPostModel
@@ -44,7 +52,7 @@ public sealed class JeepneyRouteValhallaViewModel
     public string WaypointsText { get; init; } = string.Empty;
     public string? ErrorMessage { get; init; }
     public string? SuccessMessage { get; init; }
-    public bool CanEdit => !Route.IsActive;
+    public bool CanEdit => !Route.IsActive && !Route.IsArchived;
 }
 
 public sealed class JeepneyRouteValhallaPostModel

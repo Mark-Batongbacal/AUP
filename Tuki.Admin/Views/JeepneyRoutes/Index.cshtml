@@ -7,10 +7,13 @@
     <div>
         <a asp-controller="Dashboard" asp-action="Index" class="review-back-link">← Back to dashboard</a>
         <p class="eyebrow">JEEPNEY ROUTES</p>
-        <h1>Route management foundation</h1>
-        <p>Create route metadata as inactive drafts. Geometry plotting and publishing are handled by later route-management workflows.</p>
+        <h1>Route management</h1>
+        <p>Create, verify, publish, archive, and restore jeepney route records without permanently deleting route data.</p>
     </div>
-    <a asp-action="Create" class="btn btn-tuki">Create route draft</a>
+    <div class="d-flex flex-wrap gap-2">
+        <a asp-controller="JeepneyRouteArchive" asp-action="Index" class="btn btn-outline-tuki">Archived routes</a>
+        <a asp-action="Create" class="btn btn-tuki">Create route draft</a>
+    </div>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
@@ -22,28 +25,36 @@
     <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
 }
 
-<form method="get" class="d-flex flex-wrap gap-3 align-items-center mb-3">
-    <label class="d-flex gap-2 align-items-center">
-        <input type="checkbox" name="includeDrafts" value="true" @(Model.IncludeDrafts ? "checked" : null) /> Drafts
-        <input type="hidden" name="includeDrafts" value="false" />
-    </label>
-    <label class="d-flex gap-2 align-items-center">
-        <input type="checkbox" name="includeActive" value="true" @(Model.IncludeActive ? "checked" : null) /> Published
-        <input type="hidden" name="includeActive" value="false" />
-    </label>
-    <button type="submit" class="btn btn-outline-tuki">Apply filter</button>
-</form>
+<section data-paginated-list>
+    <div class="d-flex flex-wrap gap-3 align-items-end justify-content-between mb-3">
+        <form method="get" class="d-flex flex-wrap gap-3 align-items-center">
+            <label class="d-flex gap-2 align-items-center">
+                <input type="checkbox" name="includeDrafts" value="true" @(Model.IncludeDrafts ? "checked" : null) /> Drafts
+                <input type="hidden" name="includeDrafts" value="false" />
+            </label>
+            <label class="d-flex gap-2 align-items-center">
+                <input type="checkbox" name="includeActive" value="true" @(Model.IncludeActive ? "checked" : null) /> Published
+                <input type="hidden" name="includeActive" value="false" />
+            </label>
+            <button type="submit" class="btn btn-outline-tuki">Apply filter</button>
+        </form>
 
-@if (Model.Routes.Count == 0 && string.IsNullOrWhiteSpace(Model.ErrorMessage))
-{
-    <div class="empty-review-state">
-        <h2>No jeepney routes found</h2>
-        <p>Create an inactive route draft to begin defining verified jeepney data.</p>
+        <div style="min-width: min(100%, 320px);">
+            <label for="jeepneyRouteSearch" class="form-label small text-muted mb-1">Search routes</label>
+            <input id="jeepneyRouteSearch"
+                   type="search"
+                   class="form-control"
+                   placeholder="Name, code, origin, destination, operator"
+                   data-list-search />
+        </div>
     </div>
-}
-else
-{
-    <div class="admin-table-card">
+
+    <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+        <span class="text-muted small" data-list-summary></span>
+        <span class="text-muted small">10 routes per page</span>
+    </div>
+
+    <div class="table-responsive admin-table-card">
         <table class="table mb-0 align-middle">
             <thead>
                 <tr>
@@ -58,7 +69,8 @@ else
             <tbody>
             @foreach (var route in Model.Routes)
             {
-                <tr>
+                var searchText = $"{route.RouteName} {route.RouteCode} {route.OriginName} {route.DestinationName} {route.DirectionName} {route.OperatorName}";
+                <tr data-search-text="@searchText">
                     <td>
                         <strong>@route.RouteName</strong><br />
                         <span class="text-muted small">@route.RouteCode</span>
@@ -82,13 +94,31 @@ else
                     </td>
                     <td>@(route.BaseFare is null ? "Not set" : $"₱{route.BaseFare:0.00}")</td>
                     <td class="text-end">
-                        <a asp-action="Edit" asp-route-id="@route.RouteId" class="btn btn-outline-tuki btn-sm">
-                            @(route.IsActive ? "View" : "Edit draft")
-                        </a>
+                        <div class="d-inline-flex flex-wrap justify-content-end gap-2">
+                            <a asp-action="Edit" asp-route-id="@route.RouteId" class="btn btn-outline-tuki btn-sm">
+                                @(route.IsActive ? "View" : "Edit draft")
+                            </a>
+                            <form asp-controller="JeepneyRouteArchive"
+                                  asp-action="Archive"
+                                  asp-route-id="@route.RouteId"
+                                  method="post"
+                                  onsubmit="return confirm('Archive this jeepney route? It can be restored later.');">
+                                <button type="submit" class="btn btn-outline-danger btn-sm">Archive</button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
             }
+                <tr data-list-empty hidden>
+                    <td colspan="6" class="text-center py-5 text-muted">No jeepney routes match the current search and filters.</td>
+                </tr>
             </tbody>
         </table>
     </div>
+
+    <div class="d-flex flex-wrap justify-content-center gap-2 mt-3" data-list-pagination aria-label="Jeepney route pages"></div>
+</section>
+
+@section Scripts {
+    <script src="~/js/admin-list-pagination.js" asp-append-version="true"></script>
 }
