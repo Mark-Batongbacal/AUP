@@ -3,8 +3,6 @@ package com.example.frontend.screens
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +19,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,26 +33,24 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import com.example.frontend.R
 import com.example.frontend.screens.onboarding.AskTukiPage
 import com.example.frontend.screens.onboarding.ParaPoPage
 import com.example.frontend.screens.onboarding.RouteChoicePage
+import com.example.frontend.screens.onboarding.StepByStepPage
+import com.example.frontend.ui.motion.TukiMascot
+import com.example.frontend.ui.motion.TukiMascotMood
 import com.example.frontend.ui.theme.TukiCream
-import com.example.frontend.ui.theme.TukiDeepTeal
-import com.example.frontend.ui.theme.TukiGold
+import com.example.frontend.ui.theme.TukiInk
+import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiTeal
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private const val ONBOARDING_PAGE_COUNT = 3
+private const val ONBOARDING_PAGE_COUNT = 4
 
 @Composable
 fun OnboardingScreen(
@@ -67,25 +62,25 @@ fun OnboardingScreen(
 
     val contentAlpha by animateFloatAsState(
         targetValue = if (isFinishing) 0f else 1f,
-        animationSpec = tween(320),
+        animationSpec = tween(260),
         label = "onboarding_content_alpha"
     )
     val contentScale by animateFloatAsState(
-        targetValue = if (isFinishing) 0.96f else 1f,
-        animationSpec = tween(360),
+        targetValue = if (isFinishing) 0.985f else 1f,
+        animationSpec = tween(300),
         label = "onboarding_content_scale"
     )
     val handoffAlpha by animateFloatAsState(
         targetValue = if (isFinishing) 1f else 0f,
-        animationSpec = tween(430),
-        label = "login_handoff_alpha"
+        animationSpec = tween(360),
+        label = "onboarding_handoff_alpha"
     )
 
     fun finishOnboarding() {
         if (isFinishing) return
         isFinishing = true
         coroutineScope.launch {
-            delay(460)
+            delay(390)
             onLetsRideClick()
         }
     }
@@ -93,18 +88,8 @@ fun OnboardingScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        TukiDeepTeal,
-                        TukiTeal,
-                        Color(0xFF087783)
-                    )
-                )
-            )
+            .background(TukiCream)
     ) {
-        OnboardingBackdrop()
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -116,8 +101,8 @@ fun OnboardingScreen(
                     scaleY = contentScale
                 }
         ) {
-            OnboardingTopBar(
-                showSkip = pagerState.currentPage < ONBOARDING_PAGE_COUNT - 1,
+            OnboardingHeader(
+                currentPage = pagerState.currentPage,
                 enabled = !isFinishing,
                 onSkip = ::finishOnboarding
             )
@@ -133,7 +118,8 @@ fun OnboardingScreen(
                 val active = pagerState.currentPage == page
                 when (page) {
                     0 -> RouteChoicePage(active = active)
-                    1 -> ParaPoPage(active = active)
+                    1 -> StepByStepPage(active = active)
+                    2 -> ParaPoPage(active = active)
                     else -> AskTukiPage(active = active)
                 }
             }
@@ -141,7 +127,14 @@ fun OnboardingScreen(
             OnboardingControls(
                 currentPage = pagerState.currentPage,
                 enabled = !isFinishing,
-                onPrimaryClick = {
+                onBack = {
+                    if (pagerState.currentPage > 0) {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                        }
+                    }
+                },
+                onNext = {
                     if (pagerState.currentPage == ONBOARDING_PAGE_COUNT - 1) {
                         finishOnboarding()
                     } else {
@@ -160,65 +153,50 @@ fun OnboardingScreen(
 }
 
 @Composable
-private fun OnboardingBackdrop() {
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        drawCircle(
-            color = TukiGold.copy(alpha = 0.08f),
-            radius = size.minDimension * 0.52f,
-            center = Offset(size.width * 1.08f, size.height * 0.16f)
-        )
-        drawCircle(
-            color = Color.White.copy(alpha = 0.05f),
-            radius = size.minDimension * 0.44f,
-            center = Offset(-size.width * 0.08f, size.height * 0.72f)
-        )
-        drawCircle(
-            color = TukiOrange.copy(alpha = 0.05f),
-            radius = size.minDimension * 0.22f,
-            center = Offset(size.width * 0.88f, size.height * 0.72f)
-        )
-    }
-}
-
-@Composable
-private fun OnboardingTopBar(
-    showSkip: Boolean,
+private fun OnboardingHeader(
+    currentPage: Int,
     enabled: Boolean,
     onSkip: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(62.dp)
+            .height(58.dp)
             .padding(horizontal = 22.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Image(
-                painter = painterResource(R.drawable.tuki_logo),
-                contentDescription = null,
-                modifier = Modifier.size(34.dp),
-                contentScale = ContentScale.Fit
-            )
-            Spacer(modifier = Modifier.width(7.dp))
-            Text(
-                text = "TUKI",
-                color = Color.White,
-                style = MaterialTheme.typography.titleLarge
-            )
-        }
-
-        if (showSkip) {
-            TextButton(onClick = onSkip, enabled = enabled) {
-                Text(
-                    text = "Skip",
-                    color = Color.White.copy(alpha = if (enabled) 0.86f else 0.45f),
-                    style = MaterialTheme.typography.labelLarge
+            repeat(ONBOARDING_PAGE_COUNT) { index ->
+                val segmentWidth by animateDpAsState(
+                    targetValue = if (index <= currentPage) 34.dp else 22.dp,
+                    animationSpec = tween(220),
+                    label = "progress_segment_$index"
+                )
+                Box(
+                    modifier = Modifier
+                        .width(segmentWidth)
+                        .height(5.dp)
+                        .background(
+                            color = if (index <= currentPage) TukiTeal else TukiInk.copy(alpha = 0.10f),
+                            shape = RoundedCornerShape(100.dp)
+                        )
                 )
             }
+        }
+
+        TextButton(
+            onClick = onSkip,
+            enabled = enabled
+        ) {
+            Text(
+                text = "Skip",
+                color = TukiMuted,
+                style = MaterialTheme.typography.labelLarge
+            )
         }
     }
 }
@@ -227,68 +205,47 @@ private fun OnboardingTopBar(
 private fun OnboardingControls(
     currentPage: Int,
     enabled: Boolean,
-    onPrimaryClick: () -> Unit
+    onBack: () -> Unit,
+    onNext: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 26.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-            verticalAlignment = Alignment.CenterVertically
+        TextButton(
+            onClick = onBack,
+            enabled = enabled && currentPage > 0,
+            modifier = Modifier.width(88.dp)
         ) {
-            repeat(ONBOARDING_PAGE_COUNT) { index ->
-                val width by animateDpAsState(
-                    targetValue = if (currentPage == index) 28.dp else 8.dp,
-                    animationSpec = tween(260),
-                    label = "page_indicator_width_$index"
-                )
-                Box(
-                    modifier = Modifier
-                        .width(width)
-                        .height(8.dp)
-                        .background(
-                            color = if (currentPage == index) TukiGold else Color.White.copy(alpha = 0.28f),
-                            shape = CircleShape
-                        )
-                )
-            }
+            Text(
+                text = if (currentPage == 0) "" else "Back",
+                color = TukiInk,
+                style = MaterialTheme.typography.labelLarge
+            )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
         Button(
-            onClick = onPrimaryClick,
+            onClick = onNext,
             enabled = enabled,
             modifier = Modifier
-                .fillMaxWidth()
+                .weight(1f)
                 .height(58.dp),
             shape = RoundedCornerShape(20.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = TukiOrange,
+                containerColor = TukiTeal,
                 contentColor = Color.White,
-                disabledContainerColor = TukiOrange.copy(alpha = 0.55f),
+                disabledContainerColor = TukiTeal.copy(alpha = 0.50f),
                 disabledContentColor = Color.White.copy(alpha = 0.72f)
             )
         ) {
             Text(
                 text = if (currentPage == ONBOARDING_PAGE_COUNT - 1) "Let's Ride" else "Next",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleMedium
             )
         }
-
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = if (currentPage == ONBOARDING_PAGE_COUNT - 1) {
-                "Your smarter commute starts here."
-            } else {
-                "Swipe to explore"
-            },
-            color = Color.White.copy(alpha = 0.62f),
-            style = MaterialTheme.typography.bodySmall
-        )
     }
 }
 
@@ -298,31 +255,30 @@ private fun LoginHandoffOverlay(alpha: Float) {
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer { this.alpha = alpha }
-            .background(TukiCream)
+            .background(TukiCream),
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = 12.dp)
-                .graphicsLayer {
-                    this.alpha = alpha
-                    scaleX = 0.86f + (alpha * 0.14f)
-                    scaleY = scaleX
-                },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Image(
-                painter = painterResource(R.drawable.tuki_logo),
-                contentDescription = null,
-                modifier = Modifier.size(50.dp),
-                contentScale = ContentScale.Fit
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            TukiMascot(
+                mood = TukiMascotMood.CELEBRATE,
+                modifier = Modifier
+                    .size(150.dp)
+                    .graphicsLayer {
+                        scaleX = 0.82f + (alpha * 0.18f)
+                        scaleY = scaleX
+                    },
+                showHalo = false
             )
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
-                text = "TUKI.",
-                color = TukiTeal,
+                text = "Ready when you are.",
+                color = TukiInk,
                 style = MaterialTheme.typography.displaySmall
+            )
+            Text(
+                text = "Your smarter commute starts here.",
+                color = TukiMuted,
+                style = MaterialTheme.typography.bodyMedium
             )
         }
     }
