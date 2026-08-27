@@ -1,0 +1,54 @@
+[
+  {
+    "id": "porac-angeles",
+    "origin": {
+      "latitude": 15.106744,
+      "longitude": 120.561241
+    },
+    "destination": {
+      "query": "Angeles University Foundation",
+      "name": "Angeles sample",
+      "latitude": 15.139582098206548,
+      "longitude": 120.60108373338038
+    }
+  },
+  {
+    "id": "angeles-clark",
+    "origin": {
+      "latitude": 15.139582098206548,
+      "longitude": 120.60108373338038
+    },
+    "destination": {
+      "query": "SM City Clark",
+      "name": "Clark sample",
+      "latitude": 15.169377198609359,
+      "longitude": 120.58742919718586
+    }
+  },
+  {
+    "id": "clark-dau",
+    "origin": {
+      "latitude": 15.169377198609359,
+      "longitude": 120.58742919718586
+    },
+    "destination": {
+      "query": "Dau Bus Terminal",
+      "name": "Dau sample",
+      "latitude": 15.1778,
+      "longitude": 120.5896
+    }
+  },
+  {
+    "id": "mabalacat-porac",
+    "origin": {
+      "latitude": 15.2228,
+      "longitude": 120.5745
+    },
+    "destination": {
+      "query": "Porac Public Market",
+      "name": "Porac sample",
+      "latitude": 15.106744,
+      "longitude": 120.561241
+    }
+  }
+]
