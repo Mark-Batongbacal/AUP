@@ -35,9 +35,9 @@ import com.example.frontend.ui.theme.TukiTeal
 /**
  * Reusable motion states for the TUKI mascot.
  *
- * The current brand asset is a single transparent image, so this component deliberately animates
- * the mascot as a whole. Keeping the state API separate from the renderer means a future Rive
- * implementation can replace the renderer without changing feature screens.
+ * The current production asset is still a single transparent mascot image. The state API is kept
+ * independent from the renderer so a future layered Rive mascot can replace this implementation
+ * without forcing feature screens to change their behavior.
  */
 enum class TukiMascotMood {
     WELCOME,
@@ -51,7 +51,8 @@ enum class TukiMascotMood {
 fun TukiMascot(
     mood: TukiMascotMood,
     modifier: Modifier = Modifier,
-    contentDescription: String = "TUKI mascot"
+    contentDescription: String = "TUKI mascot",
+    showHalo: Boolean = true
 ) {
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }
@@ -134,24 +135,26 @@ fun TukiMascot(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(8.dp)
-                .graphicsLayer {
-                    scaleX = haloPulse
-                    scaleY = haloPulse
-                    alpha = 0.16f * entryAlpha
-                }
-                .background(haloColor, CircleShape)
-        )
+        if (showHalo) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
+                    .graphicsLayer {
+                        scaleX = haloPulse
+                        scaleY = haloPulse
+                        alpha = 0.16f * entryAlpha
+                    }
+                    .background(haloColor, CircleShape)
+            )
+        }
 
         Image(
             painter = painterResource(R.drawable.tuki_logo),
             contentDescription = contentDescription,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(10.dp)
+                .padding(if (showHalo) 10.dp else 0.dp)
                 .graphicsLayer {
                     translationY = floatY * density
                     rotationZ = tilt
