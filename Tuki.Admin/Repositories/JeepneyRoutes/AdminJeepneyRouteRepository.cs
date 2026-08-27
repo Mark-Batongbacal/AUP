@@ -63,6 +63,26 @@ public sealed class AdminJeepneyRouteRepository(
             request,
             cancellationToken);
 
+    public Task<AdminJeepneyRepositoryResult<AdminJeepneyValhallaPreview>> PreviewValhallaAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendMutationAsync<AdminJeepneyValhallaRequest, AdminJeepneyValhallaPreview>(
+            HttpMethod.Post,
+            $"api/admin/jeepney-routes/{routeId}/valhalla/preview",
+            request,
+            cancellationToken);
+
+    public Task<AdminJeepneyRepositoryResult<AdminJeepneyRouteGeometry>> SaveValhallaGeometryAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default) =>
+        SendMutationAsync<AdminJeepneyValhallaRequest, AdminJeepneyRouteGeometry>(
+            HttpMethod.Post,
+            $"api/admin/jeepney-routes/{routeId}/valhalla/save",
+            request,
+            cancellationToken);
+
     public Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> PublishAsync(
         long routeId,
         CancellationToken cancellationToken = default) =>

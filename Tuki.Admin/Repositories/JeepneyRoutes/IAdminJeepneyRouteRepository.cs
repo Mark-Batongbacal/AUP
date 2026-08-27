@@ -35,6 +35,16 @@ public interface IAdminJeepneyRouteRepository
         AdminJeepneyRouteGeometryRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<AdminJeepneyRepositoryResult<AdminJeepneyValhallaPreview>> PreviewValhallaAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRepositoryResult<AdminJeepneyRouteGeometry>> SaveValhallaGeometryAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> PublishAsync(
         long routeId,
         CancellationToken cancellationToken = default);

@@ -48,6 +48,12 @@
             <a asp-action="Plot" asp-route-id="@Model.Route.RouteId" class="btn btn-tuki">
                 @(Model.Route.IsActive ? "View route geometry" : Model.Route.HasPolyline ? "Open geometry editor" : "Plot route geometry")
             </a>
+            @if (!Model.Route.IsActive)
+            {
+                <a asp-action="Valhalla" asp-route-id="@Model.Route.RouteId" class="btn btn-outline-primary">
+                    Generate / verify with Valhalla
+                </a>
+            }
         </div>
     </section>
 
