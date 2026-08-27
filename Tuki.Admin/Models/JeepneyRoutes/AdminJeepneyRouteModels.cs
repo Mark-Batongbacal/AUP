@@ -17,7 +17,11 @@ public sealed record AdminJeepneyRoute(
     int WaypointCount,
     bool HasPolyline,
     DateTime CreatedAt,
-    DateTime? UpdatedAt);
+    DateTime? UpdatedAt)
+{
+    public DateTime? ArchivedAt { get; init; }
+    public bool IsArchived => ArchivedAt.HasValue;
+}
 
 public sealed class AdminJeepneyRouteRequest
 {
