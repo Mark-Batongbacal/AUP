@@ -4,8 +4,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -44,11 +46,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.ui.motion.TukiMascot
@@ -60,6 +66,7 @@ import com.example.frontend.ui.theme.TukiMuted
 import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiTeal
 import kotlinx.coroutines.delay
+import kotlin.math.min
 
 private data class RoutePreview(
     val label: String,
@@ -68,14 +75,21 @@ private data class RoutePreview(
     val accent: Color
 )
 
+private enum class JourneyMode {
+    WALK,
+    TRICYCLE,
+    JEEPNEY,
+    DESTINATION
+}
+
 @Composable
 fun RouteChoicePage(active: Boolean) {
     OnboardingPageShell {
         MascotHero(
             active = active,
             mood = TukiMascotMood.WELCOME,
-            alignEnd = false,
-            speech = "Hi! I’ll help you find the ride that fits your day."
+            speech = "Hi! I’m TUKI — your travel buddy.",
+            enterFromX = -70f
         )
 
         PageTitle(
@@ -102,10 +116,10 @@ private fun RouteChoiceStack(active: Boolean) {
     LaunchedEffect(active) {
         stage = 0
         if (active) {
-            delay(180)
-            repeat(routes.size) { index ->
+            delay(160)
+            routes.indices.forEach { index ->
                 stage = index + 1
-                delay(150)
+                delay(145)
             }
         }
     }
@@ -120,7 +134,7 @@ private fun RouteChoiceStack(active: Boolean) {
             AnimatedVisibility(
                 visible = stage > index,
                 enter = fadeIn(tween(240)) + slideInHorizontally(
-                    animationSpec = tween(340),
+                    animationSpec = spring(dampingRatio = 0.78f, stiffness = 330f),
                     initialOffsetX = { if (index % 2 == 0) it / 4 else -it / 4 }
                 )
             ) {
@@ -136,7 +150,7 @@ private fun RouteChoiceCard(route: RoutePreview) {
         modifier = Modifier.fillMaxWidth(),
         color = route.accent.copy(alpha = 0.12f),
         shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, route.accent.copy(alpha = 0.18f))
+        border = BorderStroke(1.dp, route.accent.copy(alpha = 0.20f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -186,23 +200,10 @@ fun StepByStepPage(active: Boolean) {
             subtitle = "TUKI guides you through walking, tricycles, jeepneys, and transfers."
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        JourneyStory(active = active)
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TukiMascot(
-                mood = TukiMascotMood.GUIDE,
-                modifier = Modifier.size(138.dp),
-                showHalo = false
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            JourneySteps(active = active)
-        }
-
-        Spacer(modifier = Modifier.height(18.dp))
-
+        Spacer(modifier = Modifier.height(14.dp))
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = TukiTeal.copy(alpha = 0.07f),
@@ -212,7 +213,18 @@ fun StepByStepPage(active: Boolean) {
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("●", color = TukiTeal, fontSize = 20.sp)
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .background(TukiTeal.copy(alpha = 0.12f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(TukiTeal, CircleShape)
+                    )
+                }
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
@@ -232,54 +244,159 @@ fun StepByStepPage(active: Boolean) {
 }
 
 @Composable
-private fun JourneySteps(active: Boolean) {
-    val items = listOf(
-        "WALK" to "🚶",
-        "TRICYCLE" to "🛺",
-        "JEEPNEY" to "🚌",
-        "DESTINATION" to "📍"
-    )
+private fun JourneyStory(active: Boolean) {
+    val modes = remember {
+        listOf(
+            JourneyMode.WALK to "WALK",
+            JourneyMode.TRICYCLE to "TRICYCLE",
+            JourneyMode.JEEPNEY to "JEEPNEY",
+            JourneyMode.DESTINATION to "DESTINATION"
+        )
+    }
     var stage by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(active) {
         stage = 0
         if (active) {
-            items.indices.forEach { index ->
-                delay(if (index == 0) 120 else 170)
+            modes.indices.forEach { index ->
+                delay(if (index == 0) 170 else 220)
                 stage = index + 1
             }
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+    val routeProgress by animateFloatAsState(
+        targetValue = if (active) stage / modes.size.toFloat() else 0f,
+        animationSpec = tween(320),
+        label = "journey_route_progress"
+    )
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(300.dp)
     ) {
-        items.forEachIndexed { index, item ->
-            AnimatedVisibility(
-                visible = stage > index,
-                enter = fadeIn(tween(220)) + slideInHorizontally(initialOffsetX = { it / 3 })
-            ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color.White,
-                    shape = RoundedCornerShape(18.dp),
-                    shadowElevation = 2.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(item.second, fontSize = 20.sp)
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = item.first,
-                            color = TukiInk,
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
+        val routeX = maxWidth * 0.34f
+        val cardWidth = maxWidth * 0.58f
+
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val points = listOf(
+                Offset(size.width * 0.34f, size.height * 0.12f),
+                Offset(size.width * 0.29f, size.height * 0.36f),
+                Offset(size.width * 0.36f, size.height * 0.61f),
+                Offset(size.width * 0.31f, size.height * 0.86f)
+            )
+
+            points.zipWithNext().forEach { (start, end) ->
+                drawLine(
+                    color = TukiTeal.copy(alpha = 0.13f),
+                    start = start,
+                    end = end,
+                    strokeWidth = 5.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+
+            val segmentCount = points.size - 1
+            val scaledProgress = routeProgress * segmentCount
+            points.zipWithNext().forEachIndexed { index, (start, end) ->
+                val local = (scaledProgress - index).coerceIn(0f, 1f)
+                if (local > 0f) {
+                    drawLine(
+                        color = TukiTeal,
+                        start = start,
+                        end = Offset(
+                            x = start.x + ((end.x - start.x) * local),
+                            y = start.y + ((end.y - start.y) * local)
+                        ),
+                        strokeWidth = 5.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
                 }
             }
+
+            points.forEachIndexed { index, point ->
+                drawCircle(
+                    color = if (stage > index) TukiOrange else TukiTeal.copy(alpha = 0.22f),
+                    radius = 6.dp.toPx(),
+                    center = point
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = 2.5.dp.toPx(),
+                    center = point
+                )
+            }
+        }
+
+        SceneMascot(
+            active = active,
+            mood = TukiMascotMood.GUIDE,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(y = 42.dp)
+                .size(150.dp),
+            enterFromX = -90f
+        )
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .width(cardWidth),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            modes.forEachIndexed { index, (mode, label) ->
+                AnimatedVisibility(
+                    visible = stage > index,
+                    enter = fadeIn(tween(200)) + slideInHorizontally(
+                        animationSpec = spring(dampingRatio = 0.82f, stiffness = 360f),
+                        initialOffsetX = { it / 3 }
+                    )
+                ) {
+                    JourneyStopCard(mode = mode, label = label, active = stage > index)
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .offset(x = routeX - 3.dp, y = 22.dp)
+                .size(6.dp)
+                .background(TukiTeal, CircleShape)
+        )
+    }
+}
+
+@Composable
+private fun JourneyStopCard(
+    mode: JourneyMode,
+    label: String,
+    active: Boolean
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(18.dp),
+        shadowElevation = 2.dp,
+        border = BorderStroke(
+            1.dp,
+            if (active) TukiTeal.copy(alpha = 0.12f) else TukiInk.copy(alpha = 0.06f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            JourneyModeIcon(
+                mode = mode,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = label,
+                color = TukiInk,
+                style = MaterialTheme.typography.labelLarge
+            )
         }
     }
 }
@@ -292,42 +409,60 @@ fun ParaPoPage(active: Boolean) {
             subtitle = "Get notified when you’re close to your drop-off point so you know when to get off."
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+        ParaPoHero(active = active)
+        Spacer(modifier = Modifier.height(10.dp))
+        ParaPoDemo(active = active)
+    }
+}
 
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
-        ) {
-            TukiMascot(
-                mood = TukiMascotMood.ALERT,
-                modifier = Modifier.size(150.dp),
-                showHalo = false
+@Composable
+private fun ParaPoHero(active: Boolean) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(165.dp)
+    ) {
+        SceneMascot(
+            active = active,
+            mood = TukiMascotMood.ALERT,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .offset(x = (-34).dp)
+                .size(165.dp),
+            enterFromX = -60f
+        )
+
+        AnimatedVisibility(
+            visible = active,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 12.dp, end = 8.dp),
+            enter = fadeIn(tween(180)) + scaleIn(
+                initialScale = 0.72f,
+                animationSpec = spring(dampingRatio = 0.58f, stiffness = 420f)
             )
+        ) {
             Surface(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = 10.dp),
                 color = Color(0xFFFF6D57),
-                shape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp),
-                shadowElevation = 4.dp
+                shape = RoundedCornerShape(22.dp, 22.dp, 22.dp, 7.dp),
+                shadowElevation = 5.dp
             ) {
-                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp)) {
                     Text(
                         text = "PARA PO!",
                         color = Color.White,
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "Your stop is near!",
-                        color = Color.White.copy(alpha = 0.90f),
+                        color = Color.White.copy(alpha = 0.92f),
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        ParaPoDemo(active = active)
     }
 }
 
@@ -338,10 +473,19 @@ private fun ParaPoDemo(active: Boolean) {
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(3300, easing = LinearEasing),
+            animation = tween(3600, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "demo_vehicle_progress"
+    )
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.88f,
+        targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(620),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "destination_pulse"
     )
     val progress = if (active) animatedProgress else 0f
     val alertVisible = active && progress > 0.70f
@@ -349,25 +493,27 @@ private fun ParaPoDemo(active: Boolean) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color.White,
-        shape = RoundedCornerShape(24.dp),
-        shadowElevation = 2.dp
+        shape = RoundedCornerShape(26.dp),
+        shadowElevation = 3.dp
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(92.dp)
+                    .height(126.dp)
             ) {
-                val markerWidth = 52.dp
-                val travelWidth = (maxWidth - markerWidth - 24.dp).coerceAtLeast(0.dp)
+                val vehicleSize = 44.dp
+                val startPadding = 18.dp
+                val endPadding = 24.dp
+                val travelWidth = (maxWidth - vehicleSize - startPadding - endPadding).coerceAtLeast(0.dp)
 
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    val startX = 16.dp.toPx()
-                    val endX = size.width - 16.dp.toPx()
-                    val trackY = 40.dp.toPx()
+                    val startX = 18.dp.toPx()
+                    val endX = size.width - 18.dp.toPx()
+                    val trackY = 58.dp.toPx()
 
                     drawLine(
-                        color = TukiTeal.copy(alpha = 0.18f),
+                        color = TukiTeal.copy(alpha = 0.16f),
                         start = Offset(startX, trackY),
                         end = Offset(endX, trackY),
                         strokeWidth = 6.dp.toPx(),
@@ -380,36 +526,61 @@ private fun ParaPoDemo(active: Boolean) {
                         strokeWidth = 6.dp.toPx(),
                         cap = StrokeCap.Round
                     )
-                    listOf(0f, 0.5f, 1f).forEach { point ->
+
+                    listOf(0f, 0.5f, 1f).forEachIndexed { index, point ->
                         val x = startX + ((endX - startX) * point)
+                        val reached = progress >= point
                         drawCircle(
-                            color = if (progress >= point) TukiOrange else TukiTeal,
-                            radius = 6.dp.toPx(),
+                            color = if (reached) TukiOrange else TukiTeal,
+                            radius = if (index == 2) 7.dp.toPx() else 5.5.dp.toPx(),
                             center = Offset(x, trackY)
                         )
                     }
+
+                    val pulseRadius = 18.dp.toPx() * pulse
+                    drawCircle(
+                        color = Color(0xFFFF6D57).copy(alpha = if (alertVisible) 0.14f else 0.05f),
+                        radius = pulseRadius,
+                        center = Offset(endX, trackY)
+                    )
                 }
 
                 Surface(
                     modifier = Modifier
                         .offset(
-                            x = 12.dp + (travelWidth * progress),
-                            y = 23.dp
+                            x = startPadding + (travelWidth * progress),
+                            y = 36.dp
                         )
-                        .width(markerWidth)
-                        .height(34.dp),
-                    color = TukiDeepTeal,
-                    shape = RoundedCornerShape(12.dp)
+                        .size(vehicleSize),
+                    color = Color.White,
+                    shape = CircleShape,
+                    shadowElevation = 3.dp,
+                    border = BorderStroke(1.dp, TukiTeal.copy(alpha = 0.16f))
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("JEEP", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
+                    JourneyModeIcon(
+                        mode = JourneyMode.JEEPNEY,
+                        modifier = Modifier.padding(8.dp)
+                    )
                 }
+
+                Text(
+                    text = "AUF",
+                    modifier = Modifier.align(Alignment.BottomStart),
+                    color = TukiInk,
+                    style = MaterialTheme.typography.labelSmall
+                )
+                Text(
+                    text = "SM Clark",
+                    modifier = Modifier.align(Alignment.BottomEnd),
+                    color = TukiInk,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             AnimatedVisibility(
                 visible = alertVisible,
-                enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.90f),
+                enter = fadeIn(tween(180)) + slideInVertically(initialOffsetY = { it / 3 }),
                 exit = fadeOut(tween(140))
             ) {
                 Surface(
@@ -422,7 +593,10 @@ private fun ParaPoDemo(active: Boolean) {
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🔔", fontSize = 20.sp)
+                        BellIcon(
+                            active = alertVisible,
+                            modifier = Modifier.size(28.dp)
+                        )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
@@ -431,7 +605,7 @@ private fun ParaPoDemo(active: Boolean) {
                                 style = MaterialTheme.typography.labelLarge
                             )
                             Text(
-                                text = "We’ll gently alert you so you have time to prepare.",
+                                text = "TUKI gives you time to prepare before your drop-off.",
                                 color = TukiMuted,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -447,109 +621,134 @@ private fun ParaPoDemo(active: Boolean) {
 fun AskTukiPage(active: Boolean) {
     OnboardingPageShell {
         PageTitle(
-            title = "Just ask by budget",
+            title = "Travel within your budget",
             subtitle = "Tell TUKI where you’re going and how much you want to spend."
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TukiMascot(
-                mood = if (active) TukiMascotMood.THINKING else TukiMascotMood.WELCOME,
-                modifier = Modifier.size(132.dp),
-                showHalo = false
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            ChatPreview(active = active)
-        }
+        Spacer(modifier = Modifier.height(10.dp))
+        BudgetChatExperience(active = active)
     }
 }
 
 @Composable
-private fun ChatPreview(active: Boolean) {
+private fun BudgetChatExperience(active: Boolean) {
     var stage by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(active) {
         stage = 0
         if (active) {
-            delay(180)
+            delay(220)
             stage = 1
-            delay(480)
+            delay(520)
             stage = 2
-            delay(360)
+            delay(520)
             stage = 3
+            delay(360)
+            stage = 4
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(360.dp)
     ) {
-        AnimatedVisibility(
-            visible = stage >= 1,
-            enter = fadeIn(tween(220)) + slideInHorizontally(initialOffsetX = { it / 4 })
-        ) {
-            Surface(
-                color = Color(0xFFDCEEFF),
-                shape = RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp)
-            ) {
-                Text(
-                    text = "I only have ₱50. What’s the best way to SM Clark?",
-                    modifier = Modifier.padding(13.dp),
-                    color = TukiInk,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
+        val chatWidth = maxWidth * 0.68f
 
-        AnimatedVisibility(
-            visible = stage >= 2,
-            enter = fadeIn(tween(220)) + slideInHorizontally(initialOffsetX = { -it / 4 })
-        ) {
-            Surface(
-                color = Color(0xFFDDF4E8),
-                shape = RoundedCornerShape(6.dp, 20.dp, 20.dp, 20.dp)
-            ) {
-                Text(
-                    text = "I found a great route for you!",
-                    modifier = Modifier.padding(13.dp),
-                    color = TukiInk,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
+        SceneMascot(
+            active = active,
+            mood = if (stage >= 3) TukiMascotMood.CELEBRATE else TukiMascotMood.THINKING,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .offset(y = 26.dp)
+                .size(168.dp),
+            enterFromX = -80f
+        )
 
-        AnimatedVisibility(
-            visible = stage >= 3,
-            enter = fadeIn(tween(260)) + slideInVertically(initialOffsetY = { it / 3 })
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .width(chatWidth),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = Color.White,
-                shape = RoundedCornerShape(20.dp),
-                shadowElevation = 2.dp
+            AnimatedVisibility(
+                visible = stage >= 1,
+                enter = fadeIn(tween(220)) + slideInHorizontally(initialOffsetX = { it / 4 })
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Surface(
+                    color = Color(0xFFDCEEFF),
+                    shape = RoundedCornerShape(20.dp, 20.dp, 7.dp, 20.dp)
+                ) {
                     Text(
-                        text = "BALANCED ROUTE",
-                        color = TukiDeepTeal,
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "₱42  •  29 min",
+                        text = "I only have ₱50. What’s the best way to SM Clark?",
+                        modifier = Modifier.padding(13.dp),
                         color = TukiInk,
-                        style = MaterialTheme.typography.titleLarge
+                        style = MaterialTheme.typography.bodyMedium
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            AnimatedVisibility(
+                visible = stage == 2,
+                enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.90f),
+                exit = fadeOut(tween(120))
+            ) {
+                ThinkingDots()
+            }
+
+            AnimatedVisibility(
+                visible = stage >= 3,
+                enter = fadeIn(tween(220)) + slideInHorizontally(initialOffsetX = { -it / 4 })
+            ) {
+                Surface(
+                    color = Color(0xFFDDF4E8),
+                    shape = RoundedCornerShape(7.dp, 20.dp, 20.dp, 20.dp)
+                ) {
                     Text(
-                        text = "Walk  →  Tricycle  →  Jeepney",
-                        color = TukiMuted,
-                        style = MaterialTheme.typography.bodySmall
+                        text = "I found a great route for you!",
+                        modifier = Modifier.padding(13.dp),
+                        color = TukiInk,
+                        style = MaterialTheme.typography.bodyMedium
                     )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = stage >= 4,
+                enter = fadeIn(tween(260)) + slideInVertically(initialOffsetY = { it / 3 })
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White,
+                    shape = RoundedCornerShape(20.dp),
+                    shadowElevation = 3.dp,
+                    border = BorderStroke(1.dp, TukiTeal.copy(alpha = 0.10f))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "BALANCED ROUTE",
+                            color = TukiDeepTeal,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "₱42  •  29 min",
+                            color = TukiInk,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Spacer(modifier = Modifier.height(9.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                        ) {
+                            JourneyModeIcon(JourneyMode.WALK, Modifier.size(20.dp))
+                            Text("→", color = TukiMuted)
+                            JourneyModeIcon(JourneyMode.TRICYCLE, Modifier.size(20.dp))
+                            Text("→", color = TukiMuted)
+                            JourneyModeIcon(JourneyMode.JEEPNEY, Modifier.size(20.dp))
+                        }
+                    }
                 }
             }
         }
@@ -557,16 +756,78 @@ private fun ChatPreview(active: Boolean) {
 }
 
 @Composable
-private fun OnboardingPageShell(content: @Composable () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 26.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun ThinkingDots() {
+    val infiniteTransition = rememberInfiniteTransition(label = "tuki_thinking_dots")
+    val pulse1 by infiniteTransition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(480), RepeatMode.Reverse),
+        label = "thinking_dot_1"
+    )
+    val pulse2 by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.55f,
+        animationSpec = infiniteRepeatable(tween(480), RepeatMode.Reverse),
+        label = "thinking_dot_2"
+    )
+
+    Surface(
+        color = Color.White,
+        shape = RoundedCornerShape(18.dp),
+        shadowElevation = 1.dp
     ) {
-        content()
-        Spacer(modifier = Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            listOf(pulse1, pulse2, pulse1).forEach { alpha ->
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .graphicsLayer { this.alpha = alpha }
+                        .background(TukiTeal, CircleShape)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnboardingPageShell(content: @Composable () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        OnboardingDecor()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 26.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            content()
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun OnboardingDecor() {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val minDimension = min(size.width, size.height)
+        drawCircle(
+            color = TukiTeal.copy(alpha = 0.035f),
+            radius = minDimension * 0.22f,
+            center = Offset(-size.width * 0.02f, size.height * 0.26f)
+        )
+        drawCircle(
+            color = TukiGold.copy(alpha = 0.045f),
+            radius = minDimension * 0.18f,
+            center = Offset(size.width * 1.03f, size.height * 0.58f)
+        )
+        drawCircle(
+            color = TukiOrange.copy(alpha = 0.028f),
+            radius = minDimension * 0.14f,
+            center = Offset(size.width * 0.22f, size.height * 0.92f)
+        )
     }
 }
 
@@ -574,44 +835,84 @@ private fun OnboardingPageShell(content: @Composable () -> Unit) {
 private fun MascotHero(
     active: Boolean,
     mood: TukiMascotMood,
-    alignEnd: Boolean,
-    speech: String
+    speech: String,
+    enterFromX: Float
 ) {
-    val alignment = if (alignEnd) Alignment.CenterEnd else Alignment.CenterStart
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .height(190.dp)
     ) {
-        TukiMascot(
+        SceneMascot(
+            active = active,
             mood = mood,
             modifier = Modifier
-                .align(alignment)
-                .size(165.dp),
-            showHalo = false
+                .align(Alignment.CenterStart)
+                .offset(x = (-10).dp, y = 10.dp)
+                .size(185.dp),
+            enterFromX = enterFromX
         )
 
         AnimatedVisibility(
             visible = active,
             modifier = Modifier
-                .align(if (alignEnd) Alignment.TopStart else Alignment.TopEnd),
-            enter = fadeIn(tween(260)) + scaleIn(initialScale = 0.92f)
+                .align(Alignment.TopEnd)
+                .padding(top = 8.dp),
+            enter = fadeIn(tween(240)) + scaleIn(
+                initialScale = 0.88f,
+                animationSpec = spring(dampingRatio = 0.68f, stiffness = 360f)
+            )
         ) {
             Surface(
-                modifier = Modifier.widthIn(max = 180.dp),
+                modifier = Modifier.widthIn(max = 188.dp),
                 color = Color.White,
-                shape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp),
+                shape = RoundedCornerShape(21.dp, 21.dp, 21.dp, 7.dp),
                 shadowElevation = 3.dp
             ) {
                 Text(
                     text = speech,
-                    modifier = Modifier.padding(13.dp),
+                    modifier = Modifier.padding(14.dp),
                     color = TukiInk,
                     style = MaterialTheme.typography.bodySmall
                 )
             }
         }
     }
+}
+
+@Composable
+private fun SceneMascot(
+    active: Boolean,
+    mood: TukiMascotMood,
+    modifier: Modifier,
+    enterFromX: Float
+) {
+    val translationX by animateFloatAsState(
+        targetValue = if (active) 0f else enterFromX,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 250f),
+        label = "scene_mascot_entry_${mood.name}"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = tween(220),
+        label = "scene_mascot_alpha_${mood.name}"
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (active) 1f else 0.88f,
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 260f),
+        label = "scene_mascot_scale_${mood.name}"
+    )
+
+    TukiMascot(
+        mood = mood,
+        modifier = modifier.graphicsLayer {
+            this.translationX = translationX * density
+            this.alpha = alpha
+            scaleX = scale
+            scaleY = scale
+        },
+        showHalo = false
+    )
 }
 
 @Composable
@@ -632,4 +933,139 @@ private fun PageTitle(
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center
     )
+}
+
+@Composable
+private fun JourneyModeIcon(
+    mode: JourneyMode,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val teal = TukiTeal
+        val orange = TukiOrange
+        val ink = TukiDeepTeal
+
+        when (mode) {
+            JourneyMode.WALK -> {
+                drawCircle(
+                    color = orange,
+                    radius = w * 0.10f,
+                    center = Offset(w * 0.50f, h * 0.18f)
+                )
+                drawLine(teal, Offset(w * 0.50f, h * 0.30f), Offset(w * 0.46f, h * 0.58f), w * 0.07f, StrokeCap.Round)
+                drawLine(teal, Offset(w * 0.47f, h * 0.40f), Offset(w * 0.30f, h * 0.52f), w * 0.06f, StrokeCap.Round)
+                drawLine(teal, Offset(w * 0.48f, h * 0.42f), Offset(w * 0.66f, h * 0.52f), w * 0.06f, StrokeCap.Round)
+                drawLine(ink, Offset(w * 0.46f, h * 0.58f), Offset(w * 0.31f, h * 0.83f), w * 0.065f, StrokeCap.Round)
+                drawLine(ink, Offset(w * 0.46f, h * 0.58f), Offset(w * 0.65f, h * 0.80f), w * 0.065f, StrokeCap.Round)
+            }
+
+            JourneyMode.TRICYCLE -> {
+                drawRoundRect(
+                    color = teal,
+                    topLeft = Offset(w * 0.20f, h * 0.38f),
+                    size = Size(w * 0.52f, h * 0.32f),
+                    cornerRadius = CornerRadius(w * 0.08f, w * 0.08f)
+                )
+                drawRoundRect(
+                    color = orange,
+                    topLeft = Offset(w * 0.48f, h * 0.25f),
+                    size = Size(w * 0.28f, h * 0.20f),
+                    cornerRadius = CornerRadius(w * 0.05f, w * 0.05f)
+                )
+                drawLine(ink, Offset(w * 0.17f, h * 0.38f), Offset(w * 0.30f, h * 0.24f), w * 0.05f, StrokeCap.Round)
+                drawCircle(ink, w * 0.105f, Offset(w * 0.28f, h * 0.76f))
+                drawCircle(ink, w * 0.105f, Offset(w * 0.68f, h * 0.76f))
+                drawCircle(Color.White, w * 0.045f, Offset(w * 0.28f, h * 0.76f))
+                drawCircle(Color.White, w * 0.045f, Offset(w * 0.68f, h * 0.76f))
+            }
+
+            JourneyMode.JEEPNEY -> {
+                drawRoundRect(
+                    color = teal,
+                    topLeft = Offset(w * 0.10f, h * 0.32f),
+                    size = Size(w * 0.80f, h * 0.40f),
+                    cornerRadius = CornerRadius(w * 0.09f, w * 0.09f)
+                )
+                drawRoundRect(
+                    color = orange,
+                    topLeft = Offset(w * 0.17f, h * 0.23f),
+                    size = Size(w * 0.56f, h * 0.18f),
+                    cornerRadius = CornerRadius(w * 0.05f, w * 0.05f)
+                )
+                drawRoundRect(Color.White.copy(alpha = 0.92f), Offset(w * 0.21f, h * 0.40f), Size(w * 0.17f, h * 0.16f), CornerRadius(w * 0.03f, w * 0.03f))
+                drawRoundRect(Color.White.copy(alpha = 0.92f), Offset(w * 0.43f, h * 0.40f), Size(w * 0.17f, h * 0.16f), CornerRadius(w * 0.03f, w * 0.03f))
+                drawRoundRect(Color.White.copy(alpha = 0.92f), Offset(w * 0.65f, h * 0.40f), Size(w * 0.14f, h * 0.16f), CornerRadius(w * 0.03f, w * 0.03f))
+                drawCircle(ink, w * 0.09f, Offset(w * 0.28f, h * 0.76f))
+                drawCircle(ink, w * 0.09f, Offset(w * 0.72f, h * 0.76f))
+            }
+
+            JourneyMode.DESTINATION -> {
+                drawCircle(
+                    color = orange.copy(alpha = 0.18f),
+                    radius = w * 0.28f,
+                    center = Offset(w * 0.50f, h * 0.42f)
+                )
+                drawCircle(
+                    color = orange,
+                    radius = w * 0.17f,
+                    center = Offset(w * 0.50f, h * 0.38f)
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = w * 0.065f,
+                    center = Offset(w * 0.50f, h * 0.38f)
+                )
+                drawLine(
+                    color = orange,
+                    start = Offset(w * 0.50f, h * 0.53f),
+                    end = Offset(w * 0.50f, h * 0.86f),
+                    strokeWidth = w * 0.08f,
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BellIcon(
+    active: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "bell_motion")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = if (active) -8f else 0f,
+        targetValue = if (active) 8f else 0f,
+        animationSpec = infiniteRepeatable(tween(180), RepeatMode.Reverse),
+        label = "bell_rotation"
+    )
+
+    Canvas(
+        modifier = modifier.graphicsLayer {
+            rotationZ = rotation
+        }
+    ) {
+        val w = size.width
+        val h = size.height
+        drawRoundRect(
+            color = TukiOrange,
+            topLeft = Offset(w * 0.25f, h * 0.24f),
+            size = Size(w * 0.50f, h * 0.48f),
+            cornerRadius = CornerRadius(w * 0.22f, w * 0.22f)
+        )
+        drawLine(
+            color = TukiOrange,
+            start = Offset(w * 0.18f, h * 0.72f),
+            end = Offset(w * 0.82f, h * 0.72f),
+            strokeWidth = w * 0.10f,
+            cap = StrokeCap.Round
+        )
+        drawCircle(
+            color = TukiDeepTeal,
+            radius = w * 0.075f,
+            center = Offset(w * 0.50f, h * 0.82f)
+        )
+    }
 }
