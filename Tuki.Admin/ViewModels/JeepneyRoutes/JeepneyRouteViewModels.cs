@@ -36,3 +36,18 @@ public sealed class JeepneyRoutePlotPostModel
 {
     public string PointsJson { get; set; } = "[]";
 }
+
+public sealed class JeepneyRouteValhallaViewModel
+{
+    public AdminJeepneyRoute Route { get; init; } = null!;
+    public AdminJeepneyRouteGeometry Geometry { get; init; } = null!;
+    public string WaypointsText { get; init; } = string.Empty;
+    public string? ErrorMessage { get; init; }
+    public string? SuccessMessage { get; init; }
+    public bool CanEdit => !Route.IsActive;
+}
+
+public sealed class JeepneyRouteValhallaPostModel
+{
+    public string WaypointsText { get; set; } = string.Empty;
+}

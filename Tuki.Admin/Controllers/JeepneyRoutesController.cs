@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -161,6 +162,63 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
         return RedirectToAction(nameof(Plot), new { id });
     }
 
+    [HttpGet]
+    public Task<IActionResult> Valhalla(long id, CancellationToken cancellationToken = default) =>
+        RenderValhallaAsync(
+            id,
+            string.Empty,
+            TempData["JeepneyRouteError"] as string,
+            TempData["JeepneyRouteSuccess"] as string,
+            cancellationToken);
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ValhallaPreview(
+        long id,
+        JeepneyRouteValhallaPostModel model,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParseWaypoints(model.WaypointsText, out var waypoints, out var error))
+            return BadRequest(new { error });
+
+        var result = await repository.PreviewValhallaAsync(
+            id,
+            new AdminJeepneyValhallaRequest { Waypoints = waypoints },
+            cancellationToken);
+
+        return result.Succeeded && result.Value is not null
+            ? Json(result.Value)
+            : StatusCode(result.StatusCode, new { error = result.ErrorMessage ?? "Unable to generate a Valhalla preview." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveValhalla(
+        long id,
+        JeepneyRouteValhallaPostModel model,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryParseWaypoints(model.WaypointsText, out var waypoints, out var error))
+            return await RenderValhallaAsync(id, model.WaypointsText, error, null, cancellationToken);
+
+        var result = await repository.SaveValhallaGeometryAsync(
+            id,
+            new AdminJeepneyValhallaRequest { Waypoints = waypoints },
+            cancellationToken);
+
+        if (!result.Succeeded || result.Value is null)
+            return await RenderValhallaAsync(
+                id,
+                model.WaypointsText,
+                result.ErrorMessage ?? "Unable to save the Valhalla-generated geometry.",
+                null,
+                cancellationToken);
+
+        TempData["JeepneyRouteSuccess"] =
+            $"Valhalla route accepted and saved with {waypoints.Count} waypoints and {result.Value.Points.Count} generated route points.";
+        return RedirectToAction(nameof(Plot), new { id });
+    }
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Publish(long id, CancellationToken cancellationToken = default)
@@ -174,6 +232,88 @@ public sealed class JeepneyRoutesController(IAdminJeepneyRouteRepository reposit
 
         TempData["JeepneyRouteSuccess"] = "Jeepney route published successfully. It is now available to active passenger routing.";
         return RedirectToAction(nameof(Edit), new { id });
+    }
+
+    private async Task<IActionResult> RenderValhallaAsync(
+        long id,
+        string waypointsText,
+        string? errorMessage,
+        string? successMessage,
+        CancellationToken cancellationToken)
+    {
+        var routeResult = await repository.GetByIdAsync(id, cancellationToken);
+        var geometryResult = await repository.GetGeometryAsync(id, cancellationToken);
+        if (routeResult.Value is null || geometryResult.Value is null)
+        {
+            if (routeResult.StatusCode == StatusCodes.Status404NotFound ||
+                geometryResult.StatusCode == StatusCodes.Status404NotFound)
+                return NotFound();
+
+            TempData["JeepneyRouteError"] = routeResult.ErrorMessage ?? geometryResult.ErrorMessage ?? "Unable to load the route for Valhalla preview.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        return View("Valhalla", new JeepneyRouteValhallaViewModel
+        {
+            Route = routeResult.Value,
+            Geometry = geometryResult.Value,
+            WaypointsText = waypointsText,
+            ErrorMessage = errorMessage,
+            SuccessMessage = successMessage
+        });
+    }
+
+    private static bool TryParseWaypoints(
+        string? text,
+        out List<AdminJeepneyRouteGeometryPointRequest> waypoints,
+        out string? error)
+    {
+        waypoints = [];
+        error = null;
+        var lines = (text ?? string.Empty)
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (lines.Length < 2)
+        {
+            error = "Paste at least two ordered latitude, longitude waypoint pairs.";
+            return false;
+        }
+
+        if (lines.Length > 100)
+        {
+            error = "Use at most 100 ordered waypoints. Paste selected route anchors, not every generated route point.";
+            return false;
+        }
+
+        for (var index = 0; index < lines.Length; index++)
+        {
+            var pieces = lines[index]
+                .Split([',', ';', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (pieces.Length != 2 ||
+                !double.TryParse(pieces[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var latitude) ||
+                !double.TryParse(pieces[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var longitude))
+            {
+                error = $"Waypoint line {index + 1} must contain exactly: latitude, longitude.";
+                waypoints = [];
+                return false;
+            }
+
+            if (!double.IsFinite(latitude) || latitude is < -90 or > 90 ||
+                !double.IsFinite(longitude) || longitude is < -180 or > 180)
+            {
+                error = $"Waypoint line {index + 1} contains an invalid latitude or longitude.";
+                waypoints = [];
+                return false;
+            }
+
+            waypoints.Add(new AdminJeepneyRouteGeometryPointRequest
+            {
+                Latitude = latitude,
+                Longitude = longitude
+            });
+        }
+
+        return true;
     }
 
     private static AdminJeepneyRouteRequest MapRequest(AdminJeepneyRoute route) => new()

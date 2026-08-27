@@ -73,6 +73,17 @@ public sealed class AdminJeepneyRouteGeometryPointRequest
     public double Longitude { get; set; }
 }
 
+public sealed class AdminJeepneyValhallaRequest
+{
+    public List<AdminJeepneyRouteGeometryPointRequest> Waypoints { get; set; } = [];
+}
+
+public sealed record AdminJeepneyValhallaPreview(
+    long RouteId,
+    IReadOnlyList<AdminJeepneyRouteGeometryPoint> Waypoints,
+    IReadOnlyList<AdminJeepneyRouteGeometryPoint> GeneratedPoints,
+    string EncodedPolyline);
+
 public sealed record AdminJeepneyRouteReadinessCheck(
     string Code,
     string Label,

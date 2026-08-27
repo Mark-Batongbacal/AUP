@@ -46,6 +46,30 @@ public sealed class AdminJeepneyRoutesController(
         return geometry is null ? NotFound() : Ok(geometry);
     }
 
+    [HttpPost("{routeId:long}/valhalla/preview")]
+    public async Task<ActionResult<AdminJeepneyValhallaPreviewResponse>> PreviewValhalla(
+        long routeId,
+        [FromBody] AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await managementService.PreviewValhallaAsync(routeId, request, cancellationToken);
+        return result.Succeeded && result.Preview is not null
+            ? Ok(result.Preview)
+            : Failure(result);
+    }
+
+    [HttpPost("{routeId:long}/valhalla/save")]
+    public async Task<ActionResult<AdminJeepneyRouteGeometryResponse>> SaveValhallaGeometry(
+        long routeId,
+        [FromBody] AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await managementService.SaveValhallaGeometryAsync(routeId, request, cancellationToken);
+        return result.Succeeded && result.Geometry is not null
+            ? Ok(result.Geometry)
+            : Failure(result);
+    }
+
     [HttpGet("{routeId:long}/publish-readiness")]
     public async Task<ActionResult<AdminJeepneyRoutePublishReadinessResponse>> GetPublishReadiness(
         long routeId,
@@ -117,6 +141,8 @@ public sealed class AdminJeepneyRoutesController(
             AdminJeepneyRouteMutationStatus.ActiveRouteLocked => Conflict(error),
             AdminJeepneyRouteMutationStatus.JeepneyModeNotFound =>
                 StatusCode(StatusCodes.Status503ServiceUnavailable, error),
+            AdminJeepneyRouteMutationStatus.UpstreamFailure =>
+                StatusCode(StatusCodes.Status502BadGateway, error),
             _ => BadRequest(error)
         };
     }
@@ -129,6 +155,22 @@ public sealed class AdminJeepneyRoutesController(
             AdminJeepneyRouteMutationStatus.NotFound => NotFound(error),
             AdminJeepneyRouteMutationStatus.Conflict => Conflict(error),
             AdminJeepneyRouteMutationStatus.ActiveRouteLocked => Conflict(error),
+            AdminJeepneyRouteMutationStatus.UpstreamFailure =>
+                StatusCode(StatusCodes.Status502BadGateway, error),
+            _ => BadRequest(error)
+        };
+    }
+
+    private ActionResult<AdminJeepneyValhallaPreviewResponse> Failure(AdminJeepneyValhallaPreviewResult result)
+    {
+        var error = new { errors = result.Errors };
+        return result.Status switch
+        {
+            AdminJeepneyRouteMutationStatus.NotFound => NotFound(error),
+            AdminJeepneyRouteMutationStatus.Conflict => Conflict(error),
+            AdminJeepneyRouteMutationStatus.ActiveRouteLocked => Conflict(error),
+            AdminJeepneyRouteMutationStatus.UpstreamFailure =>
+                StatusCode(StatusCodes.Status502BadGateway, error),
             _ => BadRequest(error)
         };
     }
