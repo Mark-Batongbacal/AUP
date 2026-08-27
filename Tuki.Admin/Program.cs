@@ -40,10 +40,22 @@ builder.Services.AddSession(options =>
 builder.Services.AddHttpClient(BackendApiClientNames.TukiBackend, (serviceProvider, client) =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-    var baseUrl = configuration["BackendApi:BaseUrl"];
+    var baseUrl = Environment.GetEnvironmentVariable("BACKEND_BASE_URL");
+
     if (string.IsNullOrWhiteSpace(baseUrl))
     {
-        throw new InvalidOperationException("BackendApi:BaseUrl is not configured.");
+        baseUrl = configuration["BackendApi:BaseUrl"];
+    }
+
+    if (string.IsNullOrWhiteSpace(baseUrl))
+    {
+        throw new InvalidOperationException(
+            "The TUKI backend URL is not configured. Set BACKEND_BASE_URL or BackendApi:BaseUrl.");
+    }
+
+    if (!baseUrl.EndsWith('/'))
+    {
+        baseUrl += "/";
     }
 
     client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
