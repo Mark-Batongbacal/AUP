@@ -35,9 +35,8 @@ import com.example.frontend.ui.theme.TukiTeal
 /**
  * Reusable motion states for the TUKI mascot.
  *
- * The current production asset is still a single transparent mascot image. The state API is kept
- * independent from the renderer so a future layered Rive mascot can replace this implementation
- * without forcing feature screens to change their behavior.
+ * Each onboarding mood now renders a distinct approved toucan pose instead of reusing the same
+ * static logo. The screen API stays stable so this can later be swapped for Rive state machines.
  */
 enum class TukiMascotMood {
     WELCOME,
@@ -57,23 +56,33 @@ fun TukiMascot(
     var entered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entered = true }
 
-    val infiniteTransition = rememberInfiniteTransition(label = "tuki_mascot_motion")
+    val infiniteTransition = rememberInfiniteTransition(label = "tuki_mascot_${mood.name}")
+
+    val drawable = when (mood) {
+        TukiMascotMood.WELCOME -> R.drawable.tuki_mascot_intro
+        TukiMascotMood.GUIDE -> R.drawable.tuki_mascot_guide
+        TukiMascotMood.ALERT -> R.drawable.tuki_mascot_alert
+        TukiMascotMood.THINKING -> R.drawable.tuki_mascot_guide
+        TukiMascotMood.CELEBRATE -> R.drawable.tuki_mascot_alert
+    }
 
     val floatDistance = when (mood) {
         TukiMascotMood.ALERT -> 3f
-        TukiMascotMood.CELEBRATE -> 7f
+        TukiMascotMood.CELEBRATE -> 8f
+        TukiMascotMood.THINKING -> 3.5f
         else -> 5f
     }
     val tiltDistance = when (mood) {
-        TukiMascotMood.THINKING -> 2.8f
-        TukiMascotMood.ALERT -> 1.2f
-        TukiMascotMood.CELEBRATE -> 3.5f
-        else -> 1.8f
+        TukiMascotMood.THINKING -> 3.4f
+        TukiMascotMood.ALERT -> 1.6f
+        TukiMascotMood.CELEBRATE -> 4.2f
+        TukiMascotMood.WELCOME -> 2.2f
+        TukiMascotMood.GUIDE -> 1.8f
     }
     val cycleDuration = when (mood) {
-        TukiMascotMood.ALERT -> 520
-        TukiMascotMood.CELEBRATE -> 760
-        TukiMascotMood.THINKING -> 1500
+        TukiMascotMood.ALERT -> 560
+        TukiMascotMood.CELEBRATE -> 720
+        TukiMascotMood.THINKING -> 1450
         else -> 1250
     }
 
@@ -95,22 +104,22 @@ fun TukiMascot(
         ),
         label = "tuki_tilt"
     )
-    val haloPulse by infiniteTransition.animateFloat(
-        initialValue = 0.92f,
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.985f,
         targetValue = when (mood) {
-            TukiMascotMood.ALERT -> 1.12f
             TukiMascotMood.CELEBRATE -> 1.08f
-            else -> 1.02f
+            TukiMascotMood.ALERT -> 1.035f
+            else -> 1.015f
         },
         animationSpec = infiniteRepeatable(
-            animation = tween(if (mood == TukiMascotMood.ALERT) 520 else 1200),
+            animation = tween(if (mood == TukiMascotMood.ALERT) 520 else 1100),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "tuki_halo"
+        label = "tuki_pulse"
     )
 
     val entryScale by animateFloatAsState(
-        targetValue = if (entered) 1f else 0.72f,
+        targetValue = if (entered) 1f else 0.76f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow
@@ -119,14 +128,14 @@ fun TukiMascot(
     )
     val entryAlpha by animateFloatAsState(
         targetValue = if (entered) 1f else 0f,
-        animationSpec = tween(420),
+        animationSpec = tween(360),
         label = "tuki_entry_alpha"
     )
 
     val haloColor = when (mood) {
         TukiMascotMood.ALERT -> TukiOrange
         TukiMascotMood.CELEBRATE -> TukiGold
-        TukiMascotMood.THINKING -> Color.White
+        TukiMascotMood.THINKING -> TukiTeal
         TukiMascotMood.WELCOME,
         TukiMascotMood.GUIDE -> TukiTeal
     }
@@ -141,25 +150,26 @@ fun TukiMascot(
                     .fillMaxSize()
                     .padding(8.dp)
                     .graphicsLayer {
-                        scaleX = haloPulse
-                        scaleY = haloPulse
-                        alpha = 0.16f * entryAlpha
+                        scaleX = pulse
+                        scaleY = pulse
+                        alpha = 0.14f * entryAlpha
                     }
                     .background(haloColor, CircleShape)
             )
         }
 
         Image(
-            painter = painterResource(R.drawable.tuki_logo),
+            painter = painterResource(drawable),
             contentDescription = contentDescription,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (showHalo) 10.dp else 0.dp)
+                .padding(if (showHalo) 8.dp else 0.dp)
                 .graphicsLayer {
                     translationY = floatY * density
                     rotationZ = tilt
-                    scaleX = entryScale
-                    scaleY = entryScale
+                    val direction = if (mood == TukiMascotMood.THINKING) -1f else 1f
+                    scaleX = direction * entryScale * pulse
+                    scaleY = entryScale * pulse
                     alpha = entryAlpha
                 },
             contentScale = ContentScale.Fit
