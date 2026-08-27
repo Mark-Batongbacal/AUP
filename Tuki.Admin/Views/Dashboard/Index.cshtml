@@ -26,7 +26,7 @@
     <article class="summary-card">
         <strong>Build</strong>
         <span>Jeepney routes</span>
-        <small>Draft, plot, test, and publish</small>
+        <small>Draft, edit geometry, verify, and publish</small>
     </article>
     <article class="summary-card">
         <strong>Monitor</strong>
@@ -54,15 +54,15 @@
     <article class="dashboard-card">
         <span class="card-kicker">ROUTE MANAGEMENT</span>
         <h2>Manage jeepney routes</h2>
-        <p>Create drafts, edit metadata, inspect geometry, verify routes, and publish when ready.</p>
+        <p>Create drafts, edit geometry, verify the saved path with Valhalla, and publish when ready.</p>
         <a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-outline-tuki">Manage routes</a>
     </article>
 
     <article class="dashboard-card">
-        <span class="card-kicker">ROUTE TESTING</span>
-        <h2>Test with Valhalla</h2>
-        <p>Open your route list and test draft geometry directly from the route workspace.</p>
-        <a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-outline-tuki">Open route workspace</a>
+        <span class="card-kicker">NEW ROUTE</span>
+        <h2>Create jeepney route</h2>
+        <p>Start a new route draft and continue through metadata, geometry verification, and publishing in one guided workflow.</p>
+        <a asp-controller="JeepneyRoutes" asp-action="Create" class="btn btn-outline-tuki">Create route draft</a>
     </article>
 </div>
 
@@ -71,7 +71,7 @@
         <div class="dashboard-section-title mt-0"><h2>Workflow overview</h2></div>
         <div class="activity-row"><span>Tricycle submissions</span><span>Review → verify → approve</span></div>
         <div class="activity-row"><span>Official tricycle points</span><span>Create → manage → archive</span></div>
-        <div class="activity-row"><span>Jeepney routes</span><span>Draft → plot/test → publish</span></div>
+        <div class="activity-row"><span>Jeepney routes</span><span>Draft → geometry & Valhalla verify → publish</span></div>
     </article>
     <article class="health-panel">
         <div class="dashboard-section-title mt-0"><h2>Workspace modules</h2></div>
