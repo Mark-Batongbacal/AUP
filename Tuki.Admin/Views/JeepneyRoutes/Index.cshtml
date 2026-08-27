@@ -10,10 +10,7 @@
         <h1>Route management</h1>
         <p>Create, verify, publish, archive, and restore jeepney route records without permanently deleting route data.</p>
     </div>
-    <div class="d-flex flex-wrap gap-2">
-        <a asp-controller="JeepneyRouteArchive" asp-action="Index" class="btn btn-outline-tuki">Archived routes</a>
-        <a asp-action="Create" class="btn btn-tuki">Create route draft</a>
-    </div>
+    <a asp-action="Create" class="btn btn-tuki">Create route draft</a>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
@@ -27,17 +24,21 @@
 
 <section data-paginated-list>
     <div class="d-flex flex-wrap gap-3 align-items-end justify-content-between mb-3">
-        <form method="get" class="d-flex flex-wrap gap-3 align-items-center">
-            <label class="d-flex gap-2 align-items-center">
-                <input type="checkbox" name="includeDrafts" value="true" @(Model.IncludeDrafts ? "checked" : null) /> Drafts
-                <input type="hidden" name="includeDrafts" value="false" />
-            </label>
-            <label class="d-flex gap-2 align-items-center">
-                <input type="checkbox" name="includeActive" value="true" @(Model.IncludeActive ? "checked" : null) /> Published
-                <input type="hidden" name="includeActive" value="false" />
-            </label>
-            <button type="submit" class="btn btn-outline-tuki">Apply filter</button>
-        </form>
+        <div class="btn-group" role="group" aria-label="Jeepney route status filters">
+            <a asp-controller="JeepneyRoutes"
+               asp-action="Index"
+               asp-route-includeActive="true"
+               asp-route-includeDrafts="false"
+               class="btn @(Model.Status == "published" ? "btn-tuki" : "btn-outline-secondary")">Published</a>
+            <a asp-controller="JeepneyRouteArchive"
+               asp-action="Index"
+               class="btn @(Model.Status == "archived" ? "btn-tuki" : "btn-outline-secondary")">Archived</a>
+            <a asp-controller="JeepneyRoutes"
+               asp-action="Index"
+               asp-route-includeActive="false"
+               asp-route-includeDrafts="true"
+               class="btn @(Model.Status == "draft" ? "btn-tuki" : "btn-outline-secondary")">Draft</a>
+        </div>
 
         <div style="min-width: min(100%, 320px);">
             <label for="jeepneyRouteSearch" class="form-label small text-muted mb-1">Search routes</label>
@@ -110,7 +111,7 @@
                 </tr>
             }
                 <tr data-list-empty hidden>
-                    <td colspan="6" class="text-center py-5 text-muted">No jeepney routes match the current search and filters.</td>
+                    <td colspan="6" class="text-center py-5 text-muted">No jeepney routes match the current search and filter.</td>
                 </tr>
             </tbody>
         </table>
