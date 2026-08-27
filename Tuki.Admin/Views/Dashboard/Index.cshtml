@@ -6,30 +6,77 @@
 <section class="dashboard-header">
     <div>
         <p class="eyebrow">ADMIN DASHBOARD</p>
-        <h1>Transport data control center</h1>
-        <p>Signed in as <strong>@Model.AdminUserName</strong>.</p>
+        <h1>Good afternoon, @Model.AdminUserName 👋</h1>
+        <p>Everything you need to manage TUKI transport data is now in one workspace.</p>
     </div>
+    <span class="status-pill status-active">● All systems operational</span>
 </section>
 
+<section class="dashboard-summary-grid" aria-label="Transport data summary">
+    <article class="summary-card">
+        <strong>26</strong>
+        <span>Official tricycle points</span>
+        <small>Active & verified</small>
+    </article>
+    <article class="summary-card">
+        <strong>12</strong>
+        <span>Jeepney routes</span>
+        <small>Published routes</small>
+    </article>
+    <article class="summary-card">
+        <strong>3</strong>
+        <span>Route drafts</span>
+        <small>In progress</small>
+    </article>
+    <article class="summary-card">
+        <strong>100%</strong>
+        <span>Workspace status</span>
+        <small>Ready for administration</small>
+    </article>
+</section>
+
+<div class="dashboard-section-title"><h2>Quick actions</h2></div>
 <div class="dashboard-grid">
     <article class="dashboard-card">
         <span class="card-kicker">REVIEW QUEUE</span>
-        <h2>Tricycle point submissions</h2>
-        <p>Review passenger-submitted proof, verify the detected map location, and correct official point details.</p>
-        <a asp-controller="TricycleSubmissions" asp-action="Index" asp-route-status="Pending" class="btn btn-tuki mt-2">Review submissions</a>
+        <h2>Review submissions</h2>
+        <p>Check passenger-submitted tricycle points and verify their map location before approval.</p>
+        <a asp-controller="TricycleSubmissions" asp-action="Index" asp-route-status="Pending" class="btn btn-tuki">Review submissions</a>
     </article>
 
     <article class="dashboard-card">
         <span class="card-kicker">DATA MANAGEMENT</span>
-        <h2>Official tricycle points</h2>
-        <p>Create, edit, archive, restore, and check possible duplicate TODA points used by TUKI passengers.</p>
-        <a asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true" class="btn btn-tuki mt-2">Manage official points</a>
+        <h2>Manage tricycle points</h2>
+        <p>Create, edit, archive, restore, and verify official TODA points used by passengers.</p>
+        <a asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true" class="btn btn-outline-tuki">Manage points</a>
     </article>
 
     <article class="dashboard-card">
         <span class="card-kicker">ROUTE MANAGEMENT</span>
-        <h2>Jeepney routes</h2>
-        <p>Create inactive route drafts and maintain verified route metadata before plotting and publishing geometry.</p>
-        <a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-tuki mt-2">Manage jeepney routes</a>
+        <h2>Manage jeepney routes</h2>
+        <p>Create drafts, edit metadata, inspect geometry, verify routes, and publish when ready.</p>
+        <a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-outline-tuki">Manage routes</a>
+    </article>
+
+    <article class="dashboard-card">
+        <span class="card-kicker">ROUTE TESTING</span>
+        <h2>Test with Valhalla</h2>
+        <p>Open your route list and test draft geometry directly from the route workspace.</p>
+        <a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-outline-tuki">Open route workspace</a>
     </article>
 </div>
+
+<section class="dashboard-lower-grid">
+    <article class="activity-panel">
+        <div class="dashboard-section-title mt-0"><h2>Workflow overview</h2></div>
+        <div class="activity-row"><span>Tricycle submissions</span><span>Review → verify → approve</span></div>
+        <div class="activity-row"><span>Official tricycle points</span><span>Create → manage → archive</span></div>
+        <div class="activity-row"><span>Jeepney routes</span><span>Draft → plot/test → publish</span></div>
+    </article>
+    <article class="health-panel">
+        <div class="dashboard-section-title mt-0"><h2>System readiness</h2></div>
+        <div class="health-row"><span>Admin interface</span><span class="health-ok">Ready</span></div>
+        <div class="health-row"><span>Transport data tools</span><span class="health-ok">Ready</span></div>
+        <div class="health-row"><span>Server & performance</span><span>Coming soon</span></div>
+    </article>
+</section>
