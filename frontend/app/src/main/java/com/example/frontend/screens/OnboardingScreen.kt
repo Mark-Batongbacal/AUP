@@ -43,6 +43,7 @@ import com.example.frontend.screens.onboarding.AskTukiPage
 import com.example.frontend.screens.onboarding.ParaPoPage
 import com.example.frontend.screens.onboarding.RouteChoicePage
 import com.example.frontend.screens.onboarding.StepByStepPage
+import com.example.frontend.screens.onboarding.TukiFlightIntro
 import com.example.frontend.ui.motion.TukiMascot
 import com.example.frontend.ui.motion.TukiMascotMood
 import com.example.frontend.ui.theme.TukiCream
@@ -60,16 +61,26 @@ fun OnboardingScreen(
 ) {
     val pagerState = rememberPagerState(pageCount = { ONBOARDING_PAGE_COUNT })
     val coroutineScope = rememberCoroutineScope()
+    var introVisible by remember { mutableStateOf(true) }
+    var onboardingRevealed by remember { mutableStateOf(false) }
     var isFinishing by remember { mutableStateOf(false) }
 
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (isFinishing) 0f else 1f,
-        animationSpec = tween(260),
+    val onboardingAlpha by animateFloatAsState(
+        targetValue = when {
+            isFinishing -> 0f
+            onboardingRevealed -> 1f
+            else -> 0f
+        },
+        animationSpec = tween(if (onboardingRevealed) 420 else 260),
         label = "onboarding_content_alpha"
     )
-    val contentScale by animateFloatAsState(
-        targetValue = if (isFinishing) 0.985f else 1f,
-        animationSpec = tween(300),
+    val onboardingScale by animateFloatAsState(
+        targetValue = when {
+            isFinishing -> 0.985f
+            onboardingRevealed -> 1f
+            else -> 1.015f
+        },
+        animationSpec = tween(360),
         label = "onboarding_content_scale"
     )
     val handoffAlpha by animateFloatAsState(
@@ -98,14 +109,14 @@ fun OnboardingScreen(
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .graphicsLayer {
-                    alpha = contentAlpha
-                    scaleX = contentScale
-                    scaleY = contentScale
+                    alpha = onboardingAlpha
+                    scaleX = onboardingScale
+                    scaleY = onboardingScale
                 }
         ) {
             OnboardingHeader(
                 currentPage = pagerState.currentPage,
-                enabled = !isFinishing,
+                enabled = onboardingRevealed && !isFinishing,
                 onSkip = ::finishOnboarding
             )
 
@@ -114,10 +125,10 @@ fun OnboardingScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                userScrollEnabled = !isFinishing,
+                userScrollEnabled = onboardingRevealed && !isFinishing,
                 beyondViewportPageCount = 1
             ) { page ->
-                val active = pagerState.currentPage == page
+                val active = onboardingRevealed && pagerState.currentPage == page
                 when (page) {
                     0 -> RouteChoicePage(active = active)
                     1 -> StepByStepPage(active = active)
@@ -128,7 +139,7 @@ fun OnboardingScreen(
 
             OnboardingControls(
                 currentPage = pagerState.currentPage,
-                enabled = !isFinishing,
+                enabled = onboardingRevealed && !isFinishing,
                 onBack = {
                     if (pagerState.currentPage > 0) {
                         coroutineScope.launch {
@@ -144,6 +155,18 @@ fun OnboardingScreen(
                             pagerState.animateScrollToPage(pagerState.currentPage + 1)
                         }
                     }
+                }
+            )
+        }
+
+        if (introVisible) {
+            TukiFlightIntro(
+                onHandoffStarted = {
+                    onboardingRevealed = true
+                },
+                onFinished = {
+                    onboardingRevealed = true
+                    introVisible = false
                 }
             )
         }
