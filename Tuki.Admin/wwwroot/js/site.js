@@ -1,74 +1,9 @@
 // Shared TUKI Admin interactions.
 (() => {
-    const isValhallaLink = (link) => {
-        if (!link || !link.href) return false;
-        try {
-            const url = new URL(link.href, window.location.origin);
-            return url.pathname.toLowerCase().includes('/jeepneyroutes/valhalla');
-        } catch {
-            return false;
-        }
-    };
-
-    const createToolModal = () => {
-        const modal = document.createElement('div');
-        modal.className = 'tool-modal';
-        modal.setAttribute('aria-hidden', 'true');
-        modal.innerHTML = `
-            <div class="tool-modal-backdrop" data-tool-close></div>
-            <section class="tool-modal-dialog" role="dialog" aria-modal="true" aria-label="Valhalla route tester">
-                <header class="tool-modal-header">
-                    <div>
-                        <span class="card-kicker">INTEGRATED ROUTE TOOL</span>
-                        <strong>Valhalla route tester</strong>
-                        <small>Generate, compare, and save without leaving your current route workspace.</small>
-                    </div>
-                    <button type="button" class="tool-modal-close" data-tool-close aria-label="Close route tester">×</button>
-                </header>
-                <iframe class="tool-modal-frame" title="Valhalla route tester"></iframe>
-            </section>`;
-        document.body.appendChild(modal);
-        modal.querySelectorAll('[data-tool-close]').forEach((button) => button.addEventListener('click', () => closeToolModal(modal)));
-        return modal;
-    };
-
-    const closeToolModal = (modal) => {
-        modal.classList.remove('open');
-        modal.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('tool-modal-open');
-        window.setTimeout(() => {
-            const frame = modal.querySelector('.tool-modal-frame');
-            if (frame) frame.src = 'about:blank';
-        }, 180);
-    };
-
-    const openToolModal = (href) => {
-        const modal = document.querySelector('.tool-modal') || createToolModal();
-        const frame = modal.querySelector('.tool-modal-frame');
-        frame.src = href;
-        modal.classList.add('open');
-        modal.setAttribute('aria-hidden', 'false');
-        document.body.classList.add('tool-modal-open');
-    };
-
-    const geometryHasUnsavedChanges = () => {
-        const status = document.getElementById('route-editor-status');
-        return Boolean(status?.textContent?.toLowerCase().includes('unsaved'));
-    };
-
-    const confirmValhallaOpen = () => {
-        if (!geometryHasUnsavedChanges()) return true;
-        return window.confirm(
-            'You have unsaved geometry changes. Valhalla compares against the last saved route geometry, so the tester will not include these unsaved edits yet.\n\nOpen Valhalla anyway?'
-        );
-    };
-
     const findRouteActionSource = () => {
         const selectors = [
             '#route-geometry-form',
-            '#valhalla-form',
             'a[href*="/JeepneyRoutes/Plot"]',
-            'a[href*="/JeepneyRoutes/Valhalla"]',
             'a[href*="/JeepneyRoutes/Edit"]'
         ];
 
@@ -87,7 +22,7 @@
         try {
             const url = new URL(source, window.location.origin);
             const replaced = url.pathname.replace(
-                /\/JeepneyRoutes\/(?:Create|Edit|Plot|Valhalla|ValhallaPreview|SaveValhalla|Publish)(?=\/|$)/i,
+                /\/JeepneyRoutes\/(?:Create|Edit|Plot|Valhalla|ValhallaPreview|SaveValhalla|VerifySavedGeometry|Publish)(?=\/|$)/i,
                 `/JeepneyRoutes/${action}`
             );
             if (replaced === url.pathname) return null;
@@ -111,127 +46,261 @@
     const enhanceRouteWorkflow = () => {
         const path = window.location.pathname.toLowerCase();
         if (!path.includes('/jeepneyroutes/')) return;
+        if (path.includes('/valhalla')) return; // Legacy advanced page: no longer part of the primary flow.
         if (document.querySelector('.route-workflow')) return;
 
         const header = document.querySelector('.review-detail-header');
         if (!header) return;
 
-        let current = 'details';
-        if (path.includes('/plot')) current = 'geometry';
-        else if (path.includes('/valhalla')) current = 'valhalla';
-
+        const current = path.includes('/plot') ? 'geometry' : 'details';
         const detailsUrl = routeActionUrl('Edit');
         const geometryUrl = routeActionUrl('Plot');
-        const valhallaUrl = routeActionUrl('Valhalla');
-        const canContinue = Boolean(detailsUrl || geometryUrl || valhallaUrl);
+        const canContinue = Boolean(detailsUrl || geometryUrl);
 
         const workflow = document.createElement('nav');
-        workflow.className = 'route-workflow';
+        workflow.className = 'route-workflow route-workflow-three';
         workflow.setAttribute('aria-label', 'Jeepney route setup workflow');
         workflow.append(
             createWorkflowStep('1', 'Route details', current === 'details' ? null : detailsUrl, current === 'details' ? 'current' : 'complete'),
-            createWorkflowStep('2', 'Geometry', current === 'geometry' ? null : (canContinue ? geometryUrl : null), current === 'geometry' ? 'current' : ''),
-            createWorkflowStep('3', 'Test with Valhalla', current === 'valhalla' ? null : (canContinue ? valhallaUrl : null), current === 'valhalla' ? 'current' : ''),
-            createWorkflowStep('4', 'Publish readiness', canContinue ? detailsUrl : null, '')
+            createWorkflowStep('2', 'Geometry & Valhalla verify', current === 'geometry' ? null : (canContinue ? geometryUrl : null), current === 'geometry' ? 'current' : ''),
+            createWorkflowStep('3', 'Publish readiness', canContinue ? detailsUrl : null, '')
         );
 
         header.insertAdjacentElement('afterend', workflow);
     };
 
-    const makeValhallaButton = (href, label, className) => {
-        const link = document.createElement('a');
-        link.href = href;
-        link.className = className;
-        link.innerHTML = `<span aria-hidden="true">⚡</span> ${label}`;
-        return link;
+    const geometryHasUnsavedChanges = () => {
+        const status = document.getElementById('route-editor-status');
+        return Boolean(status?.textContent?.toLowerCase().includes('unsaved'));
     };
 
-    const enhanceGeometryEditor = () => {
-        const map = document.getElementById('jeepney-route-map');
-        if (!map) return;
+    const readDisplayedRoutePoints = () => {
+        const rows = Array.from(document.querySelectorAll('#route-point-list .route-point-row'));
+        const result = [];
 
-        const valhallaUrl = routeActionUrl('Valhalla');
-        const editable = Boolean(document.getElementById('save-route-geometry'));
-        if (!valhallaUrl || !editable) return;
+        rows.forEach((row) => {
+            const numberInputs = row.querySelectorAll('input[type="number"]');
+            if (numberInputs.length >= 2) {
+                const latitude = Number.parseFloat(numberInputs[0].value);
+                const longitude = Number.parseFloat(numberInputs[1].value);
+                if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+                    result.push({ latitude, longitude });
+                }
+                return;
+            }
 
-        const header = document.querySelector('.review-detail-header');
-        const headerActions = header?.querySelector(':scope > div:last-child');
-        if (headerActions && !headerActions.querySelector('.route-valhalla-header')) {
-            headerActions.appendChild(
-                makeValhallaButton(valhallaUrl, 'Test with Valhalla', 'btn btn-tuki route-valhalla-header')
-            );
-        }
+            const text = row.querySelector('.small.text-muted')?.textContent || '';
+            const match = text.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+            if (match) {
+                const latitude = Number.parseFloat(match[1]);
+                const longitude = Number.parseFloat(match[2]);
+                if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+                    result.push({ latitude, longitude });
+                }
+            }
+        });
 
-        const fitButton = document.getElementById('fit-route-points');
-        const mapToolbar = fitButton?.parentElement;
-        if (mapToolbar && !mapToolbar.querySelector('.route-valhalla-toolbar')) {
-            mapToolbar.appendChild(
-                makeValhallaButton(valhallaUrl, 'Test route with Valhalla', 'btn btn-outline-tuki route-valhalla-toolbar')
-            );
-        }
+        return result;
+    };
 
+    const enhanceGeometryVerification = () => {
+        const mapNode = document.getElementById('jeepney-route-map');
         const geometryForm = document.getElementById('route-geometry-form');
-        if (geometryForm && !geometryForm.querySelector('.route-geometry-next')) {
-            const next = document.createElement('div');
-            next.className = 'route-geometry-next';
-            next.innerHTML = `
+        if (!mapNode || !geometryForm) return;
+        if (document.getElementById('valhalla-verification-panel')) return;
+
+        const verifyUrl = routeActionUrl('VerifySavedGeometry');
+        if (!verifyUrl) return;
+
+        const savedCount = readDisplayedRoutePoints().length;
+        const panel = document.createElement('section');
+        panel.id = 'valhalla-verification-panel';
+        panel.className = 'review-panel mt-3 valhalla-verify-panel';
+        panel.innerHTML = `
+            <div class="panel-heading valhalla-verify-heading">
                 <div>
-                    <strong>Next: verify the road-following route</strong>
-                    <span>Save your geometry, then compare selected waypoint anchors with Valhalla before publishing.</span>
-                </div>`;
-            next.appendChild(
-                makeValhallaButton(valhallaUrl, 'Open Valhalla tester', 'btn btn-outline-tuki')
-            );
-            geometryForm.appendChild(next);
-        }
+                    <span class="card-kicker">VALHALLA VERIFICATION</span>
+                    <h2>Compare saved geometry with the road-following route</h2>
+                    <p>No copy-paste is needed. TUKI uses the geometry you already saved, samples it to a Valhalla-safe set of anchors, and overlays the generated road route for visual checking.</p>
+                </div>
+                <button id="verify-saved-geometry" type="button" class="btn btn-tuki" ${savedCount < 2 ? 'disabled' : ''}>
+                    Verify saved route with Valhalla
+                </button>
+            </div>
+
+            <div class="valhalla-verify-note">
+                <strong>Saved geometry is the source of truth.</strong>
+                <span>If you change any route point above, save the geometry first. Verification intentionally checks only what is already stored in the backend.</span>
+            </div>
+
+            <div id="valhalla-verify-status" class="review-alert d-none mt-3" role="status"></div>
+
+            <div id="valhalla-comparison-workspace" class="valhalla-comparison-workspace d-none">
+                <div>
+                    <div id="valhalla-comparison-map" class="review-map valhalla-comparison-map"></div>
+                    <div class="valhalla-map-legend" aria-label="Map comparison legend">
+                        <span><i class="legend-line legend-saved"></i> Saved TUKI geometry</span>
+                        <span><i class="legend-line legend-generated"></i> Valhalla generated route</span>
+                    </div>
+                </div>
+                <aside class="valhalla-verify-summary">
+                    <span class="card-kicker">COMPARISON SUMMARY</span>
+                    <div class="verify-stat"><span>Saved route points</span><strong id="verify-saved-count">—</strong></div>
+                    <div class="verify-stat"><span>Anchors sent to Valhalla</span><strong id="verify-anchor-count">—</strong></div>
+                    <div class="verify-stat"><span>Valhalla route points</span><strong id="verify-generated-count">—</strong></div>
+                    <div class="verify-guidance">
+                        <strong>What to check</strong>
+                        <span>The two lines should follow the same streets, turns, and travel direction. If Valhalla takes a different road, refine/save the geometry and verify again.</span>
+                    </div>
+                    <button id="verify-again" type="button" class="btn btn-outline-tuki">Run verification again</button>
+                </aside>
+            </div>`;
+
+        geometryForm.closest('.review-panel')?.insertAdjacentElement('beforebegin', panel);
+
+        const verifyButton = panel.querySelector('#verify-saved-geometry');
+        const verifyAgain = panel.querySelector('#verify-again');
+        const status = panel.querySelector('#valhalla-verify-status');
+        const workspace = panel.querySelector('#valhalla-comparison-workspace');
+        const comparisonMapNode = panel.querySelector('#valhalla-comparison-map');
+        let comparisonMap = null;
+        let savedLine = null;
+        let generatedLine = null;
+        let anchorMarkers = [];
+
+        const setStatus = (message, isError) => {
+            status.textContent = message;
+            status.className = `review-alert ${isError ? 'review-alert-error' : 'review-alert-success'} mt-3`;
+            status.classList.remove('d-none');
+        };
+
+        const ensureComparisonMap = () => {
+            if (comparisonMap || typeof L === 'undefined' || !comparisonMapNode) return comparisonMap;
+            comparisonMap = L.map(comparisonMapNode).setView([15.145, 120.588], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(comparisonMap);
+            return comparisonMap;
+        };
+
+        const clearComparison = () => {
+            if (savedLine) { savedLine.remove(); savedLine = null; }
+            if (generatedLine) { generatedLine.remove(); generatedLine = null; }
+            anchorMarkers.forEach((marker) => marker.remove());
+            anchorMarkers = [];
+        };
+
+        const renderComparison = (payload) => {
+            const preview = payload.preview ?? payload.Preview ?? {};
+            const generated = preview.generatedPoints ?? preview.GeneratedPoints ?? [];
+            const anchors = preview.waypoints ?? preview.Waypoints ?? [];
+            const saved = readDisplayedRoutePoints();
+
+            workspace.classList.remove('d-none');
+            const map = ensureComparisonMap();
+            if (!map) {
+                setStatus('Valhalla generated a route, but the comparison map could not be initialized.', true);
+                return;
+            }
+
+            window.requestAnimationFrame(() => map.invalidateSize());
+            window.setTimeout(() => map.invalidateSize(), 80);
+            clearComparison();
+
+            if (saved.length >= 2) {
+                savedLine = L.polyline(
+                    saved.map((point) => [point.latitude, point.longitude]),
+                    { weight: 6, opacity: .92, dashArray: '10 8', color: '#0d8b97' }
+                ).addTo(map);
+            }
+
+            if (generated.length >= 2) {
+                generatedLine = L.polyline(
+                    generated.map((point) => [
+                        Number(point.latitude ?? point.Latitude),
+                        Number(point.longitude ?? point.Longitude)
+                    ]),
+                    { weight: 5, opacity: .9, color: '#f48b1f' }
+                ).addTo(map);
+            }
+
+            anchors.forEach((point, index) => {
+                const latitude = Number(point.latitude ?? point.Latitude);
+                const longitude = Number(point.longitude ?? point.Longitude);
+                if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+                const marker = L.circleMarker([latitude, longitude], {
+                    radius: 4,
+                    weight: 1,
+                    fillOpacity: .85,
+                    color: '#0a5b48',
+                    fillColor: '#fabf3a'
+                }).addTo(map);
+                marker.bindTooltip(`Verification anchor ${index + 1}`);
+                anchorMarkers.push(marker);
+            });
+
+            const layers = [savedLine, generatedLine].filter(Boolean);
+            if (layers.length) {
+                const group = L.featureGroup(layers);
+                map.fitBounds(group.getBounds(), { padding: [32, 32] });
+            }
+
+            panel.querySelector('#verify-saved-count').textContent = String(payload.savedPointCount ?? payload.SavedPointCount ?? saved.length);
+            panel.querySelector('#verify-anchor-count').textContent = String(payload.sampledWaypointCount ?? payload.SampledWaypointCount ?? anchors.length);
+            panel.querySelector('#verify-generated-count').textContent = String(generated.length);
+
+            setStatus('Valhalla comparison generated. Visually confirm that the saved TUKI route and Valhalla road route follow the same jeepney path.', false);
+        };
+
+        const runVerification = async () => {
+            if (geometryHasUnsavedChanges()) {
+                setStatus('Save your geometry changes first. Verification only checks the route that is already stored in the backend.', true);
+                document.getElementById('save-route-geometry')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+
+            const points = readDisplayedRoutePoints();
+            if (points.length < 2) {
+                setStatus('Save at least two route points before verifying with Valhalla.', true);
+                return;
+            }
+
+            const token = geometryForm.querySelector('input[name="__RequestVerificationToken"]')?.value;
+            verifyButton.disabled = true;
+            if (verifyAgain) verifyAgain.disabled = true;
+            verifyButton.textContent = 'Verifying…';
+            status.classList.add('d-none');
+
+            try {
+                const body = new URLSearchParams();
+                if (token) body.set('__RequestVerificationToken', token);
+                const response = await fetch(verifyUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                    body
+                });
+                const payload = await response.json().catch(() => null);
+                if (!response.ok) {
+                    setStatus(payload?.error || 'Unable to verify this saved route with Valhalla.', true);
+                    return;
+                }
+                renderComparison(payload);
+            } catch (error) {
+                console.error('Saved geometry Valhalla verification failed.', error);
+                setStatus('Unable to reach the Valhalla verification workflow. Confirm the backend and Valhalla service are running, then try again.', true);
+            } finally {
+                verifyButton.disabled = false;
+                if (verifyAgain) verifyAgain.disabled = false;
+                verifyButton.textContent = 'Verify saved route with Valhalla';
+            }
+        };
+
+        verifyButton?.addEventListener('click', runVerification);
+        verifyAgain?.addEventListener('click', runVerification);
     };
-
-    const enhanceValhallaPage = () => {
-        const form = document.getElementById('valhalla-form');
-        if (!form) return;
-        const geometryUrl = routeActionUrl('Plot');
-        if (!geometryUrl) return;
-
-        const header = document.querySelector('.review-detail-header');
-        if (!header || header.querySelector('.route-geometry-return')) return;
-
-        const actions = header.querySelector(':scope > span:last-child')?.parentElement === header
-            ? null
-            : header.querySelector(':scope > div:last-child');
-
-        const link = document.createElement('a');
-        link.href = geometryUrl;
-        link.className = 'btn btn-outline-tuki route-geometry-return';
-        link.textContent = 'Back to geometry editor';
-
-        if (actions && actions !== header.firstElementChild) {
-            actions.appendChild(link);
-        } else {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'd-flex gap-2 flex-wrap align-items-center';
-            const status = header.querySelector(':scope > .status-pill');
-            if (status) wrapper.appendChild(status);
-            wrapper.appendChild(link);
-            header.appendChild(wrapper);
-        }
-    };
-
-    document.addEventListener('click', (event) => {
-        const link = event.target.closest('a');
-        if (!isValhallaLink(link)) return;
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || link.target === '_blank') return;
-        event.preventDefault();
-        if (!confirmValhallaOpen()) return;
-        openToolModal(link.href);
-    });
-
-    document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') return;
-        const modal = document.querySelector('.tool-modal.open');
-        if (modal) closeToolModal(modal);
-    });
 
     enhanceRouteWorkflow();
-    enhanceGeometryEditor();
-    enhanceValhallaPage();
+    enhanceGeometryVerification();
 })();
