@@ -1,3 +1,5 @@
+@using Tuki.Admin.Repositories.TricycleSubmissions
+@inject IAdminTricycleSubmissionRepository SubmissionRepository
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,27 +15,53 @@
     <link rel="stylesheet" href="~/css/admin-branding.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/tricycle-review.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/server-performance.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/admin-navigation.css" asp-append-version="true" />
 </head>
 <body>
 @{
     var controller = ViewContext.RouteData.Values["controller"]?.ToString() ?? string.Empty;
+    int? pendingReviewCount = null;
+
+    if (User.Identity?.IsAuthenticated == true)
+    {
+        try
+        {
+            var pendingResult = await SubmissionRepository.GetPageAsync("Pending", 1, 1);
+            if (pendingResult.Succeeded && pendingResult.Value is not null)
+            {
+                pendingReviewCount = pendingResult.Value.TotalCount;
+            }
+        }
+        catch
+        {
+            // Navigation remains usable if the backend is temporarily unavailable.
+        }
+    }
 }
 @if (User.Identity?.IsAuthenticated == true)
 {
     <div class="admin-app-shell">
-        <aside class="admin-sidebar" id="adminSidebar">
+        <aside class="admin-sidebar" id="adminSidebar" aria-label="Admin navigation">
             <div class="sidebar-brand-wrap">
                 <a class="admin-brand" asp-controller="Dashboard" asp-action="Index" aria-label="TUKI Admin dashboard">
                     <img class="admin-brand-logo" src="~/images/tuki_logo.png" alt="" />
                     <span class="brand-copy"><strong>TUKI</strong><small>Admin</small></span>
                 </a>
-                <button class="sidebar-close" type="button" data-sidebar-close aria-label="Close navigation">×</button>
+                <button class="sidebar-close" type="button" data-sidebar-close aria-label="Hide navigation">×</button>
             </div>
 
-            <nav class="sidebar-nav" aria-label="Admin navigation">
+            <nav class="sidebar-nav" aria-label="Admin navigation links">
                 <span class="sidebar-label">Workspace</span>
                 <a class="sidebar-link @(controller == "Dashboard" ? "active" : "")" asp-controller="Dashboard" asp-action="Index"><span class="nav-icon">⌂</span><span>Dashboard</span></a>
-                <a class="sidebar-link @((controller == "TricyclePoints" || controller == "TricycleSubmissions") ? "active" : "")" asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true"><span class="nav-icon">●</span><span>Tricycle points</span></a>
+                <a class="sidebar-link @(controller == "TricycleSubmissions" ? "active" : "")" asp-controller="TricycleSubmissions" asp-action="Index" asp-route-status="Pending">
+                    <span class="nav-icon">✓</span>
+                    <span>Review submissions</span>
+                    @if (pendingReviewCount.HasValue)
+                    {
+                        <span class="sidebar-count-badge" aria-label="@pendingReviewCount pending submissions">@pendingReviewCount</span>
+                    }
+                </a>
+                <a class="sidebar-link @(controller == "TricyclePoints" ? "active" : "")" asp-controller="TricyclePoints" asp-action="Index" asp-route-status="Active"><span class="nav-icon">●</span><span>Tricycle points</span></a>
                 <a class="sidebar-link @((controller == "JeepneyRoutes" || controller == "JeepneyRouteArchive") ? "active" : "")" asp-controller="JeepneyRoutes" asp-action="Index"><span class="nav-icon">▣</span><span>Jeepney routes</span></a>
 
                 <span class="sidebar-label sidebar-label-spaced">Tools</span>
@@ -56,7 +84,7 @@
             <header class="admin-header">
                 <div class="admin-header-inner">
                     <div class="mobile-brand-row">
-                        <button class="mobile-menu-button" type="button" data-sidebar-open aria-label="Open navigation">☰</button>
+                        <button class="mobile-menu-button" type="button" data-sidebar-open aria-label="Show navigation" aria-controls="adminSidebar" aria-expanded="false">☰</button>
                         <a class="admin-brand mobile-brand" asp-controller="Dashboard" asp-action="Index">
                             <img class="admin-brand-logo admin-brand-logo-mobile" src="~/images/tuki_logo.png" alt="" />
                             <span>TUKI Admin</span>
@@ -80,8 +108,35 @@ else
 <script>
 (() => {
     const body = document.body;
-    document.querySelectorAll('[data-sidebar-open]').forEach(btn => btn.addEventListener('click', () => body.classList.add('sidebar-open')));
-    document.querySelectorAll('[data-sidebar-close]').forEach(btn => btn.addEventListener('click', () => body.classList.remove('sidebar-open')));
+    const sidebar = document.getElementById('adminSidebar');
+    const openButtons = document.querySelectorAll('[data-sidebar-open]');
+    const closeButtons = document.querySelectorAll('[data-sidebar-close]');
+
+    const setSidebarOpen = (open) => {
+        body.classList.toggle('sidebar-open', open);
+        openButtons.forEach(button => button.setAttribute('aria-expanded', open ? 'true' : 'false'));
+        if (open && window.innerWidth <= 820) {
+            sidebar?.querySelector('a, button')?.focus({ preventScroll: true });
+        }
+    };
+
+    openButtons.forEach(button => button.addEventListener('click', () => setSidebarOpen(true)));
+    closeButtons.forEach(button => button.addEventListener('click', () => setSidebarOpen(false)));
+
+    sidebar?.querySelectorAll('a').forEach(link => link.addEventListener('click', () => {
+        if (window.innerWidth <= 820) setSidebarOpen(false);
+    }));
+
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && body.classList.contains('sidebar-open')) {
+            setSidebarOpen(false);
+            openButtons[0]?.focus();
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 820) setSidebarOpen(false);
+    });
 })();
 </script>
 @await RenderSectionAsync("Scripts", required: false)
