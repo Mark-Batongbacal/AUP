@@ -1,8 +1,11 @@
 package com.example.frontend.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,7 +48,6 @@ import com.example.frontend.ui.motion.TukiMascotMood
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiTeal
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -80,7 +82,7 @@ fun OnboardingScreen(
         if (isFinishing) return
         isFinishing = true
         coroutineScope.launch {
-            delay(390)
+            delay(420)
             onLetsRideClick()
         }
     }
@@ -172,31 +174,47 @@ private fun OnboardingHeader(
         ) {
             repeat(ONBOARDING_PAGE_COUNT) { index ->
                 val segmentWidth by animateDpAsState(
-                    targetValue = if (index <= currentPage) 34.dp else 22.dp,
+                    targetValue = if (index == currentPage) 38.dp else 24.dp,
                     animationSpec = tween(220),
                     label = "progress_segment_$index"
+                )
+                val segmentAlpha by animateFloatAsState(
+                    targetValue = when {
+                        index < currentPage -> 0.72f
+                        index == currentPage -> 1f
+                        else -> 0.14f
+                    },
+                    animationSpec = tween(220),
+                    label = "progress_segment_alpha_$index"
                 )
                 Box(
                     modifier = Modifier
                         .width(segmentWidth)
                         .height(5.dp)
+                        .graphicsLayer { alpha = segmentAlpha }
                         .background(
-                            color = if (index <= currentPage) TukiTeal else TukiInk.copy(alpha = 0.10f),
+                            color = TukiTeal,
                             shape = RoundedCornerShape(100.dp)
                         )
                 )
             }
         }
 
-        TextButton(
-            onClick = onSkip,
-            enabled = enabled
+        AnimatedVisibility(
+            visible = currentPage < ONBOARDING_PAGE_COUNT - 1,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(120))
         ) {
-            Text(
-                text = "Skip",
-                color = TukiMuted,
-                style = MaterialTheme.typography.labelLarge
-            )
+            TextButton(
+                onClick = onSkip,
+                enabled = enabled
+            ) {
+                Text(
+                    text = "Skip",
+                    color = TukiMuted,
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
         }
     }
 }
@@ -242,7 +260,7 @@ private fun OnboardingControls(
             )
         ) {
             Text(
-                text = if (currentPage == ONBOARDING_PAGE_COUNT - 1) "Let's Ride" else "Next",
+                text = if (currentPage == ONBOARDING_PAGE_COUNT - 1) "Let's Ride  →" else "Next  →",
                 style = MaterialTheme.typography.titleMedium
             )
         }
@@ -262,21 +280,22 @@ private fun LoginHandoffOverlay(alpha: Float) {
             TukiMascot(
                 mood = TukiMascotMood.CELEBRATE,
                 modifier = Modifier
-                    .size(150.dp)
+                    .size(176.dp)
                     .graphicsLayer {
-                        scaleX = 0.82f + (alpha * 0.18f)
+                        scaleX = 0.76f + (alpha * 0.24f)
                         scaleY = scaleX
                     },
                 showHalo = false
             )
             Spacer(modifier = Modifier.height(14.dp))
             Text(
-                text = "Ready when you are.",
+                text = "Ready to make every trip better?",
                 color = TukiInk,
                 style = MaterialTheme.typography.displaySmall
             )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Your smarter commute starts here.",
+                text = "Same guide. Greater journeys.",
                 color = TukiMuted,
                 style = MaterialTheme.typography.bodyMedium
             )
