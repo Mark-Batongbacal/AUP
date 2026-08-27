@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="~/css/admin-enhancements.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/admin-branding.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/tricycle-review.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/server-performance.css" asp-append-version="true" />
 </head>
 <body>
 @{
@@ -36,7 +37,7 @@
                 <a class="sidebar-link @(controller == "JeepneyRoutes" ? "active" : "")" asp-controller="JeepneyRoutes" asp-action="Index"><span class="nav-icon">▣</span><span>Jeepney routes</span></a>
 
                 <span class="sidebar-label sidebar-label-spaced">Tools</span>
-                <span class="sidebar-link sidebar-link-disabled" title="Reserved for the upcoming server dashboard"><span class="nav-icon">⌁</span><span>Server & performance</span><span class="coming-soon">Soon</span></span>
+                <a class="sidebar-link @(controller == "ServerPerformance" ? "active" : "")" asp-controller="ServerPerformance" asp-action="Index"><span class="nav-icon">⌁</span><span>Server & performance</span></a>
             </nav>
 
             <div class="sidebar-footer">

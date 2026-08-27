@@ -15,57 +15,18 @@
 </section>
 
 <section class="dashboard-summary-grid" aria-label="Admin workspace summary">
-    <article class="summary-card">
-        <strong>Review</strong>
-        <span>Passenger submissions</span>
-        <small>Verify location and submitted details</small>
-    </article>
-    <article class="summary-card">
-        <strong>Manage</strong>
-        <span>Official tricycle points</span>
-        <small>Create, edit, archive, and restore</small>
-    </article>
-    <article class="summary-card">
-        <strong>Build</strong>
-        <span>Jeepney routes</span>
-        <small>Draft, edit geometry, verify, and publish</small>
-    </article>
-    <article class="summary-card">
-        <strong>Monitor</strong>
-        <span>Server & performance</span>
-        <small>Workspace reserved for the next module</small>
-    </article>
+    <article class="summary-card"><strong>Review</strong><span>Passenger submissions</span><small>Verify location and submitted details</small></article>
+    <article class="summary-card"><strong>Manage</strong><span>Official tricycle points</span><small>Create, edit, archive, and restore</small></article>
+    <article class="summary-card"><strong>Build</strong><span>Jeepney routes</span><small>Draft, edit geometry, verify, and publish</small></article>
+    <article class="summary-card"><strong>Monitor</strong><span>Server & performance</span><small>Live health, API telemetry, and container metrics</small></article>
 </section>
 
 <div class="dashboard-section-title"><h2>Quick actions</h2></div>
 <div class="dashboard-grid">
-    <article class="dashboard-card">
-        <span class="card-kicker">REVIEW QUEUE</span>
-        <h2>Review submissions</h2>
-        <p>Check passenger-submitted tricycle points and verify their map location before approval.</p>
-        <a asp-controller="TricycleSubmissions" asp-action="Index" asp-route-status="Pending" class="btn btn-tuki">Review submissions</a>
-    </article>
-
-    <article class="dashboard-card">
-        <span class="card-kicker">DATA MANAGEMENT</span>
-        <h2>Manage tricycle points</h2>
-        <p>Create, edit, archive, restore, and verify official TODA points used by passengers.</p>
-        <a asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true" class="btn btn-outline-tuki">Manage points</a>
-    </article>
-
-    <article class="dashboard-card">
-        <span class="card-kicker">ROUTE MANAGEMENT</span>
-        <h2>Manage jeepney routes</h2>
-        <p>Create drafts, edit geometry, verify the saved path with Valhalla, and publish when ready.</p>
-        <a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-outline-tuki">Manage routes</a>
-    </article>
-
-    <article class="dashboard-card">
-        <span class="card-kicker">NEW ROUTE</span>
-        <h2>Create jeepney route</h2>
-        <p>Start a new route draft and continue through metadata, geometry verification, and publishing in one guided workflow.</p>
-        <a asp-controller="JeepneyRoutes" asp-action="Create" class="btn btn-outline-tuki">Create route draft</a>
-    </article>
+    <article class="dashboard-card"><span class="card-kicker">REVIEW QUEUE</span><h2>Review submissions</h2><p>Check passenger-submitted tricycle points and verify their map location before approval.</p><a asp-controller="TricycleSubmissions" asp-action="Index" asp-route-status="Pending" class="btn btn-tuki">Review submissions</a></article>
+    <article class="dashboard-card"><span class="card-kicker">DATA MANAGEMENT</span><h2>Manage tricycle points</h2><p>Create, edit, archive, restore, and verify official TODA points used by passengers.</p><a asp-controller="TricyclePoints" asp-action="Index" asp-route-includeArchived="true" class="btn btn-outline-tuki">Manage points</a></article>
+    <article class="dashboard-card"><span class="card-kicker">ROUTE MANAGEMENT</span><h2>Manage jeepney routes</h2><p>Create drafts, edit geometry, verify the saved path with Valhalla, and publish when ready.</p><a asp-controller="JeepneyRoutes" asp-action="Index" class="btn btn-outline-tuki">Manage routes</a></article>
+    <article class="dashboard-card"><span class="card-kicker">SYSTEM MONITORING</span><h2>Server & performance</h2><p>Watch backend, SQL Server, Valhalla, API response times, errors, and container-visible resources.</p><a asp-controller="ServerPerformance" asp-action="Index" class="btn btn-outline-tuki">Open monitoring</a></article>
 </div>
 
 <section class="dashboard-lower-grid">
@@ -79,6 +40,6 @@
         <div class="dashboard-section-title mt-0"><h2>Workspace modules</h2></div>
         <div class="health-row"><span>Admin interface</span><span class="health-ok">Available</span></div>
         <div class="health-row"><span>Transport data tools</span><span class="health-ok">Available</span></div>
-        <div class="health-row"><span>Server & performance</span><span>Coming soon</span></div>
+        <div class="health-row"><span>Server & performance</span><span class="health-ok">Available</span></div>
     </article>
 </section>

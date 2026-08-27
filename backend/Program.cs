@@ -52,6 +52,11 @@ builder.Services.AddHttpClient<IValhallaService, ValhallaService>(client =>
 {
     client.BaseAddress = valhallaUri;
 });
+builder.Services.AddHttpClient("ValhallaHealth", client =>
+{
+    client.BaseAddress = new Uri(valhallaUri.ToString().TrimEnd('/') + "/");
+    client.Timeout = TimeSpan.FromSeconds(4);
+});
 
 builder.Services.AddOptions<RoutingOptions>()
     .Bind(builder.Configuration.GetSection(RoutingOptions.SectionName))
@@ -165,6 +170,7 @@ builder.Services.AddScoped<IAssistantPlaceResolver, GoogleAssistantPlaceResolver
 builder.Services.AddScoped<ITukiAssistantService, TukiAssistantService>();
 builder.Services.AddScoped<IJourneyPlanPersistenceService, JourneyPlanPersistenceService>();
 builder.Services.AddSingleton<ITukiTelemetry, TukiTelemetry>();
+builder.Services.AddSingleton<SystemResourceMetricsSampler>();
 builder.Services.AddScoped<IRoutingService, TransferFallbackRoutingService>();
 builder.Services.AddScoped<IJourneyPlanningFacadeService, JourneyPlanningFacadeService>();
 builder.Services.AddSingleton<ITripSessionStateMachine, TripSessionStateMachine>();
@@ -231,11 +237,16 @@ app.Use(async (context, next) =>
     finally
     {
         stopwatch.Stop();
+        var elapsedMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
         var telemetry = context.RequestServices.GetRequiredService<ITukiTelemetry>();
         telemetry.RecordRequest(
             context.Request.Path,
             context.Response.StatusCode,
-            stopwatch.Elapsed.TotalMilliseconds);
+            elapsedMilliseconds);
+        TukiRequestMetricsStore.Record(
+            context.Request.Path,
+            context.Response.StatusCode,
+            elapsedMilliseconds);
     }
 });
 app.UseAuthentication();
