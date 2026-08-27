@@ -15,4 +15,5 @@ public sealed record TransportRouteAdminSummary(
     int WaypointCount,
     bool HasPolyline,
     DateTime CreatedAt,
-    DateTime? UpdatedAt);
+    DateTime? UpdatedAt,
+    DateTime? ArchivedAt);
