@@ -1,10 +1,12 @@
 @model Tuki.Admin.ViewModels.JeepneyRoutes.JeepneyRoutePlotViewModel
+@using System.Globalization
 @using System.Text.Json
 @{
-    ViewData["Title"] = Model.Geometry.Points.Count > 0
+    var orderedGeometryPoints = Model.Geometry.Points.OrderBy(point => point.PointOrder).ToArray();
+    ViewData["Title"] = orderedGeometryPoints.Length > 0
         ? $"Edit {Model.Route.RouteName}"
         : $"Plot {Model.Route.RouteName}";
-    var initialPointsJson = JsonSerializer.Serialize(Model.Geometry.Points.Select(point => new
+    var initialPointsJson = JsonSerializer.Serialize(orderedGeometryPoints.Select(point => new
     {
         latitude = point.Latitude,
         longitude = point.Longitude
@@ -12,11 +14,12 @@
 }
 
 @section Scripts {
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <link rel="stylesheet" href="~/lib/leaflet/leaflet.css" asp-append-version="true" />
+    <script src="~/lib/leaflet/leaflet.js" asp-append-version="true"></script>
     <script>
         (() => {
             const mapNode = document.getElementById('jeepney-route-map');
+            const mapError = document.getElementById('route-map-error');
             const pointsInput = document.getElementById('PointsJson');
             const pointList = document.getElementById('route-point-list');
             const pointCount = document.getElementById('route-point-count');
@@ -30,22 +33,20 @@
             const importText = document.getElementById('coordinate-import-text');
             const editorStatus = document.getElementById('route-editor-status');
             const geometryForm = document.getElementById('route-geometry-form');
-            if (!mapNode || !pointsInput || typeof L === 'undefined') return;
 
             const canEdit = @Model.CanEdit.ToString().ToLowerInvariant();
             const fallback = [15.145, 120.588];
             const savedPoints = @Html.Raw(initialPointsJson);
-            let points = savedPoints.map(point => ({ ...point }));
+            let points = savedPoints.map(point => ({
+                latitude: Number(point.latitude),
+                longitude: Number(point.longitude)
+            }));
             let markers = [];
             let routeLine = null;
             let dirty = false;
             let submitting = false;
-
-            const map = L.map(mapNode).setView(fallback, 13);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '&copy; OpenStreetMap contributors'
-            }).addTo(map);
+            let map = null;
+            let resizeObserver = null;
 
             const sameAsSaved = () => {
                 if (points.length !== savedPoints.length) return false;
@@ -64,14 +65,34 @@
             };
 
             const serialize = () => {
+                if (!pointsInput) return;
                 pointsInput.value = JSON.stringify(points.map(point => ({
                     latitude: point.latitude,
                     longitude: point.longitude
                 })));
             };
 
+            const formatCoordinate = value => Number.isFinite(value) ? value.toFixed(6) : '';
+
+            const setButtonState = () => {
+                if (saveButton) saveButton.disabled = !canEdit || points.length < 2 || !dirty;
+                if (undoButton) undoButton.disabled = !canEdit || points.length === 0;
+                if (clearButton) clearButton.disabled = !canEdit || points.length === 0;
+                if (restoreButton) restoreButton.disabled = !canEdit || !dirty;
+                if (fitButton) fitButton.disabled = !map || points.length === 0;
+            };
+
+            const showMapError = () => {
+                if (mapError) mapError.classList.remove('d-none');
+                setButtonState();
+            };
+
+            const hideMapError = () => {
+                if (mapError) mapError.classList.add('d-none');
+            };
+
             const fitRoute = () => {
-                if (points.length === 0) return;
+                if (!map || points.length === 0) return;
                 if (points.length === 1) {
                     map.setView([points[0].latitude, points[0].longitude], 18);
                     return;
@@ -82,6 +103,10 @@
             const focusPoint = (index) => {
                 const point = points[index];
                 if (!point) return;
+                if (!map) {
+                    pointList?.children[index]?.scrollIntoView({ block: 'nearest' });
+                    return;
+                }
                 map.setView([point.latitude, point.longitude], Math.max(map.getZoom(), 18));
                 markers[index]?.openTooltip();
             };
@@ -128,7 +153,7 @@
                 input.step = '0.000001';
                 input.inputMode = 'decimal';
                 input.className = 'form-control form-control-sm';
-                input.value = value.toFixed(6);
+                input.value = formatCoordinate(value);
                 input.setAttribute('aria-label', `Point ${index + 1} ${field}`);
                 input.addEventListener('change', () => updateCoordinate(index, field, input.value, input));
                 return input;
@@ -136,15 +161,22 @@
 
             const renderList = () => {
                 if (!pointList) return;
+                pointList.textContent = '';
+
                 if (points.length === 0) {
-                    pointList.innerHTML = '<div class="duplicate-clear">No route points yet. Click the map to add the first point.</div>';
+                    const empty = document.createElement('div');
+                    empty.className = 'duplicate-clear';
+                    empty.textContent = canEdit
+                        ? 'No route points yet. Click the map or import coordinates to add the first point.'
+                        : 'No saved route points.';
+                    pointList.appendChild(empty);
                     return;
                 }
 
-                pointList.innerHTML = '';
+                const fragment = document.createDocumentFragment();
                 points.forEach((point, index) => {
                     const row = document.createElement('div');
-                    row.className = 'border rounded-3 p-2 bg-body';
+                    row.className = 'border rounded-3 p-2 bg-body route-point-row';
 
                     const header = document.createElement('div');
                     header.className = 'd-flex justify-content-between align-items-center gap-2 mb-2';
@@ -156,6 +188,7 @@
                     jump.type = 'button';
                     jump.className = 'btn btn-sm btn-outline-secondary';
                     jump.textContent = 'Show';
+                    jump.disabled = !map;
                     jump.addEventListener('click', () => focusPoint(index));
                     header.appendChild(jump);
                     row.appendChild(header);
@@ -206,11 +239,11 @@
                     } else {
                         const coordinates = document.createElement('div');
                         coordinates.className = 'small text-muted';
-                        coordinates.textContent = `${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}`;
+                        coordinates.textContent = `${formatCoordinate(point.latitude)}, ${formatCoordinate(point.longitude)}`;
                         row.appendChild(coordinates);
                     }
 
-                    pointList.appendChild(row);
+                    fragment.appendChild(row);
 
                     if (canEdit && index < points.length - 1) {
                         const insertRow = document.createElement('div');
@@ -221,16 +254,18 @@
                         insert.textContent = `＋ Insert between ${index + 1} and ${index + 2}`;
                         insert.addEventListener('click', () => insertBetween(index));
                         insertRow.appendChild(insert);
-                        pointList.appendChild(insertRow);
+                        fragment.appendChild(insertRow);
                     }
                 });
+                pointList.appendChild(fragment);
             };
 
-            const render = () => {
-                markers.forEach(marker => map.removeLayer(marker));
+            const renderMap = () => {
+                if (!map || typeof L === 'undefined') return;
+                markers.forEach(marker => marker.remove());
                 markers = [];
                 if (routeLine) {
-                    map.removeLayer(routeLine);
+                    routeLine.remove();
                     routeLine = null;
                 }
 
@@ -253,16 +288,15 @@
                         { weight: 5, opacity: 0.85 }
                     ).addTo(map);
                 }
+            };
 
+            const render = () => {
+                renderMap();
                 serialize();
                 renderList();
                 updateDirtyState();
                 if (pointCount) pointCount.textContent = String(points.length);
-                if (saveButton) saveButton.disabled = !canEdit || points.length < 2 || !dirty;
-                if (undoButton) undoButton.disabled = !canEdit || points.length === 0;
-                if (clearButton) clearButton.disabled = !canEdit || points.length === 0;
-                if (restoreButton) restoreButton.disabled = !canEdit || !dirty;
-                if (fitButton) fitButton.disabled = points.length === 0;
+                setButtonState();
             };
 
             const parseImportedCoordinates = (text) => {
@@ -283,12 +317,43 @@
                 return parsed;
             };
 
-            if (canEdit) {
-                map.on('click', event => {
-                    points.push({ latitude: event.latlng.lat, longitude: event.latlng.lng });
-                    render();
-                });
-            }
+            const initializeMap = () => {
+                if (!mapNode || typeof L === 'undefined') {
+                    showMapError();
+                    return;
+                }
+
+                try {
+                    map = L.map(mapNode).setView(fallback, 13);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        maxZoom: 19,
+                        attribution: '&copy; OpenStreetMap contributors'
+                    }).addTo(map);
+
+                    if (canEdit) {
+                        map.on('click', event => {
+                            points.push({ latitude: event.latlng.lat, longitude: event.latlng.lng });
+                            render();
+                        });
+                    }
+
+                    hideMapError();
+                    window.requestAnimationFrame(() => map?.invalidateSize());
+                    window.setTimeout(() => map?.invalidateSize(), 100);
+                    if (typeof ResizeObserver !== 'undefined') {
+                        resizeObserver = new ResizeObserver(() => map?.invalidateSize());
+                        resizeObserver.observe(mapNode);
+                    }
+                } catch (error) {
+                    console.error('Unable to initialize the jeepney route map.', error);
+                    if (resizeObserver) {
+                        resizeObserver.disconnect();
+                        resizeObserver = null;
+                    }
+                    map = null;
+                    showMapError();
+                }
+            };
 
             if (undoButton) undoButton.addEventListener('click', () => {
                 if (points.length > 0) {
@@ -315,7 +380,7 @@
                     points = importMode?.value === 'append' ? [...points, ...imported] : imported;
                     importText.classList.remove('is-invalid');
                     render();
-                    fitRoute();
+                    if (map) fitRoute();
                 } catch (error) {
                     importText.classList.add('is-invalid');
                     alert(error.message || 'Unable to import coordinates.');
@@ -323,6 +388,7 @@
             });
             if (fitButton) fitButton.addEventListener('click', fitRoute);
             if (geometryForm) geometryForm.addEventListener('submit', () => {
+                serialize();
                 submitting = true;
             });
             window.addEventListener('beforeunload', event => {
@@ -332,11 +398,9 @@
             });
 
             render();
+            initializeMap();
+            render();
             if (points.length > 0) fitRoute();
-            window.requestAnimationFrame(() => map.invalidateSize());
-            if (typeof ResizeObserver !== 'undefined') {
-                new ResizeObserver(() => map.invalidateSize()).observe(mapNode);
-            }
         })();
     </script>
 }
@@ -344,7 +408,7 @@
 <div class="review-detail-header">
     <div>
         <a asp-action="Edit" asp-route-id="@Model.Route.RouteId" class="review-back-link">← Back to route details</a>
-        <p class="eyebrow">JEEPNEY ROUTE @(Model.Geometry.Points.Count > 0 ? "EDITOR" : "PLOTTER")</p>
+        <p class="eyebrow">JEEPNEY ROUTE @(orderedGeometryPoints.Length > 0 ? "EDITOR" : "PLOTTER")</p>
         <h1>@Model.Route.RouteName</h1>
         <p>@Model.Route.OriginName → @Model.Route.DestinationName · <code>@Model.Route.RouteCode</code></p>
     </div>
@@ -383,11 +447,14 @@ else
         <div class="panel-heading">
             <div>
                 <span class="card-kicker">MAP</span>
-                <h2>@(Model.Geometry.Points.Count > 0 ? "Edit route geometry" : "Plot route geometry")</h2>
+                <h2>@(orderedGeometryPoints.Length > 0 ? "Edit route geometry" : "Plot route geometry")</h2>
                 <p>The line follows the exact point order shown in the editor.</p>
             </div>
         </div>
         <div id="jeepney-route-map" class="review-map" style="min-height: 560px;"></div>
+        <div id="route-map-error" class="review-alert review-alert-error mt-3 d-none" role="alert">
+            The map could not be loaded. The saved route geometry is still available below.
+        </div>
         <div class="d-flex gap-2 flex-wrap mt-3">
             <button id="fit-route-points" type="button" class="btn btn-outline-secondary">Fit route</button>
             @if (Model.CanEdit)
@@ -403,11 +470,32 @@ else
         <div class="panel-heading">
             <div>
                 <span class="card-kicker">ORDERED GEOMETRY</span>
-                <h2><span id="route-point-count">@Model.Geometry.Points.Count</span> route points</h2>
+                <h2><span id="route-point-count">@orderedGeometryPoints.Length</span> route points</h2>
                 <p>Edit exact coordinates or change the order. Point 1 is the route start.</p>
             </div>
         </div>
-        <div id="route-point-list" class="d-grid gap-2"></div>
+        <div id="route-point-list" class="d-grid gap-2">
+            @if (orderedGeometryPoints.Length == 0)
+            {
+                <div class="duplicate-clear">
+                    @(Model.CanEdit ? "No route points yet. Click the map or import coordinates to add the first point." : "No saved route points.")
+                </div>
+            }
+            else
+            {
+                foreach (var point in orderedGeometryPoints)
+                {
+                    <div class="border rounded-3 p-2 bg-body route-point-row">
+                        <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                            <strong>Point @point.PointOrder</strong>
+                        </div>
+                        <div class="small text-muted">
+                            @point.Latitude.ToString("0.000000", CultureInfo.InvariantCulture), @point.Longitude.ToString("0.000000", CultureInfo.InvariantCulture)
+                        </div>
+                    </div>
+                }
+            }
+        </div>
     </section>
 </div>
 
