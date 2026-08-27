@@ -9,6 +9,12 @@ public partial class TukiDbContext
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<TransportRoute>(entity =>
+        {
+            entity.Property(e => e.ArchivedAt).HasColumnType("datetime2(7)");
+            entity.HasQueryFilter(e => e.ArchivedAt == null);
+        });
+
         modelBuilder.Entity<LocalUserCredential>(entity =>
         {
             entity.ToTable("LocalUserCredentials", "dbo");
