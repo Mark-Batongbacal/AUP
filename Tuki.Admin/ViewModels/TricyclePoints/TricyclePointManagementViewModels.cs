@@ -5,7 +5,8 @@ namespace Tuki.Admin.ViewModels.TricyclePoints;
 public sealed class TricyclePointListViewModel
 {
     public IReadOnlyList<AdminTricyclePoint> Points { get; init; } = [];
-    public bool IncludeArchived { get; init; } = true;
+    public string Status { get; init; } = "active";
+    public bool IncludeArchived => string.Equals(Status, "archived", StringComparison.OrdinalIgnoreCase);
     public string Search { get; init; } = string.Empty;
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 10;
