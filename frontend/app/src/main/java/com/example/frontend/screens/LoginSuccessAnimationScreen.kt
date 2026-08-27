@@ -3,15 +3,19 @@ package com.example.frontend.screens
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,7 +53,7 @@ fun LoginSuccessAnimationScreen(
 
     LaunchedEffect(Unit) {
         // Play the animation for 2.5 seconds
-        delay(2500)
+        delay(3000)
         startExitAnimation = true
         delay(500)
         onAnimationComplete()
@@ -68,19 +72,41 @@ fun LoginSuccessAnimationScreen(
         ) {
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(200.dp)
+                modifier = Modifier.size(320.dp)
             ) {
-                // Background circle
+                // Soft glow background instead of hard circle
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.White, CircleShape)
+                        .background(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.8f),
+                                    Color.White.copy(alpha = 0.3f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
                 )
 
                 LottieAnimation(
                     composition = composition,
                     progress = { progress },
-                    modifier = Modifier.size(160.dp)
+                    modifier = Modifier
+                        .size(260.dp)
+                        // This applies a soft transparency mask to the edges of the animation
+                        .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                        .drawWithContent {
+                            drawContent()
+                            drawRect(
+                                brush = Brush.radialGradient(
+                                    0.0f to Color.White,
+                                    0.85f to Color.White,
+                                    1.0f to Color.Transparent,
+                                ),
+                                blendMode = BlendMode.DstIn
+                            )
+                        }
                 )
             }
 
