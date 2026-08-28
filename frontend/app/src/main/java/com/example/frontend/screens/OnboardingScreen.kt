@@ -42,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.example.frontend.screens.onboarding.PremiumAskTukiPage
 import com.example.frontend.screens.onboarding.PremiumParaPoPage
 import com.example.frontend.screens.onboarding.PremiumRouteChoicePage
-import com.example.frontend.screens.onboarding.PremiumStepByStepPage
+import com.example.frontend.screens.onboarding.PremiumStepByStepPageClean
 import com.example.frontend.screens.onboarding.TukiFlightIntro
 import com.example.frontend.ui.motion.TukiMascot
 import com.example.frontend.ui.motion.TukiMascotMood
@@ -142,7 +142,7 @@ fun OnboardingScreen(
 
                 when (page) {
                     0 -> PremiumRouteChoicePage(active = active)
-                    1 -> PremiumStepByStepPage(active = active)
+                    1 -> PremiumStepByStepPageClean(active = active)
                     2 -> PremiumParaPoPage(active = active)
                     else -> PremiumAskTukiPage(active = active)
                 }
