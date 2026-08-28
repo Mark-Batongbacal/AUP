@@ -39,10 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import com.example.frontend.screens.onboarding.AskTukiPage
-import com.example.frontend.screens.onboarding.ParaPoPage
-import com.example.frontend.screens.onboarding.RouteChoicePage
-import com.example.frontend.screens.onboarding.StepByStepPage
+import com.example.frontend.screens.onboarding.PremiumAskTukiPage
+import com.example.frontend.screens.onboarding.PremiumParaPoPage
+import com.example.frontend.screens.onboarding.PremiumRouteChoicePage
+import com.example.frontend.screens.onboarding.PremiumStepByStepPage
 import com.example.frontend.screens.onboarding.TukiFlightIntro
 import com.example.frontend.ui.motion.TukiMascot
 import com.example.frontend.ui.motion.TukiMascotMood
@@ -54,6 +54,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val ONBOARDING_PAGE_COUNT = 4
+private const val LOGIN_HANDOFF_DURATION_MS = 1900L
 
 @Composable
 fun OnboardingScreen(
@@ -62,9 +63,8 @@ fun OnboardingScreen(
     val pagerState = rememberPagerState(pageCount = { ONBOARDING_PAGE_COUNT })
     val coroutineScope = rememberCoroutineScope()
     var introVisible by remember { mutableStateOf(true) }
-    // Keep the real onboarding pager composed underneath the intro from the start. The intro still
-    // sits on top and owns the visual handoff, but a delayed/missed callback can no longer leave the
-    // four onboarding pages permanently transparent.
+    // Keep the real onboarding pager composed underneath the intro from the start. The intro itself
+    // remains untouched; page motion simply waits until the intro overlay has actually left.
     var onboardingRevealed by remember { mutableStateOf(true) }
     var isFinishing by remember { mutableStateOf(false) }
 
@@ -96,7 +96,8 @@ fun OnboardingScreen(
         if (isFinishing) return
         isFinishing = true
         coroutineScope.launch {
-            delay(420)
+            // Give the closing TUKI message enough time to be read before navigating to login.
+            delay(LOGIN_HANDOFF_DURATION_MS)
             onLetsRideClick()
         }
     }
@@ -131,12 +132,19 @@ fun OnboardingScreen(
                 userScrollEnabled = onboardingRevealed && !isFinishing,
                 beyondViewportPageCount = 1
             ) { page ->
-                val active = onboardingRevealed && pagerState.currentPage == page
+                // Adjacent pages can stay composed for smooth swiping, but their story animations
+                // only run once that page is actually visible. Page 1 also waits until the intro has
+                // left so none of its entrance motion is consumed behind the welcome overlay.
+                val active = onboardingRevealed &&
+                    !introVisible &&
+                    !isFinishing &&
+                    pagerState.currentPage == page
+
                 when (page) {
-                    0 -> RouteChoicePage(active = active)
-                    1 -> StepByStepPage(active = active)
-                    2 -> ParaPoPage(active = active)
-                    else -> AskTukiPage(active = active)
+                    0 -> PremiumRouteChoicePage(active = active)
+                    1 -> PremiumStepByStepPage(active = active)
+                    2 -> PremiumParaPoPage(active = active)
+                    else -> PremiumAskTukiPage(active = active)
                 }
             }
 
@@ -162,8 +170,7 @@ fun OnboardingScreen(
             )
         }
 
-        // The intro animation remains untouched and stays above the already-composed onboarding
-        // pages. Once it finishes, removing this overlay reveals the pager immediately.
+        // The welcome/flight intro is intentionally left unchanged in this pass.
         if (introVisible) {
             TukiFlightIntro(
                 onHandoffStarted = {
