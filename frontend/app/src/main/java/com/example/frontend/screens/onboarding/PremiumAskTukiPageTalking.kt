@@ -89,13 +89,13 @@ fun PremiumAskTukiPageTalking(active: Boolean) {
             delay(220)
             stage = 1 // user message
             delay(540)
-            stage = 2 // replying dots + mouth animation
+            stage = 2 // replying dots + mouth animation starts
             delay(950)
-            stage = 3 // spoken response + mouth animation
+            stage = 3 // spoken response; mouth keeps animating
             delay(650)
-            stage = 4 // route card, TUKI settles
+            stage = 4 // route card appears; mouth keeps animating
             delay(420)
-            stage = 5 // larger settled TUKI + closing line
+            stage = 5 // closing row appears; mouth keeps animating continuously
         }
     }
 
@@ -154,7 +154,7 @@ fun PremiumAskTukiPageTalking(active: Boolean) {
                     border = BorderStroke(1.dp, TukiTeal.copy(alpha = 0.12f))
                 ) {
                     TalkingTukiImage(
-                        talking = stage == 2 || stage == 3,
+                        talking = true,
                         modifier = Modifier.padding(3.dp),
                         contentDescription = "TUKI replying"
                     )
@@ -414,9 +414,9 @@ private fun TalkingTukiResultRow() {
         ) {
             TalkingCelebrationMarks(modifier = Modifier.fillMaxSize())
             TalkingTukiImage(
-                talking = false,
+                talking = true,
                 modifier = Modifier.size(132.dp),
-                contentDescription = "TUKI after recommending a route"
+                contentDescription = "TUKI continuing to talk after recommending a route"
             )
         }
 
