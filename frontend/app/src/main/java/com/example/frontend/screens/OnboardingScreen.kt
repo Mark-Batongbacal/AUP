@@ -39,7 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import com.example.frontend.screens.onboarding.PremiumAskTukiPageRedesigned
+import com.example.frontend.screens.onboarding.PremiumAskTukiPageTalking
 import com.example.frontend.screens.onboarding.PremiumParaPoPage
 import com.example.frontend.screens.onboarding.PremiumRouteChoicePageClean
 import com.example.frontend.screens.onboarding.PremiumStepByStepPageClean
@@ -138,7 +138,7 @@ fun OnboardingScreen(
                     0 -> PremiumRouteChoicePageClean(active = active)
                     1 -> PremiumStepByStepPageClean(active = active)
                     2 -> PremiumParaPoPage(active = active)
-                    else -> PremiumAskTukiPageRedesigned(active = active)
+                    else -> PremiumAskTukiPageTalking(active = active)
                 }
             }
 
