@@ -40,11 +40,10 @@ enum class TukiMascotMood {
 }
 
 /**
- * Onboarding mascot renderer using the approved TUKI poses supplied by the product team.
+ * Onboarding mascot renderer using the exact TUKI pose artwork supplied by the product team.
  *
- * The previous generated/legacy poses were intentionally removed from onboarding because they
- * could look inconsistent with the approved mascot. The public API remains mood-based so feature
- * screens do not need to know which drawable is used for each emotion.
+ * Each onboarding mood intentionally maps to one of the four page-specific drawable assets so the
+ * visual shown in Compose matches the approved reference instead of reusing older generated poses.
  */
 @Composable
 fun TukiMascot(
@@ -58,15 +57,17 @@ fun TukiMascot(
 
     val transition = rememberInfiniteTransition(label = "tuki_${mood.name}")
 
-    // These two drawables were produced directly from the user-approved TUKI artwork.
-    // The expressive first pose is used for greeting/alert/success moments, while the raised-wing
-    // pose is used when TUKI is guiding or thinking.
+    // Exact page-to-pose mapping requested for the onboarding reference:
+    // Page 1 / WELCOME   -> peeking TUKI
+    // Page 2 / GUIDE     -> thoughtful/guiding TUKI
+    // Page 3 / ALERT     -> surprised/alert TUKI
+    // Page 4 / THINKING + CELEBRATE -> happy/waving TUKI
     val drawable = when (mood) {
-        TukiMascotMood.WELCOME -> R.drawable.tuki_pose_celebrate
-        TukiMascotMood.GUIDE -> R.drawable.tuki_pose_hover_up
-        TukiMascotMood.ALERT -> R.drawable.tuki_pose_celebrate
-        TukiMascotMood.THINKING -> R.drawable.tuki_pose_hover_up
-        TukiMascotMood.CELEBRATE -> R.drawable.tuki_pose_celebrate
+        TukiMascotMood.WELCOME -> R.drawable.tuki_onboarding_page1
+        TukiMascotMood.GUIDE -> R.drawable.tuki_onboarding_page2
+        TukiMascotMood.ALERT -> R.drawable.tuki_onboarding_page3
+        TukiMascotMood.THINKING -> R.drawable.tuki_onboarding_page4
+        TukiMascotMood.CELEBRATE -> R.drawable.tuki_onboarding_page4
     }
 
     val amplitude = when (mood) {
