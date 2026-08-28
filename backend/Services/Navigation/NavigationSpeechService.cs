@@ -37,6 +37,7 @@ public sealed class NemotronNavigationSpeechService(
     ILogger<NemotronNavigationSpeechService> logger)
     : INavigationSpeechService
 {
+    private const string DisableAiHeader = "X-Tuki-Disable-Ai";
     private static readonly TimeSpan QwenTimeout = TimeSpan.FromSeconds(15);
 
     public async Task<string> PhraseAsync(
@@ -45,6 +46,14 @@ public sealed class NemotronNavigationSpeechService(
     {
         var language = await ResolveLanguageAsync(cancellationToken);
         var localizedContext = context with { Language = language };
+
+        // Capacity/load tests can explicitly request deterministic navigation
+        // speech so they measure Tuki's infrastructure without consuming
+        // Gemini quota or mixing external-model latency into the benchmark.
+        // This only changes wording for the current request and does not bypass
+        // authentication, routing, navigation state, or any safety checks.
+        if (IsAiDisabledForRequest())
+            return DeterministicNavigationSpeech.Phrase(localizedContext);
 
         var apiKey = Environment.GetEnvironmentVariable(
             configuration["Qwen:ApiKeyEnvironmentVariable"] ??
@@ -89,6 +98,17 @@ public sealed class NemotronNavigationSpeechService(
             logger.LogWarning(exception, "Qwen navigation speech unavailable; using deterministic fallback");
             return DeterministicNavigationSpeech.Phrase(localizedContext);
         }
+    }
+
+    private bool IsAiDisabledForRequest()
+    {
+        var value = httpContextAccessor.HttpContext?
+            .Request.Headers[DisableAiHeader]
+            .ToString();
+
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+               value == "1";
     }
 
     private async Task<string> ResolveLanguageAsync(CancellationToken cancellationToken)
