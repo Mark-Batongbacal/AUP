@@ -39,7 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import com.example.frontend.screens.onboarding.PremiumAskTukiPage
+import com.example.frontend.screens.onboarding.PremiumAskTukiPageTalking
 import com.example.frontend.screens.onboarding.PremiumParaPoPage
 import com.example.frontend.screens.onboarding.PremiumRouteChoicePageClean
 import com.example.frontend.screens.onboarding.PremiumStepByStepPageClean
@@ -63,8 +63,6 @@ fun OnboardingScreen(
     val pagerState = rememberPagerState(pageCount = { ONBOARDING_PAGE_COUNT })
     val coroutineScope = rememberCoroutineScope()
     var introVisible by remember { mutableStateOf(true) }
-    // Keep the real onboarding pager composed underneath the intro from the start. The intro itself
-    // remains untouched; page motion simply waits until the intro overlay has actually left.
     var onboardingRevealed by remember { mutableStateOf(true) }
     var isFinishing by remember { mutableStateOf(false) }
 
@@ -96,7 +94,6 @@ fun OnboardingScreen(
         if (isFinishing) return
         isFinishing = true
         coroutineScope.launch {
-            // Give the closing TUKI message enough time to be read before navigating to login.
             delay(LOGIN_HANDOFF_DURATION_MS)
             onLetsRideClick()
         }
@@ -132,9 +129,6 @@ fun OnboardingScreen(
                 userScrollEnabled = onboardingRevealed && !isFinishing,
                 beyondViewportPageCount = 1
             ) { page ->
-                // Adjacent pages can stay composed for smooth swiping, but their story animations
-                // only run once that page is actually visible. Page 1 also waits until the intro has
-                // left so none of its entrance motion is consumed behind the welcome overlay.
                 val active = onboardingRevealed &&
                     !introVisible &&
                     !isFinishing &&
@@ -144,7 +138,7 @@ fun OnboardingScreen(
                     0 -> PremiumRouteChoicePageClean(active = active)
                     1 -> PremiumStepByStepPageClean(active = active)
                     2 -> PremiumParaPoPage(active = active)
-                    else -> PremiumAskTukiPage(active = active)
+                    else -> PremiumAskTukiPageTalking(active = active)
                 }
             }
 
@@ -170,7 +164,6 @@ fun OnboardingScreen(
             )
         }
 
-        // The welcome/flight intro is intentionally left unchanged in this pass.
         if (introVisible) {
             TukiFlightIntro(
                 onHandoffStarted = {
