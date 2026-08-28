@@ -20,6 +20,11 @@ const boolEnv = (name, fallback = false) => {
 
 const ALLOW_REMOTE_LOAD = boolEnv('ALLOW_REMOTE_LOAD');
 const ENABLE_EXTERNALS = boolEnv('ENABLE_EXTERNALS');
+// Stress/capacity tests disable backend-generated navigation speech AI by
+// default. The backend recognizes X-Tuki-Disable-Ai and returns the existing
+// deterministic navigation speech instead, so Gemini quota/latency is excluded
+// without skipping the real navigation endpoints.
+const DISABLE_SERVER_AI = boolEnv('DISABLE_SERVER_AI', true);
 const REROUTE_RATE = rateEnv('REROUTE_RATE', 0.05);
 const LOCATION_SYNC_RATE = rateEnv('LOCATION_SYNC_RATE', 0.05);
 const ACTIVE_REFRESH_RATE = rateEnv('ACTIVE_REFRESH_RATE', 0.10);
@@ -37,6 +42,9 @@ if (PROFILE !== 'smoke' && !isLocal && !ALLOW_REMOTE_LOAD) {
 }
 if ((GOOGLE_MORE_RATE > 0 || AI_RATE > 0) && !ENABLE_EXTERNALS) {
   throw new Error('Google/Gemini sampling is enabled. Add ENABLE_EXTERNALS=YES to acknowledge quota/billing impact.');
+}
+if (!DISABLE_SERVER_AI && !ENABLE_EXTERNALS) {
+  throw new Error('Backend navigation speech AI is enabled for this load test. Add ENABLE_EXTERNALS=YES to acknowledge Gemini quota/billing impact.');
 }
 
 const DEFAULT_TRIPS = [
@@ -139,6 +147,7 @@ const headers = (withJson = false) => ({
   headers: {
     Accept: 'application/json',
     ...(withJson ? { 'Content-Type': 'application/json' } : {}),
+    ...(DISABLE_SERVER_AI ? { 'X-Tuki-Disable-Ai': 'true' } : {}),
     ...(apiKey ? { 'X-Api-Key': apiKey } : {})
   },
   timeout: __ENV.HTTP_TIMEOUT || '30s'
@@ -289,6 +298,7 @@ function cancel(tripId) {
 }
 
 export function setup() {
+  console.log(`Navigation speech AI during load test: ${DISABLE_SERVER_AI ? 'disabled (deterministic fallback)' : 'enabled (external quota may be consumed)'}`);
   const response = http.get(`${BASE_URL}/health`, { tags: { name: 'health', endpoint: 'health', profile: PROFILE }, timeout: '30s' });
   if (response.status !== 200) throw new Error(`${BASE_URL}/health returned ${response.status}`);
 }
