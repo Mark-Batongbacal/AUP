@@ -270,6 +270,7 @@ public sealed class TransportRouteRepositoryTests
                     IsActive INTEGER NOT NULL,
                     CreatedAt TEXT NOT NULL,
                     UpdatedAt TEXT NULL,
+                    ArchivedAt TEXT NULL,
                     CONSTRAINT FK_TransportRoutes_TransportModes
                         FOREIGN KEY (TransportModeId)
                         REFERENCES TransportModes (TransportModeId)
