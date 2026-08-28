@@ -1,4 +1,5 @@
 
+using System.Diagnostics;
 using System.Net.Http.Json;
 using backend.Helpers;
 using backend.Models.Valhalla;
@@ -15,6 +16,7 @@ public class ValhallaService : IValhallaService
 
     private readonly HttpClient _httpClient;
     private readonly SemaphoreSlim _semaphore;
+    private readonly int _maxConcurrentRequests;
     private readonly ITukiTelemetry _telemetry;
     private readonly double _walkingSpeedMetersPerSecond;
     private readonly double _trikeSpeedMetersPerSecond;
@@ -47,9 +49,10 @@ public class ValhallaService : IValhallaService
                 ? configuredTrikeCosting
                 : DefaultTrikeCostingModel;
 
+        _maxConcurrentRequests = maxConcurrentRequests;
         _semaphore = new SemaphoreSlim(
-            maxConcurrentRequests,
-            maxConcurrentRequests);
+            _maxConcurrentRequests,
+            _maxConcurrentRequests);
     }
 
     public async Task<ValhallaRouteResponse> GetRouteAsync(
@@ -214,8 +217,26 @@ public class ValhallaService : IValhallaService
         CancellationToken cancellationToken)
     {
         using var measurement = _telemetry.Measure($"Valhalla{endpoint}");
-        await _semaphore.WaitAsync(cancellationToken);
+        _telemetry.SetRoutingValue(
+            "valhalla_concurrency_limit",
+            _maxConcurrentRequests);
+        var waitStarted = Stopwatch.GetTimestamp();
+        try
+        {
+            await _semaphore.WaitAsync(cancellationToken);
+        }
+        finally
+        {
+            _telemetry.ObserveRouting(
+                "valhalla_gate_wait_ms",
+                Stopwatch.GetElapsedTime(waitStarted).TotalMilliseconds);
+        }
 
+        _telemetry.IncrementRouting(
+            endpoint == "/sources_to_targets"
+                ? "valhalla_matrix_http_calls"
+                : "valhalla_route_http_calls");
+        var executionStarted = Stopwatch.GetTimestamp();
         try
         {
             return await _httpClient.PostAsJsonAsync(
@@ -225,6 +246,9 @@ public class ValhallaService : IValhallaService
         }
         finally
         {
+            _telemetry.ObserveRouting(
+                "valhalla_execution_ms",
+                Stopwatch.GetElapsedTime(executionStarted).TotalMilliseconds);
             _semaphore.Release();
         }
     }

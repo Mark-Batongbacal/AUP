@@ -35,6 +35,8 @@ const NAV_HOLD_SECONDS = Math.max(0, numberEnv('NAV_HOLD_SECONDS', PROFILE === '
 const BETWEEN_TRIPS_SECONDS = Math.max(0, numberEnv('BETWEEN_TRIPS_SECONDS', PROFILE === 'smoke' ? 1 : 15));
 const THINK_TIME_SECONDS = Math.max(0, numberEnv('THINK_TIME_SECONDS', 0.8));
 const BUDGET_PESOS = Math.max(0, numberEnv('BUDGET_PESOS', 150));
+const BENCHMARK_VUS = Math.max(1, Math.floor(numberEnv('BENCHMARK_VUS', 1)));
+const BENCHMARK_DURATION = __ENV.BENCHMARK_DURATION || '5m';
 
 const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1') || BASE_URL.includes('0.0.0.0');
 if (PROFILE !== 'smoke' && !isLocal && !ALLOW_REMOTE_LOAD) {
@@ -77,6 +79,10 @@ function scenario(profile) {
   switch (profile) {
     case 'smoke':
       return { realistic_users: { executor: 'constant-vus', vus: 1, duration: '30s', gracefulStop: '15s' } };
+    case 'benchmark':
+      return { realistic_users: {
+        executor: 'constant-vus', vus: BENCHMARK_VUS, duration: BENCHMARK_DURATION, gracefulStop: '30s'
+      } };
     case 'small':
       return { realistic_users: { executor: 'ramping-vus', startVUs: 0, stages: [
         { duration: '30s', target: 10 }, { duration: '1m', target: 25 }, { duration: '2m', target: 50 }, { duration: '30s', target: 0 }
@@ -99,7 +105,7 @@ function scenario(profile) {
     case 'soak':
       return { realistic_users: { executor: 'constant-vus', vus: 500, duration: '2h', gracefulStop: '1m' } };
     default:
-      throw new Error(`Unknown PROFILE=${profile}. Use smoke, small, load, stress, spike, or soak.`);
+      throw new Error(`Unknown PROFILE=${profile}. Use smoke, benchmark, small, load, stress, spike, or soak.`);
   }
 }
 

@@ -7,10 +7,23 @@ public interface ITukiTelemetry
     void Event(string eventName, Guid? tripSessionId = null, string? outcome = null);
     IDisposable Measure(string operationName);
     void RecordRequest(string path, int statusCode, double elapsedMilliseconds);
+    IRoutingTelemetryScope BeginRoutingPlan(
+        string source,
+        CancellationToken cancellationToken = default);
+    IRoutingTelemetryScope BeginRoutingPass(
+        int maxTransfers,
+        CancellationToken cancellationToken = default);
+    IDisposable MeasureRouting(string operationName);
+    void IncrementRouting(string metricName, long value = 1);
+    void SetRoutingValue(string metricName, double value);
+    void ObserveRouting(string metricName, double value);
 }
 
 public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetry
 {
+    private readonly AsyncLocal<RoutingPlanTelemetryContext?> _routingPlan = new();
+    private readonly AsyncLocal<RoutingPassTelemetryContext?> _routingPass = new();
+
     public void Event(string eventName, Guid? tripSessionId = null, string? outcome = null) =>
         logger.LogInformation("TukiEvent {EventName} Session={TripSessionId} Outcome={Outcome}",
             eventName, tripSessionId, outcome);
@@ -24,12 +37,115 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
             statusCode,
             elapsedMilliseconds);
 
+    public IRoutingTelemetryScope BeginRoutingPlan(
+        string source,
+        CancellationToken cancellationToken = default)
+    {
+        if (_routingPlan.Value is { } currentPlan)
+            return new NestedRoutingTelemetryScope(
+                currentPlan.Complete,
+                cancellationToken);
+
+        var context = new RoutingPlanTelemetryContext(source);
+        _routingPlan.Value = context;
+        return new RoutingPlanTelemetryScope(
+            context,
+            cancellationToken,
+            () =>
+            {
+                _routingPass.Value = null;
+                _routingPlan.Value = null;
+                var snapshot = context.Snapshot();
+                logger.Log(
+                    LogLevel.Information,
+                    new EventId(1_001, "TukiRoutingPlan"),
+                    new RoutingPlanLogState(snapshot),
+                    null,
+                    static (state, _) => state.ToString());
+            });
+    }
+
+    public IRoutingTelemetryScope BeginRoutingPass(
+        int maxTransfers,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = _routingPlan.Value;
+        if (plan is null)
+            return NestedRoutingTelemetryScope.Instance;
+
+        var prior = _routingPass.Value;
+        var pass = new RoutingPassTelemetryContext(maxTransfers);
+        _routingPass.Value = pass;
+        return new RoutingPassTelemetryScope(
+            pass,
+            cancellationToken,
+            () =>
+            {
+                _routingPass.Value = prior;
+                plan.AddPass(pass.Snapshot());
+            });
+    }
+
+    public IDisposable MeasureRouting(string operationName)
+    {
+        var plan = _routingPlan.Value;
+        var pass = _routingPass.Value;
+        return plan is null
+            ? EmptyMeasurement.Instance
+            : new RoutingMeasurement(elapsedMilliseconds =>
+            {
+                plan.Observe(operationName, elapsedMilliseconds);
+                pass?.Observe(operationName, elapsedMilliseconds);
+            });
+    }
+
+    public void IncrementRouting(string metricName, long value = 1)
+    {
+        var plan = _routingPlan.Value;
+        plan?.Increment(metricName, value);
+        _routingPass.Value?.Increment(metricName, value);
+    }
+
+    public void SetRoutingValue(string metricName, double value)
+    {
+        var plan = _routingPlan.Value;
+        plan?.SetValue(metricName, value);
+        _routingPass.Value?.SetValue(metricName, value);
+    }
+
+    public void ObserveRouting(string metricName, double value)
+    {
+        var plan = _routingPlan.Value;
+        plan?.Observe(metricName, value);
+        _routingPass.Value?.Observe(metricName, value);
+    }
+
     private sealed class Measurement(ILogger logger, string operation) : IDisposable
     {
         private readonly long _started = Stopwatch.GetTimestamp();
         public void Dispose() => logger.LogInformation(
             "TukiLatency {Operation} ElapsedMs={ElapsedMs}", operation,
             Stopwatch.GetElapsedTime(_started).TotalMilliseconds);
+    }
+
+    private sealed class RoutingMeasurement(Action<double> record) : IDisposable
+    {
+        private readonly long _started = Stopwatch.GetTimestamp();
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            record(Stopwatch.GetElapsedTime(_started).TotalMilliseconds);
+        }
+    }
+
+    private sealed class EmptyMeasurement : IDisposable
+    {
+        public static EmptyMeasurement Instance { get; } = new();
+        public void Dispose() { }
     }
 }
 
@@ -39,6 +155,18 @@ public sealed class NullTukiTelemetry : ITukiTelemetry
     public void Event(string eventName, Guid? tripSessionId = null, string? outcome = null) { }
     public IDisposable Measure(string operationName) => Empty.Instance;
     public void RecordRequest(string path, int statusCode, double elapsedMilliseconds) { }
+    public IRoutingTelemetryScope BeginRoutingPlan(
+        string source,
+        CancellationToken cancellationToken = default) =>
+        NestedRoutingTelemetryScope.Instance;
+    public IRoutingTelemetryScope BeginRoutingPass(
+        int maxTransfers,
+        CancellationToken cancellationToken = default) =>
+        NestedRoutingTelemetryScope.Instance;
+    public IDisposable MeasureRouting(string operationName) => Empty.Instance;
+    public void IncrementRouting(string metricName, long value = 1) { }
+    public void SetRoutingValue(string metricName, double value) { }
+    public void ObserveRouting(string metricName, double value) { }
     private sealed class Empty : IDisposable
     {
         public static Empty Instance { get; } = new();

@@ -55,6 +55,43 @@ k6 run tuki-load.js
 
 This is one VU for 30 seconds.
 
+## Routing optimization benchmark: 1 and 10 VUs
+
+Use the constant-VU benchmark profile before and after every routing optimization
+phase. It keeps navigation speech AI disabled and uses the same duration and trip
+fixtures at both loads.
+
+One-VU control:
+
+```bash
+k6 run \
+  --summary-export=tuki-routing-1vu.json \
+  -e PROFILE=benchmark \
+  -e BENCHMARK_VUS=1 \
+  -e BENCHMARK_DURATION=5m \
+  -e DISABLE_SERVER_AI=true \
+  -e TRIPS_FILE=./tuki-trips.example.json \
+  tuki-load.js
+```
+
+Ten-VU baseline comparison:
+
+```bash
+k6 run \
+  --summary-export=tuki-routing-10vu.json \
+  -e PROFILE=benchmark \
+  -e BENCHMARK_VUS=10 \
+  -e BENCHMARK_DURATION=5m \
+  -e DISABLE_SERVER_AI=true \
+  -e TRIPS_FILE=./tuki-trips.example.json \
+  tuki-load.js
+```
+
+For a remote target, add `BASE_URL` and `ALLOW_REMOTE_LOAD=YES` explicitly. The
+existing latency thresholds are health indicators and may fail against the
+recorded pre-optimization baseline; retain the summary and compare the actual
+average, median, p95, success, HTTP-failure, and flow-success values.
+
 ## 2. Azure smoke test
 
 ```bash
@@ -205,7 +242,9 @@ Do not set these to `1` during a 1000-user test unless you intentionally want to
 
 | Variable | Default | Purpose |
 | --- | ---: | --- |
-| `PROFILE` | `smoke` | `smoke`, `small`, `load`, `stress`, `spike`, `soak` |
+| `PROFILE` | `smoke` | `smoke`, `benchmark`, `small`, `load`, `stress`, `spike`, `soak` |
+| `BENCHMARK_VUS` | `1` | Constant virtual users for the `benchmark` profile |
+| `BENCHMARK_DURATION` | `5m` | Duration for the `benchmark` profile |
 | `REROUTE_RATE` | `0.05` | Fraction of trip flows that reroute |
 | `REROUTE_REASON` | `MANUAL` | Reroute reason, e.g. `MANUAL` or `OFF_ROUTE` |
 | `LOCATION_SYNC_RATE` | `0.05` | Fraction sending one meaningful `/location` sync |

@@ -113,14 +113,26 @@ public partial class RoutingService : IRoutingService
 
     private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
     {
+        using var initializationMeasurement =
+            _telemetry.MeasureRouting("network_initialization_ms");
         if (_isInitialized)
+        {
+            _telemetry.IncrementRouting("network_initialization_cache_hits");
+            RecordNetworkSizeTelemetry();
             return;
+        }
 
         await _initializationLock.WaitAsync(cancellationToken);
         try
         {
             if (_isInitialized)
+            {
+                _telemetry.IncrementRouting("network_initialization_cache_hits");
+                RecordNetworkSizeTelemetry();
                 return;
+            }
+
+            _telemetry.IncrementRouting("network_initialization_builds");
 
             var databaseRoutes = await _transportRouteRepository
                 .GetAllActiveWithOrderedPointsAsync(cancellationToken);
@@ -179,11 +191,19 @@ public partial class RoutingService : IRoutingService
                 _routes.Count,
                 _trikePoints.Count);
             _isInitialized = true;
+            RecordNetworkSizeTelemetry();
         }
         finally
         {
             _initializationLock.Release();
         }
+    }
+
+    private void RecordNetworkSizeTelemetry()
+    {
+        _telemetry.SetRoutingValue("route_count", _routes.Count);
+        _telemetry.SetRoutingValue("trike_point_count", _trikePoints.Count);
+        _telemetry.SetRoutingValue("toda_point_count", _trikePoints.Count);
     }
 
     // -------------------------------------------------------------------
@@ -298,12 +318,21 @@ public partial class RoutingService : IRoutingService
             CoordinateKey(source),
             string.Join(';', targets.Select(CoordinateKey)));
 
+        Task<IReadOnlyList<ValhallaMatrixResult>>? createdRequest = null;
         var request = _matrixRequests.GetOrAdd(key, _ =>
-            _valhallaService.GetMatrixAsync(
+        {
+            createdRequest = _valhallaService.GetMatrixAsync(
                 source,
                 targets,
                 costing,
-                cancellationToken));
+                cancellationToken);
+            return createdRequest;
+        });
+
+        _telemetry.IncrementRouting(
+            createdRequest is not null && ReferenceEquals(request, createdRequest)
+                ? "request_local_matrix_cache_misses"
+                : "request_local_matrix_cache_hits");
 
         try
         {

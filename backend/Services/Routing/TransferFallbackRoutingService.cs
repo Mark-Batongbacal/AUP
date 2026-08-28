@@ -23,6 +23,7 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
     private readonly RoutingService _preferredRouting;
     private readonly RoutingService? _fallbackRouting;
     private readonly ILogger<TransferFallbackRoutingService> _logger;
+    private readonly ITukiTelemetry _telemetry;
     private readonly int _preferredMaxTransfers;
     private readonly int _fallbackMaxTransfers;
 
@@ -38,6 +39,7 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
         ILogger<TransferFallbackRoutingService> logger)
     {
         _logger = logger;
+        _telemetry = telemetry;
 
         var configuredMaxTransfers = Math.Max(0, configuredOptions.Value.MaxTransfers);
         _preferredMaxTransfers = Math.Min(configuredMaxTransfers, PreferredTransferDepth);
@@ -121,6 +123,9 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
         JourneyPlanningPreferences? preferences,
         CancellationToken cancellationToken)
     {
+        using var planTelemetry = _telemetry.BeginRoutingPlan(
+            "TransferFallbackRoutingService",
+            cancellationToken);
         var preferredPlans = await _preferredRouting.PlanTripsAsync(
             originLatitude,
             originLongitude,
@@ -130,20 +135,28 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
             cancellationToken);
 
         if (preferredPlans.Count > 0 || _fallbackRouting is null)
+        {
+            planTelemetry.Complete(
+                preferredPlans.Count == 0 ? "no_route" : "success");
             return preferredPlans;
+        }
 
+        _telemetry.IncrementRouting("fallback_used");
         _logger.LogInformation(
             "No usable journey survived routing with at most {PreferredMaxTransfers} transfers; retrying with at most {FallbackMaxTransfers} transfers",
             _preferredMaxTransfers,
             _fallbackMaxTransfers);
 
-        return await _fallbackRouting.PlanTripsAsync(
+        var fallbackPlans = await _fallbackRouting.PlanTripsAsync(
             originLatitude,
             originLongitude,
             destinationLatitude,
             destinationLongitude,
             preferences,
             cancellationToken);
+        planTelemetry.Complete(
+            fallbackPlans.Count == 0 ? "no_route" : "success");
+        return fallbackPlans;
     }
 
     private static IOptions<RoutingOptions> CreateRoutingOptions(

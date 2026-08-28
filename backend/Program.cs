@@ -229,6 +229,13 @@ if (app.Environment.IsDevelopment())
 app.UseCors("Frontend");
 app.Use(async (context, next) =>
 {
+    var telemetry = context.RequestServices.GetRequiredService<ITukiTelemetry>();
+    using var routingPlan = context.Request.Method == HttpMethods.Post &&
+        context.Request.Path.Equals("/api/journeys/plan")
+            ? telemetry.BeginRoutingPlan(
+                "POST /api/journeys/plan",
+                context.RequestAborted)
+            : null;
     var stopwatch = Stopwatch.StartNew();
     try
     {
@@ -238,7 +245,6 @@ app.Use(async (context, next) =>
     {
         stopwatch.Stop();
         var elapsedMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
-        var telemetry = context.RequestServices.GetRequiredService<ITukiTelemetry>();
         telemetry.RecordRequest(
             context.Request.Path,
             context.Response.StatusCode,

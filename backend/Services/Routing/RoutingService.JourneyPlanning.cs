@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using backend.Models.Routing;
 using backend.Models.Valhalla;
 using Microsoft.Extensions.Logging;
@@ -28,6 +29,15 @@ public partial class RoutingService
         JourneyPlanningPreferences? preferences,
         CancellationToken cancellationToken = default)
     {
+        using var planTelemetry = _telemetry.BeginRoutingPlan(
+            "RoutingService",
+            cancellationToken);
+        using var passTelemetry = _telemetry.BeginRoutingPass(
+            MaxTransfers,
+            cancellationToken);
+        _telemetry.SetRoutingValue(
+            "max_candidates_to_confirm",
+            MaxCandidatesToConfirm);
         using var routingMeasurement = _telemetry.Measure("RoutePlanning");
         var areaValidation = _tripAreaValidator.ValidateTrip(
             originLatitude, originLongitude,
@@ -43,6 +53,7 @@ public partial class RoutingService
         var planningPreferences = NormalizePlanningPreferences(preferences);
         var maxWalkAccessDistanceMeters =
             GetWalkAccessDistanceLimit(planningPreferences);
+        var candidateGenerationStarted = Stopwatch.GetTimestamp();
 
         var boardAccessPrefixByRoute =
             new Dictionary<string, IReadOnlyList<AccessCandidate>[]>();
@@ -193,6 +204,7 @@ public partial class RoutingService
             destinationAccessByRoute,
             cancellationToken).ToList();
         candidates.AddRange(transferCandidates);
+        _telemetry.IncrementRouting("candidates_generated", candidates.Count);
 
         // Access generation stores walking and tricycle choices together on
         // one route anchor. Expand them before ranking; otherwise confirmation
@@ -206,6 +218,10 @@ public partial class RoutingService
             .Where(candidate => MeetsProvisionalHardConstraints(
                 candidate, planningPreferences))
             .ToList();
+        _telemetry.IncrementRouting(
+            "candidates_after_access_expansion",
+            expandedCandidates.Count);
+        _telemetry.IncrementRouting("candidates_expanded", expandedCandidates.Count);
 
         var distinctCandidates = expandedCandidates
             .GroupBy(GetJourneyCandidateKey, StringComparer.Ordinal)
@@ -219,23 +235,52 @@ public partial class RoutingService
                     .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
                     .First())
             .ToList();
+        _telemetry.IncrementRouting(
+            "candidates_after_dedupe",
+            distinctCandidates.Count);
 
         // Phase 2 reserves part of the confirmation budget for distinct route
         // and boarding regions so a dense cluster of similar candidates cannot
         // crowd out useful alternatives before authoritative validation.
         var ranked = SelectCandidatesToConfirmWithDiversity(
             distinctCandidates, planningPreferences);
+        var eligibleDirectCompletionEdges = directCompletionEdges
+            .Where(edge => MeetsProvisionalHardConstraints(
+                edge,
+                planningPreferences))
+            .ToList();
+        var eligibleAccessPathCompletionEdges = accessPathCompletionEdges
+            .Where(edge => MeetsProvisionalHardConstraints(
+                edge,
+                planningPreferences))
+            .ToList();
+        _telemetry.IncrementRouting(
+            "transit_candidates_selected_for_confirmation",
+            ranked.Count);
+        _telemetry.IncrementRouting(
+            "direct_candidates_selected_for_confirmation",
+            eligibleDirectCompletionEdges.Count);
+        _telemetry.IncrementRouting(
+            "access_path_candidates_selected_for_confirmation",
+            eligibleAccessPathCompletionEdges.Count);
+        _telemetry.IncrementRouting(
+            "candidates_selected_for_confirmation",
+            ranked.Count +
+            eligibleDirectCompletionEdges.Count +
+            eligibleAccessPathCompletionEdges.Count);
+        _telemetry.ObserveRouting(
+            "candidate_generation_ms",
+            Stopwatch.GetElapsedTime(candidateGenerationStarted).TotalMilliseconds);
 
         // Preserve transit sources while confirming all terminal-edge kinds
         // through one boundary. Transit-specific semantic pruning still has
         // its exact route occurrence; access-only completions join afterward.
         var completionEdges = ranked
             .Cast<DestinationCompletionEdge>()
-            .Concat(directCompletionEdges.Where(edge =>
-                MeetsProvisionalHardConstraints(edge, planningPreferences)))
-            .Concat(accessPathCompletionEdges.Where(edge =>
-                MeetsProvisionalHardConstraints(edge, planningPreferences)))
+            .Concat(eligibleDirectCompletionEdges)
+            .Concat(eligibleAccessPathCompletionEdges)
             .ToList();
+        var confirmationStarted = Stopwatch.GetTimestamp();
         var completionResult = await ConfirmDestinationCompletionEdgesAsync(
             completionEdges,
             originLatitude,
@@ -244,6 +289,16 @@ public partial class RoutingService
             destinationLongitude,
             cancellationToken,
             maxWalkAccessDistanceMeters);
+        _telemetry.ObserveRouting(
+            "confirmation_ms",
+            Stopwatch.GetElapsedTime(confirmationStarted).TotalMilliseconds);
+        _telemetry.IncrementRouting(
+            "transit_candidates_confirmed",
+            completionResult.Transit.Count);
+        _telemetry.IncrementRouting(
+            "access_only_candidates_confirmed",
+            completionResult.AccessOnly.Count);
+        var pruningStarted = Stopwatch.GetTimestamp();
         // Pairwise pruning must only use journeys that are eligible to reach
         // the user-facing result set. A provisionally short walk can exceed
         // the configured transit-access cap once Valhalla confirms the road
@@ -309,9 +364,16 @@ public partial class RoutingService
         var sensiblePlans = PruneTokenTransitJourneys(finalParetoPlans);
 
         var selectedPlans = SelectObjectivePlans(sensiblePlans, planningPreferences);
+        _telemetry.ObserveRouting(
+            "pruning_ms",
+            Stopwatch.GetElapsedTime(pruningStarted).TotalMilliseconds);
+        _telemetry.SetRoutingValue("selected_plan_count", selectedPlans.Count);
         LogSelectedPlanDiagnostics(selectedPlans);
         _telemetry.Event(selectedPlans.Count == 0 ? "NoRouteFound" : "TripPlanned",
             outcome: selectedPlans.Count.ToString());
+        var outcome = selectedPlans.Count == 0 ? "no_route" : "success";
+        passTelemetry.Complete(outcome);
+        planTelemetry.Complete(outcome);
         return selectedPlans;
     }
 
