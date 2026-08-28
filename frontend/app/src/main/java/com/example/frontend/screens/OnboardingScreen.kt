@@ -62,7 +62,10 @@ fun OnboardingScreen(
     val pagerState = rememberPagerState(pageCount = { ONBOARDING_PAGE_COUNT })
     val coroutineScope = rememberCoroutineScope()
     var introVisible by remember { mutableStateOf(true) }
-    var onboardingRevealed by remember { mutableStateOf(false) }
+    // Keep the real onboarding pager composed underneath the intro from the start. The intro still
+    // sits on top and owns the visual handoff, but a delayed/missed callback can no longer leave the
+    // four onboarding pages permanently transparent.
+    var onboardingRevealed by remember { mutableStateOf(true) }
     var isFinishing by remember { mutableStateOf(false) }
 
     val onboardingAlpha by animateFloatAsState(
@@ -159,8 +162,8 @@ fun OnboardingScreen(
             )
         }
 
-        // The existing intro animation is intentionally left untouched. This feature pass only
-        // changes the onboarding pages that appear after the intro handoff.
+        // The intro animation remains untouched and stays above the already-composed onboarding
+        // pages. Once it finishes, removing this overlay reveals the pager immediately.
         if (introVisible) {
             TukiFlightIntro(
                 onHandoffStarted = {
