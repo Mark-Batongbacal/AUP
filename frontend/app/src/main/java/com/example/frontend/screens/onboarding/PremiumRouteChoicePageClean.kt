@@ -300,7 +300,7 @@ private fun CleanRouteSceneMascot(
     TukiMascot(
         mood = TukiMascotMood.WELCOME,
         modifier = modifier.graphicsLayer {
-            translationX = translationX * density
+            this.translationX = translationX * density
             this.alpha = alpha
             scaleX = scale
             scaleY = scale
