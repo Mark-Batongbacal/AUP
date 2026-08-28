@@ -282,7 +282,7 @@ fun AppNavigation(
                         navController.navigate(AppScreen.SIGNUP.name)
                     },
                     onLoginSuccess = {
-                        navController.navigate(AppScreen.HOME.name) {
+                        navController.navigate(AppScreen.LOGIN_SUCCESS_ANIMATION.name) {
                             popUpTo(AppScreen.LOGIN.name) { inclusive = true }
                         }
                     },
@@ -365,7 +365,7 @@ fun AppNavigation(
                         navController.popBackStack()
                     },
                     onLoginSuccess = {
-                        navController.navigate(AppScreen.HOME.name) {
+                        navController.navigate(AppScreen.LOGIN_SUCCESS_ANIMATION.name) {
                             popUpTo(AppScreen.SIGNUP.name) { inclusive = true }
                         }
                     },
@@ -395,6 +395,16 @@ fun AppNavigation(
                 ForgotPasswordScreen(
                     onBack = { navController.popBackStack() },
                     onResetSent = { navController.popBackStack() }
+                )
+            }
+
+            composable(route = AppScreen.LOGIN_SUCCESS_ANIMATION.name) {
+                LoginSuccessAnimationScreen(
+                    onAnimationComplete = {
+                        navController.navigate(AppScreen.HOME.name) {
+                            popUpTo(AppScreen.LOGIN_SUCCESS_ANIMATION.name) { inclusive = true }
+                        }
+                    }
                 )
             }
 
