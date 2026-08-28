@@ -41,7 +41,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.example.frontend.screens.onboarding.PremiumAskTukiPage
 import com.example.frontend.screens.onboarding.PremiumParaPoPage
-import com.example.frontend.screens.onboarding.PremiumRouteChoicePage
+import com.example.frontend.screens.onboarding.PremiumRouteChoicePageClean
 import com.example.frontend.screens.onboarding.PremiumStepByStepPageClean
 import com.example.frontend.screens.onboarding.TukiFlightIntro
 import com.example.frontend.ui.motion.TukiMascot
@@ -141,7 +141,7 @@ fun OnboardingScreen(
                     pagerState.currentPage == page
 
                 when (page) {
-                    0 -> PremiumRouteChoicePage(active = active)
+                    0 -> PremiumRouteChoicePageClean(active = active)
                     1 -> PremiumStepByStepPageClean(active = active)
                     2 -> PremiumParaPoPage(active = active)
                     else -> PremiumAskTukiPage(active = active)
