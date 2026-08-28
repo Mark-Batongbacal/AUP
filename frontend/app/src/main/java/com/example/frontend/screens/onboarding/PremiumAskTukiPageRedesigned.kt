@@ -1,7 +1,11 @@
 package com.example.frontend.screens.onboarding
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -70,8 +74,9 @@ private enum class BudgetRouteMode {
 /**
  * Redesigned fourth onboarding page.
  *
- * The route result now owns a full-width block and TUKI sits in a dedicated row below it, so the
- * mascot can never be covered by the chat/result card. The motion remains staged and restrained.
+ * The route result owns a full-width block and TUKI sits in a dedicated row below it, so the
+ * mascot can never be covered by the chat/result card. The reply now restores the animated
+ * typing indicator before TUKI reveals the final response.
  */
 @Composable
 fun PremiumAskTukiPageRedesigned(active: Boolean) {
@@ -81,13 +86,15 @@ fun PremiumAskTukiPageRedesigned(active: Boolean) {
         stage = 0
         if (active) {
             delay(220)
-            stage = 1
+            stage = 1 // user message
             delay(560)
-            stage = 2
-            delay(640)
-            stage = 3
+            stage = 2 // TUKI typing/replying animation
+            delay(900)
+            stage = 3 // TUKI response text
+            delay(380)
+            stage = 4 // route result
             delay(420)
-            stage = 4
+            stage = 5 // celebration
         }
     }
 
@@ -146,7 +153,7 @@ fun PremiumAskTukiPageRedesigned(active: Boolean) {
                     border = BorderStroke(1.dp, TukiTeal.copy(alpha = 0.12f))
                 ) {
                     TukiMascot(
-                        mood = if (stage >= 3) TukiMascotMood.CELEBRATE else TukiMascotMood.THINKING,
+                        mood = if (stage == 2) TukiMascotMood.THINKING else TukiMascotMood.CELEBRATE,
                         modifier = Modifier.padding(4.dp),
                         showHalo = false
                     )
@@ -157,12 +164,16 @@ fun PremiumAskTukiPageRedesigned(active: Boolean) {
                     color = Color(0xFFDDF4E8),
                     shape = RoundedCornerShape(7.dp, 20.dp, 20.dp, 20.dp)
                 ) {
-                    Text(
-                        text = if (stage == 2) "Finding the best fit for your budget…" else "I found a great route for you!",
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        color = TukiInk,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    if (stage == 2) {
+                        BudgetReplyingDots()
+                    } else {
+                        Text(
+                            text = "I found a great route for you!",
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            color = TukiInk,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
                 }
             }
         }
@@ -170,7 +181,7 @@ fun PremiumAskTukiPageRedesigned(active: Boolean) {
         Spacer(modifier = Modifier.height(12.dp))
 
         AnimatedVisibility(
-            visible = stage >= 3,
+            visible = stage >= 4,
             enter = fadeIn(tween(260)) + slideInVertically(
                 animationSpec = spring(dampingRatio = 0.76f, stiffness = 320f),
                 initialOffsetY = { it / 4 }
@@ -182,7 +193,7 @@ fun PremiumAskTukiPageRedesigned(active: Boolean) {
         Spacer(modifier = Modifier.height(10.dp))
 
         AnimatedVisibility(
-            visible = stage >= 4,
+            visible = stage >= 5,
             enter = fadeIn(tween(260)) + scaleIn(
                 initialScale = 0.94f,
                 animationSpec = spring(dampingRatio = 0.68f, stiffness = 300f)
@@ -192,6 +203,53 @@ fun PremiumAskTukiPageRedesigned(active: Boolean) {
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun BudgetReplyingDots() {
+    val transition = rememberInfiniteTransition(label = "budget_replying_dots")
+    val firstDot by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 360, delayMillis = 0),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "budget_reply_dot_1"
+    )
+    val secondDot by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 360, delayMillis = 120),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "budget_reply_dot_2"
+    )
+    val thirdDot by transition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 360, delayMillis = 240),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "budget_reply_dot_3"
+    )
+
+    Row(
+        modifier = Modifier.padding(horizontal = 15.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        listOf(firstDot, secondDot, thirdDot).forEach { dotAlpha ->
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .graphicsLayer { alpha = dotAlpha }
+                    .background(TukiTeal, CircleShape)
+            )
+        }
     }
 }
 
