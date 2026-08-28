@@ -159,6 +159,8 @@ fun OnboardingScreen(
             )
         }
 
+        // The existing intro animation is intentionally left untouched. This feature pass only
+        // changes the onboarding pages that appear after the intro handoff.
         if (introVisible) {
             TukiFlightIntro(
                 onHandoffStarted = {
@@ -197,29 +199,46 @@ private fun OnboardingHeader(
         ) {
             repeat(ONBOARDING_PAGE_COUNT) { index ->
                 val segmentWidth by animateDpAsState(
-                    targetValue = if (index == currentPage) 38.dp else 24.dp,
-                    animationSpec = tween(220),
-                    label = "progress_segment_$index"
+                    targetValue = if (index == currentPage) 38.dp else 29.dp,
+                    animationSpec = tween(240),
+                    label = "progress_segment_width_$index"
                 )
-                val segmentAlpha by animateFloatAsState(
+                val fillWidth by animateDpAsState(
                     targetValue = when {
-                        index < currentPage -> 0.72f
-                        index == currentPage -> 1f
-                        else -> 0.14f
+                        index < currentPage -> segmentWidth
+                        index == currentPage -> segmentWidth
+                        else -> 0.dp
                     },
-                    animationSpec = tween(220),
-                    label = "progress_segment_alpha_$index"
+                    animationSpec = tween(
+                        durationMillis = if (index == currentPage) 420 else 220
+                    ),
+                    label = "progress_segment_fill_$index"
                 )
+
                 Box(
                     modifier = Modifier
                         .width(segmentWidth)
                         .height(5.dp)
-                        .graphicsLayer { alpha = segmentAlpha }
                         .background(
-                            color = TukiTeal,
+                            color = TukiTeal.copy(alpha = 0.12f),
                             shape = RoundedCornerShape(100.dp)
                         )
-                )
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .width(fillWidth)
+                            .height(5.dp)
+                            .background(
+                                color = if (index < currentPage) {
+                                    TukiTeal.copy(alpha = 0.66f)
+                                } else {
+                                    TukiTeal
+                                },
+                                shape = RoundedCornerShape(100.dp)
+                            )
+                    )
+                }
             }
         }
 
@@ -252,7 +271,7 @@ private fun OnboardingControls(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 18.dp),
+            .padding(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
