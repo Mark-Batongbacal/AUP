@@ -1,6 +1,7 @@
 using backend.Models.Database;
 using backend.Models.JeepneyRouteManagement;
 using backend.Repositories;
+using backend.Services.Routing;
 using backend.Services.Transportation;
 using Moq;
 
@@ -344,6 +345,7 @@ public sealed class AdminJeepneyRouteManagementServiceTests
     {
         var routeRepository = new Mock<ITransportRouteRepository>();
         var modeRepository = new Mock<ITransportModeRepository>();
+        var routingNetwork = new Mock<IRoutingNetworkChangeNotifier>();
         var readyDraft = ReadyDraft(44);
         routeRepository
             .Setup(repository => repository.GetByIdWithPointsForAdminAsync(44, It.IsAny<CancellationToken>()))
@@ -357,7 +359,10 @@ public sealed class AdminJeepneyRouteManagementServiceTests
                 return published;
             });
 
-        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var service = new AdminJeepneyRouteManagementService(
+            routeRepository.Object,
+            modeRepository.Object,
+            routingNetwork: routingNetwork.Object);
         var result = await service.PublishDraftAsync(44);
 
         Assert.True(result.Succeeded);
@@ -365,6 +370,8 @@ public sealed class AdminJeepneyRouteManagementServiceTests
         Assert.True(result.Route!.IsActive);
         routeRepository.Verify(repository => repository.PublishReadyJeepneyDraftAsync(
             44, It.IsAny<CancellationToken>()), Times.Once);
+        routingNetwork.Verify(network => network.Invalidate(
+            "jeepney route draft published"), Times.Once);
     }
 
     [Fact]

@@ -601,7 +601,7 @@ public partial class RoutingService
 
     private AccessCandidate? BuildExactFullRouteBoardAccess(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double originLatitude,
         double originLongitude,
         double? walkAccessDistanceLimitMeters = null)
@@ -664,7 +664,7 @@ public partial class RoutingService
 
     private AccessCandidate? BuildExactFullRouteAlightAccess(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double destinationLatitude,
         double destinationLongitude,
         double? walkAccessDistanceLimitMeters = null)

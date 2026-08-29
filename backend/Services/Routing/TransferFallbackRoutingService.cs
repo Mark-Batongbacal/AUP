@@ -36,6 +36,7 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
         IOptions<RoutingOptions> configuredOptions,
         ITripAreaValidator tripAreaValidator,
         ITukiTelemetry telemetry,
+        RoutingNetworkSnapshotProvider networkSnapshotProvider,
         ILogger<TransferFallbackRoutingService> logger)
     {
         _logger = logger;
@@ -46,6 +47,7 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
         _fallbackMaxTransfers = Math.Min(configuredMaxTransfers, FallbackTransferDepth);
 
         var routingLogger = loggerFactory.CreateLogger<RoutingService>();
+        var networkSnapshotScope = new RoutingNetworkSnapshotScope();
 
         _preferredRouting = new RoutingService(
             valhallaService,
@@ -54,7 +56,9 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
             routingLogger,
             CreateRoutingOptions(configuration, _preferredMaxTransfers),
             tripAreaValidator,
-            telemetry);
+            telemetry,
+            networkSnapshotProvider,
+            networkSnapshotScope);
 
         if (_fallbackMaxTransfers > _preferredMaxTransfers)
         {
@@ -65,7 +69,9 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
                 routingLogger,
                 CreateRoutingOptions(configuration, _fallbackMaxTransfers),
                 tripAreaValidator,
-                telemetry);
+                telemetry,
+                networkSnapshotProvider,
+                networkSnapshotScope);
         }
     }
 

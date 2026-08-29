@@ -562,7 +562,7 @@ public partial class RoutingService
 
     private AccessCandidate[] ComputeBoardAccessOptions(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double originLatitude,
         double originLongitude)
     {
@@ -619,7 +619,7 @@ public partial class RoutingService
     /// </summary>
     private async Task<BoardAccessDiscovery> DiscoverBoardAccessOptionsAsync(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double originLatitude,
         double originLongitude,
         CancellationToken cancellationToken,
@@ -782,7 +782,7 @@ public partial class RoutingService
 
     private AccessCandidate[] ComputeAlightAccessOptions(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double destinationLatitude,
         double destinationLongitude)
     {

@@ -1046,7 +1046,7 @@ public partial class RoutingService
         };
 
     private static int GetNearestSampleIndex(
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         (double Latitude, double Longitude) point)
     {
         var bestIndex = 0;
@@ -1071,7 +1071,7 @@ public partial class RoutingService
     }
 
     private static double RouteDistanceBetweenSamples(
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         int startIndex,
         int endIndex)
     {

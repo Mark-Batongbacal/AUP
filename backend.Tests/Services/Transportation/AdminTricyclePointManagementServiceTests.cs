@@ -1,6 +1,7 @@
 using backend.Models.Database;
 using backend.Models.TricyclePointManagement;
 using backend.Repositories;
+using backend.Services.Routing;
 using backend.Services.Transportation;
 using Moq;
 
@@ -68,6 +69,7 @@ public sealed class AdminTricyclePointManagementServiceTests
     {
         var repository = new Mock<ITricyclePointRepository>(MockBehavior.Strict);
         var pointService = new Mock<ITricyclePointService>(MockBehavior.Strict);
+        var routingNetwork = new Mock<IRoutingNetworkChangeNotifier>(MockBehavior.Strict);
         var point = Point(7, "ARCHIVE", 15.145000, 120.588000, true);
         repository.Setup(item => item.GetByIdAsync(7, It.IsAny<CancellationToken>()))
             .ReturnsAsync(point);
@@ -75,13 +77,18 @@ public sealed class AdminTricyclePointManagementServiceTests
                 It.Is<TricyclePoint>(candidate => candidate.TricyclePointId == 7 && !candidate.IsActive),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((TricyclePoint candidate, CancellationToken _) => candidate);
-        var service = new AdminTricyclePointManagementService(repository.Object, pointService.Object);
+        routingNetwork.Setup(network => network.Invalidate("TODA point deactivated"));
+        var service = new AdminTricyclePointManagementService(
+            repository.Object,
+            pointService.Object,
+            routingNetwork.Object);
 
         var result = await service.SetActiveAsync(7, false);
 
         Assert.True(result.Succeeded);
         Assert.False(result.Response!.Point.IsActive);
         repository.VerifyAll();
+        routingNetwork.VerifyAll();
     }
 
     private static TricyclePoint Point(

@@ -71,17 +71,22 @@ public partial class RoutingService : IRoutingService
     private readonly RoutingOptions _options;
     private readonly ITripAreaValidator _tripAreaValidator;
     private readonly ITukiTelemetry _telemetry;
-    private List<StaticJeepneyRoute> _routes = [];
-    private List<TrikePoint> _trikePoints = [];
+    private IReadOnlyList<StaticJeepneyRoute> _routes = [];
+    private IReadOnlyList<TrikePoint> _trikePoints = [];
 
-    private Dictionary<string, List<(double Latitude, double Longitude)>> _routeSamples = [];
-    private Dictionary<string, FullRouteGeometry> _routeGeometries = [];
-    private Dictionary<string, List<RouteAnchor>> _routeSearchAnchors = [];
-    private Dictionary<string, List<RouteInterchange>> _interchangesByRoute = [];
+    private IReadOnlyDictionary<string,
+        IReadOnlyList<(double Latitude, double Longitude)>> _routeSamples =
+        new Dictionary<string, IReadOnlyList<(double, double)>>();
+    private IReadOnlyDictionary<string, FullRouteGeometry> _routeGeometries =
+        new Dictionary<string, FullRouteGeometry>();
+    private IReadOnlyDictionary<string, IReadOnlyList<RouteAnchor>>
+        _routeSearchAnchors = new Dictionary<string, IReadOnlyList<RouteAnchor>>();
+    private IReadOnlyDictionary<string, IReadOnlyList<RouteInterchange>>
+        _interchangesByRoute = new Dictionary<string, IReadOnlyList<RouteInterchange>>();
     private readonly ITransportRouteRepository _transportRouteRepository;
     private readonly ITricyclePointRepository _tricyclePointRepository;
-    private readonly SemaphoreSlim _initializationLock = new(1, 1);
-    private bool _isInitialized;
+    private readonly IRoutingNetworkSnapshotProvider _networkSnapshotProvider;
+    private readonly RoutingNetworkSnapshotScope _networkSnapshotScope;
     // RoutingService is scoped in DI, so this deduplicates only one HTTP
     // request's exact matrix work and never becomes a stale global cache.
     private readonly ConcurrentDictionary<string, Task<IReadOnlyList<ValhallaMatrixResult>>>
@@ -95,6 +100,28 @@ public partial class RoutingService : IRoutingService
         IOptions<RoutingOptions> options,
         ITripAreaValidator? tripAreaValidator = null,
         ITukiTelemetry? telemetry = null)
+        : this(
+            valhallaService,
+            transportRouteRepository,
+            tricyclePointRepository,
+            logger,
+            options,
+            tripAreaValidator,
+            telemetry,
+            new RoutingNetworkSnapshotProvider())
+    {
+    }
+
+    internal RoutingService(
+        IValhallaService valhallaService,
+        ITransportRouteRepository transportRouteRepository,
+        ITricyclePointRepository tricyclePointRepository,
+        ILogger<RoutingService> logger,
+        IOptions<RoutingOptions> options,
+        ITripAreaValidator? tripAreaValidator,
+        ITukiTelemetry? telemetry,
+        IRoutingNetworkSnapshotProvider networkSnapshotProvider,
+        RoutingNetworkSnapshotScope? networkSnapshotScope = null)
     {
         _valhallaService = valhallaService;
         _logger = logger;
@@ -103,6 +130,8 @@ public partial class RoutingService : IRoutingService
         _telemetry = telemetry ?? NullTukiTelemetry.Instance;
         _transportRouteRepository = transportRouteRepository;
         _tricyclePointRepository = tricyclePointRepository;
+        _networkSnapshotProvider = networkSnapshotProvider;
+        _networkSnapshotScope = networkSnapshotScope ?? new RoutingNetworkSnapshotScope();
 
         _logger.LogInformation(
             "Routing configuration loaded: VOT={Vot}, WalkingFatigue={WalkingFatigue}",
@@ -115,88 +144,104 @@ public partial class RoutingService : IRoutingService
     {
         using var initializationMeasurement =
             _telemetry.MeasureRouting("network_initialization_ms");
-        if (_isInitialized)
-        {
-            _telemetry.IncrementRouting("network_initialization_cache_hits");
-            RecordNetworkSizeTelemetry();
-            return;
-        }
+        var pinnedSnapshot = _networkSnapshotScope.Snapshot;
+        var access = pinnedSnapshot is null
+            ? await _networkSnapshotProvider.GetSnapshotAsync(
+                BuildNetworkSnapshotAsync,
+                cancellationToken)
+            : new RoutingNetworkSnapshotAccess(pinnedSnapshot, false);
+        pinnedSnapshot = _networkSnapshotScope.Pin(access.Snapshot);
+        ApplyNetworkSnapshot(pinnedSnapshot);
+        _telemetry.IncrementRouting(
+            access.BuiltSnapshot
+                ? "network_initialization_builds"
+                : "network_initialization_cache_hits");
+        _telemetry.SetRoutingValue(
+            "network_snapshot_version",
+            pinnedSnapshot.Version);
+        RecordNetworkSizeTelemetry();
+    }
 
-        await _initializationLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (_isInitialized)
+    private async Task<RoutingNetworkSnapshot> BuildNetworkSnapshotAsync(
+        CancellationToken cancellationToken)
+    {
+        var databaseRoutes = await _transportRouteRepository
+            .GetAllActiveWithOrderedPointsAsync(cancellationToken);
+        var databaseTrikePoints = await _tricyclePointRepository
+            .GetAllActiveAsync(cancellationToken);
+
+        _routes = ValidateRoutes(databaseRoutes
+            .Where(route => string.Equals(
+                route.TransportMode?.Code,
+                "JEEPNEY",
+                StringComparison.OrdinalIgnoreCase))
+            .Select(route => new StaticJeepneyRoute
             {
-                _telemetry.IncrementRouting("network_initialization_cache_hits");
-                RecordNetworkSizeTelemetry();
-                return;
-            }
+                RouteId = route.RouteCode,
+                RouteName = route.RouteName,
+                Coordinates = route.RoutePoints
+                    .OrderBy(point => point.PointOrder)
+                    .Select(point => new[] { point.Longitude, point.Latitude })
+                    .ToList()
+            }));
 
-            _telemetry.IncrementRouting("network_initialization_builds");
+        _trikePoints = ValidateTrikePoints(databaseTrikePoints.Select(point =>
+            new TrikePoint(
+                point.PointCode,
+                point.PointName,
+                point.CenterLatitude,
+                point.CenterLongitude)));
 
-            var databaseRoutes = await _transportRouteRepository
-                .GetAllActiveWithOrderedPointsAsync(cancellationToken);
-            var databaseTrikePoints = await _tricyclePointRepository
-                .GetAllActiveAsync(cancellationToken);
-
-            _routes = ValidateRoutes(databaseRoutes
-                .Where(route => string.Equals(
-                    route.TransportMode?.Code,
-                    "JEEPNEY",
-                    StringComparison.OrdinalIgnoreCase))
-                .Select(route => new StaticJeepneyRoute
-                {
-                    RouteId = route.RouteCode,
-                    RouteName = route.RouteName,
-                    Coordinates = route.RoutePoints
-                        .OrderBy(point => point.PointOrder)
-                        .Select(point => new[] { point.Longitude, point.Latitude })
-                        .ToList()
-                }));
-
-            _trikePoints = ValidateTrikePoints(databaseTrikePoints.Select(point =>
-                new TrikePoint(
-                    point.PointCode,
-                    point.PointName,
-                    point.CenterLatitude,
-                    point.CenterLongitude)));
-
-            _routeGeometries = _routes.ToDictionary(
+        _routeGeometries = _routes.ToDictionary(
             route => route.RouteId,
             route => BuildFullRouteGeometry(route.Coordinates));
 
-            _routeSamples = _routes
+        _routeSamples = _routes
             .Where(route => route.Coordinates.Count >= 2)
             .ToDictionary(
                 route => route.RouteId,
-            route => SampleRoutePoints(
-                route.Coordinates,
-                DefaultSampleIntervalMeters,
-                MaxRouteSamples).ToList());
+                route => (IReadOnlyList<(double Latitude, double Longitude)>)
+                    SampleRoutePoints(
+                        route.Coordinates,
+                        DefaultSampleIntervalMeters,
+                        MaxRouteSamples).ToList());
 
-            _routeSearchAnchors = _routeSamples.ToDictionary(
+        _routeSearchAnchors = _routeSamples.ToDictionary(
             pair => pair.Key,
-            pair => BuildSearchAnchors(pair.Key, pair.Value));
+            pair => (IReadOnlyList<RouteAnchor>)
+                BuildSearchAnchors(pair.Key, pair.Value));
 
-            var routeNamesById = _routes.ToDictionary(
+        var routeNamesById = _routes.ToDictionary(
             route => route.RouteId,
             route => route.RouteName);
 
-            _interchangesByRoute = BuildInterchangeGraph(
-                _routeSamples,
-                routeNamesById);
+        _interchangesByRoute = BuildInterchangeGraph(
+            _routeSamples,
+            routeNamesById);
 
-            _logger.LogInformation(
-                "Loaded {RouteCount} jeepney routes and {TrikePointCount} tricycle points from the database",
-                _routes.Count,
-                _trikePoints.Count);
-            _isInitialized = true;
-            RecordNetworkSizeTelemetry();
-        }
-        finally
-        {
-            _initializationLock.Release();
-        }
+        _logger.LogInformation(
+            "Loaded {RouteCount} jeepney routes and {TrikePointCount} tricycle points from the database",
+            _routes.Count,
+            _trikePoints.Count);
+
+        return new RoutingNetworkSnapshot(
+            Version: 0,
+            _routes,
+            _trikePoints,
+            _routeSamples,
+            _routeGeometries,
+            _routeSearchAnchors,
+            _interchangesByRoute);
+    }
+
+    private void ApplyNetworkSnapshot(RoutingNetworkSnapshot snapshot)
+    {
+        _routes = snapshot.Routes;
+        _trikePoints = snapshot.TrikePoints;
+        _routeSamples = snapshot.RouteSamples;
+        _routeGeometries = snapshot.RouteGeometries;
+        _routeSearchAnchors = snapshot.RouteSearchAnchors;
+        _interchangesByRoute = snapshot.InterchangesByRoute;
     }
 
     private void RecordNetworkSizeTelemetry()

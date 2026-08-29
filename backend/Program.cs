@@ -48,6 +48,7 @@ if (!Uri.TryCreate(valhallaBaseUrl, UriKind.Absolute, out var valhallaUri) ||
         "Set Valhalla__BaseUrl in the environment.");
 }
 
+builder.Services.AddSingleton<IValhallaConcurrencyGate, ValhallaConcurrencyGate>();
 builder.Services.AddHttpClient<IValhallaService, ValhallaService>(client =>
 {
     client.BaseAddress = valhallaUri;
@@ -171,6 +172,9 @@ builder.Services.AddScoped<ITukiAssistantService, TukiAssistantService>();
 builder.Services.AddScoped<IJourneyPlanPersistenceService, JourneyPlanPersistenceService>();
 builder.Services.AddSingleton<ITukiTelemetry, TukiTelemetry>();
 builder.Services.AddSingleton<SystemResourceMetricsSampler>();
+builder.Services.AddSingleton<RoutingNetworkSnapshotProvider>();
+builder.Services.AddSingleton<IRoutingNetworkChangeNotifier>(services =>
+    services.GetRequiredService<RoutingNetworkSnapshotProvider>());
 builder.Services.AddScoped<IRoutingService, TransferFallbackRoutingService>();
 builder.Services.AddScoped<IJourneyPlanningFacadeService, JourneyPlanningFacadeService>();
 builder.Services.AddSingleton<ITripSessionStateMachine, TripSessionStateMachine>();
