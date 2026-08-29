@@ -13,6 +13,7 @@ public interface ITukiTelemetry
     IRoutingTelemetryScope BeginRoutingPass(
         int maxTransfers,
         CancellationToken cancellationToken = default);
+    IDisposable BeginRoutingStage(string stageName);
     IDisposable MeasureRouting(string operationName);
     void IncrementRouting(string metricName, long value = 1);
     void SetRoutingValue(string metricName, double value);
@@ -23,6 +24,7 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
 {
     private readonly AsyncLocal<RoutingPlanTelemetryContext?> _routingPlan = new();
     private readonly AsyncLocal<RoutingPassTelemetryContext?> _routingPass = new();
+    private readonly AsyncLocal<string?> _routingStage = new();
 
     public void Event(string eventName, Guid? tripSessionId = null, string? outcome = null) =>
         logger.LogInformation("TukiEvent {EventName} Session={TripSessionId} Outcome={Outcome}",
@@ -86,6 +88,13 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
             });
     }
 
+    public IDisposable BeginRoutingStage(string stageName)
+    {
+        var prior = _routingStage.Value;
+        _routingStage.Value = stageName;
+        return new RoutingStageScope(() => _routingStage.Value = prior);
+    }
+
     public IDisposable MeasureRouting(string operationName)
     {
         var plan = _routingPlan.Value;
@@ -104,6 +113,13 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
         var plan = _routingPlan.Value;
         plan?.Increment(metricName, value);
         _routingPass.Value?.Increment(metricName, value);
+
+        if (_routingStage.Value is { Length: > 0 } stage &&
+            IsStageAttributedCount(metricName))
+        {
+            plan?.Increment($"{stage}_{metricName}", value);
+            _routingPass.Value?.Increment($"{stage}_{metricName}", value);
+        }
     }
 
     public void SetRoutingValue(string metricName, double value)
@@ -118,7 +134,26 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
         var plan = _routingPlan.Value;
         plan?.Observe(metricName, value);
         _routingPass.Value?.Observe(metricName, value);
+
+        if (_routingStage.Value is { Length: > 0 } stage &&
+            IsStageAttributedObservation(metricName))
+        {
+            plan?.Observe($"{stage}_{metricName}", value);
+            _routingPass.Value?.Observe($"{stage}_{metricName}", value);
+        }
     }
+
+    private static bool IsStageAttributedCount(string metricName) =>
+        metricName is
+            "valhalla_matrix_http_calls" or
+            "valhalla_route_http_calls" or
+            "request_local_matrix_cache_hits" or
+            "request_local_matrix_cache_misses";
+
+    private static bool IsStageAttributedObservation(string metricName) =>
+        metricName is
+            "valhalla_gate_wait_ms" or
+            "valhalla_execution_ms";
 
     private sealed class Measurement(ILogger logger, string operation) : IDisposable
     {
@@ -147,6 +182,17 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
         public static EmptyMeasurement Instance { get; } = new();
         public void Dispose() { }
     }
+
+    private sealed class RoutingStageScope(Action dispose) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                dispose();
+        }
+    }
 }
 
 public sealed class NullTukiTelemetry : ITukiTelemetry
@@ -163,6 +209,7 @@ public sealed class NullTukiTelemetry : ITukiTelemetry
         int maxTransfers,
         CancellationToken cancellationToken = default) =>
         NestedRoutingTelemetryScope.Instance;
+    public IDisposable BeginRoutingStage(string stageName) => Empty.Instance;
     public IDisposable MeasureRouting(string operationName) => Empty.Instance;
     public void IncrementRouting(string metricName, long value = 1) { }
     public void SetRoutingValue(string metricName, double value) { }

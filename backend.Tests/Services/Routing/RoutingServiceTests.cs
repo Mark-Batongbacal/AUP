@@ -3,6 +3,7 @@ using backend.Models.Database;
 using backend.Models.Routing;
 using backend.Repositories;
 using backend.Services.Routing;
+using backend.Services.Telemetry;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -95,6 +96,39 @@ public sealed class RoutingServiceTests
                 leg => Assert.True(
                     leg.GeneralizedCostPesos > leg.DurationSeconds / 60.0 * 2));
         }
+    }
+
+    [Fact]
+    public async Task PlanTripsAsync_EmitsCandidateGenerationStageTimingsOnce()
+    {
+        var telemetry = new RecordingRoutingTelemetry();
+        var service = CreateService(
+            new FakeValhallaService((source, target, _) =>
+                DistanceMeters(source, target)),
+            telemetry: telemetry);
+
+        await service.PlanTripsAsync(
+            15.109698583445889,
+            120.58240903543013,
+            15.139582098206548,
+            120.60108373338038);
+
+        string[] metrics =
+        [
+            "candidate_generation_ms",
+            "access_discovery_ms",
+            "transfer_candidate_generation_ms",
+            "access_expansion_ms",
+            "hard_constraint_filter_ms",
+            "candidate_key_generation_ms",
+            "candidate_dedupe_ms",
+            "diversity_selection_ms"
+        ];
+        Assert.All(metrics, metric =>
+        {
+            var observation = Assert.Single(telemetry.Observations[metric]);
+            Assert.True(observation >= 0, $"{metric} must be non-negative");
+        });
     }
 
     [Fact]
@@ -537,7 +571,8 @@ public sealed class RoutingServiceTests
     private static RoutingService CreateService(
         IValhallaService valhalla,
         string? contentRootPath = null,
-        RoutingOptions? options = null)
+        RoutingOptions? options = null,
+        ITukiTelemetry? telemetry = null)
     {
         var root = contentRootPath ?? Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,
@@ -595,7 +630,8 @@ public sealed class RoutingServiceTests
             routeRepository.Object,
             tricycleRepository.Object,
             NullLogger<RoutingService>.Instance,
-            Options.Create(options ?? new RoutingOptions()));
+            Options.Create(options ?? new RoutingOptions()),
+            telemetry: telemetry);
     }
 
     private static double DistanceMeters(ValhallaLocation source, ValhallaLocation target) =>
@@ -633,6 +669,60 @@ public sealed class RoutingServiceTests
                 })
                 .ToList();
             return Task.FromResult(results);
+        }
+    }
+
+    private sealed class RecordingRoutingTelemetry : ITukiTelemetry
+    {
+        public Dictionary<string, List<double>> Observations { get; } = [];
+
+        public void Event(
+            string eventName,
+            Guid? tripSessionId = null,
+            string? outcome = null) { }
+
+        public IDisposable Measure(string operationName) => EmptyScope.Instance;
+
+        public void RecordRequest(
+            string path,
+            int statusCode,
+            double elapsedMilliseconds) { }
+
+        public IRoutingTelemetryScope BeginRoutingPlan(
+            string source,
+            CancellationToken cancellationToken = default) =>
+            EmptyScope.Instance;
+
+        public IRoutingTelemetryScope BeginRoutingPass(
+            int maxTransfers,
+            CancellationToken cancellationToken = default) =>
+            EmptyScope.Instance;
+
+        public IDisposable BeginRoutingStage(string stageName) =>
+            EmptyScope.Instance;
+
+        public IDisposable MeasureRouting(string operationName) =>
+            EmptyScope.Instance;
+
+        public void IncrementRouting(string metricName, long value = 1) { }
+        public void SetRoutingValue(string metricName, double value) { }
+
+        public void ObserveRouting(string metricName, double value)
+        {
+            if (!Observations.TryGetValue(metricName, out var values))
+            {
+                values = [];
+                Observations[metricName] = values;
+            }
+
+            values.Add(value);
+        }
+
+        private sealed class EmptyScope : IRoutingTelemetryScope
+        {
+            public static EmptyScope Instance { get; } = new();
+            public void Complete(string outcome) { }
+            public void Dispose() { }
         }
     }
 }

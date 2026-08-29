@@ -45,6 +45,55 @@ plan/flow success, and 0% failed HTTP requests. Relative to the supplied 10-VU
 baseline, average improved 34.8%, median improved 16.1%, and p95 was effectively
 flat (20.12 s to 20.07 s).
 
+### Post-B/C tail diagnosis
+
+The diagnostic telemetry change adds candidate-generation substage timings and
+attributes Valhalla calls, cache activity, gate wait, and execution to either
+access discovery or confirmation. It does not change candidate limits, routing
+requests, ranking, filtering, or selection behavior. All 463 backend tests pass.
+
+An unchanged B/C control run at the effective runtime Valhalla concurrency of 20
+produced 59 successful 10-VU plan calls: 6.21 s average, 7.77 s median, and
+17.74 s interpolated p95. In its empirical p95 cohort, median routing time was
+18.52 s, candidate generation was 15.08 s (82.4%), and confirmation was 3.36 s
+(17.6%). The slowest ten had the same shape: 83.5% candidate generation and
+16.3% confirmation.
+
+The instrumented run passed the overhead control: 1-VU average changed from
+4.60 s to 4.68 s (+1.7%) and median from 5.02 s to 5.10 s (+1.6%). Its 68
+successful 10-VU plan calls recorded 7.33 s average, 7.88 s median, and 18.63 s
+interpolated p95. The empirical p95 cohort broke down as follows:
+
+| Stage | Median wall time | Share/interpretation |
+| --- | ---: | --- |
+| Candidate generation | 13.05 s | 72.3% of routing time |
+| Confirmation | 4.82 s | 27.6% of routing time |
+| Diversity selection | 6.90 s | largest candidate substage |
+| Access discovery | 1.79 s | includes 13 median Valhalla calls |
+| Transfer candidate generation | 1.64 s | CPU candidate enumeration |
+| Candidate key generation | 1.63 s | main dedupe key construction |
+| Candidate dedupe | 0.55 s | grouping/representative selection excluding keys |
+| Access expansion | 0.26 s | alternative enumeration/materialization |
+| Hard-constraint filtering | 0.10 s | forward-progress and configured constraints |
+
+Per-request substage sums matched `candidate_generation_ms` with a 0.1 ms
+median residual. Access-discovery gate wait was secondary (75 ms median average
+per call and 460 ms median maximum). The p95 cohort's confirmation stage made a
+median 708 Valhalla calls, with 1.74 s median average gate wait per call and
+3.28 s median maximum gate wait. That is substantial global queuing, but the
+concurrent confirmation wall stage remained below 30% of p95 routing time. The
+slowest ten instrumented requests spent 78.4% in candidate generation and 21.6%
+in confirmation. The measured primary bottleneck is therefore candidate
+generation, led by diversity selection; Valhalla confirmation/gate wait is a
+material secondary bottleneck, not absent.
+
+Two benchmark caveats are recorded rather than attributed to the instrumentation:
+the active TODA dataset changed from 108 to 118 points between control and
+instrumented captures, and 13 instrumented-run navigation starts returned 409
+after planning succeeded. Plan success remained 100%; stage classification uses
+within-request wall shares and the unchanged-control cohort rather than treating
+the downstream flow failures as routing failures.
+
 ## Current architecture: verified findings
 
 ### Routing service lifetime and network initialization
@@ -201,10 +250,12 @@ timeouts, or response interpretation. If Tuki runs in multiple processes, the
 gate is process-wide, so the configured limit must account for instance count and
 Valhalla's total capacity.
 
-### Progressive, diverse confirmation
+### Conditional progressive, diverse confirmation
 
-Retain the existing ranked/diverse sequence and the 300 transit hard ceiling, but
-consume it progressively:
+Post-B/C measurements defer this architecture until candidate diversity/key
+processing is optimized and remeasured. If confirmation later meets the decision
+gate in Phase D, retain the existing ranked/diverse sequence and the 300 transit
+hard ceiling, but consume it progressively:
 
 1. Produce the same deterministic diverse ordering as today. Do not replace the
    diversity selector with a simple cost sort.
@@ -300,8 +351,9 @@ Required fields/counters are:
 | Correlation/outcome | `PlanId`, `Source`, `Outcome`, `ElapsedMs`, pass `MaxTransfers` |
 | Initialization | `network_initialization_ms`, builds/hits, route/TODA counts |
 | Candidate pipeline | generated, after access expansion, after dedupe, selected by edge family, total selected, confirmed by family |
-| Valhalla | route/matrix HTTP call counts, configured concurrency, gate wait time, execution time |
-| Caches | request-local exact matrix hits/misses; later global/static hits/misses when applicable |
+| Candidate substages | `access_discovery_ms`, `transfer_candidate_generation_ms`, `access_expansion_ms`, `hard_constraint_filter_ms`, `candidate_key_generation_ms`, `candidate_dedupe_ms`, `diversity_selection_ms` |
+| Valhalla | route/matrix HTTP call counts, configured concurrency, gate wait time, execution time, plus access-discovery/confirmation attribution |
+| Caches | request-local exact matrix hits/misses with stage attribution; later global/static hits/misses when applicable |
 | Phases | candidate generation, confirmation, pruning, geometry enrichment, persistence, routing service, total request |
 | Result/fallback | selected and eligible plan counts, fallback-used count |
 
@@ -368,12 +420,50 @@ Every phase follows the same gate:
   the measured effective limit unless the existing aggregate behavior is unsafe.
 - Validate cancellation, failures, permit release, wait metrics, and no deadlocks.
 
-### D. Progressive confirmation
+### D. Candidate diversity/key computation
 
-- First add shadow-mode batch/sufficiency telemetry with full current execution.
-- Enable diverse batches only after shadow output proves the stop rule safe.
-- Retain the full 300 ceiling and expand to it whenever required.
-- Compare every objective and diversity fixture, not just the top recommendation.
+The post-B/C p95 evidence changes this phase. Candidate generation consumes
+72%--82% of tail routing time, and diversity selection is its largest measured
+substage. Confirmation remains material but is not the primary tail bottleneck.
+Do not introduce progressive confirmation first.
+
+#### D1. Reuse existing candidate computations
+
+- Profile allocations and invocation counts inside the diversity selector before
+  changing it, with special attention to journey, boarding, access profile,
+  occurrence, objective score, fare, time, and access scalar key construction.
+- Compute each value once per candidate and carry it through dedupe and diversity
+  selection instead of regenerating equivalent keys and scores for each diversity
+  slice or ordering operation.
+- Preserve the existing comparer sequence, stable ordering, quotas, seen-set
+  behavior, candidate families, and `MaxCandidatesToConfirm = 300` ceiling.
+- In a test/shadow harness, compare the exact ordered candidate keys selected by
+  the current and optimized implementations. Cover known routing fixtures plus
+  tie-heavy, looping, self-transfer, repeated-occurrence, TODA/access-profile,
+  and randomized candidate sets.
+- Benchmark D1 independently. Do not combine it with confirmation batching or a
+  new selection algorithm, so its output parity and performance are attributable.
+
+#### D2. Exact bounded selection, only if D1 leaves selection dominant
+
+- Consider avoiding full repeated sorts only after D1 is measured. Any bounded
+  selector must reproduce LINQ's stable ordering exactly, using original input
+  position as the final tie-break and applying existing seen/diversity rules in
+  the same order.
+- Require exact equality of the full ordered selected-candidate sequence against
+  the reference selector before enabling it.
+- Re-profile after D2 before considering transfer candidate generation changes.
+
+#### Deferred progressive confirmation
+
+Progressive confirmation is now contingent, not part of the first Phase D
+implementation. Reconsider it only if D1/D2 measurements show confirmation has
+become at least 50% of p95 routing wall time, or candidate generation and
+confirmation are both at least 30% in a comparable fixed-dataset run. These are
+decision gates, not production tuning constants. Start with shadow-mode
+batch/sufficiency telemetry while executing the full current pipeline, retain the
+complete 300 ceiling for difficult cases, and compare all objective and diversity
+outputs before any early stop is enabled.
 
 ### E. Static matrix precomputation/cache
 
@@ -393,18 +483,18 @@ Every phase follows the same gate:
 
 ## Expected impact and measurements still required
 
-The largest likely throughput/latency gain is progressive confirmation because
-the current pipeline can schedule up to 300 transit and 300 access-path edges,
-with several Valhalla operations per transit candidate. It directly attacks the
-resource whose overload shape matches the nonlinear 10-to-20-VU degradation.
-This remains a hypothesis until Phase A shows that confirmation/Valhalla call
-count dominates total time.
+B/C already removed repeated network construction and made Valhalla backpressure
+process-wide, improving 10-VU average latency and stability while leaving p95
+nearly flat. Tail telemetry now identifies diversity selection and repeated key
+work as the largest actionable area. D1 is therefore the most likely next p95
+gain: it removes CPU and allocation work while keeping the current candidate set,
+ordering, diversity rules, and confirmation workload unchanged.
 
-The shared snapshot is the highest-confidence early optimization: the code proves
-that identical DB reads, geometry sampling, anchor generation, and interchange
-construction repeat per request (and again on fallback). Its gain may be smaller
-than progressive confirmation if Valhalla dominates, but it has a narrower
-correctness surface.
+Valhalla confirmation still warrants continued measurement. The instrumented
+p95 cohort spent 27.6% in confirmation and showed substantial confirmation-gate
+wait, so it may become dominant after candidate CPU work is reduced. That is the
+measurement threshold for revisiting progressive confirmation rather than a
+reason to change confirmation semantics now.
 
 Measure before choosing implementation constants:
 
@@ -412,6 +502,8 @@ Measure before choosing implementation constants:
 - candidate counts at each stage and by transfer depth/objective/access family;
 - actual Valhalla HTTP calls per plan versus logical matrix cache hits/misses;
 - Valhalla gate wait and execution distributions at 1, 10, 15, and 20 VUs;
+- invocation/allocation counts for every key, score, and sort used by diversity
+  selection;
 - maximum simultaneous confirmation tasks and calls;
 - preferred-pass no-route/fallback frequency and incremental fallback cost;
 - geometry and persistence contribution to endpoint total;
@@ -424,16 +516,21 @@ Measure before choosing implementation constants:
 1. **A — instrumentation and reproducible benchmark**
 2. **B — shared immutable network snapshot**
 3. **C — process-wide Valhalla gate**
-4. **D — progressive confirmation, shadow mode first**
-5. **E — versioned static matrix/route cache**
-6. **F — bounded routing admission control**
+4. **D1 — reuse diversity keys/scores with exact ordered-output parity**
+5. **D2 — exact bounded diversity selection, only if D1 leaves it dominant**
+6. **Deferred — progressive confirmation shadowing, only if confirmation becomes dominant**
+7. **E — versioned static matrix/route cache**
+8. **F — bounded routing admission control**
 
 B precedes static caching so cache ownership and invalidation share one network
-version. C precedes progressive confirmation so batch measurements occur under
-known global backpressure. Admission control comes last because it protects a
-tuned pipeline; it should not conceal avoidable internal work.
+version. C provides known global backpressure for all subsequent measurements.
+Candidate computation comes before progressive confirmation because measured
+p95 is currently CPU-selection dominated. Admission control comes last because
+it protects a tuned pipeline; it should not conceal avoidable internal work.
 
-The smallest safe first PR/commit is Phase A only: telemetry primitives and
-wiring, focused telemetry tests, the constant-VU benchmark profile, and this
-plan. It must contain no changed limits, lifetimes, candidate selection, caching,
-or routing output behavior.
+The smallest safe post-B/C diagnostic PR/commit is the telemetry change recorded
+above: candidate substage timings, stage-attributed Valhalla/cache observations,
+focused tests, benchmark evidence, and this revised plan. It contains no changed
+limits, lifetimes, candidate selection, caching, or routing output behavior. The
+smallest safe optimization PR after that is D1 only; do not combine it with D2 or
+progressive confirmation.

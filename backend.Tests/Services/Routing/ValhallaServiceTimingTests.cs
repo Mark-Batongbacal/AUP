@@ -342,6 +342,9 @@ public sealed class ValhallaServiceTimingTests
             CancellationToken cancellationToken = default) =>
             EmptyScope.Instance;
 
+        public IDisposable BeginRoutingStage(string stageName) =>
+            EmptyScope.Instance;
+
         public IDisposable MeasureRouting(string operationName) => EmptyScope.Instance;
 
         public void IncrementRouting(string metricName, long value = 1) =>

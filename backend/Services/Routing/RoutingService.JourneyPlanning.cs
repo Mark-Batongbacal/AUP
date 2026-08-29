@@ -54,6 +54,7 @@ public partial class RoutingService
         var maxWalkAccessDistanceMeters =
             GetWalkAccessDistanceLimit(planningPreferences);
         var candidateGenerationStarted = Stopwatch.GetTimestamp();
+        var accessDiscoveryStarted = Stopwatch.GetTimestamp();
 
         var boardAccessPrefixByRoute =
             new Dictionary<string, IReadOnlyList<AccessCandidate>[]>();
@@ -64,101 +65,110 @@ public partial class RoutingService
         var directConnectionsByRoute =
             new Dictionary<string, List<RouteConnectionCandidate>>(StringComparer.Ordinal);
         var routesById = _routes.ToDictionary(route => route.RouteId, StringComparer.Ordinal);
+        List<AccessPathDestinationCompletionEdge> accessPathCompletionEdges;
+        List<DirectAccessDestinationCompletionEdge> directCompletionEdges;
 
-        foreach (var (routeId, samples) in _routeSamples)
+        using (_telemetry.BeginRoutingStage("access_discovery"))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var boardDiscovery = await DiscoverBoardAccessOptionsAsync(
-                routeId,
-                samples,
-                originLatitude,
-                originLongitude,
-                cancellationToken,
-                maxWalkAccessDistanceMeters);
-            if (planningPreferences?.OnboardTransit is { } onboard &&
-                string.Equals(onboard.RouteId, routeId, StringComparison.Ordinal))
+            foreach (var (routeId, samples) in _routeSamples)
             {
-                var anchor = GetRouteAnchorAtProgress(
-                    routeId, onboard.CurrentRouteProgressMeters);
-                boardDiscovery = boardDiscovery with
-                {
-                    Onboard = WalkAccess(
-                        (anchor.Latitude, anchor.Longitude),
-                        0,
-                        GetNearestSampleIndex(samples, (anchor.Latitude, anchor.Longitude)),
-                        anchor) with
-                    {
-                        IsNetworkWalkConfirmed = true,
-                        IsAlreadyOnboard = true
-                    }
-                };
-            }
-            var boardOptions = boardDiscovery.Projected;
+                cancellationToken.ThrowIfCancellationRequested();
 
-            var directConnections = FindBestConnections(
-                routesById[routeId],
-                originLatitude,
-                originLongitude,
-                destinationLatitude,
-                destinationLongitude,
-                boardDiscovery,
-                maxWalkAccessDistanceMeters,
-                planningPreferences?.OnboardTransit);
-            directConnectionsByRoute[routeId] = directConnections;
-
-            // Transfer journeys take their origin access from these bounded
-            // prefix sets. Seed them with the same route-occurrence-aware
-            // states selected above for direct search. Applying the same
-            // transit-access limit keeps one configured walking cap instead
-            // of allowing a multi-kilometre transfer-only access walk.
-            var accessPrefix = ComputePrefixAccessOptions(
-                    routeId,
-                    ConstrainTransitAccessOptions(
-                        boardOptions,
-                        maxWalkAccessDistanceMeters),
-                    directConnections.Select(candidate => candidate.BoardAccess));
-            boardAccessPrefixByRoute[routeId] = ApplyOnboardAccessContext(
-                routeId,
-                accessPrefix,
-                boardDiscovery.Onboard,
-                planningPreferences?.OnboardTransit);
-
-            var alightOptions =
-                ComputeAlightAccessOptions(
+                var boardDiscovery = await DiscoverBoardAccessOptionsAsync(
                     routeId,
                     samples,
-                    destinationLatitude,
-                    destinationLongitude);
-            var constrainedAlightOptions =
-                ConstrainTransitAccessOptions(
-                    alightOptions,
+                    originLatitude,
+                    originLongitude,
+                    cancellationToken,
                     maxWalkAccessDistanceMeters);
-            destinationAccessByRoute[routeId] = DistinctAccessOccurrences(
-                constrainedAlightOptions
-                    .Where(access => access is not null)
-                    .Select(access => access!)
-                    .Concat(directConnections.Select(candidate =>
-                        candidate.AlightAccess)));
-        }
+                if (planningPreferences?.OnboardTransit is { } onboard &&
+                    string.Equals(onboard.RouteId, routeId, StringComparison.Ordinal))
+                {
+                    var anchor = GetRouteAnchorAtProgress(
+                        routeId, onboard.CurrentRouteProgressMeters);
+                    boardDiscovery = boardDiscovery with
+                    {
+                        Onboard = WalkAccess(
+                            (anchor.Latitude, anchor.Longitude),
+                            0,
+                            GetNearestSampleIndex(
+                                samples,
+                                (anchor.Latitude, anchor.Longitude)),
+                            anchor) with
+                        {
+                            IsNetworkWalkConfirmed = true,
+                            IsAlreadyOnboard = true
+                        }
+                    };
+                }
+                var boardOptions = boardDiscovery.Projected;
 
-        // Destination-completion edges are discovered from origin/access
-        // states before any transit candidate is confirmed. They run in
-        // parallel with transit confirmation and never depend on a bad suffix
-        // surviving pruning merely to reveal that the trip could have ended.
-        var accessPathCompletionEdges =
-            BuildAccessPathDestinationCompletionEdges(
+                var directConnections = FindBestConnections(
+                    routesById[routeId],
+                    originLatitude,
+                    originLongitude,
+                    destinationLatitude,
+                    destinationLongitude,
+                    boardDiscovery,
+                    maxWalkAccessDistanceMeters,
+                    planningPreferences?.OnboardTransit);
+                directConnectionsByRoute[routeId] = directConnections;
+
+                // Transfer journeys take their origin access from these bounded
+                // prefix sets. Seed them with the same route-occurrence-aware
+                // states selected above for direct search. Applying the same
+                // transit-access limit keeps one configured walking cap instead
+                // of allowing a multi-kilometre transfer-only access walk.
+                var accessPrefix = ComputePrefixAccessOptions(
+                        routeId,
+                        ConstrainTransitAccessOptions(
+                            boardOptions,
+                            maxWalkAccessDistanceMeters),
+                        directConnections.Select(candidate => candidate.BoardAccess));
+                boardAccessPrefixByRoute[routeId] = ApplyOnboardAccessContext(
+                    routeId,
+                    accessPrefix,
+                    boardDiscovery.Onboard,
+                    planningPreferences?.OnboardTransit);
+
+                var alightOptions =
+                    ComputeAlightAccessOptions(
+                        routeId,
+                        samples,
+                        destinationLatitude,
+                        destinationLongitude);
+                var constrainedAlightOptions =
+                    ConstrainTransitAccessOptions(
+                        alightOptions,
+                        maxWalkAccessDistanceMeters);
+                destinationAccessByRoute[routeId] = DistinctAccessOccurrences(
+                    constrainedAlightOptions
+                        .Where(access => access is not null)
+                        .Select(access => access!)
+                        .Concat(directConnections.Select(candidate =>
+                            candidate.AlightAccess)));
+            }
+
+            // Destination-completion edges are discovered from origin/access
+            // states before any transit candidate is confirmed. They run in
+            // parallel with transit confirmation and never depend on a bad suffix
+            // surviving pruning merely to reveal that the trip could have ended.
+            accessPathCompletionEdges = BuildAccessPathDestinationCompletionEdges(
                 boardAccessPrefixByRoute,
                 directConnectionsByRoute,
                 destinationLatitude,
                 destinationLongitude);
-        var directCompletionEdges =
-            BuildDirectAccessDestinationCompletionEdges(
+            directCompletionEdges = BuildDirectAccessDestinationCompletionEdges(
                 originLatitude,
                 originLongitude,
                 destinationLatitude,
                 destinationLongitude);
+        }
+        _telemetry.ObserveRouting(
+            "access_discovery_ms",
+            Stopwatch.GetElapsedTime(accessDiscoveryStarted).TotalMilliseconds);
 
+        var transferCandidateGenerationStarted = Stopwatch.GetTimestamp();
         var candidates = new List<JourneyCandidate>();
 
         // 0 transfers. Keep several boarding variants for each route instead
@@ -205,26 +215,39 @@ public partial class RoutingService
             cancellationToken).ToList();
         candidates.AddRange(transferCandidates);
         _telemetry.IncrementRouting("candidates_generated", candidates.Count);
+        _telemetry.ObserveRouting(
+            "transfer_candidate_generation_ms",
+            Stopwatch.GetElapsedTime(
+                transferCandidateGenerationStarted).TotalMilliseconds);
 
         // Access generation stores walking and tricycle choices together on
         // one route anchor. Expand them before ranking; otherwise confirmation
         // accepts only the first valid choice and useful multimodal variants
         // (for example trike -> jeepney -> trike) disappear.
+        var hardConstraintTicks = 0L;
+        var accessExpansionStarted = Stopwatch.GetTimestamp();
         var expandedCandidates = candidates
             .SelectMany(ExpandAccessAlternatives)
             // Full-route progress is authoritative. This catches wrong-way or
             // zero-progress legs even when sparse sample indices look valid.
-            .Where(candidate => candidate.Legs.All(HasForwardRouteProgress))
-            .Where(candidate => MeetsProvisionalHardConstraints(
-                candidate, planningPreferences))
+            .Where(MeetsMeasuredTransitHardConstraints)
             .ToList();
+        var accessExpansionAndFilterTicks =
+            Stopwatch.GetTimestamp() - accessExpansionStarted;
+        _telemetry.ObserveRouting(
+            "access_expansion_ms",
+            StopwatchTicksToMilliseconds(Math.Max(
+                0,
+                accessExpansionAndFilterTicks - hardConstraintTicks)));
         _telemetry.IncrementRouting(
             "candidates_after_access_expansion",
             expandedCandidates.Count);
         _telemetry.IncrementRouting("candidates_expanded", expandedCandidates.Count);
 
+        var candidateKeyGenerationTicks = 0L;
+        var candidateDedupeStarted = Stopwatch.GetTimestamp();
         var distinctCandidates = expandedCandidates
-            .GroupBy(GetJourneyCandidateKey, StringComparer.Ordinal)
+            .GroupBy(GetMeasuredJourneyCandidateKey, StringComparer.Ordinal)
             .Select(group => HasSoftPlanningPreference(planningPreferences)
                 ? group
                     .OrderBy(candidate => PlanningCandidateScore(
@@ -235,6 +258,16 @@ public partial class RoutingService
                     .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
                     .First())
             .ToList();
+        var candidateDedupeAndKeyTicks =
+            Stopwatch.GetTimestamp() - candidateDedupeStarted;
+        _telemetry.ObserveRouting(
+            "candidate_key_generation_ms",
+            StopwatchTicksToMilliseconds(candidateKeyGenerationTicks));
+        _telemetry.ObserveRouting(
+            "candidate_dedupe_ms",
+            StopwatchTicksToMilliseconds(Math.Max(
+                0,
+                candidateDedupeAndKeyTicks - candidateKeyGenerationTicks)));
         _telemetry.IncrementRouting(
             "candidates_after_dedupe",
             distinctCandidates.Count);
@@ -242,18 +275,21 @@ public partial class RoutingService
         // Phase 2 reserves part of the confirmation budget for distinct route
         // and boarding regions so a dense cluster of similar candidates cannot
         // crowd out useful alternatives before authoritative validation.
+        var diversitySelectionStarted = Stopwatch.GetTimestamp();
         var ranked = SelectCandidatesToConfirmWithDiversity(
             distinctCandidates, planningPreferences);
+        _telemetry.ObserveRouting(
+            "diversity_selection_ms",
+            Stopwatch.GetElapsedTime(diversitySelectionStarted).TotalMilliseconds);
         var eligibleDirectCompletionEdges = directCompletionEdges
-            .Where(edge => MeetsProvisionalHardConstraints(
-                edge,
-                planningPreferences))
+            .Where(MeetsMeasuredDirectHardConstraints)
             .ToList();
         var eligibleAccessPathCompletionEdges = accessPathCompletionEdges
-            .Where(edge => MeetsProvisionalHardConstraints(
-                edge,
-                planningPreferences))
+            .Where(MeetsMeasuredAccessPathHardConstraints)
             .ToList();
+        _telemetry.ObserveRouting(
+            "hard_constraint_filter_ms",
+            StopwatchTicksToMilliseconds(hardConstraintTicks));
         _telemetry.IncrementRouting(
             "transit_candidates_selected_for_confirmation",
             ranked.Count);
@@ -281,14 +317,18 @@ public partial class RoutingService
             .Concat(eligibleAccessPathCompletionEdges)
             .ToList();
         var confirmationStarted = Stopwatch.GetTimestamp();
-        var completionResult = await ConfirmDestinationCompletionEdgesAsync(
-            completionEdges,
-            originLatitude,
-            originLongitude,
-            destinationLatitude,
-            destinationLongitude,
-            cancellationToken,
-            maxWalkAccessDistanceMeters);
+        DestinationCompletionConfirmationResult completionResult;
+        using (_telemetry.BeginRoutingStage("confirmation"))
+        {
+            completionResult = await ConfirmDestinationCompletionEdgesAsync(
+                completionEdges,
+                originLatitude,
+                originLongitude,
+                destinationLatitude,
+                destinationLongitude,
+                cancellationToken,
+                maxWalkAccessDistanceMeters);
+        }
         _telemetry.ObserveRouting(
             "confirmation_ms",
             Stopwatch.GetElapsedTime(confirmationStarted).TotalMilliseconds);
@@ -298,6 +338,72 @@ public partial class RoutingService
         _telemetry.IncrementRouting(
             "access_only_candidates_confirmed",
             completionResult.AccessOnly.Count);
+
+        bool MeetsMeasuredTransitHardConstraints(JourneyCandidate candidate)
+        {
+            var started = Stopwatch.GetTimestamp();
+            try
+            {
+                return candidate.Legs.All(HasForwardRouteProgress) &&
+                    MeetsProvisionalHardConstraints(
+                        candidate,
+                        planningPreferences);
+            }
+            finally
+            {
+                hardConstraintTicks += Stopwatch.GetTimestamp() - started;
+            }
+        }
+
+        bool MeetsMeasuredDirectHardConstraints(
+            DirectAccessDestinationCompletionEdge edge)
+        {
+            var started = Stopwatch.GetTimestamp();
+            try
+            {
+                return MeetsProvisionalHardConstraints(
+                    edge,
+                    planningPreferences);
+            }
+            finally
+            {
+                hardConstraintTicks += Stopwatch.GetTimestamp() - started;
+            }
+        }
+
+        bool MeetsMeasuredAccessPathHardConstraints(
+            AccessPathDestinationCompletionEdge edge)
+        {
+            var started = Stopwatch.GetTimestamp();
+            try
+            {
+                return MeetsProvisionalHardConstraints(
+                    edge,
+                    planningPreferences);
+            }
+            finally
+            {
+                hardConstraintTicks += Stopwatch.GetTimestamp() - started;
+            }
+        }
+
+        string GetMeasuredJourneyCandidateKey(JourneyCandidate candidate)
+        {
+            var started = Stopwatch.GetTimestamp();
+            try
+            {
+                return GetJourneyCandidateKey(candidate);
+            }
+            finally
+            {
+                candidateKeyGenerationTicks +=
+                    Stopwatch.GetTimestamp() - started;
+            }
+        }
+
+        static double StopwatchTicksToMilliseconds(long ticks) =>
+            ticks * 1_000.0 / Stopwatch.Frequency;
+
         var pruningStarted = Stopwatch.GetTimestamp();
         // Pairwise pruning must only use journeys that are eligible to reach
         // the user-facing result set. A provisionally short walk can exceed

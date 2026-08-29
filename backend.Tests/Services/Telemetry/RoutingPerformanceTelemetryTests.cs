@@ -84,6 +84,86 @@ public sealed class RoutingPerformanceTelemetryTests
         Assert.Equal("failed", entry["Outcome"]);
     }
 
+    [Fact]
+    public async Task RoutingStage_AttributesValhallaMetricsAndRestoresNestedStage()
+    {
+        var logger = new CapturingLogger<TukiTelemetry>();
+        var telemetry = new TukiTelemetry(logger);
+
+        using (var plan = telemetry.BeginRoutingPlan("test"))
+        {
+            using (var pass = telemetry.BeginRoutingPass(2))
+            {
+                using (telemetry.BeginRoutingStage("access_discovery"))
+                {
+                    await Task.Run(() =>
+                    {
+                        telemetry.IncrementRouting(
+                            "valhalla_matrix_http_calls");
+                        telemetry.ObserveRouting(
+                            "valhalla_gate_wait_ms",
+                            10);
+                    });
+
+                    using (telemetry.BeginRoutingStage("confirmation"))
+                    {
+                        telemetry.IncrementRouting(
+                            "valhalla_matrix_http_calls");
+                        telemetry.ObserveRouting(
+                            "valhalla_gate_wait_ms",
+                            20);
+                    }
+
+                    telemetry.IncrementRouting(
+                        "valhalla_matrix_http_calls");
+                    telemetry.ObserveRouting(
+                        "valhalla_gate_wait_ms",
+                        30);
+                }
+
+                pass.Complete("success");
+            }
+
+            plan.Complete("success");
+        }
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(
+            3L,
+            Assert.IsType<long>(entry["valhalla_matrix_http_calls"]));
+        Assert.Equal(
+            2L,
+            Assert.IsType<long>(entry[
+                "access_discovery_valhalla_matrix_http_calls"]));
+        Assert.Equal(
+            1L,
+            Assert.IsType<long>(entry[
+                "confirmation_valhalla_matrix_http_calls"]));
+        Assert.Equal(
+            60,
+            Assert.IsType<double>(entry["valhalla_gate_wait_ms_sum"]));
+        Assert.Equal(
+            40,
+            Assert.IsType<double>(entry[
+                "access_discovery_valhalla_gate_wait_ms_sum"]));
+        Assert.Equal(
+            20,
+            Assert.IsType<double>(entry[
+                "confirmation_valhalla_gate_wait_ms_sum"]));
+
+        var passes = Assert.IsAssignableFrom<
+            IReadOnlyList<RoutingPassTelemetrySnapshot>>(entry["Passes"]);
+        var passSnapshot = Assert.Single(passes);
+        Assert.Equal(
+            2,
+            passSnapshot.Counts[
+                "access_discovery_valhalla_matrix_http_calls"]);
+        Assert.Equal(
+            20,
+            passSnapshot.Observations[
+                "confirmation_valhalla_gate_wait_ms"].Sum);
+    }
+
     private sealed class CapturingLogger<T> : ILogger<T>
     {
         public List<IReadOnlyDictionary<string, object?>> Entries { get; } = [];
