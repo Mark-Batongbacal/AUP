@@ -65,6 +65,8 @@ public partial class TransportRoute
 
     public DateTime? UpdatedAt { get; set; }
 
+    public DateTime? ArchivedAt { get; set; }
+
     public virtual TransportStop? EndStop { get; set; }
 
     public virtual ICollection<FareRule> FareRules { get; set; } = new List<FareRule>();

@@ -61,12 +61,23 @@ import java.time.Instant
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private val NavigationAiSurface = com.example.frontend.ui.theme.TukiCream
-private val NavigationAiDark = com.example.frontend.ui.theme.TukiInk
-private val NavigationAiTeal = com.example.frontend.ui.theme.TukiTeal
-private val NavigationAiOrange = com.example.frontend.ui.theme.TukiOrange
-private val NavigationAiMuted = com.example.frontend.ui.theme.TukiMuted
-private val NavigationAiBubble = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val NavigationAiSurface: Color
+    @Composable get() = MaterialTheme.colorScheme.background
+
+private val NavigationAiDark: Color
+    @Composable get() = MaterialTheme.colorScheme.onBackground
+
+private val NavigationAiTeal: Color
+    @Composable get() = MaterialTheme.colorScheme.primary
+
+private val NavigationAiOrange: Color
+    @Composable get() = MaterialTheme.colorScheme.tertiary
+
+private val NavigationAiMuted: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+
+private val NavigationAiBubble: Color
+    @Composable get() = MaterialTheme.colorScheme.surface
 
 private data class NavigationAiMessage(
     val id: Long,
@@ -378,7 +389,7 @@ fun NavigationAiSheet(
                             ) {
                                 Text(
                                     message.text,
-                                    color = if (message.fromUser) Color.White else NavigationAiDark,
+                                    color = if (message.fromUser) MaterialTheme.colorScheme.onTertiary else NavigationAiDark,
                                     fontSize = 13.sp,
                                     lineHeight = 18.sp
                                 )
@@ -444,7 +455,7 @@ fun NavigationAiSheet(
                                     Modifier
                                         .fillMaxWidth()
                                         .background(
-                                            NavigationAiTeal.copy(alpha = 0.09f),
+                                            MaterialTheme.colorScheme.primaryContainer,
                                             RoundedCornerShape(14.dp)
                                         )
                                         .clickable(
@@ -456,7 +467,7 @@ fun NavigationAiSheet(
                                 ) {
                                     Text(
                                         prompt,
-                                        color = NavigationAiDark,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
@@ -534,7 +545,7 @@ fun NavigationAiSheet(
                         ) { send(input) },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("➤", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("➤", color = MaterialTheme.colorScheme.onTertiary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -570,10 +581,11 @@ private fun NavigationDestinationChoiceCard(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .fillMaxWidth(0.92f)
-            .background(NavigationAiTeal, RoundedCornerShape(14.dp))
+            .background(colors.primary, RoundedCornerShape(14.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 13.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -581,12 +593,12 @@ private fun NavigationDestinationChoiceCard(
         Text("📍", fontSize = 16.sp)
         Spacer(Modifier.width(9.dp))
         Column(Modifier.weight(1f)) {
-            Text(place.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text(place.name, color = colors.onPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             place.address?.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = Color.White.copy(alpha = 0.75f), fontSize = 10.sp)
+                Text(it, color = colors.onPrimary.copy(alpha = 0.75f), fontSize = 10.sp)
             }
         }
-        Text("Select", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("Select", color = colors.onPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -598,6 +610,7 @@ private fun NavigationReplanCard(
     enabled: Boolean,
     onApply: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val tags = journey.recommendationType
         .split(',')
         .map { it.trim().lowercase() }
@@ -619,14 +632,14 @@ private fun NavigationReplanCard(
     Column(
         Modifier
             .fillMaxWidth(0.94f)
-            .background(NavigationAiDark, RoundedCornerShape(17.dp))
+            .background(colors.surfaceVariant, RoundedCornerShape(17.dp))
             .padding(14.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+            Text(label, color = colors.onSurfaceVariant, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
             Text(
                 "₱${journey.farePesos.roundToInt()}",
-                color = Color.White,
+                color = colors.onSurfaceVariant,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -634,19 +647,19 @@ private fun NavigationReplanCard(
         Spacer(Modifier.height(5.dp))
         Text(
             "~${(journey.durationSeconds / 60).roundToInt()} min  •  ${journey.walkingMeters.roundToInt()}m walk",
-            color = Color.White.copy(alpha = 0.78f),
+            color = colors.onSurfaceVariant.copy(alpha = 0.78f),
             fontSize = 11.sp
         )
         if (modes.isNotBlank()) {
             Spacer(Modifier.height(5.dp))
-            Text(modes, color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
+            Text(modes, color = colors.onSurfaceVariant.copy(alpha = 0.72f), fontSize = 11.sp)
         }
         Spacer(Modifier.height(10.dp))
         Box(
             Modifier
                 .fillMaxWidth()
                 .background(
-                    if (enabled) NavigationAiOrange else NavigationAiMuted.copy(alpha = 0.45f),
+                    if (enabled) colors.tertiary else colors.onSurfaceVariant.copy(alpha = 0.22f),
                     RoundedCornerShape(12.dp)
                 )
                 .clickable(enabled = enabled && !applying, onClick = onApply)
@@ -657,16 +670,16 @@ private fun NavigationReplanCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(
                         Modifier.size(15.dp),
-                        color = Color.White,
+                        color = colors.onTertiary,
                         strokeWidth = 2.dp
                     )
                     Spacer(Modifier.width(7.dp))
-                    Text("Applying…", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Applying…", color = colors.onTertiary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             } else {
                 Text(
                     "Apply this route",
-                    color = Color.White,
+                    color = if (enabled) colors.onTertiary else colors.onSurfaceVariant,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -681,11 +694,12 @@ fun NavigationAiButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     Box(
         modifier
             .size(48.dp)
             .background(
-                if (enabled) NavigationAiOrange else NavigationAiOrange.copy(alpha = 0.4f),
+                if (enabled) colors.tertiary else colors.tertiary.copy(alpha = 0.4f),
                 CircleShape
             )
             .clickable(enabled = enabled, onClick = onClick),

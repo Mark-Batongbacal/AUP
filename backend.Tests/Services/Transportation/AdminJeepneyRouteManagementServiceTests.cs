@@ -142,6 +142,63 @@ public sealed class AdminJeepneyRouteManagementServiceTests
     }
 
     [Fact]
+    public async Task GetAllAsync_UsesAdminSummariesAndMapsGeometryCounts()
+    {
+        var routeRepository = new Mock<ITransportRouteRepository>();
+        var modeRepository = new Mock<ITransportModeRepository>();
+        var createdAt = new DateTime(2026, 8, 27, 1, 2, 3, DateTimeKind.Utc);
+        var updatedAt = new DateTime(2026, 8, 27, 4, 5, 6, DateTimeKind.Utc);
+        routeRepository
+            .Setup(repository => repository.GetAdminSummariesByTransportModeCodeAsync(
+                "JEEPNEY",
+                true,
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new TransportRouteAdminSummary(
+                    44,
+                    "XEVERA-ASTRO",
+                    "Xevera to Astro",
+                    "Xevera",
+                    "Astro",
+                    "Outbound",
+                    "Verified Operator",
+                    "Summary-only route",
+                    13m,
+                    true,
+                    PointCount: 321,
+                    WaypointCount: 12,
+                    HasPolyline: true,
+                    createdAt,
+                    updatedAt)
+            ]);
+
+        var service = new AdminJeepneyRouteManagementService(routeRepository.Object, modeRepository.Object);
+        var result = await service.GetAllAsync(includeActive: true, includeDrafts: false);
+
+        var route = Assert.Single(result);
+        Assert.Equal(44, route.RouteId);
+        Assert.Equal("XEVERA-ASTRO", route.RouteCode);
+        Assert.Equal("Xevera to Astro", route.RouteName);
+        Assert.Equal("Xevera", route.OriginName);
+        Assert.Equal("Astro", route.DestinationName);
+        Assert.Equal("Outbound", route.DirectionName);
+        Assert.Equal("Verified Operator", route.OperatorName);
+        Assert.Equal("Summary-only route", route.Description);
+        Assert.Equal(13m, route.BaseFare);
+        Assert.True(route.IsActive);
+        Assert.Equal(321, route.PointCount);
+        Assert.Equal(12, route.WaypointCount);
+        Assert.True(route.HasPolyline);
+        Assert.Equal(createdAt, route.CreatedAt);
+        Assert.Equal(updatedAt, route.UpdatedAt);
+        routeRepository.Verify(repository => repository.GetByIdWithPointsForAdminAsync(
+            It.IsAny<long>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task ReplaceDraftGeometryAsync_ValidDraft_SavesOrderedGeometryAndPolyline()
     {
         var routeRepository = new Mock<ITransportRouteRepository>();

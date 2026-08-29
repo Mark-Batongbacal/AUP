@@ -1,0 +1,167 @@
+@model Tuki.Admin.Models.ServerPerformance.ServerPerformanceSnapshot?
+@{
+    ViewData["Title"] = "Server & performance";
+    var monitoringError = ViewData["MonitoringError"]?.ToString();
+    string StatusClass(string? status) => status?.ToLowerInvariant() switch
+    {
+        "healthy" => "is-healthy",
+        "degraded" => "is-degraded",
+        "unhealthy" => "is-unhealthy",
+        _ => "is-unknown"
+    };
+    string FormatBytes(long? value)
+    {
+        if (!value.HasValue) return "Unavailable";
+        var bytes = (double)value.Value;
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var unit = 0;
+        while (bytes >= 1024 && unit < units.Length - 1) { bytes /= 1024; unit++; }
+        return $"{bytes:0.#} {units[unit]}";
+    }
+    string FormatUptime(long seconds)
+    {
+        var span = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return span.TotalDays >= 1
+            ? $"{(int)span.TotalDays}d {span.Hours}h {span.Minutes}m"
+            : $"{span.Hours}h {span.Minutes}m {span.Seconds}s";
+    }
+}
+
+<section class="server-page" data-server-dashboard data-snapshot-url="@Url.Action("Snapshot", "ServerPerformance")">
+    <div class="server-page-header">
+        <div>
+            <p class="eyebrow">SYSTEM MONITORING</p>
+            <h1>Server & performance</h1>
+            <p>Live health, application telemetry, and container-visible resource usage for TUKI.</p>
+        </div>
+        <div class="server-page-actions">
+            <div class="server-last-updated">Updated <span data-last-updated>@(Model is null ? "—" : Model.CheckedAtUtc.ToLocalTime().ToString("h:mm:ss tt"))</span></div>
+            <button type="button" class="btn btn-tuki" data-refresh-server>Refresh</button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(monitoringError))
+    {
+        <div class="server-alert" data-monitoring-alert>
+            <strong>Monitoring is currently unavailable.</strong>
+            <span>@monitoringError</span>
+        </div>
+    }
+    else
+    {
+        <div class="server-alert d-none" data-monitoring-alert></div>
+    }
+
+    <section class="server-overview-grid" aria-label="System overview">
+        <article class="server-status-card @StatusClass(Model?.Status)" data-overall-card>
+            <span class="server-card-label">Overall system</span>
+            <div class="server-status-value"><span class="server-status-dot"></span><strong data-overall-status>@(Model?.Status ?? "Unknown")</strong></div>
+            <small>Backend, SQL Server, and Valhalla health</small>
+        </article>
+        <article class="server-metric-card">
+            <span class="server-card-label">Uptime</span>
+            <strong data-uptime>@(Model is null ? "—" : FormatUptime(Model.UptimeSeconds))</strong>
+            <small>Current backend process</small>
+        </article>
+        <article class="server-metric-card">
+            <span class="server-card-label">CPU</span>
+            <strong data-cpu>@(Model?.Resources.CpuPercent is double cpu ? $"{cpu:0.0}%" : "Warming up")</strong>
+            <small>@(Model is null ? "Process usage" : $"{Model.Resources.ProcessorCount} logical processor(s)")</small>
+        </article>
+        <article class="server-metric-card">
+            <span class="server-card-label">Memory</span>
+            <strong data-memory>@(Model is null ? "—" : FormatBytes(Model.Resources.ContainerMemoryCurrentBytes ?? Model.Resources.WorkingSetBytes))</strong>
+            <small data-memory-detail>@(Model?.Resources.ContainerMemoryLimitBytes is long limit ? $"of {FormatBytes(limit)} container limit" : "Working set / container usage")</small>
+        </article>
+    </section>
+
+    <section class="server-section">
+        <div class="server-section-heading">
+            <div><p class="eyebrow">PHASE 1</p><h2>Service health</h2></div>
+            <span class="server-section-note">Checked through the authenticated backend</span>
+        </div>
+        <div class="server-service-grid" data-service-grid>
+            @if (Model?.Services.Count > 0)
+            {
+                foreach (var service in Model.Services)
+                {
+                    <article class="server-service-card @StatusClass(service.Status)" data-service-key="@service.Key">
+                        <div class="service-card-top"><span class="server-status-dot"></span><strong>@service.Name</strong><span class="service-status-text">@service.Status</span></div>
+                        <div class="service-latency">@(service.ResponseTimeMs.HasValue ? $"{service.ResponseTimeMs.Value:0} ms" : "—")</div>
+                        <small>@service.Detail</small>
+                    </article>
+                }
+            }
+            else
+            {
+                <article class="server-service-card is-unknown"><strong>Health data unavailable</strong><small>Refresh after the backend monitoring endpoint is available.</small></article>
+            }
+        </div>
+    </section>
+
+    <section class="server-section">
+        <div class="server-section-heading">
+            <div><p class="eyebrow">API TELEMETRY</p><h2>Request performance</h2></div>
+            <span class="server-section-note">Rolling @(Model?.Requests.RetentionHours ?? 24)-hour in-memory window</span>
+        </div>
+        <div class="server-request-grid">
+            <article class="server-metric-card"><span class="server-card-label">Requests</span><strong data-total-requests>@(Model?.Requests.TotalRequests.ToString("N0") ?? "0")</strong><small>Recorded since process start / retention window</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Avg. response</span><strong data-average-response>@(Model is null ? "—" : $"{Model.Requests.AverageResponseTimeMs:0} ms")</strong><small>Application request duration</small></article>
+            <article class="server-metric-card"><span class="server-card-label">5xx errors</span><strong data-server-errors>@(Model?.Requests.ServerErrors.ToString("N0") ?? "0")</strong><small>Server-side failures</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Error rate</span><strong data-error-rate>@(Model is null ? "—" : $"{Model.Requests.ErrorRatePercent:0.00}%")</strong><small>5xx responses / total requests</small></article>
+        </div>
+        <article class="server-chart-card">
+            <div class="server-chart-header"><strong>Traffic & latency</strong><span>Hourly request volume with average response time</span></div>
+            <canvas id="requestPerformanceChart" height="240" aria-label="Request performance chart"></canvas>
+            <div class="server-chart-empty d-none" data-chart-empty>No request history has been collected yet.</div>
+        </article>
+    </section>
+
+    <section class="server-section">
+        <div class="server-section-heading">
+            <div><p class="eyebrow">PHASE 2</p><h2>Container & infrastructure</h2></div>
+            <span class="server-section-note">Read-only metrics visible from the backend container/process</span>
+        </div>
+        <div class="server-infra-grid">
+            <article class="server-infra-card"><span>Runtime</span><strong data-runtime>@(Model?.Resources.IsContainer == true ? "Container" : "Host process")</strong><small data-container-name>@(Model?.Resources.ContainerName ?? "—")</small></article>
+            <article class="server-infra-card"><span>Disk usage</span><strong data-disk>@(Model?.Resources.DiskUsagePercent is double disk ? $"{disk:0.0}%" : "Unavailable")</strong><small data-disk-detail>@(Model?.Resources.DiskTotalBytes is long total ? $"{FormatBytes(Model.Resources.DiskUsedBytes)} / {FormatBytes(total)}" : "Not exposed by runtime")</small></article>
+            <article class="server-infra-card"><span>Network received</span><strong data-network-rx>@FormatBytes(Model?.Resources.NetworkReceivedBytes)</strong><small>Container-visible non-loopback total</small></article>
+            <article class="server-infra-card"><span>Network sent</span><strong data-network-tx>@FormatBytes(Model?.Resources.NetworkSentBytes)</strong><small>Container-visible non-loopback total</small></article>
+            <article class="server-infra-card"><span>Threads</span><strong data-threads>@(Model?.Resources.ThreadCount.ToString("N0") ?? "—")</strong><small data-process-id>PID @(Model?.Resources.ProcessId.ToString() ?? "—")</small></article>
+            <article class="server-infra-card"><span>Environment</span><strong data-environment>@(Model?.Environment ?? "—")</strong><small data-version>Version @(Model?.Version ?? "—")</small></article>
+        </div>
+        <div class="server-safety-note">
+            <strong>Read-only by design.</strong>
+            <span>This page does not expose Docker socket access or restart controls. Docker restart count and host-level metrics should come from Azure Monitor or a dedicated infrastructure collector.</span>
+        </div>
+    </section>
+
+    <section class="server-section server-recent-section">
+        <div class="server-section-heading"><div><p class="eyebrow">RECENT ACTIVITY</p><h2>Latest API requests</h2></div></div>
+        <div class="server-table-wrap">
+            <table class="server-table">
+                <thead><tr><th>Time</th><th>Endpoint</th><th>Status</th><th>Duration</th></tr></thead>
+                <tbody data-recent-requests>
+                @if (Model?.RecentRequests.Count > 0)
+                {
+                    foreach (var request in Model.RecentRequests)
+                    {
+                        <tr><td>@request.OccurredAtUtc.ToLocalTime().ToString("h:mm:ss tt")</td><td><code>@request.Path</code></td><td><span class="http-status @(request.StatusCode >= 500 ? "status-bad" : request.StatusCode >= 400 ? "status-warn" : "status-ok")">@request.StatusCode</span></td><td>@request.ElapsedMilliseconds.ToString("0") ms</td></tr>
+                    }
+                }
+                else
+                {
+                    <tr data-empty-row><td colspan="4">No request activity recorded yet.</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</section>
+
+@section Scripts {
+    <script src="~/js/server-performance.js" asp-append-version="true"></script>
+    <script>
+        window.tukiInitialServerSnapshot = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model));
+    </script>
+}

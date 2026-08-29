@@ -1,0 +1,282 @@
+@model Tuki.Admin.ViewModels.JeepneyRoutes.JeepneyRouteValhallaViewModel
+@using System.Text.Json
+@{
+    ViewData["Title"] = $"Valhalla Preview - {Model.Route.RouteName}";
+    var savedGeometryJson = JsonSerializer.Serialize(Model.Geometry.Points
+        .OrderBy(point => point.PointOrder)
+        .Select(point => new { latitude = point.Latitude, longitude = point.Longitude }));
+}
+
+@section Scripts {
+    <link rel="stylesheet" href="~/lib/leaflet/leaflet.css" asp-append-version="true" />
+    <script src="~/lib/leaflet/leaflet.js" asp-append-version="true"></script>
+    <script>
+        (() => {
+            const form = document.getElementById('valhalla-form');
+            const textarea = document.getElementById('WaypointsText');
+            const generateButton = document.getElementById('generate-valhalla-preview');
+            const saveButton = document.getElementById('accept-valhalla-route');
+            const status = document.getElementById('valhalla-preview-status');
+            const summary = document.getElementById('valhalla-preview-summary');
+            const mapError = document.getElementById('valhalla-map-error');
+            const mapNode = document.getElementById('valhalla-map');
+            const previewUrl = '@Url.Action("ValhallaPreview", "JeepneyRoutes", new { id = Model.Route.RouteId })';
+            const savedGeometry = @Html.Raw(savedGeometryJson);
+            const fallback = [15.145, 120.588];
+            let map = null;
+            let savedLine = null;
+            let previewLine = null;
+            let waypointMarkers = [];
+            let previewValid = false;
+
+            const setStatus = (message, isError) => {
+                if (!status) return;
+                status.textContent = message;
+                status.className = isError
+                    ? 'review-alert review-alert-error mt-3'
+                    : 'review-alert review-alert-success mt-3';
+                status.classList.remove('d-none');
+            };
+
+            const invalidatePreview = () => {
+                previewValid = false;
+                if (saveButton) saveButton.disabled = true;
+                if (summary) summary.classList.add('d-none');
+            };
+
+            const clearPreviewLayers = () => {
+                waypointMarkers.forEach(marker => marker.remove());
+                waypointMarkers = [];
+                if (previewLine) {
+                    previewLine.remove();
+                    previewLine = null;
+                }
+            };
+
+            const initializeMap = () => {
+                if (!mapNode || typeof L === 'undefined') {
+                    mapError?.classList.remove('d-none');
+                    return;
+                }
+
+                try {
+                    map = L.map(mapNode).setView(fallback, 13);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        maxZoom: 19,
+                        attribution: '&copy; OpenStreetMap contributors'
+                    }).addTo(map);
+
+                    if (savedGeometry.length >= 2) {
+                        savedLine = L.polyline(
+                            savedGeometry.map(point => [Number(point.latitude), Number(point.longitude)]),
+                            { weight: 4, opacity: 0.45, dashArray: '8 8' }
+                        ).addTo(map);
+                        map.fitBounds(savedLine.getBounds(), { padding: [30, 30] });
+                    }
+
+                    window.requestAnimationFrame(() => map?.invalidateSize());
+                    window.setTimeout(() => map?.invalidateSize(), 100);
+                } catch (error) {
+                    console.error('Unable to initialize Valhalla preview map.', error);
+                    map = null;
+                    mapError?.classList.remove('d-none');
+                }
+            };
+
+            const renderPreview = preview => {
+                clearPreviewLayers();
+                const waypoints = preview.waypoints ?? preview.Waypoints ?? [];
+                const generated = preview.generatedPoints ?? preview.GeneratedPoints ?? [];
+
+                if (map) {
+                    waypoints.forEach((point, index) => {
+                        const latitude = Number(point.latitude ?? point.Latitude);
+                        const longitude = Number(point.longitude ?? point.Longitude);
+                        const marker = L.circleMarker([latitude, longitude], {
+                            radius: 7,
+                            weight: 2,
+                            fillOpacity: 0.9
+                        }).addTo(map);
+                        marker.bindTooltip(`Waypoint ${index + 1}`, { permanent: false });
+                        waypointMarkers.push(marker);
+                    });
+
+                    if (generated.length >= 2) {
+                        previewLine = L.polyline(
+                            generated.map(point => [
+                                Number(point.latitude ?? point.Latitude),
+                                Number(point.longitude ?? point.Longitude)
+                            ]),
+                            { weight: 6, opacity: 0.9 }
+                        ).addTo(map);
+                        map.fitBounds(previewLine.getBounds(), { padding: [30, 30] });
+                    }
+                }
+
+                if (summary) {
+                    summary.innerHTML = `<strong>${waypoints.length}</strong> ordered waypoints → <strong>${generated.length}</strong> Valhalla route points.`;
+                    summary.classList.remove('d-none');
+                }
+
+                previewValid = generated.length >= 2;
+                if (saveButton) saveButton.disabled = !previewValid;
+                setStatus(
+                    previewValid
+                        ? 'Preview generated. Compare the waypoint anchors with the road-following route, then accept it only if it matches the real jeepney path.'
+                        : 'Valhalla returned no usable route geometry.',
+                    !previewValid);
+            };
+
+            if (textarea) textarea.addEventListener('input', invalidatePreview);
+
+            if (generateButton && form) {
+                generateButton.addEventListener('click', async () => {
+                    invalidatePreview();
+                    clearPreviewLayers();
+                    generateButton.disabled = true;
+                    generateButton.textContent = 'Generating…';
+                    if (status) status.classList.add('d-none');
+
+                    try {
+                        const response = await fetch(previewUrl, {
+                            method: 'POST',
+                            body: new FormData(form),
+                            credentials: 'same-origin'
+                        });
+                        const payload = await response.json().catch(() => null);
+                        if (!response.ok) {
+                            setStatus(payload?.error || 'Unable to generate the Valhalla preview.', true);
+                            return;
+                        }
+                        renderPreview(payload);
+                    } catch (error) {
+                        console.error('Valhalla preview request failed.', error);
+                        setStatus('Unable to contact the Admin backend for Valhalla preview.', true);
+                    } finally {
+                        generateButton.disabled = false;
+                        generateButton.textContent = 'Generate with Valhalla';
+                    }
+                });
+            }
+
+            if (form) {
+                form.addEventListener('submit', event => {
+                    if (!previewValid) {
+                        event.preventDefault();
+                        setStatus('Generate and review a successful Valhalla preview before accepting the route.', true);
+                        return;
+                    }
+                    if (!confirm('Accept this waypoint set and replace the draft geometry with a freshly generated Valhalla route?')) {
+                        event.preventDefault();
+                    }
+                });
+            }
+
+            initializeMap();
+        })();
+    </script>
+}
+
+<div class="review-detail-header">
+    <div>
+        <a asp-action="Edit" asp-route-id="@Model.Route.RouteId" class="review-back-link">← Back to route details</a>
+        <p class="eyebrow">JEEPNEY ROUTE · VALHALLA</p>
+        <h1>@Model.Route.RouteName</h1>
+        <p>@Model.Route.OriginName → @Model.Route.DestinationName · <code>@Model.Route.RouteCode</code></p>
+    </div>
+    <span class="status-pill @(Model.Route.IsActive ? "status-active" : "status-archived")">
+        @(Model.Route.IsActive ? "Published · read only" : "Draft · previewable")
+    </span>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div class="review-alert review-alert-success">@Model.SuccessMessage</div>
+}
+
+@if (!Model.CanEdit)
+{
+    <div class="review-alert review-alert-error">
+        Published routes cannot be regenerated. Create or edit an inactive draft to use the Valhalla verification workflow.
+    </div>
+}
+else
+{
+    <div class="review-alert review-alert-success">
+        Paste selected ordered route anchors from Google Maps, generate a road-following Valhalla preview, compare it visually, then accept and save only when it matches the real jeepney route.
+    </div>
+}
+
+<div class="review-detail-grid">
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">WAYPOINT INPUT</span>
+                <h2>Google Maps route anchors</h2>
+                <p>Paste one <code>latitude, longitude</code> pair per line, in travel order. Use selected turning/road anchors rather than every generated geometry point.</p>
+            </div>
+        </div>
+
+        <form id="valhalla-form" asp-action="SaveValhalla" asp-route-id="@Model.Route.RouteId" method="post">
+            @if (Model.CanEdit)
+            {
+                <textarea id="WaypointsText"
+                          name="WaypointsText"
+                          class="form-control"
+                          rows="14"
+                          placeholder="15.187197, 120.587297&#10;15.186112, 120.590851&#10;15.183772, 120.596442">@Model.WaypointsText</textarea>
+            }
+            else
+            {
+                <textarea id="WaypointsText"
+                          name="WaypointsText"
+                          class="form-control"
+                          rows="14"
+                          readonly
+                          placeholder="15.187197, 120.587297&#10;15.186112, 120.590851&#10;15.183772, 120.596442">@Model.WaypointsText</textarea>
+            }
+            <div class="small text-muted mt-2">
+                Minimum 2, maximum 100 ordered waypoints. Preview does not save anything.
+            </div>
+            @if (Model.CanEdit)
+            {
+                <div class="d-flex gap-2 flex-wrap mt-3">
+                    <button id="generate-valhalla-preview" type="button" class="btn btn-outline-primary">Generate with Valhalla</button>
+                    <button id="accept-valhalla-route" type="submit" class="btn btn-tuki" disabled>Accept &amp; Save generated route</button>
+                </div>
+            }
+        </form>
+
+        <div id="valhalla-preview-status" class="d-none" role="status"></div>
+        <div id="valhalla-preview-summary" class="review-alert review-alert-success mt-3 d-none"></div>
+    </section>
+
+    <section class="review-panel">
+        <div class="panel-heading">
+            <div>
+                <span class="card-kicker">VISUAL VERIFICATION</span>
+                <h2>Compare before saving</h2>
+                <p>Waypoint circles are your ordered reference anchors. The generated solid line is Valhalla's road route. The dashed line is the currently saved draft geometry, when available.</p>
+            </div>
+        </div>
+        <div id="valhalla-map" class="review-map" style="min-height: 620px;"></div>
+        <div id="valhalla-map-error" class="review-alert review-alert-error mt-3 d-none">
+            The map could not be loaded. Valhalla generation can still be requested, but visual verification is required before you accept the route.
+        </div>
+    </section>
+</div>
+
+<section class="review-panel mt-3">
+    <span class="card-kicker">SAVE BEHAVIOR</span>
+    <h2>What Accept &amp; Save stores</h2>
+    <div class="review-meta-grid">
+        <div><dt>RouteWaypoints</dt><dd>Your pasted ordered Google Maps anchors</dd></div>
+        <div><dt>RoutePoints</dt><dd>Fresh road-following geometry generated by Valhalla</dd></div>
+        <div><dt>EncodedPolyline</dt><dd>Polyline6 encoded from the generated RoutePoints</dd></div>
+        <div><dt>Publishing</dt><dd>The route remains an inactive draft until you publish it separately</dd></div>
+    </div>
+</section>

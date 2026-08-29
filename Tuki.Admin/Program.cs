@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Tuki.Admin.Repositories.AdminAuth;
 using Tuki.Admin.Repositories.Common;
 using Tuki.Admin.Repositories.JeepneyRoutes;
+using Tuki.Admin.Repositories.ServerPerformance;
 using Tuki.Admin.Repositories.TricyclePoints;
 using Tuki.Admin.Repositories.TricycleSubmissions;
 using Tuki.Admin.Services.AdminAuth;
@@ -40,10 +41,22 @@ builder.Services.AddSession(options =>
 builder.Services.AddHttpClient(BackendApiClientNames.TukiBackend, (serviceProvider, client) =>
 {
     var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-    var baseUrl = configuration["BackendApi:BaseUrl"];
+    var baseUrl = Environment.GetEnvironmentVariable("BACKEND_BASE_URL");
+
     if (string.IsNullOrWhiteSpace(baseUrl))
     {
-        throw new InvalidOperationException("BackendApi:BaseUrl is not configured.");
+        baseUrl = configuration["BackendApi:BaseUrl"];
+    }
+
+    if (string.IsNullOrWhiteSpace(baseUrl))
+    {
+        throw new InvalidOperationException(
+            "The TUKI backend URL is not configured. Set BACKEND_BASE_URL or BackendApi:BaseUrl.");
+    }
+
+    if (!baseUrl.EndsWith('/'))
+    {
+        baseUrl += "/";
     }
 
     client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
@@ -54,6 +67,7 @@ builder.Services.AddScoped<IAdminAuthRepository, AdminAuthRepository>();
 builder.Services.AddScoped<IAdminTricycleSubmissionRepository, AdminTricycleSubmissionRepository>();
 builder.Services.AddScoped<IAdminTricyclePointRepository, AdminTricyclePointRepository>();
 builder.Services.AddScoped<IAdminJeepneyRouteRepository, AdminJeepneyRouteRepository>();
+builder.Services.AddScoped<IServerPerformanceRepository, ServerPerformanceRepository>();
 builder.Services.AddScoped<IAdminAuthService, AdminAuthService>();
 
 var app = builder.Build();

@@ -446,12 +446,10 @@ private fun ResetTextField(
             enabled = enabled,
             singleLine = true,
             shape = RoundedCornerShape(15.dp),
-            trailingIcon = if (trailingText is null) {
-                null
-            } else {
+            trailingIcon = trailingText?.let { text ->
                 {
                     Text(
-                        text = trailingText,
+                        text = text,
                         color = TukiMuted,
                         style = MaterialTheme.typography.labelSmall
                     )

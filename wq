@@ -1,0 +1,809 @@
+[33m6256ca9[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mdev[m[33m, [m[1;31morigin/dev[m[33m)[m Merge pull request #142 from Mark-Batongbacal/navOptimization
+[33md1767d5[m Merge branch 'dev' into navOptimization
+[33ma643d5f[m[33m ([m[1;31morigin/navOptimization[m[33m, [m[1;32mnavOptimization[m[33m, [m[1;32mcodex/boarding-debug[m[33m)[m fix routing state generation and destination completion
+[33mefdbfed[m Merge pull request #141 from Mark-Batongbacal/kurt
+[33m19f8061[m align routing defaults with tuning experiment
+[33m0ae41a8[m tune routing search and multimodal preferences
+[33mb8d935d[m Correct the redundant-prefix regression's claim
+[33m70aa40f[m style: made ui scrollable when searching destination, removed origin and destination in home screen when there is an ongoing trip, enhanced UX in trip tracking screen, removed capsule's shadow when leaving trip tracking screen, search destination is now scrollable
+[33m04205f1[m Drop a jeepney ridden only to reach another jeepney
+[33m49e74fb[m Add regressions that run against the real network
+[33mf32f379[m Expand transfer journeys level by level so no interchange is skipped
+[33m21795ef[m Fix feeder shadowing on all three journey boundaries
+[33mae1a68f[m Merge pull request #140 from Stephen-Pinacate/revert-139-feature/filipino-interface-language
+[33m84b12bd[m Revert "filipino ver created"
+[33m5e4ec0f[m Merge pull request #139 from Mark-Batongbacal/feature/filipino-interface-language
+[33m9c77230[m feat: localize destination search interface
+[33mdb3eb0d[m feat: localize route results interface
+[33mc87ea48[m fix: finalize localized home copy
+[33m6a33a43[m feat: localize change password interface
+[33m07566bc[m feat: localize forgot password interface
+[33m0fb1a4d[m feat: localize signup interface copy
+[33m080e407[m feat: localize login interface copy
+[33m2cf042d[m feat: localize recent trip route details
+[33ma8ed135[m feat: localize route details interface
+[33mb32d1ca[m feat: localize settings interface copy
+[33m2765db9[m feat: localize profile interface copy
+[33m63874e8[m feat: localize language settings interface
+[33m3d79d2e[m feat: localize favorites interface
+[33mc5ab67a[m fix: expose language state for interface copy
+[33m21a3408[m feat: localize recent trips interface
+[33m2537a1c[m feat: localize home interface for Filipino
+[33m50cc342[m feat: expand Filipino interface copy
+[33m8a05eb5[m feat: localize bottom navigation labels
+[33m730a805[m feat: add centralized Filipino interface text
+[33mc5e7b13[m feat: make interface language preference reactive
+[33mbbe921f[m fix: repair the five long-standing test failures
+[33m3fcd298[m Merge pull request #138 from Stephen-Pinacate/feature/dark-light-mode
+[33m6bbbedb[m fix: support dark mode on forgot password screen
+[33m9bdf472[m fix: make signup screen fully theme aware
+[33m5703c54[m fix: make login screen fully theme aware
+[33m7eb1726[m fix: make otp resend text theme aware
+[33m34880d5[m fix: make otp fields theme aware
+[33me4e7864[m fix: make change password honor dark mode
+[33m969b16e[m fix: use theme-aware surfaces for favorites
+[33m2fae99f[m fix: use theme-aware surfaces for recent trips
+[33mef41706[m fix(routing): keep repeated route positions as distinct occurrences
+[33mee5bc9f[m fix(routing): ration transfer generation fairly across routes
+[33mdde1637[m fix: refresh route details colors with appearance mode
+[33m4c1212c[m feat: make home palette respond to appearance mode
+[33m778dc07[m feat: load current user in appearance settings
+[33m755bbd1[m feat: expose appearance settings from profile
+[33mafffcde[m fix: build theme scheme from current appearance
+[33m521cc2c[m feat: add polished dark mode settings UI
+[33m8c0f379[m feat: restore persisted appearance on startup
+[33m847967c[m feat: persist app appearance preference
+[33m64a7aaa[m feat: support TUKI dark color scheme
+[33m4111a9d[m feat: add theme-aware TUKI palette
+[33m71e39c0[m Merge pull request #137 from Stephen-Pinacate/fix/recent-trip-route-details-map
+[33md884e92[m fix: show route map in recent trip details
+[33mecd9c10[m Merge pull request #136 from Stephen-Pinacate/fix/route-details-map-cleanup
+[33m398a65f[m Merge pull request #135 from Stephen-Pinacate/fix/live-trip-exit-home
+[33m9cf2c0a[m fix: declutter route details map preview
+[33m60fa521[m fix: skipping jeepney leg
+[33m622cc4e[m Merge pull request #134 from Stephen-Pinacate/feature/guest-24h-access
+[33me4d9eb2[m fix: leave live trip directly to home
+[33m01bc187[m fixed the guest access. made it 24 hours with all capabilitie except edit profile.
+[33m6c891ff[m feat(routing): make jeepney the primary corridor mode
+[33me61799b[m fix(routing): spread boarding variants across route progress
+[33md9270e5[m fix: navigation error where geometric distance is favored over walk distance
+[33md77c93b[m[33m ([m[1;31morigin/feature/guest-24h-access[m[33m)[m test: align navigation fixtures with current contract
+[33m27a66cd[m test: harden guest access assertions
+[33m2c9b81b[m test: cover isolated 24-hour guest access
+[33mfc5bb53[m fix: keep auth previews compatible with guest login
+[33m8bc3353[m fix: preserve registered profile update path
+[33m25e68cb[m feat: expose authenticated profile role claim
+[33mf56eb0b[m feat: show guest expiry and keep profile view-only
+[33m1057b1b[m feat: create guest session before entering app
+[33m7627392[m feat: authenticate temporary guest sessions
+[33mb1cf26f[m fix: keep guest profiles view-only
+[33m4ad3544[m feat: issue isolated 24-hour guest access
+[33mb01a392[m feat: create isolated temporary guest profiles
+[33m2f786ab[m feat: add temporary guest profile creation
+[33m649f3ec[m feat: support guest-scoped api key lifetime
+[33me807db2[m add regression tests for endpoint-only nearest points
+[33m13421df[m preserve network-aware nearby ranking with exact projection candidate
+[33m1d63146[m fix exact projected boarding and alighting access
+[33mcacb1ab[m fix nearest route points using full geometry projection
+[33md1fb3f3[m Merge pull request #133 from Stephen-Pinacate/feature/live-trip-jeepney-context
+[33m5c04f21[m[33m ([m[1;31morigin/feature/live-trip-jeepney-context[m[33m)[m feat: show tappable contextual jeepney routes in live trip
+[33mc05f2b5[m Merge pull request #132 from Mark-Batongbacal/navOptimization
+[33m1bed2d9[m merge latest dev into navOptimization after phase 2
+[33m6c9377d[m phase 2: add continuity and geometry regression tests
+[33ma8c7bee[m phase 2: widen transfer candidate generation for diversity
+[33m0752c89[m phase 2: validate enriched geometry continuity
+[33mab56806[m phase 2: wire diversity transfer pruning dominance and continuity
+[33m381600c[m phase 2: add dominance diversity transfer and continuity guards
+[33mb1bc443[m phase 2: add diversity and continuity routing options
+[33m1aefb0c[m Merge pull request #131 from Stephen-Pinacate/fix/destination-selection-pin
+[33m1929b7e[m[33m ([m[1;31morigin/fix/destination-selection-pin[m[33m)[m fix: show selected destination pin in home map picker
+[33ma359d5e[m feat: allow focused map camera target
+[33mcdccb6a[m fix: show red pin for chosen destination
+[33m78f241c[m Merge pull request #130 from Stephen-Pinacate/fix/favorites-route-actions
+[33m24d9f73[m[33m ([m[1;31morigin/fix/favorites-route-actions[m[33m)[m fix: confirm favorite removal from recent trips
+[33me661052[m fix: hydrate favorite cards from trip history
+[33m2d6d6f6[m phase 1: test confirmed access over provisional speed
+[33m985b3da[m phase 1: add boarding optimization regression tests
+[33m125dfac[m phase 1: confirm and prune feeder shadowing
+[33m9d7e05a[m phase 1: preserve boarding objective variants
+[33m0cd7ba3[m fix: return favorite route summary details
+[33m1ee6898[m phase 1: expose feeder shadowing options
+[33m9fa655c[m phase 1: add feeder shadowing tuning
+[33m9924c44[m fix: append favorite route leg geometries correctly
+[33m6380bb1[m phase 1: prefer nearby viable jeepney boarding
+[33ma8a71c9[m fix: open favorite cards with route history details
+[33mf92988a[m fix: open favorite routes with saved trip details
+[33ma9e13f4[m fix: confirm before removing favorite routes
+[33m7725d26[m Merge pull request #128 from Stephen-Pinacate/feature/navigation-transit-overlays
+[33mbd39d1f[m[33m ([m[1;31morigin/feature/navigation-transit-overlays[m[33m)[m fix: safely reuse main destination pin image
+[33m2cf1e4a[m feat: use red pin for final route destination
+[33mcb491f3[m feat: show red pin for main trip destination
+[33m867f99b[m feat: add main destination map pin renderer
+[33m0787c33[m fix: keep TODA markers above route overlays
+[33maf4eefe[m fix: show only selected journey jeepney routes on route maps
+[33m7b2a3cc[m fix: load selected journey jeepney geometry
+[33m00c0bb2[m fix: load geometry only for selected jeepney routes
+[33m0da102c[m fix: limit jeepney overlays to selected journey routes
+[33mf84345c[m fix: select only journey jeepney overlays
+[33me8c9607[m fix: track jeepney routes for selected journey
+[33m0926cc9[m fix: retain jeepney route ids in selected journey
+[33m8ef0ce2[m fix: preserve selected journey route ids
+[33mf3c3df1[m fix: show only current jeepney route and keep TODA visible
+[33mebb756d[m fix: show active TODA points on every map
+[33mc847ff3[m fix: load TODA overlays for every map
+[33m47ce3b6[m fix: provide shared map data source
+[33m77b4655[m fix: make TODA overlays globally available to maps
+[33m0d70a7c[m fix: pass transit overlays into live trip map
+[33mf3447bc[m Merge pull request #126 from Mark-Batongbacal/navOptimization
+[33mfc91dfb[m fix: restore transit overlays on live navigation map
+[33m83c225d[m merge: resolve navOptimization with latest dev
+[33m7890eef[m Merge pull request #127 from Mark-Batongbacal/navFix
+[33m8cb7091[m feat: switch tuki voice to gemini flash lite
+[33m15679cd[m Merge pull request #125 from Mark-Batongbacal/kurt
+[33m75a904b[m[33m ([m[1;31morigin/kurt[m[33m)[m Merge dev into kurt and resolve style conflicts
+[33m2ec2849[m[33m ([m[1;31morigin/navFix[m[33m)[m Rebase navFix onto latest dev
+[33mecfb28a[m fix: use Kotlin reroute request fields
+[33mba13698[m style: overhauled all screens to use color and type kt files, fixed top margin. feat: added vibrate when para po
+[33mc7569c9[m Merge pull request #124 from Mark-Batongbacal/navTripAI
+[33m20ed000[m[33m ([m[1;31morigin/navTripAI[m[33m)[m fix: resolve navigation AI compose import
+[33m43cd820[m Merge pull request #123 from Mark-Batongbacal/feature/navigation-map-camera
+[33m664d35f[m[33m ([m[1;31morigin/feature/navigation-map-camera[m[33m)[m Merge dev into feature/navigation-map-camera
+[33m6144f08[m Merge pull request #121 from Mark-Batongbacal/navFix
+[33maeb6e7d[m Merge pull request #122 from Mark-Batongbacal/navTripAI
+[33mb20341a[m fix: default navigation AI to saved language
+[33md295d88[m fix: localize live navigation AI chat
+[33m7975768[m test: cover transport-aware manual rerouting
+[33mb37479d[m fix: derive home area from reverse geocoding
+[33mf2afd4b[m feat: carry locality through place results
+[33m13f4a3b[m feat: derive locality from Pelias results
+[33m17a6a9f[m feat: expose place locality in destination results
+[33m4bcba7a[m fix: complete navigation AI sheet imports
+[33m5aca339[m feat: add AI access to live navigation
+[33m6bf29ec[m feat: add live navigation AI chat sheet
+[33mbe0139b[m feat: add manual reroute reasons to trip options
+[33mf3338e4[m feat: coordinate live trip AI and reroutes
+[33m5b1490b[m feat: send transport exclusions during reroute
+[33m401bfaa[m feat: make manual reroutes transport aware
+[33m021045a[m feat: support transport-aware reroute requests
+[33ma8033ec[m Cover missed-target reroute cooldown
+[33mfd16c46[m Avoid duplicate reroutes after forced location sync
+[33md88f1d8[m Cover route jumps, match loss, and missed walking targets
+[33mcb5969f[m Test bounded route matching near future segments
+[33m51ef899[m Trigger missed-target recovery from live navigation
+[33mf7f3448[m Apply reroute cooldown to missed walking targets
+[33m1b9d44d[m Add local missed-target reroute recovery
+[33m32fa7b9[m Harden local navigation progress and missed-target detection
+[33m44b42b9[m Guard local route matching against forward jumps
+[33m48e0b90[m Merge remote-tracking branch 'origin/dev' into feature/navigation-map-camera
+[33m89f6f0a[m fix(android): center navigation on GPS and frame route legs
+[33m0147e9d[m Merge pull request #120 from Mark-Batongbacal/googlePlaces
+[33mdc81bc7[m[33m ([m[1;31morigin/googlePlaces[m[33m)[m fix: expose Google Places expansion in home search
+[33me9714cb[m Merge pull request #119 from Mark-Batongbacal/googlePlaces
+[33mc9ce6fc[m Update backend.http
+[33ma728bbb[m Merge pull request #118 from Stephen-Pinacate/feature/active-trip-lifecycle
+[33mabea7a4[m fix: keep place search previews compatible
+[33mbcdeec8[m feat: expand destination search with Google Places
+[33mcfca152[m fix: omit empty Google location bias
+[33md5438c7[m feat: add expanded Google place search client
+[33mfda4d8b[m feat: expose expanded Google place search
+[33m58adcc3[m feat: add Google Places fallback search
+[33m54067f2[m[33m ([m[1;31morigin/feature/active-trip-lifecycle[m[33m)[m feat(android): preserve and replace active trips safely
+[33m712aed0[m Merge pull request #117 from Mark-Batongbacal/fixNavDirections
+[33m2a62c01[m[33m ([m[1;31morigin/fixNavDirections[m[33m)[m test: cover faster navigation confirmations
+[33m87b1560[m fix: tighten live navigation sync timing
+[33m8bc727b[m fix: reduce navigation state confirmation latency
+[33md343f68[m test: cover localized navigation landmark speech
+[33m276824f[m fix: keep live trip guidance in profile language
+[33m4f7bbd0[m fix: refresh navigation language from profile
+[33m3a21945[m fix: localize local navigation landmark speech
+[33m70f8a32[m Merge pull request #116 from Mark-Batongbacal/fixNavDirections
+[33m41755b0[m fix: enforce selected language in qwen navigation
+[33m290fb5b[m test: cover english and filipino local guidance
+[33m2d6dabc[m fix: restore saved language after login
+[33mf1271c2[m fix: sync language preference after authentication
+[33m7a9c80d[m fix: use saved language for local turn guidance
+[33mdc1a1ac[m fix: initialize frontend language preference
+[33m3e4c96c[m fix: sync local navigation language from profile
+[33meae4fe5[m feat: persist frontend language preference locally
+[33ma32ffd5[m fix: respect profile language in local navigation
+[33m2e99d25[m Merge pull request #115 from Mark-Batongbacal/fixNavDirections
+[33me28ba59[m fix: align navigation maneuver mapping tests
+[33m6770be9[m fix: correct valhalla maneuver direction mapping
+[33mfc61fb2[m Merge pull request #113 from Mark-Batongbacal/aiNav
+[33mb3820f9[m fix: cap Qwen intent extraction at 15 seconds
+[33m8c2ef33[m fix: register navigation request context accessor
+[33me2c23b2[m feat: persist language selection from profile screen
+[33ma9fda51[m feat: sync preferred language with profile api
+[33ma6440dd[m feat: localize Tuki AI from profile language
+[33mb915983[m feat: restore Qwen navigation voice with 15s fallback
+[33mec80f29[m feat: allow updating profile language preference
+[33m06c65be[m feat: support persisted profile language preference
+[33m99a28de[m feat: preserve preferred language in user profiles
+[33mbb911f6[m feat: add user language preference service contract
+[33mf04c579[m feat: expose preferred language in profile api
+[33m4d171ba[m feat: add preferred language to user profile
+[33mb7a392b[m feat: persist user language preference
+[33m0c3f83a[m feat: add shared Tuki language helper
+[33m4087123[m fix: keep walking guidance context-aware
+[33m7008970[m fix: fast-path common Tuki assistant responses
+[33mebfaf78[m fix: remove blocking AI call from navigation speech
+[33m7b500ca[m feat: improved qwen speech
+[33mcfbf0a8[m feat: changed intent analyzer to qwen
+[33m2a67dad[m feat: changed system prompts to make ai friendly and not awkward
+[33mb3ab2c9[m feat: switch to qwen model
+[33m675a336[m Merge pull request #112 from Mark-Batongbacal/navOptimization
+[33m26db24e[m Harden navigation location fallback cleanup
+[33m5d96606[m Add Google Play services location dependency
+[33mddcd84d[m Use fused location for navigation tracking
+[33m7d4ae54[m test: align guest navigation contract
+[33m886081d[m fix: harden persisted navigation fallback
+[33m74b06c4[m test: cover local navigation recovery
+[33m0690d26[m fix: resume local guidance without replaying history
+[33m8cd28cc[m feat: persist active navigation for recovery
+[33m4ebf949[m fix: harden local navigation transitions
+[33m217e871[m refactor: sync navigation only on meaningful events
+[33m1adc5c2[m feat: drive live trip ui from local progress
+[33m58d3eb5[m feat: centralize local navigation progress
+[33maeac640[m feat: expose local navigation guidance package
+[33md71605e[m feat: burst sync near navigation transitions
+[33mec0966b[m fix: stabilize local route deviation detection
+[33m87e5c8e[m feat: sync immediately on sustained route deviation
+[33m9d89948[m refactor: coalesce routine navigation location syncs
+[33mf40e1fa[m feat: match live gps to the active route
+[33m5b6f613[m fix: use fresh device location for live navigation
+[33md21d019[m[33m ([m[1;31morigin/navOptimization-work[m[33m)[m Merge pull request #111 from Mark-Batongbacal/multiple_pageui_refinements
+[33m06b4866[m[33m ([m[1;31morigin/multiple_pageui_refinements[m[33m)[m feat: resolve dev merge conflicts
+[33m07c76f2[m feat: changed ai
+[33me00f2eb[m 1. imported fonts from the brand board so the entire app will have consistency and would look more appealing.
+[33m37c25fb[m Merge pull request #110 from Mark-Batongbacal/navigation_read_fast
+[33m26d0483[m feat: speed up navigation reads
+[33m0a4bb96[m Merge pull request #108 from Mark-Batongbacal/quick_cancel
+[33m5568cee[m Merge pull request #107 from Mark-Batongbacal/ai
+[33m58d964b[m[33m ([m[1;31morigin/ai[m[33m)[m feat: changed qwent to smaller nemotron
+[33md050e03[m feat: use quick trip cancellation
+[33m9f0ccfb[m feat: swap tuki voice model
+[33mfb132d9[m fixed the overall ease of use and UI of the app based on the branding. made sure that every page was easy to use and none was confusing.
+[33me9016fc[m Merge pull request #106 from Mark-Batongbacal/authOtp
+[33m89a3f10[m[33m ([m[1;31morigin/authOtp[m[33m)[m Fix OTP auth controller conflicts
+[33m0e7414b[m Merge pull request #105 from Mark-Batongbacal/ui
+[33m69db09b[m Merge pull request #104 from Mark-Batongbacal/backend
+[33m07f20d4[m Fix multi-page UI integration and startup crash
+[33m37d24a7[m Add transport route deactivation endpoint
+[33m850f218[m[33m ([m[1;31morigin/authOtp3[m[33m, [m[1;31morigin/authOtp2[m[33m, [m[1;31morigin/authOtp-review[m[33m, [m[1;31morigin/authOtp-fix-temp[m[33m)[m Add Qwen Tuki conversation voice
+[33m0dfe841[m Merge pull request #103 from Mark-Batongbacal/ui
+[33m9e55990[m Merge pull request #101 from Mark-Batongbacal/live_trip_ui_refinements
+[33mf4f5998[m Add registration OTP resend cooldown
+[33ma5f48e1[m Add change password OTP resend cooldown
+[33mf22b166[m Add forgot password OTP resend cooldown
+[33me64ac84[m Add reusable three minute OTP resend countdown
+[33m105c19a[m Rate limit registration OTP sends
+[33m8f7c02a[m Enforce three minute OTP send cooldown
+[33m630c23f[m Refine shared bottom navigation styling
+[33m5a91746[m Make favorites back navigation functional
+[33m557b849[m Connect route details favorites to backend
+[33mf3f02b8[m Connect favorites screen to backend data
+[33m5a508c8[m Keep favorite route model backwards compatible
+[33mc2c0b96[m Redesign favorites screen
+[33m2fe0851[m Redesign route details screen
+[33m5560a65[m Redesign recent trips screen
+[33m36ecfe3[m Consume favorite route metrics
+[33m9ad84e0[m Map favorite route metrics from recommendations
+[33m58c0d0f[m Expose route metrics for favorites
+[33mb0f69b3[m Map backend trip values for refined history UI
+[33ma5260cc[m Match registration OTP layout to two-page flow
+[33m6efded0[m Expand favorite route card data
+[33m79b5827[m Expand trip history UI data
+[33m46c87ae[m Polish reusable OTP input
+[33m03f88cb[m Add email OTP registration stages
+[33m032e499[m Split profile password change into OTP verification stages
+[33mcfb23dd[m Split forgot password into email OTP and password stages
+[33m3d1cd88[m Add reusable eight-box OTP input
+[33mb9ec0fd[m Update preview auth mock for staged OTP flows
+[33m4da5e2b[m Add staged OTP auth client flows
+[33m1bfcccd[m Add staged OTP auth endpoints
+[33m9216e24[m Use secure 8-digit numeric OTP codes
+[33ma2c7203[m Merge latest dev into ui before OTP flow work
+[33mf7adbed[m[33m ([m[1;31morigin/live_trip_ui_refinements[m[33m)[m fixed the overall ui, design, and added functionalities of live trip
+[33m558a333[m Fix live trip preference cards and collapsible instructions
+[33mc656829[m Keep recenter control visible above instructions
+[33m69792c0[m Refine live trip overlays and route preferences
+[33m1b6838d[m Redesign live trip experience to match TUKI UI
+[33m5b6cfc2[m Fix ProfileScreen password OTP compatibility
+[33mdc7033d[m Update preview auth mock for OTP password flows
+[33m3aa1c59[m Fix profile password OTP flow
+[33m713bb8a[m[33m ([m[1;31morigin/ui[m[33m, [m[1;32mui[m[33m)[m Handle password OTP message responses correctly
+[33m8420afe[m fixed the UI of route results screen
+[33m8082c95[m Make password OTP flow reachable from settings
+[33maa6ba56[m Use real auth repository for password change OTP
+[33m158703f[m Use real auth repository for forgot password
+[33md225d75[m Expose privacy and security from settings
+[33m37f3fb1[m Connect change password screen to OTP confirmation
+[33mfe595fb[m Connect forgot password screen to OTP reset flow
+[33m2fc768f[m Wire password OTP auth endpoints in frontend
+[33mefc2440[m Make password OTP migration standalone
+[33me7623db[m Document Tuki email sender configuration
+[33m331f838[m Set Tuki Azure email sender address
+[33mf1e657f[m Add password OTP purpose migration
+[33m10c92a2[m Require email OTP for password changes
+[33m676d725[m Add OTP confirmation for password changes
+[33m2abeb90[m Track password OTP purpose
+[33m381ebf4[m Use Azure Communication Services email env var
+[33m3d0e19c[m Configure Azure email connection fallback
+[33m66e6da0[m Merge pull request #100 from Mark-Batongbacal/ui
+[33m897185d[m Fix UI theme following system dark mode
+[33m6a29e80[m Merge pull request #99 from Mark-Batongbacal/ios_android_full_feature_parity
+[33mbe1c950[m Merge pull request #98 from Mark-Batongbacal/ai_route_recommendation_cards
+[33mf9697ae[m[33m ([m[1;31morigin/ios_android_full_feature_parity[m[33m)[m fix(android): restore resilient trip history loading
+[33md269482[m fix(android): restore profile logout action
+[33m79bcaa6[m fix(ios): restore visible profile logout
+[33m09b3a82[m fix(ios): restore repeat routing from history
+[33m18be980[m fix(ios): preserve trip history coordinates
+[33m90085dd[m fix(ios): retain recent trip route coordinates
+[33mc7200be[m fix(ios): import CoreLocation in AI chat
+[33m943d925[m feat(ios): match origin and destination map picking
+[33mc0d3ea9[m feat(ios): add destination map pin parity
+[33mbba87d9[m fix(ios): avoid async autoclosure in route search
+[33m2739036[m feat(ios): activate unified parity screens
+[33m7790ad6[m feat(ios): use unified Android-parity flow
+[33m9fcbfc0[m feat(ios): align route and tracking screens
+[33m599dd8a[m feat(ios): add Android-parity account pages
+[33mdc7a3be[m feat(ios): match Android AI route cards
+[33m49f403f[m feat(ios): add assistant route API parity
+[33mbe7c9f5[m[33m ([m[1;31morigin/ai_route_recommendation_cards[m[33m)[m chore(ai): remove superseded route handoff store
+[33m1c28780[m fix(ai): enrich selected route geometry
+[33m38a13c7[m fix(ai): hand off exact planned journey
+[33m5f88185[m fix(ai): reuse selected recommendation in route results
+[33m7298cce[m fix(ai): keep exact route on card tap
+[33mbcb5483[m fix(ai): preserve selected route card
+[33m444aacb[m fix(ai): keep route cards compatible with app navigation
+[33mf0a585b[m feat(ai): render clickable route recommendation cards
+[33m9dab80f[m feat(ai): decode route card plans
+[33m7b1be51[m feat(ai): return exact route card plans
+[33m1af80d4[m feat(ai): expose structured route cards
+[33m00b4633[m[33m ([m[1;31morigin/navigation_camera_summary_nextguide[m[33m)[m test(navigation): allow arrival from final alight state
+[33m2753a58[m fix(android): wait for gps before camera follow
+[33mfe43a47[m test(navigation): cover arrival after final transit alight
+[33m0838489[m fix(navigation): allow arrival from final alight
+[33m3be227f[m fix(navigation): arrive after final transit alight
+[33mbf29bb1[m feat(android): return home after arrival summary
+[33m01c5a40[m test(navigation): cover then guide and arrival summary
+[33m59545b7[m feat(ios): wire navigation camera guide and summary overlays
+[33m6c6f506[m feat(ios): add navigation camera follow and recenter
+[33m0e968e7[m feat(ios): add then guide and arrival trip summary
+[33m7501250[m feat(navigation): allow reading completed session snapshot
+[33mb331a0f[m feat(navigation): expose completed navigation snapshot by session
+[33m5551a74[m fix(ios): default new navigation snapshot fields
+[33m19ddea5[m feat(ios): decode following guide and trip summary
+[33m89592fc[m feat(android): add then guide and arrival trip summary
+[33m4da1a93[m feat(android): add navigation camera follow and recenter
+[33mb14aba0[m feat(android): decode following guide and trip summary
+[33m3526242[m feat(navigation): populate following guide and arrival summary
+[33m39dd4e6[m feat(navigation): add following guide and trip summary snapshot
+[33me75c25a[m[33m ([m[1;31morigin/navigation_alighting_fare_tracking[m[33m)[m fix(ios): keep auth screen interactive under trip overlays
+[33m38d96e2[m fix(ios): import Combine for trip options model
+[33m7e00716[m fix(ios): import Combine in credential store
+[33mc7f9d44[m fix(ios): import Combine for fare tracking model
+[33m5d813ef[m fix(ios): import fare formatting dependency
+[33m758af2c[m test(navigation): cover fare and alight rules
+[33m3651ff5[m fix(android): keep fare card null safe
+[33m2a7c3e6[m fix(navigation): make paid transport rule explicit
+[33mfefbae9[m fix(ios): keep local navigation snapshot construction compatible
+[33m803cbca[m feat(ios): surface live fare tracking
+[33m32f049e[m feat(ios): show live navigation fare state
+[33m4ecf8d1[m feat(ios): decode navigation fare state
+[33m42d1425[m feat(database): add fare tracking migration
+[33m2657022[m feat(android): show safe alight guidance and fare tracking
+[33md336831[m feat(android): read navigation fare state
+[33m04231bd[m feat(database): add approximate fare spent to trip sessions
+[33m2e4d053[m test(navigation): verify alight visibility and fare snapshot
+[33mfd99ab9[m test(navigation): cover alight gate and fare tracking
+[33mfdfb0f3[m feat(navigation): expose safe alight and live fare state
+[33m7dd6f33[m feat(navigation): expose fare tracking in snapshots
+[33m7e29a8a[m fix(navigation): gate alighting and track spent fare
+[33m0865c3f[m feat(navigation): centralize alight and fare rules
+[33md30be62[m feat(navigation): separate alight warning and confirmation
+[33m17b234c[m feat(navigation): persist approximate fare spent
+[33m66ea9c5[m[33m ([m[1;31morigin/navigation_reroute_geometry_arrival[m[33m)[m fix(ios): reset main flow after ending trip
+[33m37971dc[m fix(ios): return home after ending active trip
+[33m1e8b5f2[m test(navigation): harden trip option reroute cases
+[33m419486a[m chore: remove temporary navigation validation workflow
+[33m58e8ec1[m fix(navigation): return reroute failures to clients
+[33m90f45ef[m fix(android): suppress stale route overlays after reroute
+[33m0e80842[m ci: validate navigation trip options
+[33m86c78a0[m fix(navigation): keep manual trip options responsive
+[33m9b8bce9[m fix(ios): anchor active trip options overlay
+[33md182346[m fix(android): keep rerouted geometry synced across legs
+[33m9cf1019[m feat(ios): surface active trip options
+[33m79785ed[m feat(ios): add active trip options
+[33md28bc22[m feat(android): wire trip options to navigation backend
+[33m17eeb08[m feat(android): resolve rerouted active leg geometry
+[33m61bcb7f[m feat(android): add destination suggestions to trip options
+[33m27dab91[m feat(android): coordinate active trip option changes
+[33m3c29df8[m feat(android): carry active transport route id
+[33m0085b25[m feat(navigation): include active transport route id
+[33m3b51ca3[m feat(navigation): expose active route id in snapshots
+[33mbbca384[m feat(android): expose polished trip options
+[33m7726aea[m feat(android): add trip options sheet
+[33m00d883a[m feat(android): support trip option reroute payload
+[33m66648bf[m test(navigation): update facade reroute request contract
+[33mfdea905[m test(navigation): cover trip option reroute validation
+[33mf284bc8[m fix(navigation): keep legacy trip reroute endpoint compatible
+[33m770da14[m feat(navigation): accept trip option reroute payload
+[33mdacbda1[m refactor(navigation): use trip option reroute requests
+[33m7b29c20[m feat(navigation): support trip option reroutes
+[33mc60f240[m feat(navigation): add trip option reroute request
+[33me8c2b2b[m fix(android): draw current route from live user position
+[33ma40ca5b[m feat(android): read live location from navigation snapshot
+[33m0ef83d8[m feat(navigation): include live position in snapshots
+[33m4ca67c5[m feat(navigation): expose accepted current location
+[33maab2f0a[m test(navigation): verify active manual reroute readiness
+[33m5130115[m test(navigation): cover manual reroute transitions
+[33m297da45[m fix(android): expose reroute hook only when wired
+[33maf98b2f[m feat(android): add manual reroute and arrival event
+[33m221b9a8[m fix(navigation): map match against road geometry
+[33m188a543[m feat(navigation): support user-requested reroutes
+[33mf3103d7[m feat(navigation): allow manual reroute from active states
+[33m234c8f1[m Merge pull request #94 from Stephen-Pinacate/IOS_UI
+[33m859bb4e[m[33m ([m[1;31morigin/IOS_UI[m[33m)[m fix(ios): repair parity SwiftUI compile errors
+[33m51943d6[m fix(ios): import Combine for location observable state
+[33ma57331d[m feat(ios): mirror android dev app behavior
+[33mf8dcd3b[m feat(ios): align authentication profile state with android
+[33m5bde4d4[m fix(ios): harden SwiftUI parity implementation
+[33m8d4aeb7[m feat(ios): align SwiftUI with Android dev UI
+[33mc644847[m Merge pull request #93 from Mark-Batongbacal/guestmode_journeyhistory
+[33ma5e5832[m[33m ([m[1;31morigin/guestmode_journeyhistory[m[33m)[m merge: resolve dev into guestmode_journeyhistory
+[33mcf97dbb[m fix: restore home navigation compatibility
+[33m69aaee1[m merge: take dev home screen during conflict resolution
+[33m12edd07[m merge: resolve preview mock conflict with dev
+[33m35844bf[m refactor: align guest home with dev layout
+[33md822c71[m fix: restore journey history loading
+[33m05b1712[m feat: expose password change endpoint
+[33ma176e04[m feat: expose account deletion endpoint
+[33m597f0bd[m feat: deactivate user profiles
+[33m07e5b27[m feat: support user profile deactivation
+[33m47492da[m test: update auth preview mock
+[33m6687f91[m fix: preserve profile features under app navigation
+[33m6eceb04[m 1. guest login/navigation 2. not working history 3. implemented the not recent/favorites sa guests 4. cancelled trip returns directly to home 5. pwede na outside hanggang mabalacat then pwede adjust current loc.
+[33mfe607ce[m fix: restore app navigation entry point
+[33m7b15e1a[m Merge pull request #92 from Mark-Batongbacal/lovely
+[33m9a297fd[m[33m ([m[1;31morigin/lovely[m[33m)[m feat: add change pass, del acc, fixed home screen
+[33me43e4ae[m Merge pull request #91 from Mark-Batongbacal/dev
+[33me5f46ab[m Merge pull request #90 from Mark-Batongbacal/ui
+[33m5d841ff[m fix: use explicit mutable geometry inserts
+[33m3c57e79[m fix: restore request telemetry contract
+[33m6f1fe68[m feat: pin historical leg endpoints
+[33m0a46ee3[m feat: distinguish leg start and next path
+[33m2be97a8[m fix: reject missing jeepney geometry route
+[33m1fbc906[m test: update navigation api fake
+[33mc955a06[m test: update places preview mock
+[33m6ced2bd[m feat: resolve live and historical trip geometry
+[33md0fd0de[m feat: visualize and repeat recent trips
+[33mdc4fb97[m fix: never fabricate straight leg geometry
+[33mbc0dea9[m feat: label map coordinates with pelias
+[33m8beb85e[m feat: retain recent trip leg metadata
+[33m4915331[m feat: carry history trip coordinates
+[33m0a2e595[m feat: include trip history coordinates
+[33ma901fe7[m feat: reverse geocode selected coordinates
+[33m1471a0c[m feat: fetch navigation leg geometry
+[33m34c7476[m feat: expose reverse geocoding endpoint
+[33ma4bc783[m feat: register reverse geocoding service
+[33m63a3140[m feat: reverse geocode map coordinates
+[33m05bbb20[m feat: expose navigation leg geometry
+[33me1eb22a[m test: update trips controller session dependency
+[33m87423e9[m fix: build recents from navigation sessions
+[33mcabdf0d[m feat: query trip session history
+[33me7a9268[m feat: query trip session history
+[33m12f27c1[m test: update trip repository preview mock
+[33m4a2f77d[m feat: connect recents and transit navigation context
+[33m100a93c[m feat: show future transit context while navigating
+[33m7acad0f[m feat: render transit context on navigation map
+[33m007d381[m feat: render backend trip history
+[33m5afc5e3[m feat: fetch active tricycle points
+[33m3b356cc[m feat: fetch passenger trip history
+[33m5b10c0c[m feat: expose active tricycle points
+[33mbc3bc2a[m feat: expose passenger trip history
+[33md919f68[m fix: stabilize navigation state lifecycle
+[33m5c7ef12[m feat: handle existing active trips in route details
+[33mcde9e3b[m feat: add navigation confirmations and trip exit flow
+[33m858544c[m feat: retain route geometry by leg
+[33m0bdc0d3[m feat: retain geometry per journey leg
+[33m95817ce[m Merge pull request #89 from Mark-Batongbacal/dev
+[33m63a89ed[m Merge pull request #88 from Mark-Batongbacal/ui
+[33m0db2e4b[m test: update auth controller test dependencies
+[33m82436a8[m refactor: configure valhalla concurrency limit
+[33m233da32[m feat: render confirmed journey geometry
+[33m9ea0b4c[m feat: parse journey leg geometry
+[33m6d9f0d9[m feat: attach geometry to journey recommendations
+[33m6850ca3[m refactor: expose journey geometry enrichment capability
+[33maed95fe[m feat: enrich selected journeys with road geometry
+[33m521274a[m feat: expose journey leg geometry
+[33m679cba0[m feat: stream navigation updates into tracking
+[33me4e415f[m feat: render live navigation snapshot in tracking
+[33m1070348[m fix: clean route result labels and counts
+[33me024d9e[m feat: carry route coordinates in route options
+[33m81c009e[m refactor: added backend endpoint for connection
+[33mc576e49[m feat: start backend navigation session
+[33m08b6660[m feat: add navigation start state
+[33m204d854[m fix: pass places repository to route preview
+[33ma5b7ece[m fix: update previews for places repository
+[33m422fd10[m fix: merge issues
+[33m28ca78c[m feat: pass backend destination data through navigation
+[33me6a9000[m feat: use backend journey planning for route results
+[33md4c631b[m feat: connect destination search to backend places
+[33m9e2cf81[m Add destination pin selection to MapLibre screen
+[33m523ac24[m Add reusable device location helper for route planning
+[33m018521e[m redesign: put the map in a container
+[33m58a05ec[m Merge branch 'ui' of github.com:Mark-Batongbacal/AUP into ui
+[33m7a8cc32[m Replace Google Maps renderer with MapLibre
+[33me1f21e2[m Use MapLibre coordinates in trip tracking
+[33m2115f96[m Move temporary map samples to MapLibre coordinates
+[33mb58b262[m Remove Google Maps API key metadata
+[33ma3dd48b[m Replace Google Maps dependency with MapLibre
+[33me9fa501[m Merge branch 'ui' of github.com:Mark-Batongbacal/AUP into ui
+[33m1db533f[m feat: email setup
+[33m2d4c08e[m Wire destination search to existing map screen
+[33me219f7b[m Merge pull request #87 from Mark-Batongbacal/dev
+[33m542f2b5[m Integrate main frontend flow into AppNavigation
+[33m52c1d0e[m Merge main into dev and resolve navigation conflicts
+[33m3330fec[m Merge pull request #86 from Mark-Batongbacal/kurt
+[33mbc5458b[m Merge branch 'dev' into kurt
+[33m71852d9[m Merge pull request #84 from Mark-Batongbacal/frontendBackendIntegration
+[33mbce0268[m[33m ([m[1;31morigin/frontendBackendIntegration[m[33m)[m refactor: changed endpoint to handle a different ip address
+[33me568169[m feat: para po overlay, forget pass screen, nav screen
+[33md8c0c9c[m Merge pull request #83 from Mark-Batongbacal/lovely
+[33m94b3d25[m Merge branch 'main' into lovely
+[33m153ed7d[m Merge branch 'frontendBackendIntegration' of github.com:Mark-Batongbacal/AUP into frontendBackendIntegration
+[33md4d4c69[m Use completed trip sessions for profile trip count
+[33mcb8a181[m fix: login, home cards, profile
+[33m75619d8[m Count arrived trip sessions for profile stats
+[33mccbfa78[m Count completed trip sessions by user
+[33m6e43855[m Merge branch 'frontendBackendIntegration' of github.com:Mark-Batongbacal/AUP into frontendBackendIntegration
+[33m91232a9[m Keep profile controller test compatible
+[33me515d0c[m Wire profile view data into existing UI
+[33m91bb97c[m Merge pull request #82 from Mark-Batongbacal/dev
+[33m2d0b5c7[m Read current user profile view data
+[33m849bcce[m Return profile view data for current user
+[33m5b6dbe0[m Expose profile view statistics
+[33m27d6a1a[m Merge pull request #81 from Mark-Batongbacal/frontendBackendIntegration
+[33m988177a[m feat: implement favorite trips, updated db, db context and controllers and repositories for frontend
+[33m0afe0c3[m Merge branch 'dev' into kurt
+[33mce2d696[m Merge pull request #80 from Mark-Batongbacal/frontendBackendIntegration
+[33ma130fc9[m fixed error where user can't connect to the backend
+[33m77002fe[m Wire profile logout to auth session
+[33m164f119[m Add logout action to profile screen
+[33md195f69[m Merge pull request #79 from Stephen-Pinacate/dau_tricyclepoints
+[33m8bc16b5[m[33m ([m[1;31morigin/dau_tricyclepoints[m[33m)[m Merge branch 'dev' into dau_tricyclepoints
+[33m9508f80[m removed the trike points since they are already stored in the database
+[33mf5590a8[m Merge pull request #78 from Mark-Batongbacal/frontendBackendIntegration
+[33me20eff9[m refactor: removed supabase, added tukidbschema
+[33m5353e5b[m refactor: removed supabase, added tukidbschema
+[33meb94818[m Validate restored auth session on startup
+[33mb9bfa6b[m Add local authentication credential migration
+[33m7c475a0[m Support persistent local signup and login
+[33m49f3fd4[m Register local authentication service
+[33m30a651f[m Add database-backed local authentication
+[33mb972e8f[m Map local auth credentials
+[33m8b500d7[m Add persistent local auth credential model
+[33m3e05b57[m Connect login and signup screens to auth repository
+[33medbb246[m Wire signup screen to auth callback
+[33ma6bfff7[m Wire password login screen to auth callback
+[33m62dcc8f[m Remove unused local credential model
+[33m75f1274[m Add local user credential model
+[33m83b67b9[m added 24 dau tricycle points
+[33m5906473[m Merge pull request #76 from Mark-Batongbacal/dev
+[33m65e7294[m Merge pull request #75 from Mark-Batongbacal/frontendBackendIntegration
+[33m26ddbd1[m Merge pull request #74 from Mark-Batongbacal/aiChanges
+[33m73d998c[m feat: added azure endpoint on the frontend
+[33m538dbf0[m[33m ([m[1;31morigin/aiChanges[m[33m)[m fix: fixed error where ai doesn't produce an output
+[33m424ee60[m Merge pull request #73 from Mark-Batongbacal/httpUpdate
+[33mabeb94b[m[33m ([m[1;31morigin/httpUpdate[m[33m)[m refactor: properly formatted backend.http
+[33m2684354[m Merge pull request #72 from Mark-Batongbacal/bugFix
+[33m032ec04[m fix: progress not updating and status being locked to location not matched
+[33m73fe288[m Merge pull request #71 from Mark-Batongbacal/hide_secrets_clean
+[33m66f8188[m[33m ([m[1;31morigin/hide_secrets_clean[m[33m)[m chore: configure local iOS authentication secrets
+[33m33899c2[m refactor: changed the ios ui to fit the android ui
+[33m77fd4c0[m feat: started integration of backend to frontend
+[33m8320df1[m Merge branch 'dev' into kurt
+[33m13accce[m style: changed multiple screen layouts
+[33m93b9491[m feat: setting screen and tracking screen
+[33m1f564dc[m fix: robotic tone on tuki, unclear pathing on the trip plan controller
+[33m78252e9[m Merge pull request #69 from Mark-Batongbacal/selfTransfer
+[33m25a0851[m Merge pull request #68 from Mark-Batongbacal/frontendRepo
+[33m08aa12b[m[33m ([m[1;31morigin/selfTransfer[m[33m)[m Support same-route transfers
+[33m2091337[m[33m ([m[1;31morigin/frontendRepo[m[33m)[m Add Android API repository layer
+[33m4e4ce20[m[33m ([m[1;32mmain[m[33m)[m Merge pull request #67 from Mark-Batongbacal/dev
+[33m971f4b1[m Merge pull request #66 from Mark-Batongbacal/userprofile_facebookauth
+[33mfaede60[m[33m ([m[1;31morigin/userprofile_facebookauth[m[33m)[m Create or reuse UserProfile records for Facebook Android and iOS logins so authenticated Facebook users can access /api/users/me while preserving existing auth flows and token security.
+[33m06ffe16[m Merge pull request #65 from Mark-Batongbacal/userprofile_servicecontroller
+[33mef9cd6c[m[33m ([m[1;31morigin/userprofile_servicecontroller[m[33m)[m added service and controller for user side (user profile)
+[33m5c9c8ce[m Merge pull request #64 from Mark-Batongbacal/driver_ridematching_trips_controller
+[33m1b4cefd[m Merge pull request #63 from Mark-Batongbacal/namespace_service_fix
+[33m8634a2c[m finished the driver, ride matching, and trips controller
+[33mce82320[m[33m ([m[1;31morigin/namespace_service_fix[m[33m)[m fixed the namespaces
+[33m2c6d157[m Merge pull request #61 from Mark-Batongbacal/services_filestructure
+[33m236164c[m fixed the file structure of services
+[33m8a7be67[m Merge pull request #60 from Mark-Batongbacal/facebook_auth_login
+[33m649bacf[m[33m ([m[1;31morigin/facebook_auth_login[m[33m)[m feat: add Google and Facebook authentication for Android and iOS
+[33m08e0d95[m Merge pull request #59 from Mark-Batongbacal/facebook_auth_login
+[33mecfe9d4[m Merge branch 'dev' into facebook_auth_login
+[33m814904a[m implemented the facebook auth login successfully in android and ios devices.
+[33ma927014[m feat: implement advanced repository layer and align data models with backend
+[33m5764ec6[m Merge pull request #58 from Mark-Batongbacal/AiIntegration
+[33md186a42[m merge: integrate dev into AiIntegration
+[33m7746161[m docs: document navigation setup and API workflows
+[33m637c151[m chore(container): prepare production image for port 8080
+[33mf0468e3[m feat(navigation): add assistant-guided trip sessions
+[33m9bcced7[m feat(routing): validate trips and support transfer graphs
+[33m0478934[m feat(auth): register profiles and bind API key identities
+[33mc1eec3a[m Merge pull request #57 from Mark-Batongbacal/google_auth_login
+[33md13fbcd[m successfully integrated google login in ios and android. make sure to read the readme in frontend.
+[33m1d1be4a[m Merge pull request #56 from Mark-Batongbacal/dev
+[33m6a1fcbc[m Merge pull request #53 from Mark-Batongbacal/lovely
+[33m8e4ad19[m Merge pull request #55 from Mark-Batongbacal/agent/tricycle-point-creation
+[33m8b8147c[m[33m ([m[1;31morigin/agent/tricycle-point-creation[m[33m)[m test(tricycle-points): cover creation endpoint
+[33mb2fb9c3[m feat: added trike point adder
+[33me72c233[m Merge pull request #54 from Mark-Batongbacal/jeepneyRouting
+[33m03a6582[m fix(navigation): restore profile back action
+[33medb3797[m[33m ([m[1;31morigin/jeepneyRouting[m[33m)[m docs(backend): document route creation and Valhalla setup
+[33mb24113f[m refactor(routing): use database transit data and configurable scoring
+[33m11c6683[m feat(transport-routes): generate and persist jeepney routes
+[33m0101073[m added bottom navigation screens
+[33m73ae4e0[m Merge pull request #52 from Mark-Batongbacal/tricyclepoint_transferconnection_repo_services
+[33mec6e7eb[m Merge pull request #51 from Mark-Batongbacal/dev
+[33m31b4820[m feat: fully functioning commute routing system with control over time vs cost preference
+[33m76ed913[m Merge pull request #50 from Mark-Batongbacal/tricyclepoint_transferconnection_repo_services
+[33m27b4b30[m Merge dev into tricyclepoint_transferconnection_repo_services
+[33mca180dc[m Merge pull request #48 from Mark-Batongbacal/jeepneyRouting
+[33m1536be8[m feat(transportation): add transfer connection and tricycle point repositories and services
+[33m4e7b1ea[m Merge pull request #49 from Mark-Batongbacal/route-point-repo-service
+[33m11ee058[m Merge branch 'dev' into jeepneyRouting
+[33m6f09be5[m feat: add route point repository and service
+[33mcd34fc8[m Merge pull request #47 from Mark-Batongbacal/backend-mssql-integration
+[33m3025437[m Migrate backend database provider to MSSQL and fixed all the corresponding related logic. Also read the readme file to run the database on your desktop (query is located TukiDbSchema.sql)
+[33m8cdc98b[m feat: added jeepney routing valid for 2 transfers or 3 jeepneys, added tricycle feature to enhance going from origin to nearest jeepney route
+[33mc191d52[m Merge pull request #46 from Mark-Batongbacal/main
+[33m4884fdb[m Merge pull request #45 from Mark-Batongbacal/dev
+[33mc1455a7[m Merge pull request #44 from Mark-Batongbacal/valhallaImplementation
+[33mda24389[m feat: implement valhalla api and commute routing - walking and tracking nearest jeepney route
+[33m598c2e1[m Merge pull request #43 from Mark-Batongbacal/lovely
+[33m4c09525[m added home screen
+[33m2716f58[m Merge pull request #42 from Mark-Batongbacal/lovely
+[33m2e7117c[m Merge pull request #41 from Mark-Batongbacal/unitTests
+[33m0ab077e[m added necessary tests for each services.
+[33m1543da1[m Merge pull request #40 from Mark-Batongbacal/chatService
+[33maf97326[m Merge pull request #39 from Mark-Batongbacal/rideMatchingService
+[33m13790a5[m Merge pull request #38 from Mark-Batongbacal/tripService
+[33m2c9dbfa[m Merge pull request #37 from Mark-Batongbacal/driverService
+[33m09321fb[m changed font color on splash
+[33m0bab35a[m added splash/login/signup screens
+[33mb665544[m[33m ([m[1;31morigin/chatService[m[33m)[m added the service for Chat Service.
+[33mb30a1fd[m finished the service for Ride Matching.
+[33m4926f7d[m added tripService
+[33md4c6043[m added the driver service
+[33mc9e19f5[m Merge pull request #36 from Mark-Batongbacal/feat/repoInputTest
+[33mf05567c[m refactor: changed ai model
+[33m13a2295[m feat: added post for the testing
+[33m3968631[m Merge pull request #35 from Mark-Batongbacal/dev
+[33m89da286[m Merge pull request #34 from Mark-Batongbacal/backend-mark
+[33m0e7f313[m Merge branch 'dev' into backend-mark
+[33me2c50a2[m fix: removed redundant file
+[33m50b6f65[m Merge pull request #33 from Mark-Batongbacal/backend-pen
+[33m9792def[m Merge branch 'dev' into backend-pen
+[33m29694dc[m fixed the secret
+[33mb9ae641[m 1. fixed the calling of supabase
+[33m9a2dc79[m fix: fixed test controller
+[33m8d8de0e[m fix: fixed issue where login post returns error 500
+[33m343d725[m for testing purposes
+[33m3e73483[m Merge pull request #31 from Mark-Batongbacal/dev
+[33m1399022[m Merge pull request #30 from Mark-Batongbacal/backend-mark
+[33m0e80a7b[m fix: fixed test controller
+[33maf09542[m Merge pull request #29 from Mark-Batongbacal/backend-pen
+[33mb5b087a[m Merge branch 'dev' into backend-pen
+[33mb11e1c2[m for testing purposes
+[33me17bf32[m Merge pull request #28 from Mark-Batongbacal/backend-mark
+[33ma887e18[m feat: AI implementation done
+[33m0654500[m fixed the file structure especially the naming convention (followed the pascal format instead of the snake case).
+[33mb2528a2[m fixed the file structure especially the naming convention (followed the pascal format instead of the snake case).
+[33mb9c2f3c[m fix: fixed issue where login post returns error 500
+[33mfe07c5c[m fixed the file formatting of the repositories and made sure that it has public class and public interfaces.
+[33md8c2789[m fixed the file formatting of the repositories and made sure that it has public class and public interfaces.
+[33m286dc1a[m added the interface needed for repository files.
+[33m164db9f[m added the interface needed for repository files.
+[33mee0fc87[m created the repository files based on the db context.
+[33m68868d2[m created the repository files based on the db context.
+[33me78d8d9[m Merge pull request #27 from Mark-Batongbacal/dev
+[33mee1feb8[m Merge pull request #26 from Mark-Batongbacal/backend-mark
+[33m891b080[m Merge pull request #26 from Mark-Batongbacal/backend-mark
+[33m33a22fb[m fix: authcontroller only being able to check one login
+[33ma3ec0cf[m fix: authcontroller only being able to check one login
+[33ma483338[m fix: Change ASPNETCORE_ENVIRONMENT to Production
+[33m35c01d0[m Merge pull request #25 from Mark-Batongbacal/dev
+[33m2b232c6[m Merge pull request #24 from Mark-Batongbacal/backend-mark
+[33md088d6d[m Merge pull request #24 from Mark-Batongbacal/backend-mark
+[33m6d5e640[m fix: revert dockerfile from development to production
+[33mfff4b07[m fix: revert dockerfile from development to production
+[33m9df6ab9[m chore: switch Dockerfile to Development (publish Debug build)
+[33m69dde23[m Merge pull request #23 from Mark-Batongbacal/dev
+[33md17522b[m Merge pull request #22 from Mark-Batongbacal/backend-mark
+[33me2c8aa1[m Merge pull request #22 from Mark-Batongbacal/backend-mark
+[33m0a24be6[m fix: backend http fix
+[33m16acd74[m fix: backend http fix
+[33me61e904[m Merge pull request #21 from Mark-Batongbacal/backend-mark
+[33m2c76a85[m Merge pull request #21 from Mark-Batongbacal/backend-mark
+[33mb93d6ea[m Merge branch 'dev' into backend-mark
+[33m545f734[m Merge branch 'dev' into backend-mark
+[33m2762277[m fix: brought back missing files
+[33md35fbcc[m fix: brought back missing files
+[33md50440c[m Merge pull request #20 from Mark-Batongbacal/backend-pen
+[33mca82404[m Merge pull request #20 from Mark-Batongbacal/backend-pen
+[33m091b027[m Merge branch 'dev' into backend-pen
+[33mbabc391[m Merge branch 'dev' into backend-pen
+[33m58dbed2[m fix: merge issues
+[33m1874753[m fix: merge issues
+[33m3341ab6[m added sample route endpoint for map integration testing
+[33mdcd45f4[m add initial Google Maps integration with location, markers, and route polyline
+[33med9c597[m Merge branch 'dev' into backend-mark
+[33m1dc3924[m Merge branch 'dev' into backend-mark
+[33m775874c[m Merge pull request #19 from Mark-Batongbacal/backend-mark
+[33mf5745ad[m Merge pull request #19 from Mark-Batongbacal/backend-mark
+[33macda180[m docs: update Supabase database configuration
+[33mf2220d6[m docs: update Supabase database configuration
+[33m495f91d[m Merge branch 'backend-mark' of github.com:Mark-Batongbacal/AUP into backend-mark
+[33m75e6a04[m Merge branch 'backend-mark' of github.com:Mark-Batongbacal/AUP into backend-mark
+[33mb6bf0e4[m feat: add EF Core models for Supabase database
+[33m4ac4e46[m feat: add EF Core models for Supabase database
+[33me354d62[m chore: revise backend API instructions in README
+[33m43e2e9d[m chore: revise backend API instructions in README
+[33mad846df[m Merge pull request #18 from Mark-Batongbacal/dev
+[33m7f98a4b[m Merge pull request #18 from Mark-Batongbacal/dev
+[33m61b3803[m Merge pull request #17 from Mark-Batongbacal/backend-mark
+[33m3fb74f3[m Merge pull request #17 from Mark-Batongbacal/backend-mark
+[33mb9daf43[m Merge branch 'dev' into backend-mark
+[33m6e1a0ae[m Merge branch 'dev' into backend-mark
+[33m2a9ad64[m chore: edited readme for better development workflow
+[33m127b05e[m chore: edited readme for better development workflow
+[33mee62c6a[m Merge pull request #16 from Mark-Batongbacal/dev
+[33m2b29029[m Merge pull request #16 from Mark-Batongbacal/dev
+[33m4fe427f[m Merge pull request #15 from Mark-Batongbacal/backend-mark
+[33m877b1c4[m Merge pull request #15 from Mark-Batongbacal/backend-mark
+[33m53b86f1[m feat: added health monitoring for backend API
+[33mbec4561[m feat: added health monitoring for backend API
+[33me5f8689[m Merge pull request #14 from Mark-Batongbacal/dev
+[33mae86f55[m Merge pull request #14 from Mark-Batongbacal/dev
+[33m73bcd70[m Merge pull request #13 from Mark-Batongbacal/backend-mark
+[33m9db53a5[m Merge pull request #13 from Mark-Batongbacal/backend-mark
+[33m287cca8[m fix: fixed dockerfile polling
+[33m1e16a16[m fix: fixed dockerfile polling
+[33m3953e8b[m Merge pull request #12 from Mark-Batongbacal/dev
+[33m007c2b4[m Merge pull request #12 from Mark-Batongbacal/dev
+[33ma7f7465[m Merge pull request #11 from Mark-Batongbacal/backend-mark
+[33m4fc0060[m Merge pull request #11 from Mark-Batongbacal/backend-mark
+[33m3eea90f[m feat: added dockerfile
+[33me3a115c[m feat: added dockerfile
+[33m5a55a6f[m Merge pull request #10 from Mark-Batongbacal/main
+[33md707913[m Merge pull request #10 from Mark-Batongbacal/main
+[33maf3e773[m Merge pull request #9 from Mark-Batongbacal/dev
+[33m66a3247[m Merge pull request #9 from Mark-Batongbacal/dev
+[33mc2c389b[m Merge pull request #7 from Mark-Batongbacal/backend-mark
+[33me76e2e4[m Merge pull request #7 from Mark-Batongbacal/backend-mark
+[33m711ed09[m BYPASS DEV - Merge pull request #8 from Mark-Batongbacal/backend-mark
+[33md88f3a9[m BYPASS DEV - Merge pull request #8 from Mark-Batongbacal/backend-mark
+[33m83a03d2[m feat: added nvidia test on backend.http and added a dockerfile for hosting the api on render
+[33m00a50fd[m feat: added nvidia test on backend.http and added a dockerfile for hosting the api on render
+[33m49d8fd2[m Merge pull request #6 from Mark-Batongbacal/dev
+[33mc09bbbe[m Merge branch 'main' into dev
+[33m9698e7f[m Merge pull request #5 from Mark-Batongbacal/backend-mark
+[33mda54b48[m fix: fixed sdk version in the frontend
+[33m7c621eb[m Merge pull request #3 from Mark-Batongbacal/backend-mark
+[33m9ebc6fb[m feat: API key and login authentication
+[33m08f1dca[m docs: add frontend and backend run guide
+[33m312e9e2[m docs: add local setup prerequisites
+[33m73dc1e9[m Merge pull request #2 from Mark-Batongbacal/ui
+[33m89b8938[m feat(frontend): add destination content screens
+[33mc5ea8c3[m Merge pull request #1 from Mark-Batongbacal/backend-pen
+[33mc2ae216[m refactor: changed to kotlin
+[33mb86a182[m chore: clean frontend and backend main files
+[33m45be4ab[m Revert "chore: clean main files for both backend and frontend"
+[33m7ba1889[m chore: clean main files for both backend and frontend
+[33m849e6b1[m chore: initialize project structure
+[33mc3fde7f[m Initial commit
