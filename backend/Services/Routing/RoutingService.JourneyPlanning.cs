@@ -248,15 +248,17 @@ public partial class RoutingService
         var candidateDedupeStarted = Stopwatch.GetTimestamp();
         var distinctCandidates = expandedCandidates
             .GroupBy(GetMeasuredJourneyCandidateKey, StringComparer.Ordinal)
-            .Select(group => HasSoftPlanningPreference(planningPreferences)
-                ? group
-                    .OrderBy(candidate => PlanningCandidateScore(
-                        candidate, planningPreferences))
-                    .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
-                    .First()
-                : group
-                    .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-                    .First())
+            .Select(group => new KeyedJourneyCandidate(
+                HasSoftPlanningPreference(planningPreferences)
+                    ? group
+                        .OrderBy(candidate => PlanningCandidateScore(
+                            candidate, planningPreferences))
+                        .ThenBy(candidate => candidate.TotalGeneralizedCostPesos)
+                        .First()
+                    : group
+                        .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
+                        .First(),
+                group.Key))
             .ToList();
         var candidateDedupeAndKeyTicks =
             Stopwatch.GetTimestamp() - candidateDedupeStarted;
@@ -1022,6 +1024,10 @@ public partial class RoutingService
             Math.Round(leg.AlightFullRouteAnchor?.DistanceFromRouteStartMeters ?? -1, 1)))) +
         $"|{candidate.OriginAccess.Mode}:{candidate.OriginAccess.TrikePoint?.Id}" +
         $"|{candidate.DestinationAccess.Mode}:{candidate.DestinationAccess.TrikePoint?.Id}";
+
+    internal static string GetJourneyCandidateSelectionKey(
+        JourneyCandidate candidate) =>
+        GetJourneyCandidateKey(candidate);
 
     // Leg distance is part of the identity because a route may pass the same
     // physical point twice. Two rides can share board and alight coordinates

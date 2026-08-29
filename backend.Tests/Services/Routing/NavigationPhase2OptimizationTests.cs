@@ -230,6 +230,102 @@ public sealed class NavigationPhase2OptimizationTests
             reversed.Select(candidate => candidate.TotalGeneralizedCostPesos).Order());
     }
 
+    [Theory]
+    [InlineData("direct")]
+    [InlineData("one-transfer")]
+    [InlineData("two-transfer")]
+    [InlineData("loop-self-transfer")]
+    [InlineData("tricycle-access")]
+    [InlineData("preference-fastest-less-walking")]
+    [InlineData("preference-cheapest-more-walking")]
+    [InlineData("preference-efficient")]
+    public void OptimizedSelection_MatchesReferenceCandidateKeysInExactOrder(
+        string scenario)
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 20);
+        var (candidates, preferences) = BuildSelectionParityScenario(scenario);
+
+        var reference = service.SelectCandidatesToConfirmWithDiversityReference(
+            candidates,
+            preferences);
+        var optimized = service.SelectCandidatesToConfirmWithDiversity(
+            candidates,
+            preferences);
+
+        var referenceKeys = reference
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+        var optimizedKeys = optimized
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+
+        Assert.Equal(referenceKeys, optimizedKeys);
+    }
+
+    private static (List<RoutingService.JourneyCandidate> Candidates,
+        JourneyPlanningPreferences? Preferences)
+        BuildSelectionParityScenario(string scenario)
+    {
+        JourneyPlanningPreferences? preferences = scenario switch
+        {
+            "preference-fastest-less-walking" => new JourneyPlanningPreferences(
+                MaxFarePesos: 150,
+                MaxWalkingMeters: 2_000,
+                WalkingPreference: JourneyWalkingPreference.Less,
+                OptimizationPreference: JourneyOptimizationPreference.Fastest),
+            "preference-cheapest-more-walking" => new JourneyPlanningPreferences(
+                MaxFarePesos: 150,
+                MaxWalkingMeters: 2_000,
+                WalkingPreference: JourneyWalkingPreference.More,
+                OptimizationPreference: JourneyOptimizationPreference.Cheapest),
+            "preference-efficient" => new JourneyPlanningPreferences(
+                MaxFarePesos: 150,
+                MaxWalkingMeters: 2_000,
+                OptimizationPreference: JourneyOptimizationPreference.Efficient),
+            _ => null
+        };
+
+        var candidates = Enumerable.Range(0, 80)
+            .Select(index =>
+            {
+                IReadOnlyList<string> routeIds = scenario switch
+                {
+                    "direct" => [$"DIRECT-{index % 9:D2}"],
+                    "one-transfer" =>
+                        [$"ONE-A-{index % 7:D2}", $"ONE-B-{index % 5:D2}"],
+                    "two-transfer" =>
+                    [
+                        $"TWO-A-{index % 7:D2}",
+                        $"TWO-B-{index % 5:D2}",
+                        $"TWO-C-{index % 3:D2}"
+                    ],
+                    "loop-self-transfer" =>
+                        [$"LOOP-{index % 4:D2}", $"LOOP-{index % 4:D2}"],
+                    "tricycle-access" =>
+                        [$"TRIKE-A-{index % 6:D2}", $"TRIKE-B-{index % 4:D2}"],
+                    "preference-fastest-less-walking" or
+                    "preference-cheapest-more-walking" or
+                    "preference-efficient" =>
+                        [$"PREF-A-{index % 8:D2}", $"PREF-B-{index % 6:D2}"],
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(scenario),
+                        scenario,
+                        "Unknown selection parity scenario")
+                };
+
+                var usesTrike = scenario == "tricycle-access" && index % 3 != 0;
+                return BuildSelectionCandidate(
+                    routeIds,
+                    usesTrike ? AccessMode.Trike : AccessMode.Walk,
+                    usesTrike ? $"TODA-{index % 5:D2}" : null,
+                    provisionalCost: 10 + index % 11,
+                    alightProgressOffsetMeters: index * 7.25);
+            })
+            .ToList();
+
+        return (candidates, preferences);
+    }
+
     private static RoutingService CreateTransferService()
     {
         var routes = new List<TransportRoute>

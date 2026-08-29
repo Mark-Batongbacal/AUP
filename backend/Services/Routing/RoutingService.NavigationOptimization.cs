@@ -18,6 +18,28 @@ public partial class RoutingService
         if (candidates.Count <= MaxCandidatesToConfirm)
             return candidates;
 
+        var keyedCandidates = candidates
+            .Select(candidate => new KeyedJourneyCandidate(
+                candidate,
+                GetJourneyCandidateKey(candidate)))
+            .ToList();
+        return SelectCandidatesToConfirmWithDiversity(
+            keyedCandidates,
+            preferences);
+    }
+
+    private List<JourneyCandidate> SelectCandidatesToConfirmWithDiversity(
+        List<KeyedJourneyCandidate> candidates,
+        JourneyPlanningPreferences? preferences)
+    {
+        if (candidates.Count <= MaxCandidatesToConfirm)
+            return candidates.Select(candidate => candidate.Candidate).ToList();
+
+        var metadata = candidates
+            .Select(candidate => BuildCandidateSelectionMetadata(
+                candidate,
+                preferences))
+            .ToList();
         var selected = new List<JourneyCandidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var physicalDiversityQuota = Math.Max(1, MaxCandidatesToConfirm / 4);
@@ -32,6 +54,173 @@ public partial class RoutingService
         // physical-region reservation, and use the former low-origin-access
         // objective slice for bounded origin/destination mode + TODA
         // fallbacks. The total confirmation budget is unchanged.
+        AddDiverse(physicalDiversityQuota);
+        Add(OrderByPlanningPreference(metadata, preferences), objectiveQuota);
+        Add(metadata.OrderBy(candidate => candidate.FarePesos)
+            .ThenBy(candidate => candidate.Candidate.TotalGeneralizedCostPesos),
+            objectiveQuota);
+        Add(metadata.OrderBy(candidate => candidate.TimeSeconds)
+            .ThenBy(candidate => candidate.Candidate.TotalGeneralizedCostPesos),
+            objectiveQuota);
+        AddAccessProfileDiverse(objectiveQuota);
+
+        if (selected.Count < MaxCandidatesToConfirm)
+        {
+            Add(
+                OrderByPlanningPreference(metadata, preferences),
+                MaxCandidatesToConfirm - selected.Count);
+        }
+
+        _logger.LogDebug(
+            "Routing candidate diversity selected {SelectedCount} of {CandidateCount} candidates for confirmation",
+            selected.Count,
+            candidates.Count);
+
+        return selected;
+
+        void Add(IEnumerable<CandidateSelectionMetadata> source, int limit)
+        {
+            var added = 0;
+            foreach (var item in source)
+            {
+                if (added >= limit || selected.Count >= MaxCandidatesToConfirm)
+                    break;
+
+                if (!seen.Add(item.JourneyKey))
+                    continue;
+
+                selected.Add(item.Candidate);
+                added++;
+            }
+        }
+
+        void AddDiverse(int limit)
+        {
+            var buckets = metadata
+                .GroupBy(candidate => candidate.BoardingDiversityKey, StringComparer.Ordinal)
+                .Select(group => new Queue<CandidateSelectionMetadata>(
+                    OrderByPlanningPreference(group, preferences)
+                        .ThenBy(candidate => candidate.TimeSeconds)
+                        .ThenBy(candidate => candidate.JourneyKey, StringComparer.Ordinal)))
+                .OrderBy(queue => queue.Peek().Candidate.TotalGeneralizedCostPesos)
+                .ThenBy(
+                    queue => queue.Peek().BoardingDiversityKey,
+                    StringComparer.Ordinal)
+                .ToList();
+
+            var added = 0;
+            while (added < limit &&
+                   selected.Count < MaxCandidatesToConfirm &&
+                   buckets.Any(queue => queue.Count > 0))
+            {
+                foreach (var queue in buckets)
+                {
+                    while (queue.Count > 0)
+                    {
+                        var item = queue.Dequeue();
+                        if (!seen.Add(item.JourneyKey))
+                            continue;
+
+                        selected.Add(item.Candidate);
+                        added++;
+                        break;
+                    }
+
+                    if (added >= limit || selected.Count >= MaxCandidatesToConfirm)
+                        break;
+                }
+            }
+        }
+
+        void AddAccessProfileDiverse(int limit)
+        {
+            if (limit <= 0)
+                return;
+
+            // First divide by the coarse mode pair so walk/walk cannot consume
+            // the complete access-fallback reservation. Within each pair, one
+            // representative per route sequence + concrete TODA + physical
+            // occurrence keeps the low-origin-access objective this quota
+            // replaces. The occurrence component is essential: boarding and
+            // transfer regions that confirm differently cannot be collapsed
+            // merely because their modes and route IDs match. Choose the
+            // shortest access within each joint bucket, then let bucket
+            // representatives compete by complete provisional journey cost.
+            // Round-robin selection remains deterministic and bounded.
+            var modePairQueues = metadata
+                .GroupBy(candidate => candidate.AccessModePairKey, StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+                .Select(group => new Queue<CandidateSelectionMetadata>(group
+                    .GroupBy(
+                        candidate => candidate.AccessProfileRegionDiversityKey,
+                        StringComparer.Ordinal)
+                    .Select(profile => new
+                    {
+                        Representative = profile
+                            .OrderBy(candidate => candidate.OriginAccessDistanceMeters)
+                            .ThenBy(candidate =>
+                                candidate.Candidate.OriginAccess.TotalTimeSeconds)
+                            .ThenBy(candidate =>
+                                candidate.Candidate.TotalGeneralizedCostPesos)
+                            .ThenBy(candidate => candidate.TimeSeconds)
+                            .ThenBy(candidate => candidate.JourneyKey, StringComparer.Ordinal)
+                            .First(),
+                        ProvisionalProfileCost = profile.Min(candidate =>
+                            candidate.Candidate.TotalGeneralizedCostPesos)
+                    })
+                    .OrderBy(profile => profile.ProvisionalProfileCost)
+                    .ThenBy(profile =>
+                        profile.Representative.Candidate.TotalGeneralizedCostPesos)
+                    .ThenBy(profile => profile.Representative.TimeSeconds)
+                    .ThenBy(
+                        profile => profile.Representative
+                            .AccessProfileRegionDiversityKey,
+                        StringComparer.Ordinal)
+                    .Select(profile => profile.Representative)))
+                .ToList();
+
+            var added = 0;
+            while (added < limit &&
+                   selected.Count < MaxCandidatesToConfirm &&
+                   modePairQueues.Any(queue => queue.Count > 0))
+            {
+                foreach (var queue in modePairQueues)
+                {
+                    while (queue.Count > 0)
+                    {
+                        var item = queue.Dequeue();
+                        if (!seen.Add(item.JourneyKey))
+                            continue;
+
+                        selected.Add(item.Candidate);
+                        added++;
+                        break;
+                    }
+
+                    if (added >= limit || selected.Count >= MaxCandidatesToConfirm)
+                        break;
+                }
+            }
+        }
+    }
+
+    // Test-only parity oracle retained from the pre-D1 selector. Production
+    // planning uses the metadata-cached overload above.
+    internal List<JourneyCandidate>
+        SelectCandidatesToConfirmWithDiversityReference(
+            List<JourneyCandidate> candidates,
+            JourneyPlanningPreferences? preferences = null)
+    {
+        if (candidates.Count <= MaxCandidatesToConfirm)
+            return candidates;
+
+        var selected = new List<JourneyCandidate>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var physicalDiversityQuota = Math.Max(1, MaxCandidatesToConfirm / 4);
+        var objectiveQuota = Math.Max(
+            1,
+            (MaxCandidatesToConfirm - physicalDiversityQuota) / 4);
+
         AddDiverse(physicalDiversityQuota, GetBoardingDiversityKey);
         Add(OrderByPlanningPreference(candidates, preferences), objectiveQuota);
         Add(candidates.OrderBy(EstimateCandidateFarePesos)
@@ -46,11 +235,6 @@ public partial class RoutingService
                 OrderByPlanningPreference(candidates, preferences),
                 MaxCandidatesToConfirm - selected.Count);
         }
-
-        _logger.LogDebug(
-            "Routing candidate diversity selected {SelectedCount} of {CandidateCount} candidates for confirmation",
-            selected.Count,
-            candidates.Count);
 
         return selected;
 
@@ -76,9 +260,10 @@ public partial class RoutingService
         {
             var buckets = candidates
                 .GroupBy(diversityKey, StringComparer.Ordinal)
-                .Select(group => new Queue<JourneyCandidate>(OrderByPlanningPreference(group, preferences)
-                    .ThenBy(EstimateCandidateTimeSeconds)
-                    .ThenBy(GetJourneyCandidateKey, StringComparer.Ordinal)))
+                .Select(group => new Queue<JourneyCandidate>(
+                    OrderByPlanningPreference(group, preferences)
+                        .ThenBy(EstimateCandidateTimeSeconds)
+                        .ThenBy(GetJourneyCandidateKey, StringComparer.Ordinal)))
                 .OrderBy(queue => queue.Peek().TotalGeneralizedCostPesos)
                 .ThenBy(queue => diversityKey(queue.Peek()), StringComparer.Ordinal)
                 .ToList();
@@ -112,16 +297,6 @@ public partial class RoutingService
             if (limit <= 0)
                 return;
 
-            // First divide by the coarse mode pair so walk/walk cannot consume
-            // the complete access-fallback reservation. Within each pair, one
-            // representative per route sequence + concrete TODA + physical
-            // occurrence keeps the low-origin-access objective this quota
-            // replaces. The occurrence component is essential: boarding and
-            // transfer regions that confirm differently cannot be collapsed
-            // merely because their modes and route IDs match. Choose the
-            // shortest access within each joint bucket, then let bucket
-            // representatives compete by complete provisional journey cost.
-            // Round-robin selection remains deterministic and bounded.
             var modePairQueues = candidates
                 .GroupBy(GetAccessModePairKey, StringComparer.Ordinal)
                 .OrderBy(group => group.Key, StringComparer.Ordinal)
@@ -171,6 +346,105 @@ public partial class RoutingService
                 }
             }
         }
+    }
+
+    private IOrderedEnumerable<CandidateSelectionMetadata>
+        OrderByPlanningPreference(
+            IEnumerable<CandidateSelectionMetadata> candidates,
+            JourneyPlanningPreferences? preferences)
+    {
+        if (!HasSoftPlanningPreference(preferences))
+        {
+            return candidates.OrderBy(candidate =>
+                candidate.Candidate.TotalGeneralizedCostPesos);
+        }
+
+        return candidates
+            .OrderBy(candidate => candidate.PlanningScore)
+            .ThenBy(candidate => candidate.Candidate.TotalGeneralizedCostPesos)
+            .ThenBy(candidate => candidate.JourneyKey, StringComparer.Ordinal);
+    }
+
+    private CandidateSelectionMetadata BuildCandidateSelectionMetadata(
+        KeyedJourneyCandidate keyedCandidate,
+        JourneyPlanningPreferences? preferences)
+    {
+        var candidate = keyedCandidate.Candidate;
+        var diversity = BuildCandidateDiversityMetadata(candidate);
+        var farePesos = EstimateCandidateFarePesos(candidate);
+        var timeSeconds = EstimateCandidateTimeSeconds(candidate);
+        var planningScore = HasSoftPlanningPreference(preferences)
+            ? PlanningCandidateScoreFromEstimates(
+                candidate.TotalGeneralizedCostPesos,
+                preferences,
+                timeSeconds,
+                farePesos,
+                EstimateCandidateWalkingMeters(candidate))
+            : candidate.TotalGeneralizedCostPesos;
+
+        return new CandidateSelectionMetadata(
+            candidate,
+            keyedCandidate.JourneyKey,
+            diversity.BoardingKey,
+            GetAccessModePairKey(candidate),
+            diversity.AccessProfileRegionKey,
+            planningScore,
+            farePesos,
+            timeSeconds,
+            EstimateCandidateOriginAccessDistanceMeters(candidate));
+    }
+
+    private CandidateDiversityMetadata BuildCandidateDiversityMetadata(
+        JourneyCandidate candidate)
+    {
+        var bucketSize = _options.BoardingDiversityBucketMeters;
+        var boardingParts = new string[candidate.Legs.Count];
+        var occurrenceParts = new string[candidate.Legs.Count];
+
+        for (var index = 0; index < candidate.Legs.Count; index++)
+        {
+            var leg = candidate.Legs[index];
+            var boardBucket = (long)Math.Floor(
+                GetBoardProgressMeters(leg) / bucketSize);
+            var alightBucket = (long)Math.Floor(
+                GetAlightProgressMeters(leg) / bucketSize);
+            boardingParts[index] = $"{leg.RouteId}@{boardBucket}";
+            occurrenceParts[index] =
+                $"{leg.RouteId}@{boardBucket}-{alightBucket}";
+        }
+
+        return new CandidateDiversityMetadata(
+            string.Join('>', boardingParts),
+            $"{GetAccessProfileDiversityKey(candidate)}|" +
+            string.Join('>', occurrenceParts));
+    }
+
+    private double PlanningCandidateScoreFromEstimates(
+        double generalizedCostPesos,
+        JourneyPlanningPreferences? preferences,
+        double timeSeconds,
+        double farePesos,
+        double walkingMeters)
+    {
+        if (preferences is null)
+            return generalizedCostPesos;
+
+        var score = preferences.OptimizationPreference switch
+        {
+            JourneyOptimizationPreference.Fastest =>
+                timeSeconds + generalizedCostPesos / 100,
+            JourneyOptimizationPreference.Cheapest =>
+                farePesos * 1_000 + generalizedCostPesos,
+            _ => generalizedCostPesos
+        };
+
+        return preferences.WalkingPreference switch
+        {
+            JourneyWalkingPreference.Less => score + walkingMeters / 100,
+            JourneyWalkingPreference.More => score -
+                WalkingFatiguePesosPerKilometer * walkingMeters / 2_000,
+            _ => score
+        };
     }
 
     private IOrderedEnumerable<JourneyCandidate> OrderByPlanningPreference(
@@ -235,6 +509,25 @@ public partial class RoutingService
         access.Mode == AccessMode.Trike
             ? $"Trike:{access.TrikePoint?.Id ?? "unknown"}"
             : access.Mode.ToString();
+
+    private sealed record KeyedJourneyCandidate(
+        JourneyCandidate Candidate,
+        string JourneyKey);
+
+    private sealed record CandidateSelectionMetadata(
+        JourneyCandidate Candidate,
+        string JourneyKey,
+        string BoardingDiversityKey,
+        string AccessModePairKey,
+        string AccessProfileRegionDiversityKey,
+        double PlanningScore,
+        double FarePesos,
+        double TimeSeconds,
+        double OriginAccessDistanceMeters);
+
+    private sealed record CandidateDiversityMetadata(
+        string BoardingKey,
+        string AccessProfileRegionKey);
 
     /// <summary>
     /// Conservative Pareto pruning over confirmed journeys. A plan is removed
