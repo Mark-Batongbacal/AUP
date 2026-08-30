@@ -230,6 +230,7 @@ public partial class RoutingService
         AddUniqueAccessCandidate(alightCandidates, exactAlight);
 
         var all = new List<RouteConnectionCandidate>();
+        var combinationsEvaluated = 0L;
 
         foreach (var alightAccess in alightCandidates)
         {
@@ -240,6 +241,7 @@ public partial class RoutingService
 
             foreach (var boardAccess in boardCandidates)
             {
+                combinationsEvaluated++;
                 var boardIndex = boardAccess.RouteSampleIndex ??
                     GetNearestSampleIndex(samples, boardAccess.Anchor);
                 var boardAnchor = boardAccess.FullRouteAnchor ??
@@ -271,6 +273,9 @@ public partial class RoutingService
                     total));
             }
         }
+        _telemetry.IncrementRouting(
+            "board_alight_combinations_evaluated",
+            combinationsEvaluated);
 
         if (all.Count == 0)
             return [];

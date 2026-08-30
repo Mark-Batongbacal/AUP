@@ -45,6 +45,47 @@ public sealed class RoutingPerformanceTelemetryTests
     }
 
     [Fact]
+    public void CompletedPlan_EmitsCompactCoordinateFreeJourneyPerformanceSummary()
+    {
+        var logger = new CapturingLogger<TukiTelemetry>();
+        var telemetry = new TukiTelemetry(logger);
+
+        using (var plan = telemetry.BeginRoutingPlan("test"))
+        {
+            telemetry.SetRoutingValue("route_count", 21);
+            telemetry.SetRoutingValue(
+                "routes_considered_after_spatial_filter",
+                7);
+            telemetry.SetRoutingValue("selected_plan_count", 3);
+            telemetry.IncrementRouting("board_access_alternatives", 40);
+            telemetry.IncrementRouting("destination_access_alternatives", 32);
+            telemetry.IncrementRouting(
+                "board_alight_combinations_evaluated",
+                120);
+            telemetry.IncrementRouting(
+                "transfer_interchange_candidates_evaluated",
+                80);
+            telemetry.IncrementRouting("transit_candidates_confirmed", 5);
+            telemetry.IncrementRouting("valhalla_matrix_http_calls", 4);
+            telemetry.IncrementRouting("valhalla_matrix_cache_hits", 3);
+            telemetry.IncrementRouting("request_local_matrix_cache_hits", 2);
+            telemetry.IncrementRouting("valhalla_route_http_calls", 6);
+            telemetry.IncrementRouting("valhalla_route_cache_hits", 1);
+            plan.Complete("success");
+        }
+
+        var entry = Assert.Single(logger.PerformanceEntries);
+        Assert.Equal(21, Assert.IsType<double>(entry["RoutesTotal"]));
+        Assert.Equal(7, Assert.IsType<double>(entry["RoutesConsidered"]));
+        Assert.Equal(120L, entry["CombinationsEvaluated"]);
+        Assert.Equal(5L, entry["MatrixCacheHits"]);
+        Assert.Equal(3, Assert.IsType<double>(entry["OptionsProduced"]));
+        Assert.DoesNotContain(entry.Keys, key =>
+            key.Contains("Latitude", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("Longitude", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void IncompletePlan_UsesCancellationStateForOutcome()
     {
         var logger = new CapturingLogger<TukiTelemetry>();
@@ -199,6 +240,8 @@ public sealed class RoutingPerformanceTelemetryTests
     private sealed class CapturingLogger<T> : ILogger<T>
     {
         public List<IReadOnlyDictionary<string, object?>> Entries { get; } = [];
+        public List<IReadOnlyDictionary<string, object?>> PerformanceEntries
+            { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -212,18 +255,22 @@ public sealed class RoutingPerformanceTelemetryTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (state is not IEnumerable<KeyValuePair<string, object?>> values ||
-                !formatter(state, exception).StartsWith(
-                    "TukiRoutingPlan ",
-                    StringComparison.Ordinal))
+            if (state is not IEnumerable<KeyValuePair<string, object?>> values)
             {
                 return;
             }
 
-            Entries.Add(values.ToDictionary(
+            var entry = values.ToDictionary(
                 item => item.Key,
                 item => item.Value,
-                StringComparer.Ordinal));
+                StringComparer.Ordinal);
+            var message = formatter(state, exception);
+            if (message.StartsWith("TukiRoutingPlan ", StringComparison.Ordinal))
+                Entries.Add(entry);
+            else if (message.StartsWith(
+                         "JourneyPerformance ",
+                         StringComparison.Ordinal))
+                PerformanceEntries.Add(entry);
         }
     }
 }

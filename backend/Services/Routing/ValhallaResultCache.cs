@@ -83,7 +83,7 @@ public sealed class ValhallaResultCache : IValhallaResultCache, IDisposable
     {
         if (_cache.TryGetValue(key, out object? cached) && cached is T value)
         {
-            RecordHit(usage);
+            RecordHit(key, usage);
             RecordEntryCount();
             return value;
         }
@@ -113,7 +113,7 @@ public sealed class ValhallaResultCache : IValhallaResultCache, IDisposable
         var ownsMiss = ReferenceEquals(shared, candidate);
         if (ownsMiss)
         {
-            RecordMiss(usage);
+            RecordMiss(key, usage);
             _ = shared.Value.ContinueWith(
                 (_, state) =>
                 {
@@ -145,17 +145,21 @@ public sealed class ValhallaResultCache : IValhallaResultCache, IDisposable
 
     internal int EntryCount => _cache.Count;
 
-    private void RecordHit(ValhallaCacheUsage usage)
+    private void RecordHit(ValhallaCacheKey key, ValhallaCacheUsage usage)
     {
         _telemetry.IncrementRouting("valhalla_cache_hits");
+        _telemetry.IncrementRouting(
+            $"valhalla_{key.Operation}_cache_hits");
         _telemetry.IncrementRouting("valhalla_calls_avoided");
         if (usage == ValhallaCacheUsage.StaticTransfer)
             _telemetry.IncrementRouting("static_transfer_cache_hits");
     }
 
-    private void RecordMiss(ValhallaCacheUsage usage)
+    private void RecordMiss(ValhallaCacheKey key, ValhallaCacheUsage usage)
     {
         _telemetry.IncrementRouting("valhalla_cache_misses");
+        _telemetry.IncrementRouting(
+            $"valhalla_{key.Operation}_cache_misses");
         if (usage == ValhallaCacheUsage.StaticTransfer)
             _telemetry.IncrementRouting("static_transfer_cache_misses");
     }

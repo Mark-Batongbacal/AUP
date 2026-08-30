@@ -77,6 +77,15 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
                     new RoutingPlanLogState(snapshot),
                     null,
                     static (state, _) => state.ToString());
+                if (logger.IsEnabled(LogLevel.Debug))
+                {
+                    logger.Log(
+                        LogLevel.Debug,
+                        new EventId(1_002, "JourneyPerformance"),
+                        new JourneyPerformanceLogState(snapshot),
+                        null,
+                        static (state, _) => state.ToString());
+                }
             });
     }
 
@@ -190,6 +199,10 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
         metricName is
             "valhalla_matrix_http_calls" or
             "valhalla_route_http_calls" or
+            "valhalla_matrix_cache_hits" or
+            "valhalla_matrix_cache_misses" or
+            "valhalla_route_cache_hits" or
+            "valhalla_route_cache_misses" or
             "request_local_matrix_cache_hits" or
             "request_local_matrix_cache_misses" or
             "valhalla_cache_hits" or

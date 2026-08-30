@@ -50,6 +50,16 @@ public partial class RoutingService
 
         await EnsureInitializedAsync(cancellationToken);
 
+        // Phase 0 baseline: before a spatial prefilter exists every static
+        // route enters both sides of access discovery. Phase 1 replaces these
+        // values with the actual immutable-index query results.
+        _telemetry.SetRoutingValue(
+            "routes_considered_before_spatial_filter",
+            _routes.Count);
+        _telemetry.SetRoutingValue(
+            "routes_considered_after_spatial_filter",
+            _routes.Count);
+
         var planningPreferences = NormalizePlanningPreferences(preferences);
         var maxWalkAccessDistanceMeters =
             GetWalkAccessDistanceLimit(planningPreferences);
@@ -568,7 +578,11 @@ public partial class RoutingService
         // cheapest arithmetic combination of individually legal legs.
         var sensiblePlans = PruneTokenTransitJourneys(finalParetoPlans);
 
+        var finalRankingStarted = Stopwatch.GetTimestamp();
         var selectedPlans = SelectObjectivePlans(sensiblePlans, planningPreferences);
+        _telemetry.ObserveRouting(
+            "final_journey_ranking_ms",
+            Stopwatch.GetElapsedTime(finalRankingStarted).TotalMilliseconds);
         _telemetry.ObserveRouting(
             "pruning_ms",
             Stopwatch.GetElapsedTime(pruningStarted).TotalMilliseconds);

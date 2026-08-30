@@ -27,7 +27,13 @@ public partial class RoutingService
     {
         if (MaxTransfers == 0) yield break;
 
-        var routeNames = _routes.ToDictionary(route => route.RouteId, route => route.RouteName);
+        var interchangeCandidatesEvaluated = 0L;
+        var routeNames = _routes.ToDictionary(
+            route => route.RouteId,
+            route => route.RouteName);
+        var dominance = new Dictionary<string, double>(StringComparer.Ordinal);
+        try
+        {
         var emitted = 0;
         var rootCompletionsEmitted = 0;
         // A safety ceiling only. Per-route and per-level bounds below are what
@@ -38,8 +44,6 @@ public partial class RoutingService
             Math.Max(1, _routes.Count);
         var rootCompletionLimit = MaxCandidatesToConfirm *
             Math.Max(1, _routes.Count);
-        var dominance = new Dictionary<string, double>(StringComparer.Ordinal);
-
         foreach (var startRoute in _routes)
         {
             if (!_interchangesByRoute.TryGetValue(startRoute.RouteId, out var firstEdges))
@@ -110,6 +114,14 @@ public partial class RoutingService
             }
         }
 
+        }
+        finally
+        {
+            _telemetry.IncrementRouting(
+                "transfer_interchange_candidates_evaluated",
+                interchangeCandidatesEvaluated);
+        }
+
         yield break;
 
         List<TransferSearchState> BuildOriginStates(
@@ -122,6 +134,7 @@ public partial class RoutingService
 
             foreach (var first in firstEdges)
             {
+                interchangeCandidatesEvaluated++;
                 var isSelfInterchange = string.Equals(
                     startRouteId,
                     first.OtherRouteId,
@@ -172,6 +185,7 @@ public partial class RoutingService
 
             foreach (var first in firstEdges)
             {
+                interchangeCandidatesEvaluated++;
                 var isSelfInterchange = string.Equals(
                     startRouteId,
                     first.OtherRouteId,
@@ -340,6 +354,7 @@ public partial class RoutingService
 
             foreach (var edge in edges)
             {
+                interchangeCandidatesEvaluated++;
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var isSelfInterchange = string.Equals(

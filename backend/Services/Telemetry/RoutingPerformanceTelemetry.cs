@@ -92,6 +92,85 @@ internal sealed class RoutingPlanLogState :
         $"TukiRoutingPlan {JsonSerializer.Serialize(_snapshot)}";
 }
 
+/// <summary>
+/// A compact, coordinate-free view of the high-value work counters. The full
+/// TukiRoutingPlan event remains the benchmark source of truth; this debug
+/// event makes one request easy to inspect without expanding every pass and
+/// per-route diagnostic.
+/// </summary>
+internal sealed class JourneyPerformanceLogState :
+    IReadOnlyList<KeyValuePair<string, object?>>
+{
+    private const string OriginalFormat =
+        "JourneyPerformance ElapsedMs={ElapsedMs} RoutesTotal={RoutesTotal} " +
+        "RoutesConsidered={RoutesConsidered} BoardCandidates={BoardCandidates} " +
+        "AlightCandidates={AlightCandidates} CombinationsEvaluated={CombinationsEvaluated} " +
+        "TransferCandidates={TransferCandidates} CandidatesConfirmed={CandidatesConfirmed} " +
+        "MatrixRequests={MatrixRequests} MatrixCacheHits={MatrixCacheHits} " +
+        "RouteRequests={RouteRequests} RouteCacheHits={RouteCacheHits} " +
+        "OptionsProduced={OptionsProduced}";
+    private readonly List<KeyValuePair<string, object?>> _properties;
+
+    public JourneyPerformanceLogState(RoutingPlanTelemetrySnapshot snapshot)
+    {
+        long Count(string name) => snapshot.Counts.GetValueOrDefault(name);
+        double Value(string name) => snapshot.Values.GetValueOrDefault(name);
+
+        _properties =
+        [
+            new("EventName", "JourneyPerformance"),
+            new("PlanId", snapshot.PlanId),
+            new("ElapsedMs", snapshot.ElapsedMilliseconds),
+            new("RoutesTotal", Value("route_count")),
+            new("RoutesConsidered", Value(
+                "routes_considered_after_spatial_filter")),
+            new("BoardCandidates", Count("board_access_alternatives")),
+            new("AlightCandidates", Count("destination_access_alternatives")),
+            new("CombinationsEvaluated", Count(
+                "board_alight_combinations_evaluated")),
+            new("TransferCandidates", Count(
+                "transfer_interchange_candidates_evaluated")),
+            new("CandidatesConfirmed", Count("transit_candidates_confirmed") +
+                Count("access_only_candidates_confirmed")),
+            new("MatrixRequests", Count("valhalla_matrix_http_calls")),
+            new("MatrixCacheHits", Count("valhalla_matrix_cache_hits") +
+                Count("request_local_matrix_cache_hits")),
+            new("RouteRequests", Count("valhalla_route_http_calls")),
+            new("RouteCacheHits", Count("valhalla_route_cache_hits")),
+            new("OptionsProduced", Value("selected_plan_count")),
+            new("{OriginalFormat}", OriginalFormat)
+        ];
+    }
+
+    public int Count => _properties.Count;
+    public KeyValuePair<string, object?> this[int index] => _properties[index];
+    public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() =>
+        _properties.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+        GetEnumerator();
+
+    public override string ToString() => string.Format(
+        System.Globalization.CultureInfo.InvariantCulture,
+        "JourneyPerformance ElapsedMs={0:F1} RoutesTotal={1} " +
+        "RoutesConsidered={2} BoardCandidates={3} AlightCandidates={4} " +
+        "CombinationsEvaluated={5} TransferCandidates={6} CandidatesConfirmed={7} " +
+        "MatrixRequests={8} MatrixCacheHits={9} RouteRequests={10} " +
+        "RouteCacheHits={11} OptionsProduced={12}",
+        _properties[2].Value,
+        _properties[3].Value,
+        _properties[4].Value,
+        _properties[5].Value,
+        _properties[6].Value,
+        _properties[7].Value,
+        _properties[8].Value,
+        _properties[9].Value,
+        _properties[10].Value,
+        _properties[11].Value,
+        _properties[12].Value,
+        _properties[13].Value,
+        _properties[14].Value);
+}
+
 internal abstract class RoutingTelemetryContext
 {
     private readonly ConcurrentDictionary<string, long> _counts =
