@@ -26,6 +26,11 @@
             : $"{span.Hours}h {span.Minutes}m {span.Seconds}s";
     }
     string FormatPeso(decimal value) => value < 1m ? $"₱{value:0.0000}" : $"₱{value:N2}";
+    string FormatNullablePeso(decimal? value) => value.HasValue ? FormatPeso(value.Value) : "—";
+    var persistentAi = Model?.AiEconomics.PersistentStorageAvailable == true;
+    var todayAi = Model?.AiEconomics.Today;
+    var last7DaysAi = Model?.AiEconomics.Last7Days;
+    var lifetimeAi = Model?.AiEconomics.Lifetime;
 }
 
 <section class="server-page" data-server-dashboard data-snapshot-url="@Url.Action("Snapshot", "ServerPerformance")">
@@ -103,15 +108,56 @@
     <section class="server-section">
         <div class="server-section-heading">
             <div><p class="eyebrow">AI & TRIPS</p><h2>Usage & estimated cost</h2></div>
-            <span class="server-section-note">AI counters reset with the backend process; total trips come from SQL Server</span>
+            <span class="server-section-note" data-ai-storage-note>@(persistentAi ? "Persistent SQL history · Asia/Manila calendar windows" : "Live process counters available · apply the AI usage migration for persistent history")</span>
         </div>
         <div class="server-request-grid">
-            <article class="server-metric-card"><span class="server-card-label">Total trips</span><strong data-total-trips>@(Model?.TotalTrips?.ToString("N0") ?? "Unavailable")</strong><small>PassengerTrip records in the database</small></article>
-            <article class="server-metric-card"><span class="server-card-label">AI calls</span><strong data-ai-calls>@(Model?.AiUsage.TotalCalls.ToString("N0") ?? "0")</strong><small data-ai-call-detail>@(Model is null ? "Intent + navigation" : $"{Model.AiUsage.IntentCalls:N0} intent · {Model.AiUsage.NavigationCalls:N0} navigation")</small></article>
-            <article class="server-metric-card"><span class="server-card-label">Input tokens</span><strong data-ai-input-tokens>@(Model?.AiUsage.InputTokens.ToString("N0") ?? "0")</strong><small>Model-reported prompt/input usage</small></article>
-            <article class="server-metric-card"><span class="server-card-label">Output tokens</span><strong data-ai-output-tokens>@(Model?.AiUsage.OutputTokens.ToString("N0") ?? "0")</strong><small>Model-reported completion/output usage</small></article>
-            <article class="server-metric-card"><span class="server-card-label">Total AI tokens</span><strong data-ai-total-tokens>@(Model?.AiUsage.TotalTokens.ToString("N0") ?? "0")</strong><small data-ai-model>@(Model?.AiUsage.LastModel ?? "No successful model call yet")</small></article>
-            <article class="server-metric-card"><span class="server-card-label">Estimated AI cost</span><strong data-ai-cost-php>@(Model is null ? "₱0.0000" : FormatPeso(Model.AiUsage.EstimatedCostPhp))</strong><small data-ai-pricing>@(Model is null ? "Configured token pricing" : $"${Model.AiUsage.InputUsdPerMillionTokens:0.00}/M in · ${Model.AiUsage.OutputUsdPerMillionTokens:0.00}/M out · ₱{Model.AiUsage.UsdToPhp:0.00}/USD")</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Total trips</span><strong data-total-trips>@(Model?.TotalTrips?.ToString("N0") ?? "Unavailable")</strong><small>All PassengerTrip records in SQL Server</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Process AI calls</span><strong data-ai-calls>@(Model?.AiUsage.TotalCalls.ToString("N0") ?? "0")</strong><small data-ai-call-detail>@(Model is null ? "Intent + navigation" : $"{Model.AiUsage.IntentCalls:N0} intent · {Model.AiUsage.NavigationCalls:N0} navigation")</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Process input</span><strong data-ai-input-tokens>@(Model?.AiUsage.InputTokens.ToString("N0") ?? "0")</strong><small>Model-reported input tokens since backend start</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Process output</span><strong data-ai-output-tokens>@(Model?.AiUsage.OutputTokens.ToString("N0") ?? "0")</strong><small>Model-reported output tokens since backend start</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Process AI tokens</span><strong data-ai-total-tokens>@(Model?.AiUsage.TotalTokens.ToString("N0") ?? "0")</strong><small data-ai-model>@(Model?.AiUsage.LastModel ?? "No successful model call yet")</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Process AI cost</span><strong data-ai-cost-php>@(Model is null ? "₱0.0000" : FormatPeso(Model.AiUsage.EstimatedCostPhp))</strong><small data-ai-pricing>@(Model is null ? "Configured token pricing" : $"${Model.AiUsage.InputUsdPerMillionTokens:0.00}/M in · ${Model.AiUsage.OutputUsdPerMillionTokens:0.00}/M out · ₱{Model.AiUsage.UsdToPhp:0.00}/USD")</small></article>
+        </div>
+
+        <div class="server-table-wrap mt-3">
+            <table class="server-table" aria-label="Persistent AI economics">
+                <thead>
+                    <tr><th>Period</th><th>Trips</th><th>AI calls</th><th>Input tokens</th><th>Output tokens</th><th>AI cost</th><th>AI cost / trip</th></tr>
+                </thead>
+                <tbody>
+                    <tr data-ai-window="today">
+                        <td><strong>Today</strong></td>
+                        <td data-window-trips>@(persistentAi ? todayAi?.Trips.ToString("N0") : "—")</td>
+                        <td data-window-calls>@(persistentAi ? todayAi?.TotalCalls.ToString("N0") : "—")</td>
+                        <td data-window-input>@(persistentAi ? todayAi?.InputTokens.ToString("N0") : "—")</td>
+                        <td data-window-output>@(persistentAi ? todayAi?.OutputTokens.ToString("N0") : "—")</td>
+                        <td data-window-cost>@(persistentAi && todayAi is not null ? FormatPeso(todayAi.EstimatedCostPhp) : "—")</td>
+                        <td data-window-cost-per-trip>@(persistentAi ? FormatNullablePeso(todayAi?.EstimatedCostPhpPerTrip) : "—")</td>
+                    </tr>
+                    <tr data-ai-window="last7Days">
+                        <td><strong>Last 7 days</strong></td>
+                        <td data-window-trips>@(persistentAi ? last7DaysAi?.Trips.ToString("N0") : "—")</td>
+                        <td data-window-calls>@(persistentAi ? last7DaysAi?.TotalCalls.ToString("N0") : "—")</td>
+                        <td data-window-input>@(persistentAi ? last7DaysAi?.InputTokens.ToString("N0") : "—")</td>
+                        <td data-window-output>@(persistentAi ? last7DaysAi?.OutputTokens.ToString("N0") : "—")</td>
+                        <td data-window-cost>@(persistentAi && last7DaysAi is not null ? FormatPeso(last7DaysAi.EstimatedCostPhp) : "—")</td>
+                        <td data-window-cost-per-trip>@(persistentAi ? FormatNullablePeso(last7DaysAi?.EstimatedCostPhpPerTrip) : "—")</td>
+                    </tr>
+                    <tr data-ai-window="lifetime">
+                        <td><strong>Tracked lifetime</strong></td>
+                        <td data-window-trips>@(persistentAi ? lifetimeAi?.Trips.ToString("N0") : "—")</td>
+                        <td data-window-calls>@(persistentAi ? lifetimeAi?.TotalCalls.ToString("N0") : "—")</td>
+                        <td data-window-input>@(persistentAi ? lifetimeAi?.InputTokens.ToString("N0") : "—")</td>
+                        <td data-window-output>@(persistentAi ? lifetimeAi?.OutputTokens.ToString("N0") : "—")</td>
+                        <td data-window-cost>@(persistentAi && lifetimeAi is not null ? FormatPeso(lifetimeAi.EstimatedCostPhp) : "—")</td>
+                        <td data-window-cost-per-trip>@(persistentAi ? FormatNullablePeso(lifetimeAi?.EstimatedCostPhpPerTrip) : "—")</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="server-safety-note mt-3">
+            <strong>Economics note.</strong>
+            <span>Tracked-lifetime cost per trip only divides by trips created after AI persistence began, so older trips cannot make the average look artificially cheap.</span>
         </div>
     </section>
 

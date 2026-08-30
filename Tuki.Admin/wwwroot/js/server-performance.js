@@ -75,6 +75,51 @@
         });
     };
 
+    const updateAiEconomics = economics => {
+        const available = economics?.persistentStorageAvailable === true;
+        setText(
+            '[data-ai-storage-note]',
+            available
+                ? `Persistent SQL history · ${economics.timeZone || 'Asia/Manila'} calendar windows`
+                : 'Live process counters available · apply the AI usage migration for persistent history');
+
+        const windows = {
+            today: economics?.today,
+            last7Days: economics?.last7Days,
+            lifetime: economics?.lifetime
+        };
+
+        Object.entries(windows).forEach(([key, windowData]) => {
+            const row = root.querySelector(`[data-ai-window="${key}"]`);
+            if (!row) return;
+            const write = (selector, value) => {
+                const element = row.querySelector(selector);
+                if (element) element.textContent = value;
+            };
+
+            if (!available || !windowData) {
+                write('[data-window-trips]', '—');
+                write('[data-window-calls]', '—');
+                write('[data-window-input]', '—');
+                write('[data-window-output]', '—');
+                write('[data-window-cost]', '—');
+                write('[data-window-cost-per-trip]', '—');
+                return;
+            }
+
+            write('[data-window-trips]', Number(windowData.trips || 0).toLocaleString());
+            write('[data-window-calls]', Number(windowData.totalCalls || 0).toLocaleString());
+            write('[data-window-input]', Number(windowData.inputTokens || 0).toLocaleString());
+            write('[data-window-output]', Number(windowData.outputTokens || 0).toLocaleString());
+            write('[data-window-cost]', formatPeso(windowData.estimatedCostPhp || 0));
+            write(
+                '[data-window-cost-per-trip]',
+                windowData.estimatedCostPhpPerTrip === null || windowData.estimatedCostPhpPerTrip === undefined
+                    ? '—'
+                    : formatPeso(windowData.estimatedCostPhpPerTrip));
+        });
+    };
+
     const updateRecentRequests = requests => {
         const tbody = root.querySelector('[data-recent-requests]');
         if (!tbody) return;
@@ -203,9 +248,10 @@
         setText('[data-ai-input-tokens]', Number(snapshot.aiUsage?.inputTokens || 0).toLocaleString());
         setText('[data-ai-output-tokens]', Number(snapshot.aiUsage?.outputTokens || 0).toLocaleString());
         setText('[data-ai-total-tokens]', Number(snapshot.aiUsage?.totalTokens || 0).toLocaleString());
-        setText('[data-ai-model]', snapshot.aiUsage?.lastModel || 'No successful model call yet');
+        setText('[data-ai-model]', snapshot.aiUsage?.lastModel || snapshot.aiEconomics?.lastModel || 'No successful model call yet');
         setText('[data-ai-cost-php]', formatPeso(snapshot.aiUsage?.estimatedCostPhp || 0));
         setText('[data-ai-pricing]', `$${Number(snapshot.aiUsage?.inputUsdPerMillionTokens || 0).toFixed(2)}/M in · $${Number(snapshot.aiUsage?.outputUsdPerMillionTokens || 0).toFixed(2)}/M out · ₱${Number(snapshot.aiUsage?.usdToPhp || 0).toFixed(2)}/USD`);
+        updateAiEconomics(snapshot.aiEconomics);
         setText('[data-total-requests]', Number(snapshot.requests?.totalRequests || 0).toLocaleString());
         setText('[data-average-response]', `${Math.round(Number(snapshot.requests?.averageResponseTimeMs) || 0)} ms`);
         setText('[data-server-errors]', Number(snapshot.requests?.serverErrors || 0).toLocaleString());
