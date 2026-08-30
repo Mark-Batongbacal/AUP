@@ -10,6 +10,9 @@ public sealed class ServerPerformanceSnapshot
     public ServerResourceSnapshot Resources { get; init; } = new();
     public string ValhallaEndpoint { get; init; } = string.Empty;
     public IReadOnlyList<ServerServiceHealth> Services { get; init; } = [];
+    public long? TotalTrips { get; init; }
+    public ServerAiUsageMetrics AiUsage { get; init; } = new();
+    public ServerAiEconomics AiEconomics { get; init; } = new();
     public ServerRequestMetrics Requests { get; init; } = new();
     public IReadOnlyList<ServerRecentRequest> RecentRequests { get; init; } = [];
 }
@@ -41,6 +44,48 @@ public sealed class ServerServiceHealth
     public string Status { get; init; } = "Unknown";
     public double? ResponseTimeMs { get; init; }
     public string Detail { get; init; } = string.Empty;
+}
+
+public sealed class ServerAiUsageMetrics
+{
+    public DateTimeOffset SinceUtc { get; init; }
+    public long TotalCalls { get; init; }
+    public long IntentCalls { get; init; }
+    public long NavigationCalls { get; init; }
+    public long InputTokens { get; init; }
+    public long OutputTokens { get; init; }
+    public long TotalTokens { get; init; }
+    public string? LastModel { get; init; }
+    public decimal InputUsdPerMillionTokens { get; init; }
+    public decimal OutputUsdPerMillionTokens { get; init; }
+    public decimal UsdToPhp { get; init; }
+    public decimal EstimatedCostUsd { get; init; }
+    public decimal EstimatedCostPhp { get; init; }
+}
+
+public sealed class ServerAiEconomics
+{
+    public bool PersistentStorageAvailable { get; init; }
+    public string TimeZone { get; init; } = "Asia/Manila";
+    public DateTimeOffset? TrackingStartedAtUtc { get; init; }
+    public string? LastModel { get; init; }
+    public ServerAiUsageWindow Today { get; init; } = new();
+    public ServerAiUsageWindow Last7Days { get; init; } = new();
+    public ServerAiUsageWindow Lifetime { get; init; } = new();
+}
+
+public sealed class ServerAiUsageWindow
+{
+    public long Trips { get; init; }
+    public long TotalCalls { get; init; }
+    public long IntentCalls { get; init; }
+    public long NavigationCalls { get; init; }
+    public long InputTokens { get; init; }
+    public long OutputTokens { get; init; }
+    public long TotalTokens { get; init; }
+    public decimal EstimatedCostUsd { get; init; }
+    public decimal EstimatedCostPhp { get; init; }
+    public decimal? EstimatedCostPhpPerTrip { get; init; }
 }
 
 public sealed class ServerRequestMetrics
