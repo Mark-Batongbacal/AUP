@@ -9,6 +9,8 @@ public sealed record AdminSystemOverviewResponse(
     AdminSystemResourceResponse Resources,
     string ValhallaEndpoint,
     IReadOnlyList<AdminServiceHealthResponse> Services,
+    long? TotalTrips,
+    AdminAiUsageResponse AiUsage,
     AdminRequestMetricsResponse Requests,
     IReadOnlyList<AdminRecentRequestResponse> RecentRequests);
 
@@ -36,6 +38,21 @@ public sealed record AdminServiceHealthResponse(
     string Status,
     double? ResponseTimeMs,
     string Detail);
+
+public sealed record AdminAiUsageResponse(
+    DateTimeOffset SinceUtc,
+    long TotalCalls,
+    long IntentCalls,
+    long NavigationCalls,
+    long InputTokens,
+    long OutputTokens,
+    long TotalTokens,
+    string? LastModel,
+    decimal InputUsdPerMillionTokens,
+    decimal OutputUsdPerMillionTokens,
+    decimal UsdToPhp,
+    decimal EstimatedCostUsd,
+    decimal EstimatedCostPhp);
 
 public sealed record AdminRequestMetricsResponse(
     int RetentionHours,

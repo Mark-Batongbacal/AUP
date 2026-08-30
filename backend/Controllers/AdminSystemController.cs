@@ -21,7 +21,8 @@ public sealed class AdminSystemController(
     IHttpClientFactory httpClientFactory,
     IWebHostEnvironment environment,
     IConfiguration configuration,
-    SystemResourceMetricsSampler resourceMetricsSampler) : ControllerBase
+    SystemResourceMetricsSampler resourceMetricsSampler,
+    IAiUsageMetricsStore aiUsageMetricsStore) : ControllerBase
 {
     [HttpGet("overview")]
     [ProducesResponseType<AdminSystemOverviewResponse>(StatusCodes.Status200OK)]
@@ -44,6 +45,8 @@ public sealed class AdminSystemController(
             await valhallaHealthTask
         };
 
+        var totalTrips = await GetTotalTripsAsync(cancellationToken);
+        var aiUsage = aiUsageMetricsStore.Snapshot();
         var requestSnapshot = TukiRequestMetricsStore.Snapshot(TimeSpan.FromHours(24));
         var resourceSnapshot = resourceMetricsSampler.Sample();
         using var process = Process.GetCurrentProcess();
@@ -80,6 +83,21 @@ public sealed class AdminSystemController(
                 resourceSnapshot.NetworkSentBytes),
             configuration["Valhalla:BaseUrl"] ?? "Not configured",
             services,
+            totalTrips,
+            new AdminAiUsageResponse(
+                aiUsage.SinceUtc,
+                aiUsage.TotalCalls,
+                aiUsage.IntentCalls,
+                aiUsage.NavigationCalls,
+                aiUsage.InputTokens,
+                aiUsage.OutputTokens,
+                aiUsage.TotalTokens,
+                aiUsage.LastModel,
+                aiUsage.InputUsdPerMillionTokens,
+                aiUsage.OutputUsdPerMillionTokens,
+                aiUsage.UsdToPhp,
+                aiUsage.EstimatedCostUsd,
+                aiUsage.EstimatedCostPhp),
             new AdminRequestMetricsResponse(
                 requestSnapshot.RetentionHours,
                 requestSnapshot.TotalRequests,
@@ -102,6 +120,18 @@ public sealed class AdminSystemController(
                 .ToArray());
 
         return Ok(response);
+    }
+
+    private async Task<long?> GetTotalTripsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await dbContext.PassengerTrips.LongCountAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     private async Task<AdminServiceHealthResponse> CheckDatabaseAsync(CancellationToken cancellationToken)

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using backend.Repositories;
 using backend.Services.Localization;
+using backend.Services.Telemetry;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -34,7 +35,8 @@ public sealed class NemotronNavigationSpeechService(
     IConfiguration configuration,
     IHttpContextAccessor httpContextAccessor,
     IUserProfileRepository userProfiles,
-    ILogger<NemotronNavigationSpeechService> logger)
+    ILogger<NemotronNavigationSpeechService> logger,
+    IAiUsageMetricsStore aiUsageMetrics)
     : INavigationSpeechService
 {
     private const string DisableAiHeader = "X-Tuki-Disable-Ai";
@@ -62,8 +64,9 @@ public sealed class NemotronNavigationSpeechService(
         if (string.IsNullOrWhiteSpace(apiKey))
             return DeterministicNavigationSpeech.Phrase(localizedContext);
 
+        var model = configuration["Qwen:Model"] ?? "qwen/qwen3-next-80b-a3b-instruct";
         var client = new ChatClient(
-            configuration["Qwen:Model"] ?? "qwen/qwen3-next-80b-a3b-instruct",
+            model,
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
@@ -82,6 +85,13 @@ public sealed class NemotronNavigationSpeechService(
                 new SystemChatMessage(PromptFor(language)),
                 new UserChatMessage(JsonSerializer.Serialize(localizedContext))
             ], cancellationToken: timeout.Token);
+
+            var usage = response.Value.Usage;
+            aiUsageMetrics.Record(
+                "navigation",
+                model,
+                usage?.InputTokenCount ?? 0,
+                usage?.OutputTokenCount ?? 0);
 
             var text = response.Value.Content.FirstOrDefault()?.Text?.Trim();
             return NavigationSpeechTemplate.Normalize(text, localizedContext);

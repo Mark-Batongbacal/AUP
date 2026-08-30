@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text.Json;
+using backend.Services.Telemetry;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -14,13 +15,16 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
     private static readonly TimeSpan ModelTimeout = TimeSpan.FromSeconds(15);
     private readonly ChatClient _client;
     private readonly ILogger<NemotronIntentExtractor> _logger;
+    private readonly IAiUsageMetricsStore _aiUsageMetrics;
     private readonly string _model;
 
     public NemotronIntentExtractor(
         IConfiguration configuration,
-        ILogger<NemotronIntentExtractor> logger)
+        ILogger<NemotronIntentExtractor> logger,
+        IAiUsageMetricsStore aiUsageMetrics)
     {
         _logger = logger;
+        _aiUsageMetrics = aiUsageMetrics;
         var apiKey = Environment.GetEnvironmentVariable(
             configuration["Qwen:ApiKeyEnvironmentVariable"] ?? "GEMINI_API_KEY");
 
@@ -85,6 +89,12 @@ public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
             var response = await _client.CompleteChatAsync(
                 messages,
                 cancellationToken: timeout.Token);
+            var usage = response.Value.Usage;
+            _aiUsageMetrics.Record(
+                "intent",
+                _model,
+                usage?.InputTokenCount ?? 0,
+                usage?.OutputTokenCount ?? 0);
             _logger.LogDebug(
                 "AI.Intent.ApiCall.Completed ElapsedMs={ElapsedMs} Model={Model}",
                 ElapsedMilliseconds(started),

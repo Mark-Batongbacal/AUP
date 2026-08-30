@@ -171,6 +171,7 @@ builder.Services.AddScoped<ITukiAssistantService, TukiAssistantService>();
 builder.Services.AddScoped<IJourneyPlanPersistenceService, JourneyPlanPersistenceService>();
 builder.Services.AddSingleton<ITukiTelemetry, TukiTelemetry>();
 builder.Services.AddSingleton<SystemResourceMetricsSampler>();
+builder.Services.AddSingleton<IAiUsageMetricsStore, AiUsageMetricsStore>();
 builder.Services.AddScoped<IRoutingService, TransferFallbackRoutingService>();
 builder.Services.AddScoped<IJourneyPlanningFacadeService, JourneyPlanningFacadeService>();
 builder.Services.AddSingleton<ITripSessionStateMachine, TripSessionStateMachine>();

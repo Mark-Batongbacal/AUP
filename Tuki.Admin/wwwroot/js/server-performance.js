@@ -20,6 +20,14 @@
         return `${bytes.toFixed(bytes >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`;
     };
 
+    const formatPeso = value => {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return '₱0.0000';
+        return amount < 1
+            ? `₱${amount.toFixed(4)}`
+            : `₱${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
     const formatUptime = seconds => {
         const total = Math.max(0, Number(seconds) || 0);
         const days = Math.floor(total / 86400);
@@ -189,6 +197,15 @@
         const memoryCurrent = snapshot.resources?.containerMemoryCurrentBytes ?? snapshot.resources?.workingSetBytes;
         setText('[data-memory]', formatBytes(memoryCurrent));
         setText('[data-memory-detail]', snapshot.resources?.containerMemoryLimitBytes ? `of ${formatBytes(snapshot.resources.containerMemoryLimitBytes)} container limit` : 'Working set / container usage');
+        setText('[data-total-trips]', snapshot.totalTrips === null || snapshot.totalTrips === undefined ? 'Unavailable' : Number(snapshot.totalTrips).toLocaleString());
+        setText('[data-ai-calls]', Number(snapshot.aiUsage?.totalCalls || 0).toLocaleString());
+        setText('[data-ai-call-detail]', `${Number(snapshot.aiUsage?.intentCalls || 0).toLocaleString()} intent · ${Number(snapshot.aiUsage?.navigationCalls || 0).toLocaleString()} navigation`);
+        setText('[data-ai-input-tokens]', Number(snapshot.aiUsage?.inputTokens || 0).toLocaleString());
+        setText('[data-ai-output-tokens]', Number(snapshot.aiUsage?.outputTokens || 0).toLocaleString());
+        setText('[data-ai-total-tokens]', Number(snapshot.aiUsage?.totalTokens || 0).toLocaleString());
+        setText('[data-ai-model]', snapshot.aiUsage?.lastModel || 'No successful model call yet');
+        setText('[data-ai-cost-php]', formatPeso(snapshot.aiUsage?.estimatedCostPhp || 0));
+        setText('[data-ai-pricing]', `$${Number(snapshot.aiUsage?.inputUsdPerMillionTokens || 0).toFixed(2)}/M in · $${Number(snapshot.aiUsage?.outputUsdPerMillionTokens || 0).toFixed(2)}/M out · ₱${Number(snapshot.aiUsage?.usdToPhp || 0).toFixed(2)}/USD`);
         setText('[data-total-requests]', Number(snapshot.requests?.totalRequests || 0).toLocaleString());
         setText('[data-average-response]', `${Math.round(Number(snapshot.requests?.averageResponseTimeMs) || 0)} ms`);
         setText('[data-server-errors]', Number(snapshot.requests?.serverErrors || 0).toLocaleString());

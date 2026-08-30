@@ -25,6 +25,7 @@
             ? $"{(int)span.TotalDays}d {span.Hours}h {span.Minutes}m"
             : $"{span.Hours}h {span.Minutes}m {span.Seconds}s";
     }
+    string FormatPeso(decimal value) => value < 1m ? $"₱{value:0.0000}" : $"₱{value:N2}";
 }
 
 <section class="server-page" data-server-dashboard data-snapshot-url="@Url.Action("Snapshot", "ServerPerformance")">
@@ -32,7 +33,7 @@
         <div>
             <p class="eyebrow">SYSTEM MONITORING</p>
             <h1>Server & performance</h1>
-            <p>Live health, application telemetry, and container-visible resource usage for TUKI.</p>
+            <p>Live health, application telemetry, AI usage, and container-visible resource usage for TUKI.</p>
         </div>
         <div class="server-page-actions">
             <div class="server-last-updated">Updated <span data-last-updated>@(Model is null ? "—" : Model.CheckedAtUtc.ToLocalTime().ToString("h:mm:ss tt"))</span></div>
@@ -96,6 +97,21 @@
             {
                 <article class="server-service-card is-unknown"><strong>Health data unavailable</strong><small>Refresh after the backend monitoring endpoint is available.</small></article>
             }
+        </div>
+    </section>
+
+    <section class="server-section">
+        <div class="server-section-heading">
+            <div><p class="eyebrow">AI & TRIPS</p><h2>Usage & estimated cost</h2></div>
+            <span class="server-section-note">AI counters reset with the backend process; total trips come from SQL Server</span>
+        </div>
+        <div class="server-request-grid">
+            <article class="server-metric-card"><span class="server-card-label">Total trips</span><strong data-total-trips>@(Model?.TotalTrips?.ToString("N0") ?? "Unavailable")</strong><small>PassengerTrip records in the database</small></article>
+            <article class="server-metric-card"><span class="server-card-label">AI calls</span><strong data-ai-calls>@(Model?.AiUsage.TotalCalls.ToString("N0") ?? "0")</strong><small data-ai-call-detail>@(Model is null ? "Intent + navigation" : $"{Model.AiUsage.IntentCalls:N0} intent · {Model.AiUsage.NavigationCalls:N0} navigation")</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Input tokens</span><strong data-ai-input-tokens>@(Model?.AiUsage.InputTokens.ToString("N0") ?? "0")</strong><small>Model-reported prompt/input usage</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Output tokens</span><strong data-ai-output-tokens>@(Model?.AiUsage.OutputTokens.ToString("N0") ?? "0")</strong><small>Model-reported completion/output usage</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Total AI tokens</span><strong data-ai-total-tokens>@(Model?.AiUsage.TotalTokens.ToString("N0") ?? "0")</strong><small data-ai-model>@(Model?.AiUsage.LastModel ?? "No successful model call yet")</small></article>
+            <article class="server-metric-card"><span class="server-card-label">Estimated AI cost</span><strong data-ai-cost-php>@(Model is null ? "₱0.0000" : FormatPeso(Model.AiUsage.EstimatedCostPhp))</strong><small data-ai-pricing>@(Model is null ? "Configured token pricing" : $"${Model.AiUsage.InputUsdPerMillionTokens:0.00}/M in · ${Model.AiUsage.OutputUsdPerMillionTokens:0.00}/M out · ₱{Model.AiUsage.UsdToPhp:0.00}/USD")</small></article>
         </div>
     </section>
 
