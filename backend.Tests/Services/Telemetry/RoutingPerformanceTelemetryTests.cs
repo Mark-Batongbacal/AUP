@@ -122,6 +122,19 @@ public sealed class RoutingPerformanceTelemetryTests
                     telemetry.ObserveRouting(
                         "valhalla_gate_wait_ms",
                         30);
+                    telemetry.RecordRoutingAccessDiscoveryRoute(
+                        "ROUTE-A",
+                        80,
+                        12,
+                        8,
+                        3,
+                        6,
+                        12_160,
+                        42,
+                        16,
+                        120,
+                        96,
+                        8);
                 }
 
                 pass.Complete("success");
@@ -177,6 +190,10 @@ public sealed class RoutingPerformanceTelemetryTests
             20,
             passSnapshot.Observations[
                 "confirmation_valhalla_gate_wait_ms"].Sum);
+        var route = Assert.Single(passSnapshot.AccessDiscoveryRoutes);
+        Assert.Equal("ROUTE-A", route.RouteId);
+        Assert.Equal(12_160, route.TodaCandidatesConsidered);
+        Assert.Equal(120, route.BoardAccessAlternatives);
     }
 
     private sealed class CapturingLogger<T> : ILogger<T>

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using backend.Models.Routing;
 using backend.Models.Valhalla;
 
@@ -621,6 +622,7 @@ public partial class RoutingService
             originLongitude,
             anchor.Latitude,
             anchor.Longitude);
+        var walkStarted = Stopwatch.GetTimestamp();
         if (walkDistance <= walkAccessLimit)
         {
             alternatives.Add(WalkAccess(
@@ -629,7 +631,12 @@ public partial class RoutingService
                 sampleIndex,
                 anchor));
         }
+        _accessDiscoveryDiagnostics?.RecordWalkCandidates(
+            walkStarted,
+            walkDistance <= walkAccessLimit ? 1 : 0);
 
+        var tricycleStarted = Stopwatch.GetTimestamp();
+        var tricycleCount = 0;
         foreach (var trikePoint in FindNearbyTrikePoints(
                      originLatitude,
                      originLongitude))
@@ -652,7 +659,11 @@ public partial class RoutingService
                 rideDistanceMeters,
                 sampleIndex,
                 anchor));
+            tricycleCount++;
         }
+        _accessDiscoveryDiagnostics?.RecordTricycleCandidates(
+            tricycleStarted,
+            tricycleCount);
 
         if (alternatives.Count == 0)
             return null;
@@ -684,6 +695,7 @@ public partial class RoutingService
             anchor.Longitude,
             destinationLatitude,
             destinationLongitude);
+        var walkStarted = Stopwatch.GetTimestamp();
         if (walkDistance <= walkAccessLimit)
         {
             alternatives.Add(WalkAccess(
@@ -692,7 +704,12 @@ public partial class RoutingService
                 sampleIndex,
                 anchor));
         }
+        _accessDiscoveryDiagnostics?.RecordWalkCandidates(
+            walkStarted,
+            walkDistance <= walkAccessLimit ? 1 : 0);
 
+        var tricycleStarted = Stopwatch.GetTimestamp();
+        var tricycleCount = 0;
         foreach (var trikePoint in FindNearbyTrikePoints(
                      anchor.Latitude,
                      anchor.Longitude))
@@ -715,7 +732,11 @@ public partial class RoutingService
                 rideDistanceMeters,
                 sampleIndex,
                 anchor));
+            tricycleCount++;
         }
+        _accessDiscoveryDiagnostics?.RecordTricycleCandidates(
+            tricycleStarted,
+            tricycleCount);
 
         if (alternatives.Count == 0)
             return null;

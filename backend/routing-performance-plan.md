@@ -37,6 +37,60 @@ Valhalla behavior.
 - The Phase B invalidation signal is intentionally process-local. Before running
   multiple backend instances, add the durable revision/outbox notification
   described below so every process observes admin mutations.
+- Phase D1 is retained in commit `7d46cc4`. Controlled same-data A/B testing
+  showed that it lowers selector allocation by about 68%, lowers CPU, and
+  improves the 10-VU plan p95 from 26.12 s to 19.59 s. The previously proposed
+  D2 selector rewrite is canceled pending evidence of a different bottleneck.
+
+### Frozen access-discovery diagnostic fixture
+
+The access-discovery investigation adds an opt-in, SHA-256-pinned routing input
+under `stress/fixtures`. Normal processes continue loading active route/TODA
+records from the database. `stress/run-routing-benchmark.sh` starts a clean
+backend process against the frozen 21-route/8,630-point/152-TODA snapshot and
+runs exact-coordinate, plan-only k6 traffic. A deterministic first-118-TODA
+variant is included only for controlled scaling; it is not labeled as the
+unknown historical 118-TODA composition.
+
+Fine-grained telemetry now records per-plan and per-route board discovery,
+direct-connection discovery, prefix computation, destination access, TODA scan
+and ranking, access alternative construction/ranking, access/direct completion
+discovery, access Valhalla calls/gate wait/execution, and all requested candidate
+counts.
+
+The measured topology performs 1,534 `FindNearbyTrikePoints` invocations per
+ordinary heavy plan. A route with `S` samples performs `2S + 4` full TODA scans:
+
+- projected board and search-anchor board each rediscover the same origin TODAs;
+- exact full-route board performs another origin scan;
+- destination access scans once per sample inside direct-connection discovery;
+- destination access scans once per sample again for transfer search;
+- exact full-route alight performs one additional scan.
+
+At 118 TODAs this evaluates 181,012 TODA/anchor pairs per plan; at 152 it
+evaluates 233,168 (+28.8%). Median selected nearby TODAs rose only from 4,506 to
+4,684 (+4.0%) because `MaxNearbyTrikeCandidates` remains four. Median 1-VU local
+TODA scan time rose from 17.55 ms to 22.63 ms and destination-access computation
+from 25.88 ms to 30.78 ms; complete access discovery remained effectively flat
+(250.07 ms versus 246.30 ms).
+
+Under the saturated plan-only 10-VU workload, access-discovery wall time varied
+with the process-wide Valhalla gate rather than local TODA work. In the mixed
+run, 118 to 152 TODAs changed median local TODA discovery from 67.90 ms to
+84.69 ms, but access Valhalla gate wait from 0.05 ms to 868.26 ms and complete
+access discovery from 881.52 ms to 1,992.39 ms. Access-discovery matrix-call
+count was identical (median 10; mean 8.16) in both fixtures. A subsequent fixed
+trip repeat reversed the access wall/gate direction while preserving the exact
+181,130 versus 233,320 pair counts, demonstrating significant shared-Valhalla
+run variance at saturation.
+
+Diagnosis: TODA growth creates real linear CPU/allocation work through repeated
+full-list scans and duplicated destination generation, but it does not directly
+create more access-discovery Valhalla calls and is too small to explain a
+multi-second historical increase. The disproportionate tail is access calls
+waiting behind concurrent confirmation traffic at the global gate, with some
+indirect pressure from the changed tricycle candidate mix. Do not change TODA,
+walking, candidate, or confirmation limits based on these results.
 
 Validation after B/C: all 461 backend tests pass. The isolated 1-VU run recorded
 4.78 s average, 5.29 s median, 8.63 s p95, and 100% plan/flow success. The
@@ -475,11 +529,21 @@ outputs before any early stop is enabled.
 
 ### F. Routing admission control
 
-- Add bounded active planning and queue limits with cancellation, timeout, and
-  saturation behavior.
-- Tune from the established capacity knee and define operational overload SLOs.
-- Load-test 15 and 20 VUs after 1/10-VU parity to prove graceful degradation
-  instead of request/Valhalla collapse.
+Implemented in `RoutingAdmissionControl.cs` as a singleton FIFO controller and
+an outer `IRoutingService` decorator. One permit covers both preferred and
+fallback transfer-depth passes. Nearby-route discovery and unrelated endpoints
+are not gated. Queue cancellation/removal is O(1); full queues and queue-wait
+timeouts return `429` with `Retry-After` through
+`RoutingAdmissionExceptionMiddleware`.
+
+The limits remain configuration under `Routing:AdmissionControl`. The initial
+host benchmark found four active planners more stable than six: at 10 VUs, four
+completed 111/111 plans while six increased intrinsic routing time and produced
+a client timeout. The initial queue is bounded at eight with a 25-second wait;
+these are deployment starting values, not universal constants. Overload clients
+and k6 honor `Retry-After`, preventing immediate-retry storms. Repeat tuning on
+an isolated/restarted Valhalla process because restarting only the backend does
+not clear outstanding Valhalla work between probes.
 
 ## Expected impact and measurements still required
 

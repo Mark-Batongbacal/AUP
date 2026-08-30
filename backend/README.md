@@ -5,7 +5,7 @@ Copy `appsettings.Development.json.example` to `appsettings.Development.json` fo
 ```bash
 export Login__Users__0__UserName='admin@aup.edu'
 export Login__Users__0__Password='your-login-password'
-export NVIDIA_API_KEY='your-nvidia-api-key'
+export GEMINI_API_KEY='your-gemini-api-key'
 export ConnectionStrings__TukiDbConnection='<sql-server-connection-string>'
 export Valhalla__BaseUrl='https://your-valhalla-instance.example.com'
 export Facebook__AppId='<facebook-app-id>'
@@ -40,7 +40,7 @@ Login__Users__2__UserName=<third-user-name>
 Login__Users__2__Password=<another-long-unique-password>
 Login__Users__3__UserName=<fourth-user-name>
 Login__Users__3__Password=<another-long-unique-password>
-NVIDIA_API_KEY=<your-nvidia-api-key>
+GEMINI_API_KEY=<your-gemini-api-key>
 ConnectionStrings__TukiDbConnection=<sql-server-connection-string>
 Facebook__AppId=<facebook-app-id>
 Facebook__AppSecret=<facebook-app-secret>

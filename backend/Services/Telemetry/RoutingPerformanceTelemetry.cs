@@ -14,13 +14,28 @@ internal sealed record RoutingMetricObservation(
     double Sum,
     double Maximum);
 
+internal sealed record RoutingAccessDiscoveryRouteSnapshot(
+    string RouteId,
+    int RouteSampleCount,
+    double BoardDiscoveryMilliseconds,
+    double DirectConnectionDiscoveryMilliseconds,
+    double PrefixComputationMilliseconds,
+    double DestinationAccessMilliseconds,
+    long TodaCandidatesConsidered,
+    long TodaCandidatesSurvivingFilters,
+    long TodaCandidatesSelected,
+    long BoardAccessAlternatives,
+    long DestinationAccessAlternatives,
+    long DirectConnections);
+
 internal sealed record RoutingPassTelemetrySnapshot(
     int MaxTransfers,
     string Outcome,
     double ElapsedMilliseconds,
     IReadOnlyDictionary<string, long> Counts,
     IReadOnlyDictionary<string, double> Values,
-    IReadOnlyDictionary<string, RoutingMetricObservation> Observations);
+    IReadOnlyDictionary<string, RoutingMetricObservation> Observations,
+    IReadOnlyList<RoutingAccessDiscoveryRouteSnapshot> AccessDiscoveryRoutes);
 
 internal sealed record RoutingPlanTelemetrySnapshot(
     Guid PlanId,
@@ -152,8 +167,14 @@ internal sealed class RoutingPassTelemetryContext(int maxTransfers)
     private readonly object _outcomeSync = new();
     private string _outcome = "incomplete";
     private int _completed;
+    private readonly ConcurrentQueue<RoutingAccessDiscoveryRouteSnapshot>
+        _accessDiscoveryRoutes = new();
 
     public bool IsCompleted => Volatile.Read(ref _completed) != 0;
+
+    public void AddAccessDiscoveryRoute(
+        RoutingAccessDiscoveryRouteSnapshot route) =>
+        _accessDiscoveryRoutes.Enqueue(route);
 
     public void Complete(string outcome)
     {
@@ -169,7 +190,8 @@ internal sealed class RoutingPassTelemetryContext(int maxTransfers)
             Stopwatch.GetElapsedTime(_started).TotalMilliseconds,
             CountsSnapshot(),
             ValuesSnapshot(),
-            ObservationsSnapshot());
+            ObservationsSnapshot(),
+            _accessDiscoveryRoutes.ToArray());
 }
 
 internal sealed class RoutingMetricAccumulator

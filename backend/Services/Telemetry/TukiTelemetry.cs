@@ -18,6 +18,19 @@ public interface ITukiTelemetry
     void IncrementRouting(string metricName, long value = 1);
     void SetRoutingValue(string metricName, double value);
     void ObserveRouting(string metricName, double value);
+    void RecordRoutingAccessDiscoveryRoute(
+        string routeId,
+        int routeSampleCount,
+        double boardDiscoveryMilliseconds,
+        double directConnectionDiscoveryMilliseconds,
+        double prefixComputationMilliseconds,
+        double destinationAccessMilliseconds,
+        long todaCandidatesConsidered,
+        long todaCandidatesSurvivingFilters,
+        long todaCandidatesSelected,
+        long boardAccessAlternatives,
+        long destinationAccessAlternatives,
+        long directConnections);
 }
 
 public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetry
@@ -143,6 +156,36 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
         }
     }
 
+    public void RecordRoutingAccessDiscoveryRoute(
+        string routeId,
+        int routeSampleCount,
+        double boardDiscoveryMilliseconds,
+        double directConnectionDiscoveryMilliseconds,
+        double prefixComputationMilliseconds,
+        double destinationAccessMilliseconds,
+        long todaCandidatesConsidered,
+        long todaCandidatesSurvivingFilters,
+        long todaCandidatesSelected,
+        long boardAccessAlternatives,
+        long destinationAccessAlternatives,
+        long directConnections)
+    {
+        var route = new RoutingAccessDiscoveryRouteSnapshot(
+            routeId,
+            routeSampleCount,
+            boardDiscoveryMilliseconds,
+            directConnectionDiscoveryMilliseconds,
+            prefixComputationMilliseconds,
+            destinationAccessMilliseconds,
+            todaCandidatesConsidered,
+            todaCandidatesSurvivingFilters,
+            todaCandidatesSelected,
+            boardAccessAlternatives,
+            destinationAccessAlternatives,
+            directConnections);
+        _routingPass.Value?.AddAccessDiscoveryRoute(route);
+    }
+
     private static bool IsStageAttributedCount(string metricName) =>
         metricName is
             "valhalla_matrix_http_calls" or
@@ -220,6 +263,19 @@ public sealed class NullTukiTelemetry : ITukiTelemetry
     public void IncrementRouting(string metricName, long value = 1) { }
     public void SetRoutingValue(string metricName, double value) { }
     public void ObserveRouting(string metricName, double value) { }
+    public void RecordRoutingAccessDiscoveryRoute(
+        string routeId,
+        int routeSampleCount,
+        double boardDiscoveryMilliseconds,
+        double directConnectionDiscoveryMilliseconds,
+        double prefixComputationMilliseconds,
+        double destinationAccessMilliseconds,
+        long todaCandidatesConsidered,
+        long todaCandidatesSurvivingFilters,
+        long todaCandidatesSelected,
+        long boardAccessAlternatives,
+        long destinationAccessAlternatives,
+        long directConnections) { }
     private sealed class Empty : IDisposable
     {
         public static Empty Instance { get; } = new();

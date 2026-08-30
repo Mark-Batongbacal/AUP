@@ -25,6 +25,7 @@ const ENABLE_EXTERNALS = boolEnv('ENABLE_EXTERNALS');
 // deterministic navigation speech instead, so Gemini quota/latency is excluded
 // without skipping the real navigation endpoints.
 const DISABLE_SERVER_AI = boolEnv('DISABLE_SERVER_AI', true);
+const ROUTING_ONLY = boolEnv('ROUTING_ONLY');
 const REROUTE_RATE = rateEnv('REROUTE_RATE', 0.05);
 const LOCATION_SYNC_RATE = rateEnv('LOCATION_SYNC_RATE', 0.05);
 const ACTIVE_REFRESH_RATE = rateEnv('ACTIVE_REFRESH_RATE', 0.10);
@@ -37,6 +38,8 @@ const THINK_TIME_SECONDS = Math.max(0, numberEnv('THINK_TIME_SECONDS', 0.8));
 const BUDGET_PESOS = Math.max(0, numberEnv('BUDGET_PESOS', 150));
 const BENCHMARK_VUS = Math.max(1, Math.floor(numberEnv('BENCHMARK_VUS', 1)));
 const BENCHMARK_DURATION = __ENV.BENCHMARK_DURATION || '5m';
+const BENCHMARK_TRIP_ID = __ENV.BENCHMARK_TRIP_ID || '';
+const FIXED_PREFERENCE = (__ENV.FIXED_PREFERENCE || '').toLowerCase();
 
 const isLocal = BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1') || BASE_URL.includes('0.0.0.0');
 if (PROFILE !== 'smoke' && !isLocal && !ALLOW_REMOTE_LOAD) {
@@ -74,6 +77,13 @@ const DEFAULT_TRIPS = [
 
 const TRIPS = __ENV.TRIPS_FILE ? JSON.parse(open(__ENV.TRIPS_FILE)) : DEFAULT_TRIPS;
 if (!Array.isArray(TRIPS) || TRIPS.length === 0) throw new Error('TRIPS_FILE must be a non-empty JSON array.');
+const BENCHMARK_TRIP = BENCHMARK_TRIP_ID
+  ? TRIPS.find((trip) => trip.id === BENCHMARK_TRIP_ID)
+  : null;
+if (BENCHMARK_TRIP_ID && !BENCHMARK_TRIP) throw new Error(`BENCHMARK_TRIP_ID=${BENCHMARK_TRIP_ID} was not found in TRIPS_FILE.`);
+if (FIXED_PREFERENCE && !['efficient', 'fastest', 'cheapest'].includes(FIXED_PREFERENCE)) {
+  throw new Error('FIXED_PREFERENCE must be efficient, fastest, or cheapest.');
+}
 
 function scenario(profile) {
   switch (profile) {
@@ -123,6 +133,7 @@ const rerouteSuccess = new Rate('tuki_reroute_success');
 const cancelSuccess = new Rate('tuki_cancel_success');
 const noRouteCount = new Counter('tuki_no_route_count');
 const unexpectedStatusCount = new Counter('tuki_unexpected_status_count');
+const routingAdmissionRejections = new Counter('tuki_routing_admission_rejections');
 
 export const options = {
   scenarios: scenario(PROFILE),
@@ -196,7 +207,7 @@ function destinationFor(trip) {
 }
 
 function plan(trip, destination) {
-  const preference = ['efficient', 'fastest', 'cheapest'][(__VU + __ITER) % 3];
+  const preference = FIXED_PREFERENCE || ['efficient', 'fastest', 'cheapest'][(__VU + __ITER) % 3];
   const body = {
     originLatitude: trip.origin.latitude,
     originLongitude: trip.origin.longitude,
@@ -216,6 +227,11 @@ function plan(trip, destination) {
   const ok = response.status === 200 && Boolean(recommendationId);
   planSuccess.add(ok, { trip: trip.id });
   if (response.status === 200 && Array.isArray(recommendations) && recommendations.length === 0) noRouteCount.add(1, { trip: trip.id });
+  if (response.status === 429) {
+    routingAdmissionRejections.add(1, { trip: trip.id });
+    const retryAfter = Number(response.headers['Retry-After']);
+    sleep(Number.isFinite(retryAfter) ? Math.min(60, Math.max(1, retryAfter)) : 1);
+  }
   return recommendationId;
 }
 
@@ -305,17 +321,29 @@ function cancel(tripId) {
 
 export function setup() {
   console.log(`Navigation speech AI during load test: ${DISABLE_SERVER_AI ? 'disabled (deterministic fallback)' : 'enabled (external quota may be consumed)'}`);
+  console.log(`Routing-only deterministic flow: ${ROUTING_ONLY ? 'enabled' : 'disabled'}`);
   const response = http.get(`${BASE_URL}/health`, { tags: { name: 'health', endpoint: 'health', profile: PROFILE }, timeout: '30s' });
   if (response.status !== 200) throw new Error(`${BASE_URL}/health returned ${response.status}`);
 }
 
 export default function () {
-  const trip = TRIPS[(__VU + __ITER - 1) % TRIPS.length];
+  const trip = BENCHMARK_TRIP || TRIPS[(__VU + __ITER - 1) % TRIPS.length];
   let ok = true;
 
   if (sessionId) ok = cancel(trip.id) && ok;
   group('01 auth', () => { ok = authenticate() && ok; });
   if (!apiKey) { flowSuccess.add(false, { trip: trip.id }); return; }
+
+  if (ROUTING_ONLY) {
+    let recommendationId;
+    group('03 plan', () => {
+      recommendationId = plan(trip, trip.destination);
+      ok = Boolean(recommendationId) && ok;
+    });
+    flowSuccess.add(ok, { trip: trip.id });
+    think(BETWEEN_TRIPS_SECONDS);
+    return;
+  }
 
   think(THINK_TIME_SECONDS);
   let destination;

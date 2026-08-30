@@ -47,12 +47,20 @@ public sealed class JourneyPlanningFacadeService(
             throw new RoutingValidationException("INVALID_REQUEST",
                 "A destination name is required.");
         List<JeepneyTripPlan> plans;
-        using (_telemetry.MeasureRouting("routing_service_ms"))
+        try
         {
-            plans = await routing.PlanTripsAsync(
-                request.OriginLatitude, request.OriginLongitude,
-                request.DestinationLatitude, request.DestinationLongitude,
-                cancellationToken);
+            using (_telemetry.MeasureRouting("routing_service_ms"))
+            {
+                plans = await routing.PlanTripsAsync(
+                    request.OriginLatitude, request.OriginLongitude,
+                    request.DestinationLatitude, request.DestinationLongitude,
+                    cancellationToken);
+            }
+        }
+        catch (RoutingAdmissionRejectedException)
+        {
+            planTelemetry.Complete("admission_rejected");
+            throw;
         }
         var eligible = plans
             .Where(plan => RoutingPlanSafety.HasValidTransitAccess(

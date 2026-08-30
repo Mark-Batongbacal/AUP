@@ -27,18 +27,17 @@ public interface INavigationSpeechService
         CancellationToken cancellationToken = default);
 }
 
-// Kept under the existing class name so current DI wiring remains compatible.
-// Qwen phrases meaningful navigation events, while deterministic speech is always
+// Gemini phrases meaningful navigation events, while deterministic speech is always
 // available as the safety/latency fallback.
-public sealed class NemotronNavigationSpeechService(
+public sealed class GeminiNavigationSpeechService(
     IConfiguration configuration,
     IHttpContextAccessor httpContextAccessor,
     IUserProfileRepository userProfiles,
-    ILogger<NemotronNavigationSpeechService> logger)
+    ILogger<GeminiNavigationSpeechService> logger)
     : INavigationSpeechService
 {
     private const string DisableAiHeader = "X-Tuki-Disable-Ai";
-    private static readonly TimeSpan QwenTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan GeminiTimeout = TimeSpan.FromSeconds(15);
 
     public async Task<string> PhraseAsync(
         NavigationSpeechContext context,
@@ -56,24 +55,22 @@ public sealed class NemotronNavigationSpeechService(
             return DeterministicNavigationSpeech.Phrase(localizedContext);
 
         var apiKey = Environment.GetEnvironmentVariable(
-            configuration["Qwen:ApiKeyEnvironmentVariable"] ??
-            configuration["Nvidia:ApiKeyEnvironmentVariable"] ??
-            "NVIDIA_API_KEY");
+            configuration["Gemini:ApiKeyEnvironmentVariable"] ??
+            "GEMINI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
             return DeterministicNavigationSpeech.Phrase(localizedContext);
 
         var client = new ChatClient(
-            configuration["Qwen:Model"] ?? "qwen/qwen3-next-80b-a3b-instruct",
+            configuration["Gemini:Model"] ?? "gemini-3.5-flash-lite",
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
-                Endpoint = new Uri(configuration["Qwen:BaseUrl"] ??
-                    configuration["Nvidia:BaseUrl"] ??
-                    "https://integrate.api.nvidia.com/v1")
+                Endpoint = new Uri(configuration["Gemini:BaseUrl"] ??
+                    "https://generativelanguage.googleapis.com/v1beta/openai/")
             });
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(QwenTimeout);
+        timeout.CancelAfter(GeminiTimeout);
 
         try
         {
@@ -89,13 +86,13 @@ public sealed class NemotronNavigationSpeechService(
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
-                "Qwen navigation speech exceeded {TimeoutSeconds}s; using deterministic fallback",
-                QwenTimeout.TotalSeconds);
+                "Gemini navigation speech exceeded {TimeoutSeconds}s; using deterministic fallback",
+                GeminiTimeout.TotalSeconds);
             return DeterministicNavigationSpeech.Phrase(localizedContext);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            logger.LogWarning(exception, "Qwen navigation speech unavailable; using deterministic fallback");
+            logger.LogWarning(exception, "Gemini navigation speech unavailable; using deterministic fallback");
             return DeterministicNavigationSpeech.Phrase(localizedContext);
         }
     }

@@ -67,102 +67,190 @@ public partial class RoutingService
         var routesById = _routes.ToDictionary(route => route.RouteId, StringComparer.Ordinal);
         List<AccessPathDestinationCompletionEdge> accessPathCompletionEdges;
         List<DirectAccessDestinationCompletionEdge> directCompletionEdges;
+        var accessDiscoveryDiagnostics = new AccessDiscoveryDiagnostics();
+        _accessDiscoveryDiagnostics = accessDiscoveryDiagnostics;
 
-        using (_telemetry.BeginRoutingStage("access_discovery"))
+        try
         {
-            foreach (var (routeId, samples) in _routeSamples)
+            using (_telemetry.BeginRoutingStage("access_discovery"))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var boardDiscovery = await DiscoverBoardAccessOptionsAsync(
-                    routeId,
-                    samples,
-                    originLatitude,
-                    originLongitude,
-                    cancellationToken,
-                    maxWalkAccessDistanceMeters);
-                if (planningPreferences?.OnboardTransit is { } onboard &&
-                    string.Equals(onboard.RouteId, routeId, StringComparison.Ordinal))
+                foreach (var (routeId, samples) in _routeSamples)
                 {
-                    var anchor = GetRouteAnchorAtProgress(
-                        routeId, onboard.CurrentRouteProgressMeters);
-                    boardDiscovery = boardDiscovery with
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var routeDiagnosticCountsBefore =
+                        accessDiscoveryDiagnostics.Counts();
+
+                    var boardDiscoveryStarted = Stopwatch.GetTimestamp();
+                    var boardDiscovery = await DiscoverBoardAccessOptionsAsync(
+                        routeId,
+                        samples,
+                        originLatitude,
+                        originLongitude,
+                        cancellationToken,
+                        maxWalkAccessDistanceMeters);
+                    var boardDiscoveryMilliseconds = Stopwatch.GetElapsedTime(
+                        boardDiscoveryStarted).TotalMilliseconds;
+                    _telemetry.ObserveRouting(
+                        "board_access_discovery_by_route_ms",
+                        boardDiscoveryMilliseconds);
+                    if (planningPreferences?.OnboardTransit is { } onboard &&
+                        string.Equals(onboard.RouteId, routeId, StringComparison.Ordinal))
                     {
-                        Onboard = WalkAccess(
-                            (anchor.Latitude, anchor.Longitude),
-                            0,
-                            GetNearestSampleIndex(
-                                samples,
-                                (anchor.Latitude, anchor.Longitude)),
-                            anchor) with
+                        var anchor = GetRouteAnchorAtProgress(
+                            routeId, onboard.CurrentRouteProgressMeters);
+                        boardDiscovery = boardDiscovery with
                         {
-                            IsNetworkWalkConfirmed = true,
-                            IsAlreadyOnboard = true
-                        }
-                    };
-                }
-                var boardOptions = boardDiscovery.Projected;
+                            Onboard = WalkAccess(
+                                (anchor.Latitude, anchor.Longitude),
+                                0,
+                                GetNearestSampleIndex(
+                                    samples,
+                                    (anchor.Latitude, anchor.Longitude)),
+                                anchor) with
+                            {
+                                IsNetworkWalkConfirmed = true,
+                                IsAlreadyOnboard = true
+                            }
+                        };
+                    }
+                    var boardOptions = boardDiscovery.Projected;
 
-                var directConnections = FindBestConnections(
-                    routesById[routeId],
-                    originLatitude,
-                    originLongitude,
-                    destinationLatitude,
-                    destinationLongitude,
-                    boardDiscovery,
-                    maxWalkAccessDistanceMeters,
-                    planningPreferences?.OnboardTransit);
-                directConnectionsByRoute[routeId] = directConnections;
+                    var directConnectionStarted = Stopwatch.GetTimestamp();
+                    var directConnections = FindBestConnections(
+                        routesById[routeId],
+                        originLatitude,
+                        originLongitude,
+                        destinationLatitude,
+                        destinationLongitude,
+                        boardDiscovery,
+                        maxWalkAccessDistanceMeters,
+                        planningPreferences?.OnboardTransit);
+                    var directConnectionMilliseconds = Stopwatch.GetElapsedTime(
+                        directConnectionStarted).TotalMilliseconds;
+                    _telemetry.ObserveRouting(
+                        "direct_connection_discovery_ms",
+                        directConnectionMilliseconds);
+                    _telemetry.IncrementRouting(
+                        "direct_connections_generated",
+                        directConnections.Count);
+                    directConnectionsByRoute[routeId] = directConnections;
 
-                // Transfer journeys take their origin access from these bounded
-                // prefix sets. Seed them with the same route-occurrence-aware
-                // states selected above for direct search. Applying the same
-                // transit-access limit keeps one configured walking cap instead
-                // of allowing a multi-kilometre transfer-only access walk.
-                var accessPrefix = ComputePrefixAccessOptions(
+                    // Transfer journeys take their origin access from these bounded
+                    // prefix sets. Seed them with the same route-occurrence-aware
+                    // states selected above for direct search. Applying the same
+                    // transit-access limit keeps one configured walking cap instead
+                    // of allowing a multi-kilometre transfer-only access walk.
+                    var prefixStarted = Stopwatch.GetTimestamp();
+                    var accessPrefix = ComputePrefixAccessOptions(
                         routeId,
                         ConstrainTransitAccessOptions(
                             boardOptions,
                             maxWalkAccessDistanceMeters),
                         directConnections.Select(candidate => candidate.BoardAccess));
-                boardAccessPrefixByRoute[routeId] = ApplyOnboardAccessContext(
-                    routeId,
-                    accessPrefix,
-                    boardDiscovery.Onboard,
-                    planningPreferences?.OnboardTransit);
-
-                var alightOptions =
-                    ComputeAlightAccessOptions(
+                    boardAccessPrefixByRoute[routeId] = ApplyOnboardAccessContext(
                         routeId,
-                        samples,
-                        destinationLatitude,
-                        destinationLongitude);
-                var constrainedAlightOptions =
-                    ConstrainTransitAccessOptions(
-                        alightOptions,
-                        maxWalkAccessDistanceMeters);
-                destinationAccessByRoute[routeId] = DistinctAccessOccurrences(
-                    constrainedAlightOptions
-                        .Where(access => access is not null)
-                        .Select(access => access!)
-                        .Concat(directConnections.Select(candidate =>
-                            candidate.AlightAccess)));
-            }
+                        accessPrefix,
+                        boardDiscovery.Onboard,
+                        planningPreferences?.OnboardTransit);
+                    var prefixMilliseconds = Stopwatch.GetElapsedTime(
+                        prefixStarted).TotalMilliseconds;
+                    _telemetry.ObserveRouting(
+                        "prefix_access_computation_ms",
+                        prefixMilliseconds);
 
-            // Destination-completion edges are discovered from origin/access
-            // states before any transit candidate is confirmed. They run in
-            // parallel with transit confirmation and never depend on a bad suffix
-            // surviving pruning merely to reveal that the trip could have ended.
-            accessPathCompletionEdges = BuildAccessPathDestinationCompletionEdges(
-                boardAccessPrefixByRoute,
-                directConnectionsByRoute,
-                destinationLatitude,
-                destinationLongitude);
-            directCompletionEdges = BuildDirectAccessDestinationCompletionEdges(
-                originLatitude,
-                originLongitude,
-                destinationLatitude,
-                destinationLongitude);
+                    var destinationAccessStarted = Stopwatch.GetTimestamp();
+                    var alightOptions =
+                        ComputeAlightAccessOptions(
+                            routeId,
+                            samples,
+                            destinationLatitude,
+                            destinationLongitude);
+                    var constrainedAlightOptions =
+                        ConstrainTransitAccessOptions(
+                            alightOptions,
+                            maxWalkAccessDistanceMeters);
+                    destinationAccessByRoute[routeId] = DistinctAccessOccurrences(
+                        constrainedAlightOptions
+                            .Where(access => access is not null)
+                            .Select(access => access!)
+                            .Concat(directConnections.Select(candidate =>
+                                candidate.AlightAccess)));
+                    var destinationAccessMilliseconds = Stopwatch.GetElapsedTime(
+                        destinationAccessStarted).TotalMilliseconds;
+
+                    var boardAlternatives =
+                        boardDiscovery.Projected.Sum(candidate =>
+                            candidate.AllAlternatives.Count) +
+                        boardDiscovery.SearchAnchors.Sum(candidate =>
+                            candidate.AllAlternatives.Count) +
+                        (boardDiscovery.Exact?.AllAlternatives.Count ?? 0);
+                    var destinationAlternatives = alightOptions.Sum(candidate =>
+                        candidate.AllAlternatives.Count);
+                    _telemetry.IncrementRouting(
+                        "board_access_alternatives",
+                        boardAlternatives);
+                    _telemetry.IncrementRouting(
+                        "destination_access_alternatives",
+                        destinationAlternatives);
+                    _telemetry.ObserveRouting(
+                        "access_alternatives_per_route",
+                        boardAlternatives + destinationAlternatives);
+
+                    var routeDiagnosticCounts =
+                        accessDiscoveryDiagnostics.Counts() -
+                        routeDiagnosticCountsBefore;
+                    _telemetry.RecordRoutingAccessDiscoveryRoute(
+                        routeId,
+                        samples.Count,
+                        boardDiscoveryMilliseconds,
+                        directConnectionMilliseconds,
+                        prefixMilliseconds,
+                        destinationAccessMilliseconds,
+                        routeDiagnosticCounts.TodaCandidatesConsidered,
+                        routeDiagnosticCounts.TodaCandidatesSurvivingFilters,
+                        routeDiagnosticCounts.TodaCandidatesSelected,
+                        boardAlternatives,
+                        destinationAlternatives,
+                        directConnections.Count);
+                }
+
+                // Destination-completion edges are discovered from origin/access
+                // states before any transit candidate is confirmed. They run in
+                // parallel with transit confirmation and never depend on a bad suffix
+                // surviving pruning merely to reveal that the trip could have ended.
+                var accessPathDiscoveryStarted = Stopwatch.GetTimestamp();
+                accessPathCompletionEdges = BuildAccessPathDestinationCompletionEdges(
+                    boardAccessPrefixByRoute,
+                    directConnectionsByRoute,
+                    destinationLatitude,
+                    destinationLongitude);
+                _telemetry.ObserveRouting(
+                    "access_path_completion_discovery_ms",
+                    Stopwatch.GetElapsedTime(
+                        accessPathDiscoveryStarted).TotalMilliseconds);
+                _telemetry.IncrementRouting(
+                    "access_path_completion_edges_generated",
+                    accessPathCompletionEdges.Count);
+
+                var directCompletionStarted = Stopwatch.GetTimestamp();
+                directCompletionEdges = BuildDirectAccessDestinationCompletionEdges(
+                    originLatitude,
+                    originLongitude,
+                    destinationLatitude,
+                    destinationLongitude);
+                _telemetry.ObserveRouting(
+                    "direct_connection_completion_discovery_ms",
+                    Stopwatch.GetElapsedTime(
+                        directCompletionStarted).TotalMilliseconds);
+                _telemetry.IncrementRouting(
+                    "direct_completion_edges_generated",
+                    directCompletionEdges.Count);
+            }
+        }
+        finally
+        {
+            _accessDiscoveryDiagnostics = null;
+            accessDiscoveryDiagnostics.Flush(_telemetry);
         }
         _telemetry.ObserveRouting(
             "access_discovery_ms",
@@ -277,12 +365,21 @@ public partial class RoutingService
         // Phase 2 reserves part of the confirmation budget for distinct route
         // and boarding regions so a dense cluster of similar candidates cannot
         // crowd out useful alternatives before authoritative validation.
+        var diversitySelectionAllocatedBytesBefore =
+            GC.GetAllocatedBytesForCurrentThread();
         var diversitySelectionStarted = Stopwatch.GetTimestamp();
         var ranked = SelectCandidatesToConfirmWithDiversity(
             distinctCandidates, planningPreferences);
+        var diversitySelectionAllocatedBytes = Math.Max(
+            0,
+            GC.GetAllocatedBytesForCurrentThread() -
+            diversitySelectionAllocatedBytesBefore);
         _telemetry.ObserveRouting(
             "diversity_selection_ms",
             Stopwatch.GetElapsedTime(diversitySelectionStarted).TotalMilliseconds);
+        _telemetry.ObserveRouting(
+            "diversity_selection_allocated_bytes",
+            diversitySelectionAllocatedBytes);
         var eligibleDirectCompletionEdges = directCompletionEdges
             .Where(MeetsMeasuredDirectHardConstraints)
             .ToList();

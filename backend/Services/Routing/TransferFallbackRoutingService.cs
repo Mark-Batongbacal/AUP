@@ -15,7 +15,9 @@ namespace backend.Services.Routing;
 /// trips while preserving coverage for the uncommon routes that genuinely need
 /// four transit legs.
 /// </summary>
-public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGeometryEnricher
+public interface IRoutingPlanningPipeline : IRoutingService, IJourneyGeometryEnricher;
+
+public sealed class TransferFallbackRoutingService : IRoutingPlanningPipeline
 {
     private const int PreferredTransferDepth = 2;
     private const int FallbackTransferDepth = 3;
@@ -37,6 +39,7 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
         ITripAreaValidator tripAreaValidator,
         ITukiTelemetry telemetry,
         RoutingNetworkSnapshotProvider networkSnapshotProvider,
+        RoutingBenchmarkNetworkFixtureProvider benchmarkNetworkFixtureProvider,
         ValhallaResultCache valhallaResultCache,
         ILogger<TransferFallbackRoutingService> logger)
     {
@@ -60,6 +63,7 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
             telemetry,
             networkSnapshotProvider,
             networkSnapshotScope,
+            benchmarkNetworkFixtureProvider,
             valhallaResultCache);
 
         if (_fallbackMaxTransfers > _preferredMaxTransfers)
@@ -74,6 +78,7 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
                 telemetry,
                 networkSnapshotProvider,
                 networkSnapshotScope,
+                benchmarkNetworkFixtureProvider,
                 valhallaResultCache);
         }
     }

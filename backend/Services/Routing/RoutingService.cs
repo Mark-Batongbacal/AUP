@@ -88,6 +88,8 @@ public partial class RoutingService : IRoutingService
     private readonly IRoutingNetworkSnapshotProvider _networkSnapshotProvider;
     private readonly RoutingNetworkSnapshotScope _networkSnapshotScope;
     private readonly IValhallaResultCache _valhallaResultCache;
+    private readonly RoutingBenchmarkNetworkFixtureProvider?
+        _benchmarkNetworkFixtureProvider;
     // RoutingService is scoped in DI, so this deduplicates only one HTTP
     // request's exact matrix work and never becomes a stale global cache.
     private readonly ConcurrentDictionary<ValhallaCacheKey,
@@ -125,6 +127,7 @@ public partial class RoutingService : IRoutingService
         ITukiTelemetry? telemetry,
         IRoutingNetworkSnapshotProvider networkSnapshotProvider,
         RoutingNetworkSnapshotScope? networkSnapshotScope = null,
+        RoutingBenchmarkNetworkFixtureProvider? benchmarkNetworkFixtureProvider = null,
         IValhallaResultCache? valhallaResultCache = null)
     {
         _valhallaService = valhallaService;
@@ -136,6 +139,7 @@ public partial class RoutingService : IRoutingService
         _tricyclePointRepository = tricyclePointRepository;
         _networkSnapshotProvider = networkSnapshotProvider;
         _networkSnapshotScope = networkSnapshotScope ?? new RoutingNetworkSnapshotScope();
+        _benchmarkNetworkFixtureProvider = benchmarkNetworkFixtureProvider;
         _valhallaResultCache = valhallaResultCache ??
             PassThroughValhallaResultCache.Instance;
 
@@ -171,32 +175,51 @@ public partial class RoutingService : IRoutingService
     private async Task<RoutingNetworkSnapshot> BuildNetworkSnapshotAsync(
         CancellationToken cancellationToken)
     {
-        var databaseRoutes = await _transportRouteRepository
-            .GetAllActiveWithOrderedPointsAsync(cancellationToken);
-        var databaseTrikePoints = await _tricyclePointRepository
-            .GetAllActiveAsync(cancellationToken);
+        var benchmarkFixture = _benchmarkNetworkFixtureProvider is null
+            ? null
+            : await _benchmarkNetworkFixtureProvider.GetFixtureAsync();
+        if (benchmarkFixture is not null)
+        {
+            _routes = ValidateRoutes(benchmarkFixture.Routes.Select(route =>
+                new StaticJeepneyRoute
+                {
+                    RouteId = route.RouteId,
+                    RouteName = route.RouteName,
+                    Coordinates = route.Coordinates
+                        .Select(point => point.ToArray())
+                        .ToList()
+                }));
+            _trikePoints = ValidateTrikePoints(benchmarkFixture.TrikePoints);
+        }
+        else
+        {
+            var databaseRoutes = await _transportRouteRepository
+                .GetAllActiveWithOrderedPointsAsync(cancellationToken);
+            var databaseTrikePoints = await _tricyclePointRepository
+                .GetAllActiveAsync(cancellationToken);
 
-        _routes = ValidateRoutes(databaseRoutes
-            .Where(route => string.Equals(
-                route.TransportMode?.Code,
-                "JEEPNEY",
-                StringComparison.OrdinalIgnoreCase))
-            .Select(route => new StaticJeepneyRoute
-            {
-                RouteId = route.RouteCode,
-                RouteName = route.RouteName,
-                Coordinates = route.RoutePoints
-                    .OrderBy(point => point.PointOrder)
-                    .Select(point => new[] { point.Longitude, point.Latitude })
-                    .ToList()
-            }));
+            _routes = ValidateRoutes(databaseRoutes
+                .Where(route => string.Equals(
+                    route.TransportMode?.Code,
+                    "JEEPNEY",
+                    StringComparison.OrdinalIgnoreCase))
+                .Select(route => new StaticJeepneyRoute
+                {
+                    RouteId = route.RouteCode,
+                    RouteName = route.RouteName,
+                    Coordinates = route.RoutePoints
+                        .OrderBy(point => point.PointOrder)
+                        .Select(point => new[] { point.Longitude, point.Latitude })
+                        .ToList()
+                }));
 
-        _trikePoints = ValidateTrikePoints(databaseTrikePoints.Select(point =>
-            new TrikePoint(
-                point.PointCode,
-                point.PointName,
-                point.CenterLatitude,
-                point.CenterLongitude)));
+            _trikePoints = ValidateTrikePoints(databaseTrikePoints.Select(point =>
+                new TrikePoint(
+                    point.PointCode,
+                    point.PointName,
+                    point.CenterLatitude,
+                    point.CenterLongitude)));
+        }
 
         _routeGeometries = _routes.ToDictionary(
             route => route.RouteId,
@@ -226,9 +249,10 @@ public partial class RoutingService : IRoutingService
             routeNamesById);
 
         _logger.LogInformation(
-            "Loaded {RouteCount} jeepney routes and {TrikePointCount} tricycle points from the database",
+            "Loaded {RouteCount} jeepney routes and {TrikePointCount} tricycle points from {NetworkSource}",
             _routes.Count,
-            _trikePoints.Count);
+            _trikePoints.Count,
+            benchmarkFixture is null ? "database" : benchmarkFixture.FixtureId);
 
         return new RoutingNetworkSnapshot(
             Version: 0,

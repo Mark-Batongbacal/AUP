@@ -364,6 +364,20 @@ public sealed class ValhallaServiceTimingTests
             values.Add(value);
         }
 
+        public void RecordRoutingAccessDiscoveryRoute(
+            string routeId,
+            int routeSampleCount,
+            double boardDiscoveryMilliseconds,
+            double directConnectionDiscoveryMilliseconds,
+            double prefixComputationMilliseconds,
+            double destinationAccessMilliseconds,
+            long todaCandidatesConsidered,
+            long todaCandidatesSurvivingFilters,
+            long todaCandidatesSelected,
+            long boardAccessAlternatives,
+            long destinationAccessAlternatives,
+            long directConnections) { }
+
         private sealed class EmptyScope : IRoutingTelemetryScope
         {
             public static EmptyScope Instance { get; } = new();
