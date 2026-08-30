@@ -193,6 +193,7 @@ builder.Services.AddScoped<IAssistantPlaceResolver, GoogleAssistantPlaceResolver
 builder.Services.AddScoped<ITukiAssistantService, TukiAssistantService>();
 builder.Services.AddScoped<IJourneyPlanPersistenceService, JourneyPlanPersistenceService>();
 builder.Services.AddSingleton<ITukiTelemetry, TukiTelemetry>();
+builder.Services.AddSingleton<IAiUsageMetricsStore, AiUsageMetricsStore>();
 builder.Services.AddSingleton<SystemResourceMetricsSampler>();
 builder.Services.AddSingleton<RoutingNetworkSnapshotProvider>();
 builder.Services.AddSingleton<RoutingBenchmarkNetworkFixtureProvider>();
