@@ -1,4 +1,5 @@
 using backend.Repositories;
+using backend.Services.Routing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,7 +8,8 @@ namespace backend.Controllers;
 [ApiController]
 [Route("api/transport-routes")]
 public sealed class TransportRouteDeactivationController(
-    ITransportRouteRepository transportRouteRepository) : ControllerBase
+    ITransportRouteRepository transportRouteRepository,
+    IRoutingNetworkChangeNotifier? routingNetwork = null) : ControllerBase
 {
     [HttpDelete("{routeId:long}")]
     [Authorize]
@@ -26,6 +28,7 @@ public sealed class TransportRouteDeactivationController(
             return NotFound(new RoutePointErrorResponseDto(["Transport route was not found."]));
         }
 
+        routingNetwork?.Invalidate("transport route deactivated");
         return NoContent();
     }
 
@@ -46,6 +49,7 @@ public sealed class TransportRouteDeactivationController(
             return NotFound(new RoutePointErrorResponseDto(["Transport route was not found."]));
         }
 
+        routingNetwork?.Invalidate("transport route activated");
         return NoContent();
     }
 }

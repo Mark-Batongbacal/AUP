@@ -1,11 +1,13 @@
 using backend.Models.TricyclePointSubmissions;
 using backend.Repositories;
+using backend.Services.Routing;
 
 namespace backend.Services;
 
 public sealed class TricyclePointSubmissionPublishingService(
     ITricyclePointSubmissionRepository submissionRepository,
-    ITricyclePointSubmissionPublishingRepository publishingRepository)
+    ITricyclePointSubmissionPublishingRepository publishingRepository,
+    IRoutingNetworkChangeNotifier? routingNetwork = null)
     : ITricyclePointSubmissionPublishingService
 {
     private const int PublishedPointRadiusMeters = 500;
@@ -80,11 +82,14 @@ public sealed class TricyclePointSubmissionPublishingService(
             Address: NormalizeOptional(submission.AdminAddress),
             OperatorName: NormalizeOptional(submission.AdminOperatorName));
 
-        return await publishingRepository.PublishAsync(
+        var result = await publishingRepository.PublishAsync(
             submissionId,
             adminUserId,
             draft,
             cancellationToken);
+        if (result.Succeeded)
+            routingNetwork?.Invalidate("approved TODA submission published");
+        return result;
     }
 
     private static string? NormalizeOptional(string? value)

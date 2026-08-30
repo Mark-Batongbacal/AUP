@@ -1,5 +1,6 @@
 using backend.Models.Routing;
 using backend.Services.Assistant;
+using backend.Services.Telemetry;
 using Microsoft.Extensions.Options;
 
 namespace backend.Services.Routing;
@@ -27,22 +28,40 @@ public interface IJourneyPlanningFacadeService
 public sealed class JourneyPlanningFacadeService(
     IRoutingService routing,
     IJourneyPlanPersistenceService persistence,
-    IOptions<RoutingOptions>? routingOptions = null) : IJourneyPlanningFacadeService
+    IOptions<RoutingOptions>? routingOptions = null,
+    ITukiTelemetry? telemetry = null) : IJourneyPlanningFacadeService
 {
     private readonly RoutingOptions _routingOptions =
         routingOptions?.Value ?? new RoutingOptions();
+    private readonly ITukiTelemetry _telemetry =
+        telemetry ?? NullTukiTelemetry.Instance;
 
     public async Task<IReadOnlyList<MobileJourneyRecommendation>> PlanAsync(
         Guid userId, JourneyPlanRequest request,
         CancellationToken cancellationToken = default)
     {
+        using var planTelemetry = _telemetry.BeginRoutingPlan(
+            "JourneyPlanningFacadeService",
+            cancellationToken);
         if (string.IsNullOrWhiteSpace(request.DestinationName))
             throw new RoutingValidationException("INVALID_REQUEST",
                 "A destination name is required.");
-        var plans = await routing.PlanTripsAsync(
-            request.OriginLatitude, request.OriginLongitude,
-            request.DestinationLatitude, request.DestinationLongitude,
-            cancellationToken);
+        List<JeepneyTripPlan> plans;
+        try
+        {
+            using (_telemetry.MeasureRouting("routing_service_ms"))
+            {
+                plans = await routing.PlanTripsAsync(
+                    request.OriginLatitude, request.OriginLongitude,
+                    request.DestinationLatitude, request.DestinationLongitude,
+                    cancellationToken);
+            }
+        }
+        catch (RoutingAdmissionRejectedException)
+        {
+            planTelemetry.Complete("admission_rejected");
+            throw;
+        }
         var eligible = plans
             .Where(plan => RoutingPlanSafety.HasValidTransitAccess(
                 plan,
@@ -53,22 +72,40 @@ public sealed class JourneyPlanningFacadeService(
         if (!string.IsNullOrWhiteSpace(request.Preference))
             eligible = eligible.OrderByDescending(plan => plan.RecommendationType.Split(',')
                 .Contains(request.Preference, StringComparer.OrdinalIgnoreCase)).ToList();
-        if (eligible.Count == 0) return [];
+        _telemetry.SetRoutingValue("eligible_plan_count", eligible.Count);
+        if (eligible.Count == 0)
+        {
+            planTelemetry.Complete("no_route");
+            return [];
+        }
 
         if (routing is IJourneyGeometryEnricher geometryEnricher)
-            await geometryEnricher.EnrichSelectedPlanGeometryAsync(eligible, cancellationToken);
+        {
+            using (_telemetry.MeasureRouting("geometry_enrichment_ms"))
+            {
+                await geometryEnricher.EnrichSelectedPlanGeometryAsync(
+                    eligible,
+                    cancellationToken);
+            }
+        }
 
         if (userId == Guid.Empty)
         {
+            planTelemetry.Complete("success");
             return eligible.Select(plan => new MobileJourneyRecommendation(
                 Guid.NewGuid(), plan)).ToList();
         }
 
-        var stored = await persistence.PersistAsync(userId,
-            request.OriginLatitude, request.OriginLongitude,
-            request.DestinationName.Trim(), request.DestinationLatitude,
-            request.DestinationLongitude, request.Budget, request.Preference,
-            eligible, cancellationToken);
+        IReadOnlyList<PersistedJourney> stored;
+        using (_telemetry.MeasureRouting("persistence_ms"))
+        {
+            stored = await persistence.PersistAsync(userId,
+                request.OriginLatitude, request.OriginLongitude,
+                request.DestinationName.Trim(), request.DestinationLatitude,
+                request.DestinationLongitude, request.Budget, request.Preference,
+                eligible, cancellationToken);
+        }
+        planTelemetry.Complete("success");
         return stored.Select(item => new MobileJourneyRecommendation(
             item.Recommendation.RecommendationId, item.Plan)).ToList();
     }

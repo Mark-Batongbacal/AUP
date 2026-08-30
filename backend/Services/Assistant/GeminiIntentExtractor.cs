@@ -8,38 +8,36 @@ using OpenAI.Chat;
 
 namespace backend.Services.Assistant;
 
-// Kept under the existing class name so current DI wiring remains compatible.
-// The configured provider/model is selected entirely through configuration.
-public sealed class NemotronIntentExtractor : IAssistantIntentExtractor
+public sealed class GeminiIntentExtractor : IAssistantIntentExtractor
 {
     private static readonly TimeSpan ModelTimeout = TimeSpan.FromSeconds(15);
     private readonly ChatClient _client;
-    private readonly ILogger<NemotronIntentExtractor> _logger;
+    private readonly ILogger<GeminiIntentExtractor> _logger;
     private readonly IAiUsageMetricsStore _aiUsageMetrics;
     private readonly string _model;
 
-    public NemotronIntentExtractor(
+    public GeminiIntentExtractor(
         IConfiguration configuration,
-        ILogger<NemotronIntentExtractor> logger,
+        ILogger<GeminiIntentExtractor> logger,
         IAiUsageMetricsStore aiUsageMetrics)
     {
         _logger = logger;
         _aiUsageMetrics = aiUsageMetrics;
         var apiKey = Environment.GetEnvironmentVariable(
-            configuration["Qwen:ApiKeyEnvironmentVariable"] ?? "GEMINI_API_KEY");
+            configuration["Gemini:ApiKeyEnvironmentVariable"] ?? "GEMINI_API_KEY");
 
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException(
                 "The configured assistant model API key is unavailable.");
 
-        _model = configuration["Qwen:Model"] ?? "gemini-3.5-flash-lite";
+        _model = configuration["Gemini:Model"] ?? "gemini-3.5-flash-lite";
         _client = new ChatClient(
             _model,
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
                 Endpoint = new Uri(
-                    configuration["Qwen:BaseUrl"] ??
+                    configuration["Gemini:BaseUrl"] ??
                     "https://generativelanguage.googleapis.com/v1beta/openai/"),
                 RetryPolicy = new ClientRetryPolicy(0),
                 Transport = HttpClientPipelineTransport.Shared

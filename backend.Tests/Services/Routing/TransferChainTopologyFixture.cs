@@ -183,7 +183,9 @@ internal static class TransferChainTopologyFixture
         bool chainRoutesFirst = false,
         bool crowdedSecondTransfer = false,
         List<TricyclePoint>? trikePoints = null,
-        IValhallaService? valhalla = null)
+        IValhallaService? valhalla = null,
+        IValhallaResultCache? resultCache = null,
+        RoutingNetworkSnapshotProvider? snapshotProvider = null)
     {
         var routeRepository = new Mock<ITransportRouteRepository>();
         routeRepository
@@ -196,12 +198,29 @@ internal static class TransferChainTopologyFixture
             .Setup(repository => repository.GetAllActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(trikePoints ?? BuildTrikePoints());
 
+        var authoritativeValhalla = valhalla ?? new RoadNetworkValhallaService();
+        var routingOptions = Options.Create(options ?? DefaultOptions());
+        if (resultCache is null)
+        {
+            return new RoutingService(
+                authoritativeValhalla,
+                routeRepository.Object,
+                tricycleRepository.Object,
+                NullLogger<RoutingService>.Instance,
+                routingOptions);
+        }
+
         return new RoutingService(
-            valhalla ?? new RoadNetworkValhallaService(),
+            authoritativeValhalla,
             routeRepository.Object,
             tricycleRepository.Object,
             NullLogger<RoutingService>.Instance,
-            Options.Create(options ?? DefaultOptions()));
+            routingOptions,
+            tripAreaValidator: null,
+            telemetry: null,
+            networkSnapshotProvider:
+                snapshotProvider ?? new RoutingNetworkSnapshotProvider(),
+            valhallaResultCache: resultCache);
     }
 
     private static TransportRoute Route(

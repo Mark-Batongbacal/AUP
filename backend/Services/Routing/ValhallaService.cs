@@ -1,4 +1,5 @@
 
+using System.Diagnostics;
 using System.Net.Http.Json;
 using backend.Helpers;
 using backend.Models.Valhalla;
@@ -8,13 +9,12 @@ namespace backend.Services.Routing;
 
 public class ValhallaService : IValhallaService
 {
-    private const int DefaultMaxConcurrentRequests = 5;
     private const double DefaultWalkingSpeedMetersPerSecond = 1.2;
     private const double DefaultTrikeSpeedMetersPerSecond = 5.6;
     private const string DefaultTrikeCostingModel = "auto";
 
     private readonly HttpClient _httpClient;
-    private readonly SemaphoreSlim _semaphore;
+    private readonly IValhallaConcurrencyGate _concurrencyGate;
     private readonly ITukiTelemetry _telemetry;
     private readonly double _walkingSpeedMetersPerSecond;
     private readonly double _trikeSpeedMetersPerSecond;
@@ -23,16 +23,14 @@ public class ValhallaService : IValhallaService
     public ValhallaService(
         HttpClient httpClient,
         IConfiguration configuration,
-        ITukiTelemetry? telemetry = null)
+        ITukiTelemetry? telemetry = null,
+        IValhallaConcurrencyGate? concurrencyGate = null)
     {
         _httpClient = httpClient;
         _telemetry = telemetry ?? NullTukiTelemetry.Instance;
 
-        var configuredConcurrency = configuration.GetValue<int?>(
-            "Valhalla:MaxConcurrentRequests");
-        var maxConcurrentRequests = configuredConcurrency is > 0
-            ? configuredConcurrency.Value
-            : DefaultMaxConcurrentRequests;
+        _concurrencyGate = concurrencyGate ??
+            new ValhallaConcurrencyGate(configuration);
 
         _walkingSpeedMetersPerSecond = PositiveOrDefault(
             configuration.GetValue<double?>(
@@ -47,9 +45,6 @@ public class ValhallaService : IValhallaService
                 ? configuredTrikeCosting
                 : DefaultTrikeCostingModel;
 
-        _semaphore = new SemaphoreSlim(
-            maxConcurrentRequests,
-            maxConcurrentRequests);
     }
 
     public async Task<ValhallaRouteResponse> GetRouteAsync(
@@ -214,18 +209,42 @@ public class ValhallaService : IValhallaService
         CancellationToken cancellationToken)
     {
         using var measurement = _telemetry.Measure($"Valhalla{endpoint}");
-        await _semaphore.WaitAsync(cancellationToken);
-
+        _telemetry.SetRoutingValue(
+            "valhalla_concurrency_limit",
+            _concurrencyGate.MaxConcurrency);
+        var waitStarted = Stopwatch.GetTimestamp();
+        IDisposable lease;
         try
         {
-            return await _httpClient.PostAsJsonAsync(
-                endpoint,
-                request,
-                cancellationToken);
+            lease = await _concurrencyGate.AcquireAsync(cancellationToken);
         }
         finally
         {
-            _semaphore.Release();
+            _telemetry.ObserveRouting(
+                "valhalla_gate_wait_ms",
+                Stopwatch.GetElapsedTime(waitStarted).TotalMilliseconds);
+        }
+
+        _telemetry.IncrementRouting(
+            endpoint == "/sources_to_targets"
+                ? "valhalla_matrix_http_calls"
+                : "valhalla_route_http_calls");
+        var executionStarted = Stopwatch.GetTimestamp();
+        using (lease)
+        {
+            try
+            {
+                return await _httpClient.PostAsJsonAsync(
+                    endpoint,
+                    request,
+                    cancellationToken);
+            }
+            finally
+            {
+                _telemetry.ObserveRouting(
+                    "valhalla_execution_ms",
+                    Stopwatch.GetElapsedTime(executionStarted).TotalMilliseconds);
+            }
         }
     }
 }

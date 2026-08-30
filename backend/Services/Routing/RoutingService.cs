@@ -71,21 +71,30 @@ public partial class RoutingService : IRoutingService
     private readonly RoutingOptions _options;
     private readonly ITripAreaValidator _tripAreaValidator;
     private readonly ITukiTelemetry _telemetry;
-    private List<StaticJeepneyRoute> _routes = [];
-    private List<TrikePoint> _trikePoints = [];
+    private IReadOnlyList<StaticJeepneyRoute> _routes = [];
+    private IReadOnlyList<TrikePoint> _trikePoints = [];
 
-    private Dictionary<string, List<(double Latitude, double Longitude)>> _routeSamples = [];
-    private Dictionary<string, FullRouteGeometry> _routeGeometries = [];
-    private Dictionary<string, List<RouteAnchor>> _routeSearchAnchors = [];
-    private Dictionary<string, List<RouteInterchange>> _interchangesByRoute = [];
+    private IReadOnlyDictionary<string,
+        IReadOnlyList<(double Latitude, double Longitude)>> _routeSamples =
+        new Dictionary<string, IReadOnlyList<(double, double)>>();
+    private IReadOnlyDictionary<string, FullRouteGeometry> _routeGeometries =
+        new Dictionary<string, FullRouteGeometry>();
+    private IReadOnlyDictionary<string, IReadOnlyList<RouteAnchor>>
+        _routeSearchAnchors = new Dictionary<string, IReadOnlyList<RouteAnchor>>();
+    private IReadOnlyDictionary<string, IReadOnlyList<RouteInterchange>>
+        _interchangesByRoute = new Dictionary<string, IReadOnlyList<RouteInterchange>>();
     private readonly ITransportRouteRepository _transportRouteRepository;
     private readonly ITricyclePointRepository _tricyclePointRepository;
-    private readonly SemaphoreSlim _initializationLock = new(1, 1);
-    private bool _isInitialized;
+    private readonly IRoutingNetworkSnapshotProvider _networkSnapshotProvider;
+    private readonly RoutingNetworkSnapshotScope _networkSnapshotScope;
+    private readonly IValhallaResultCache _valhallaResultCache;
+    private readonly RoutingBenchmarkNetworkFixtureProvider?
+        _benchmarkNetworkFixtureProvider;
     // RoutingService is scoped in DI, so this deduplicates only one HTTP
     // request's exact matrix work and never becomes a stale global cache.
-    private readonly ConcurrentDictionary<string, Task<IReadOnlyList<ValhallaMatrixResult>>>
-        _matrixRequests = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<ValhallaCacheKey,
+        Task<IReadOnlyList<ValhallaMatrixResult>>>
+        _matrixRequests = new();
 
     public RoutingService(
         IValhallaService valhallaService,
@@ -95,6 +104,31 @@ public partial class RoutingService : IRoutingService
         IOptions<RoutingOptions> options,
         ITripAreaValidator? tripAreaValidator = null,
         ITukiTelemetry? telemetry = null)
+        : this(
+            valhallaService,
+            transportRouteRepository,
+            tricyclePointRepository,
+            logger,
+            options,
+            tripAreaValidator,
+            telemetry,
+            new RoutingNetworkSnapshotProvider(),
+            valhallaResultCache: null)
+    {
+    }
+
+    internal RoutingService(
+        IValhallaService valhallaService,
+        ITransportRouteRepository transportRouteRepository,
+        ITricyclePointRepository tricyclePointRepository,
+        ILogger<RoutingService> logger,
+        IOptions<RoutingOptions> options,
+        ITripAreaValidator? tripAreaValidator,
+        ITukiTelemetry? telemetry,
+        IRoutingNetworkSnapshotProvider networkSnapshotProvider,
+        RoutingNetworkSnapshotScope? networkSnapshotScope = null,
+        RoutingBenchmarkNetworkFixtureProvider? benchmarkNetworkFixtureProvider = null,
+        IValhallaResultCache? valhallaResultCache = null)
     {
         _valhallaService = valhallaService;
         _logger = logger;
@@ -103,6 +137,11 @@ public partial class RoutingService : IRoutingService
         _telemetry = telemetry ?? NullTukiTelemetry.Instance;
         _transportRouteRepository = transportRouteRepository;
         _tricyclePointRepository = tricyclePointRepository;
+        _networkSnapshotProvider = networkSnapshotProvider;
+        _networkSnapshotScope = networkSnapshotScope ?? new RoutingNetworkSnapshotScope();
+        _benchmarkNetworkFixtureProvider = benchmarkNetworkFixtureProvider;
+        _valhallaResultCache = valhallaResultCache ??
+            PassThroughValhallaResultCache.Instance;
 
         _logger.LogInformation(
             "Routing configuration loaded: VOT={Vot}, WalkingFatigue={WalkingFatigue}",
@@ -113,15 +152,47 @@ public partial class RoutingService : IRoutingService
 
     private async Task EnsureInitializedAsync(CancellationToken cancellationToken)
     {
-        if (_isInitialized)
-            return;
+        using var initializationMeasurement =
+            _telemetry.MeasureRouting("network_initialization_ms");
+        var pinnedSnapshot = _networkSnapshotScope.Snapshot;
+        var access = pinnedSnapshot is null
+            ? await _networkSnapshotProvider.GetSnapshotAsync(
+                BuildNetworkSnapshotAsync,
+                cancellationToken)
+            : new RoutingNetworkSnapshotAccess(pinnedSnapshot, false);
+        pinnedSnapshot = _networkSnapshotScope.Pin(access.Snapshot);
+        ApplyNetworkSnapshot(pinnedSnapshot);
+        _telemetry.IncrementRouting(
+            access.BuiltSnapshot
+                ? "network_initialization_builds"
+                : "network_initialization_cache_hits");
+        _telemetry.SetRoutingValue(
+            "network_snapshot_version",
+            pinnedSnapshot.Version);
+        RecordNetworkSizeTelemetry();
+    }
 
-        await _initializationLock.WaitAsync(cancellationToken);
-        try
+    private async Task<RoutingNetworkSnapshot> BuildNetworkSnapshotAsync(
+        CancellationToken cancellationToken)
+    {
+        var benchmarkFixture = _benchmarkNetworkFixtureProvider is null
+            ? null
+            : await _benchmarkNetworkFixtureProvider.GetFixtureAsync();
+        if (benchmarkFixture is not null)
         {
-            if (_isInitialized)
-                return;
-
+            _routes = ValidateRoutes(benchmarkFixture.Routes.Select(route =>
+                new StaticJeepneyRoute
+                {
+                    RouteId = route.RouteId,
+                    RouteName = route.RouteName,
+                    Coordinates = route.Coordinates
+                        .Select(point => point.ToArray())
+                        .ToList()
+                }));
+            _trikePoints = ValidateTrikePoints(benchmarkFixture.TrikePoints);
+        }
+        else
+        {
             var databaseRoutes = await _transportRouteRepository
                 .GetAllActiveWithOrderedPointsAsync(cancellationToken);
             var databaseTrikePoints = await _tricyclePointRepository
@@ -148,42 +219,66 @@ public partial class RoutingService : IRoutingService
                     point.PointName,
                     point.CenterLatitude,
                     point.CenterLongitude)));
+        }
 
-            _routeGeometries = _routes.ToDictionary(
+        _routeGeometries = _routes.ToDictionary(
             route => route.RouteId,
             route => BuildFullRouteGeometry(route.Coordinates));
 
-            _routeSamples = _routes
+        _routeSamples = _routes
             .Where(route => route.Coordinates.Count >= 2)
             .ToDictionary(
                 route => route.RouteId,
-            route => SampleRoutePoints(
-                route.Coordinates,
-                DefaultSampleIntervalMeters,
-                MaxRouteSamples).ToList());
+                route => (IReadOnlyList<(double Latitude, double Longitude)>)
+                    SampleRoutePoints(
+                        route.Coordinates,
+                        DefaultSampleIntervalMeters,
+                        MaxRouteSamples).ToList());
 
-            _routeSearchAnchors = _routeSamples.ToDictionary(
+        _routeSearchAnchors = _routeSamples.ToDictionary(
             pair => pair.Key,
-            pair => BuildSearchAnchors(pair.Key, pair.Value));
+            pair => (IReadOnlyList<RouteAnchor>)
+                BuildSearchAnchors(pair.Key, pair.Value));
 
-            var routeNamesById = _routes.ToDictionary(
+        var routeNamesById = _routes.ToDictionary(
             route => route.RouteId,
             route => route.RouteName);
 
-            _interchangesByRoute = BuildInterchangeGraph(
-                _routeSamples,
-                routeNamesById);
+        _interchangesByRoute = BuildInterchangeGraph(
+            _routeSamples,
+            routeNamesById);
 
-            _logger.LogInformation(
-                "Loaded {RouteCount} jeepney routes and {TrikePointCount} tricycle points from the database",
-                _routes.Count,
-                _trikePoints.Count);
-            _isInitialized = true;
-        }
-        finally
-        {
-            _initializationLock.Release();
-        }
+        _logger.LogInformation(
+            "Loaded {RouteCount} jeepney routes and {TrikePointCount} tricycle points from {NetworkSource}",
+            _routes.Count,
+            _trikePoints.Count,
+            benchmarkFixture is null ? "database" : benchmarkFixture.FixtureId);
+
+        return new RoutingNetworkSnapshot(
+            Version: 0,
+            _routes,
+            _trikePoints,
+            _routeSamples,
+            _routeGeometries,
+            _routeSearchAnchors,
+            _interchangesByRoute);
+    }
+
+    private void ApplyNetworkSnapshot(RoutingNetworkSnapshot snapshot)
+    {
+        _routes = snapshot.Routes;
+        _trikePoints = snapshot.TrikePoints;
+        _routeSamples = snapshot.RouteSamples;
+        _routeGeometries = snapshot.RouteGeometries;
+        _routeSearchAnchors = snapshot.RouteSearchAnchors;
+        _interchangesByRoute = snapshot.InterchangesByRoute;
+    }
+
+    private void RecordNetworkSizeTelemetry()
+    {
+        _telemetry.SetRoutingValue("route_count", _routes.Count);
+        _telemetry.SetRoutingValue("trike_point_count", _trikePoints.Count);
+        _telemetry.SetRoutingValue("toda_point_count", _trikePoints.Count);
     }
 
     // -------------------------------------------------------------------
@@ -292,18 +387,35 @@ public partial class RoutingService : IRoutingService
         ValhallaLocation source,
         IReadOnlyList<ValhallaLocation> targets,
         string costing,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ValhallaCacheUsage usage = ValhallaCacheUsage.General)
     {
-        var key = string.Join('|', costing,
-            CoordinateKey(source),
-            string.Join(';', targets.Select(CoordinateKey)));
+        var key = ValhallaCacheKey.Matrix(
+            CurrentNetworkSnapshotVersion(),
+            source,
+            targets,
+            costing);
 
+        Task<IReadOnlyList<ValhallaMatrixResult>>? createdRequest = null;
         var request = _matrixRequests.GetOrAdd(key, _ =>
-            _valhallaService.GetMatrixAsync(
-                source,
-                targets,
-                costing,
-                cancellationToken));
+        {
+            createdRequest = _valhallaResultCache.GetOrCreateAsync(
+                key,
+                usage,
+                sharedCancellationToken => _valhallaService.GetMatrixAsync(
+                    source,
+                    targets,
+                    costing,
+                    sharedCancellationToken),
+                ValhallaCacheSize.Matrix,
+                cancellationToken);
+            return createdRequest;
+        });
+
+        _telemetry.IncrementRouting(
+            createdRequest is not null && ReferenceEquals(request, createdRequest)
+                ? "request_local_matrix_cache_misses"
+                : "request_local_matrix_cache_hits");
 
         try
         {
@@ -317,8 +429,40 @@ public partial class RoutingService : IRoutingService
         }
     }
 
-    private static string CoordinateKey(ValhallaLocation location) =>
-        $"{location.Lat:F7},{location.Lon:F7}";
+    private Task<ValhallaRouteResponse> GetRouteAsync(
+        double startLatitude,
+        double startLongitude,
+        double endLatitude,
+        double endLongitude,
+        string costing,
+        CancellationToken cancellationToken,
+        ValhallaCacheUsage usage = ValhallaCacheUsage.General)
+    {
+        var key = ValhallaCacheKey.Route(
+            CurrentNetworkSnapshotVersion(),
+            startLatitude,
+            startLongitude,
+            endLatitude,
+            endLongitude,
+            costing);
+        return _valhallaResultCache.GetOrCreateAsync(
+            key,
+            usage,
+            sharedCancellationToken => _valhallaService.GetRouteAsync(
+                startLatitude,
+                startLongitude,
+                endLatitude,
+                endLongitude,
+                costing,
+                sharedCancellationToken),
+            ValhallaCacheSize.Route,
+            cancellationToken);
+    }
+
+    private long CurrentNetworkSnapshotVersion() =>
+        _networkSnapshotScope.Snapshot?.Version ??
+        throw new InvalidOperationException(
+            "Routing network snapshot must be initialized before Valhalla access.");
 
     private bool IsWithinServiceArea(double latitude, double longitude) =>
         latitude >= _options.ServiceAreaMinLatitude &&
