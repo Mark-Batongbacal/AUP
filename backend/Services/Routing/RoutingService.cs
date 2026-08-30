@@ -87,10 +87,12 @@ public partial class RoutingService : IRoutingService
     private readonly ITricyclePointRepository _tricyclePointRepository;
     private readonly IRoutingNetworkSnapshotProvider _networkSnapshotProvider;
     private readonly RoutingNetworkSnapshotScope _networkSnapshotScope;
+    private readonly IValhallaResultCache _valhallaResultCache;
     // RoutingService is scoped in DI, so this deduplicates only one HTTP
     // request's exact matrix work and never becomes a stale global cache.
-    private readonly ConcurrentDictionary<string, Task<IReadOnlyList<ValhallaMatrixResult>>>
-        _matrixRequests = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<ValhallaCacheKey,
+        Task<IReadOnlyList<ValhallaMatrixResult>>>
+        _matrixRequests = new();
 
     public RoutingService(
         IValhallaService valhallaService,
@@ -108,7 +110,8 @@ public partial class RoutingService : IRoutingService
             options,
             tripAreaValidator,
             telemetry,
-            new RoutingNetworkSnapshotProvider())
+            new RoutingNetworkSnapshotProvider(),
+            valhallaResultCache: null)
     {
     }
 
@@ -121,7 +124,8 @@ public partial class RoutingService : IRoutingService
         ITripAreaValidator? tripAreaValidator,
         ITukiTelemetry? telemetry,
         IRoutingNetworkSnapshotProvider networkSnapshotProvider,
-        RoutingNetworkSnapshotScope? networkSnapshotScope = null)
+        RoutingNetworkSnapshotScope? networkSnapshotScope = null,
+        IValhallaResultCache? valhallaResultCache = null)
     {
         _valhallaService = valhallaService;
         _logger = logger;
@@ -132,6 +136,8 @@ public partial class RoutingService : IRoutingService
         _tricyclePointRepository = tricyclePointRepository;
         _networkSnapshotProvider = networkSnapshotProvider;
         _networkSnapshotScope = networkSnapshotScope ?? new RoutingNetworkSnapshotScope();
+        _valhallaResultCache = valhallaResultCache ??
+            PassThroughValhallaResultCache.Instance;
 
         _logger.LogInformation(
             "Routing configuration loaded: VOT={Vot}, WalkingFatigue={WalkingFatigue}",
@@ -357,19 +363,27 @@ public partial class RoutingService : IRoutingService
         ValhallaLocation source,
         IReadOnlyList<ValhallaLocation> targets,
         string costing,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ValhallaCacheUsage usage = ValhallaCacheUsage.General)
     {
-        var key = string.Join('|', costing,
-            CoordinateKey(source),
-            string.Join(';', targets.Select(CoordinateKey)));
+        var key = ValhallaCacheKey.Matrix(
+            CurrentNetworkSnapshotVersion(),
+            source,
+            targets,
+            costing);
 
         Task<IReadOnlyList<ValhallaMatrixResult>>? createdRequest = null;
         var request = _matrixRequests.GetOrAdd(key, _ =>
         {
-            createdRequest = _valhallaService.GetMatrixAsync(
-                source,
-                targets,
-                costing,
+            createdRequest = _valhallaResultCache.GetOrCreateAsync(
+                key,
+                usage,
+                sharedCancellationToken => _valhallaService.GetMatrixAsync(
+                    source,
+                    targets,
+                    costing,
+                    sharedCancellationToken),
+                ValhallaCacheSize.Matrix,
                 cancellationToken);
             return createdRequest;
         });
@@ -391,8 +405,40 @@ public partial class RoutingService : IRoutingService
         }
     }
 
-    private static string CoordinateKey(ValhallaLocation location) =>
-        $"{location.Lat:F7},{location.Lon:F7}";
+    private Task<ValhallaRouteResponse> GetRouteAsync(
+        double startLatitude,
+        double startLongitude,
+        double endLatitude,
+        double endLongitude,
+        string costing,
+        CancellationToken cancellationToken,
+        ValhallaCacheUsage usage = ValhallaCacheUsage.General)
+    {
+        var key = ValhallaCacheKey.Route(
+            CurrentNetworkSnapshotVersion(),
+            startLatitude,
+            startLongitude,
+            endLatitude,
+            endLongitude,
+            costing);
+        return _valhallaResultCache.GetOrCreateAsync(
+            key,
+            usage,
+            sharedCancellationToken => _valhallaService.GetRouteAsync(
+                startLatitude,
+                startLongitude,
+                endLatitude,
+                endLongitude,
+                costing,
+                sharedCancellationToken),
+            ValhallaCacheSize.Route,
+            cancellationToken);
+    }
+
+    private long CurrentNetworkSnapshotVersion() =>
+        _networkSnapshotScope.Snapshot?.Version ??
+        throw new InvalidOperationException(
+            "Routing network snapshot must be initialized before Valhalla access.");
 
     private bool IsWithinServiceArea(double latitude, double longitude) =>
         latitude >= _options.ServiceAreaMinLatitude &&

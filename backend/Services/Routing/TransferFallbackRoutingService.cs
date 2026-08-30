@@ -37,6 +37,7 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
         ITripAreaValidator tripAreaValidator,
         ITukiTelemetry telemetry,
         RoutingNetworkSnapshotProvider networkSnapshotProvider,
+        ValhallaResultCache valhallaResultCache,
         ILogger<TransferFallbackRoutingService> logger)
     {
         _logger = logger;
@@ -58,7 +59,8 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
             tripAreaValidator,
             telemetry,
             networkSnapshotProvider,
-            networkSnapshotScope);
+            networkSnapshotScope,
+            valhallaResultCache);
 
         if (_fallbackMaxTransfers > _preferredMaxTransfers)
         {
@@ -71,7 +73,8 @@ public sealed class TransferFallbackRoutingService : IRoutingService, IJourneyGe
                 tripAreaValidator,
                 telemetry,
                 networkSnapshotProvider,
-                networkSnapshotScope);
+                networkSnapshotScope,
+                valhallaResultCache);
         }
     }
 

@@ -148,7 +148,13 @@ public sealed class TukiTelemetry(ILogger<TukiTelemetry> logger) : ITukiTelemetr
             "valhalla_matrix_http_calls" or
             "valhalla_route_http_calls" or
             "request_local_matrix_cache_hits" or
-            "request_local_matrix_cache_misses";
+            "request_local_matrix_cache_misses" or
+            "valhalla_cache_hits" or
+            "valhalla_cache_misses" or
+            "valhalla_cache_coalesced_waiters" or
+            "valhalla_calls_avoided" or
+            "static_transfer_cache_hits" or
+            "static_transfer_cache_misses";
 
     private static bool IsStageAttributedObservation(string metricName) =>
         metricName is

@@ -49,6 +49,16 @@ if (!Uri.TryCreate(valhallaBaseUrl, UriKind.Absolute, out var valhallaUri) ||
 }
 
 builder.Services.AddSingleton<IValhallaConcurrencyGate, ValhallaConcurrencyGate>();
+builder.Services.AddOptions<ValhallaResultCacheOptions>()
+    .Bind(builder.Configuration.GetSection(
+        ValhallaResultCacheOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        "Valhalla result cache configuration is invalid.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<ValhallaResultCache>();
+builder.Services.AddSingleton<IValhallaResultCache>(services =>
+    services.GetRequiredService<ValhallaResultCache>());
 builder.Services.AddHttpClient<IValhallaService, ValhallaService>(client =>
 {
     client.BaseAddress = valhallaUri;

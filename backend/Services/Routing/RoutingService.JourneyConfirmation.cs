@@ -54,7 +54,8 @@ public partial class RoutingService
                                         }
                                     ],
                                     "pedestrian",
-                                    cancellationToken);
+                                    cancellationToken,
+                                    ValhallaCacheUsage.StaticTransfer);
 
                             var result = results.FirstOrDefault(r =>
                                 r.FromIndex == 0 &&

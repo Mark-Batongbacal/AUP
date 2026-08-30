@@ -194,7 +194,9 @@ internal static class ProductionTopologyFixture
         RoutingOptions? options = null,
         IValhallaService? valhalla = null,
         List<TransportRoute>? routes = null,
-        List<TricyclePoint>? trikePoints = null)
+        List<TricyclePoint>? trikePoints = null,
+        IValhallaResultCache? resultCache = null,
+        RoutingNetworkSnapshotProvider? snapshotProvider = null)
     {
         var routeRepository = new Mock<ITransportRouteRepository>();
         routeRepository
@@ -207,12 +209,29 @@ internal static class ProductionTopologyFixture
             .Setup(repository => repository.GetAllActiveAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(trikePoints ?? BuildTrikePoints());
 
+        var authoritativeValhalla = valhalla ?? new RoadNetworkValhallaService();
+        var routingOptions = Options.Create(options ?? DefaultOptions());
+        if (resultCache is null)
+        {
+            return new RoutingService(
+                authoritativeValhalla,
+                routeRepository.Object,
+                tricycleRepository.Object,
+                NullLogger<RoutingService>.Instance,
+                routingOptions);
+        }
+
         return new RoutingService(
-            valhalla ?? new RoadNetworkValhallaService(),
+            authoritativeValhalla,
             routeRepository.Object,
             tricycleRepository.Object,
             NullLogger<RoutingService>.Instance,
-            Options.Create(options ?? DefaultOptions()));
+            routingOptions,
+            tripAreaValidator: null,
+            telemetry: null,
+            networkSnapshotProvider:
+                snapshotProvider ?? new RoutingNetworkSnapshotProvider(),
+            valhallaResultCache: resultCache);
     }
 
     public static double Haversine(

@@ -103,6 +103,7 @@ public sealed class RoutingPerformanceTelemetryTests
                         telemetry.ObserveRouting(
                             "valhalla_gate_wait_ms",
                             10);
+                        telemetry.IncrementRouting("valhalla_cache_misses");
                     });
 
                     using (telemetry.BeginRoutingStage("confirmation"))
@@ -112,6 +113,8 @@ public sealed class RoutingPerformanceTelemetryTests
                         telemetry.ObserveRouting(
                             "valhalla_gate_wait_ms",
                             20);
+                        telemetry.IncrementRouting("valhalla_cache_hits");
+                        telemetry.IncrementRouting("valhalla_calls_avoided");
                     }
 
                     telemetry.IncrementRouting(
@@ -150,6 +153,18 @@ public sealed class RoutingPerformanceTelemetryTests
             20,
             Assert.IsType<double>(entry[
                 "confirmation_valhalla_gate_wait_ms_sum"]));
+        Assert.Equal(
+            1L,
+            Assert.IsType<long>(entry[
+                "access_discovery_valhalla_cache_misses"]));
+        Assert.Equal(
+            1L,
+            Assert.IsType<long>(entry[
+                "confirmation_valhalla_cache_hits"]));
+        Assert.Equal(
+            1L,
+            Assert.IsType<long>(entry[
+                "confirmation_valhalla_calls_avoided"]));
 
         var passes = Assert.IsAssignableFrom<
             IReadOnlyList<RoutingPassTelemetrySnapshot>>(entry["Passes"]);
