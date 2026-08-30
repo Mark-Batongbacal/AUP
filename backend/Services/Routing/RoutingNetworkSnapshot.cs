@@ -37,7 +37,9 @@ internal sealed record RoutingNetworkSnapshot(
     IReadOnlyDictionary<string,
         IReadOnlyList<RoutingService.RouteAnchor>> RouteSearchAnchors,
     IReadOnlyDictionary<string,
-        IReadOnlyList<RoutingService.RouteInterchange>> InterchangesByRoute);
+        IReadOnlyList<RoutingService.RouteInterchange>> InterchangesByRoute,
+    IRouteSpatialIndex SpatialRouteIndex,
+    IReadOnlySet<string> RoutesWithTodaAccess);
 
 /// <summary>
 /// Pins one snapshot version for all routing passes in the same request,

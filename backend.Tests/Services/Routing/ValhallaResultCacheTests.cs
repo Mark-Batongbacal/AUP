@@ -241,5 +241,7 @@ public sealed class ValhallaResultCacheTests
         RouteSearchAnchors: new Dictionary<string,
             IReadOnlyList<RoutingService.RouteAnchor>>(),
         InterchangesByRoute: new Dictionary<string,
-            IReadOnlyList<RoutingService.RouteInterchange>>());
+            IReadOnlyList<RoutingService.RouteInterchange>>(),
+        SpatialRouteIndex: RouteSpatialIndex.Build([]),
+        RoutesWithTodaAccess: new HashSet<string>(StringComparer.Ordinal));
 }

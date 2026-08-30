@@ -154,6 +154,7 @@ public partial class RoutingService
         return FindTransferCandidates(
                 boardPrefixes,
                 destinationAccess,
+                _routes,
                 cancellationToken)
             .Select(candidate => new TransferDestinationCompletionSnapshot(
                 candidate.Legs.Select(leg => leg.RouteId).ToList(),

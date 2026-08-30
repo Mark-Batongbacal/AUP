@@ -70,6 +70,42 @@ public sealed class RoutingNetworkSnapshotProviderTests
     }
 
     [Fact]
+    public async Task Invalidation_AtomicallyReplacesTheSnapshotSpatialIndex()
+    {
+        using var provider = new RoutingNetworkSnapshotProvider();
+        var snapshots = (IRoutingNetworkSnapshotProvider)provider;
+        var routes = new[]
+        {
+            SpatialRoute("old", 15.0, 120.5)
+        };
+
+        Task<RoutingNetworkSnapshot> Build(CancellationToken _) =>
+            Task.FromResult(SnapshotWithRoutes(routes));
+
+        var first = await snapshots.GetSnapshotAsync(Build, default);
+        routes = [SpatialRoute("new", 15.2, 120.7)];
+        provider.Invalidate("route geometry changed");
+        var second = await snapshots.GetSnapshotAsync(Build, default);
+
+        Assert.Equal(
+            ["old"],
+            first.Snapshot.SpatialRouteIndex.FindNearbyRoutes(
+                15.0,
+                120.5,
+                100));
+        Assert.Empty(second.Snapshot.SpatialRouteIndex.FindNearbyRoutes(
+            15.0,
+            120.5,
+            100));
+        Assert.Equal(
+            ["new"],
+            second.Snapshot.SpatialRouteIndex.FindNearbyRoutes(
+                15.2,
+                120.7,
+                100));
+    }
+
+    [Fact]
     public async Task FailedRebuild_DoesNotPublishAPartialSnapshotAndCanRetry()
     {
         using var provider = new RoutingNetworkSnapshotProvider();
@@ -123,6 +159,61 @@ public sealed class RoutingNetworkSnapshotProviderTests
             It.IsAny<CancellationToken>()), Times.Once);
         todas.Verify(repository => repository.GetAllActiveAsync(
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task MalformedRoutesAreRejectedBeforeSpatialIndexConstruction()
+    {
+        var routes = new Mock<ITransportRouteRepository>();
+        routes.Setup(repository => repository.GetAllActiveWithOrderedPointsAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(
+            [
+                new TransportRoute
+                {
+                    RouteId = 1,
+                    RouteCode = "MALFORMED",
+                    RouteName = "Malformed",
+                    IsActive = true,
+                    TransportMode = new TransportMode
+                    {
+                        Code = "JEEPNEY",
+                        Name = "Jeepney"
+                    },
+                    RoutePoints =
+                    [
+                        new RoutePoint
+                        {
+                            RouteId = 1,
+                            PointOrder = 0,
+                            Latitude = double.NaN,
+                            Longitude = 120.5
+                        },
+                        new RoutePoint
+                        {
+                            RouteId = 1,
+                            PointOrder = 1,
+                            Latitude = 15.0,
+                            Longitude = 120.6
+                        }
+                    ]
+                }
+            ]);
+        var todas = new Mock<ITricyclePointRepository>();
+        todas.Setup(repository => repository.GetAllActiveAsync(
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var valhalla = new Mock<IValhallaService>(MockBehavior.Strict);
+        var service = new RoutingService(
+            valhalla.Object,
+            routes.Object,
+            todas.Object,
+            NullLogger<RoutingService>.Instance,
+            Options.Create(new RoutingOptions()));
+
+        var result = await service.FindNearbyRoutesAsync(15.0, 120.5);
+
+        Assert.Empty(result);
     }
 
     [Fact]
@@ -180,5 +271,36 @@ public sealed class RoutingNetworkSnapshotProviderTests
         RouteSearchAnchors: new Dictionary<string,
             IReadOnlyList<RoutingService.RouteAnchor>>(),
         InterchangesByRoute: new Dictionary<string,
-            IReadOnlyList<RoutingService.RouteInterchange>>());
+            IReadOnlyList<RoutingService.RouteInterchange>>(),
+        SpatialRouteIndex: RouteSpatialIndex.Build([]),
+        RoutesWithTodaAccess: new HashSet<string>(StringComparer.Ordinal));
+
+    private static RoutingNetworkSnapshot SnapshotWithRoutes(
+        IReadOnlyList<backend.Models.Routing.StaticJeepneyRoute> routes) => new(
+        Version: 0,
+        Routes: routes,
+        TrikePoints: [],
+        RouteSamples: new Dictionary<string,
+            IReadOnlyList<(double Latitude, double Longitude)>>(),
+        RouteGeometries: new Dictionary<string, RoutingService.FullRouteGeometry>(),
+        RouteSearchAnchors: new Dictionary<string,
+            IReadOnlyList<RoutingService.RouteAnchor>>(),
+        InterchangesByRoute: new Dictionary<string,
+            IReadOnlyList<RoutingService.RouteInterchange>>(),
+        SpatialRouteIndex: RouteSpatialIndex.Build(routes),
+        RoutesWithTodaAccess: new HashSet<string>(StringComparer.Ordinal));
+
+    private static backend.Models.Routing.StaticJeepneyRoute SpatialRoute(
+        string id,
+        double latitude,
+        double longitude) => new()
+        {
+            RouteId = id,
+            RouteName = id,
+            Coordinates =
+            [
+                [longitude, latitude],
+                [longitude + 0.001, latitude + 0.001]
+            ]
+        };
 }

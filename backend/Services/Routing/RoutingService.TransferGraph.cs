@@ -1,3 +1,5 @@
+using backend.Models.Routing;
+
 namespace backend.Services.Routing;
 
 public partial class RoutingService
@@ -23,6 +25,7 @@ public partial class RoutingService
         IReadOnlyDictionary<string, IReadOnlyList<AccessCandidate>[]> boardPrefixes,
         IReadOnlyDictionary<string, IReadOnlyList<AccessCandidate>>
             destinationAccessByRoute,
+        IReadOnlyList<StaticJeepneyRoute> startingRoutes,
         CancellationToken cancellationToken)
     {
         if (MaxTransfers == 0) yield break;
@@ -44,7 +47,7 @@ public partial class RoutingService
             Math.Max(1, _routes.Count);
         var rootCompletionLimit = MaxCandidatesToConfirm *
             Math.Max(1, _routes.Count);
-        foreach (var startRoute in _routes)
+        foreach (var startRoute in startingRoutes)
         {
             if (!_interchangesByRoute.TryGetValue(startRoute.RouteId, out var firstEdges))
                 continue;

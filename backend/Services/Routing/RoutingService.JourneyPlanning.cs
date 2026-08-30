@@ -50,19 +50,86 @@ public partial class RoutingService
 
         await EnsureInitializedAsync(cancellationToken);
 
-        // Phase 0 baseline: before a spatial prefilter exists every static
-        // route enters both sides of access discovery. Phase 1 replaces these
-        // values with the actual immutable-index query results.
         _telemetry.SetRoutingValue(
             "routes_considered_before_spatial_filter",
-            _routes.Count);
-        _telemetry.SetRoutingValue(
-            "routes_considered_after_spatial_filter",
             _routes.Count);
 
         var planningPreferences = NormalizePlanningPreferences(preferences);
         var maxWalkAccessDistanceMeters =
             GetWalkAccessDistanceLimit(planningPreferences);
+        var spatialDiscoveryStarted = Stopwatch.GetTimestamp();
+        var spatialAccessRadiusMeters =
+            GetConservativeSpatialAccessRadiusMeters(
+                maxWalkAccessDistanceMeters);
+        var originRouteIds = _spatialRouteIndex.FindNearbyRoutes(
+            originLatitude,
+            originLongitude,
+            spatialAccessRadiusMeters).ToHashSet(StringComparer.Ordinal);
+        var destinationRouteIds = _spatialRouteIndex.FindNearbyRoutes(
+            destinationLatitude,
+            destinationLongitude,
+            spatialAccessRadiusMeters).ToHashSet(StringComparer.Ordinal);
+
+        // Existing origin feeder semantics allow any route anchor to be
+        // reached from a TODA the passenger can walk to. There is no feeder
+        // ride-distance cap, so narrowing this set would be a false negative.
+        // Destination tricycle access is different: the route anchor itself
+        // must be near a TODA, which is static and captured by the snapshot.
+        if (FindNearbyTrikePoints(originLatitude, originLongitude).Count > 0)
+        {
+            foreach (var route in _routes)
+                originRouteIds.Add(route.RouteId);
+        }
+        if (MaxNearbyTrikeCandidates > 0)
+            destinationRouteIds.UnionWith(_routesWithTodaAccess);
+
+        // A live onboard occurrence remains authoritative even if reported
+        // GPS drift puts the passenger just outside the conservative query.
+        if (planningPreferences?.OnboardTransit is { } onboardContext &&
+            _routeSamples.ContainsKey(onboardContext.RouteId))
+        {
+            originRouteIds.Add(onboardContext.RouteId);
+        }
+
+        var originRoutes = new List<StaticJeepneyRoute>(_routes.Count);
+        var routesForAccessDiscovery =
+            new List<StaticJeepneyRoute>(_routes.Count);
+        var directRoutes = new List<StaticJeepneyRoute>(_routes.Count);
+        var destinationRouteCount = 0;
+        foreach (var route in _routes)
+        {
+            var isOriginRoute = originRouteIds.Contains(route.RouteId);
+            var isDestinationRoute = destinationRouteIds.Contains(route.RouteId);
+            if (isOriginRoute)
+                originRoutes.Add(route);
+            if (isDestinationRoute)
+                destinationRouteCount++;
+            if (isOriginRoute || isDestinationRoute)
+                routesForAccessDiscovery.Add(route);
+            if (isOriginRoute && isDestinationRoute)
+                directRoutes.Add(route);
+        }
+        _telemetry.SetRoutingValue(
+            "spatial_access_radius_meters",
+            spatialAccessRadiusMeters);
+        _telemetry.SetRoutingValue(
+            "origin_routes_after_spatial_filter",
+            originRoutes.Count);
+        _telemetry.SetRoutingValue(
+            "destination_routes_after_spatial_filter",
+            destinationRouteCount);
+        _telemetry.SetRoutingValue(
+            "direct_routes_after_spatial_filter",
+            directRoutes.Count);
+        _telemetry.SetRoutingValue(
+            "routes_considered_after_spatial_filter",
+            originRoutes.Count);
+        _telemetry.SetRoutingValue(
+            "routes_in_access_discovery_union",
+            routesForAccessDiscovery.Count);
+        _telemetry.ObserveRouting(
+            "spatial_route_discovery_ms",
+            Stopwatch.GetElapsedTime(spatialDiscoveryStarted).TotalMilliseconds);
         var candidateGenerationStarted = Stopwatch.GetTimestamp();
         var accessDiscoveryStarted = Stopwatch.GetTimestamp();
 
@@ -74,7 +141,6 @@ public partial class RoutingService
                 StringComparer.Ordinal);
         var directConnectionsByRoute =
             new Dictionary<string, List<RouteConnectionCandidate>>(StringComparer.Ordinal);
-        var routesById = _routes.ToDictionary(route => route.RouteId, StringComparer.Ordinal);
         List<AccessPathDestinationCompletionEdge> accessPathCompletionEdges;
         List<DirectAccessDestinationCompletionEdge> directCompletionEdges;
         var accessDiscoveryDiagnostics = new AccessDiscoveryDiagnostics();
@@ -84,128 +150,151 @@ public partial class RoutingService
         {
             using (_telemetry.BeginRoutingStage("access_discovery"))
             {
-                foreach (var (routeId, samples) in _routeSamples)
+                foreach (var route in routesForAccessDiscovery)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    var routeId = route.RouteId;
+                    var samples = _routeSamples[routeId];
+                    var isOriginRoute = originRouteIds.Contains(routeId);
+                    var isDestinationRoute = destinationRouteIds.Contains(routeId);
                     var routeDiagnosticCountsBefore =
                         accessDiscoveryDiagnostics.Counts();
+                    var boardDiscoveryMilliseconds = 0.0;
+                    var directConnectionMilliseconds = 0.0;
+                    var prefixMilliseconds = 0.0;
+                    var destinationAccessMilliseconds = 0.0;
+                    var boardAlternatives = 0;
+                    var destinationAlternatives = 0;
+                    var directConnections = new List<RouteConnectionCandidate>();
+                    BoardAccessDiscovery? boardDiscovery = null;
 
-                    var boardDiscoveryStarted = Stopwatch.GetTimestamp();
-                    var boardDiscovery = await DiscoverBoardAccessOptionsAsync(
-                        routeId,
-                        samples,
-                        originLatitude,
-                        originLongitude,
-                        cancellationToken,
-                        maxWalkAccessDistanceMeters);
-                    var boardDiscoveryMilliseconds = Stopwatch.GetElapsedTime(
-                        boardDiscoveryStarted).TotalMilliseconds;
-                    _telemetry.ObserveRouting(
-                        "board_access_discovery_by_route_ms",
-                        boardDiscoveryMilliseconds);
-                    if (planningPreferences?.OnboardTransit is { } onboard &&
-                        string.Equals(onboard.RouteId, routeId, StringComparison.Ordinal))
+                    if (isOriginRoute)
                     {
-                        var anchor = GetRouteAnchorAtProgress(
-                            routeId, onboard.CurrentRouteProgressMeters);
-                        boardDiscovery = boardDiscovery with
+                        var boardDiscoveryStarted = Stopwatch.GetTimestamp();
+                        boardDiscovery = await DiscoverBoardAccessOptionsAsync(
+                            routeId,
+                            samples,
+                            originLatitude,
+                            originLongitude,
+                            cancellationToken,
+                            maxWalkAccessDistanceMeters);
+                        boardDiscoveryMilliseconds = Stopwatch.GetElapsedTime(
+                            boardDiscoveryStarted).TotalMilliseconds;
+                        _telemetry.ObserveRouting(
+                            "board_access_discovery_by_route_ms",
+                            boardDiscoveryMilliseconds);
+                        if (planningPreferences?.OnboardTransit is { } onboard &&
+                            string.Equals(
+                                onboard.RouteId,
+                                routeId,
+                                StringComparison.Ordinal))
                         {
-                            Onboard = WalkAccess(
-                                (anchor.Latitude, anchor.Longitude),
-                                0,
-                                GetNearestSampleIndex(
-                                    samples,
-                                    (anchor.Latitude, anchor.Longitude)),
-                                anchor) with
+                            var anchor = GetRouteAnchorAtProgress(
+                                routeId,
+                                onboard.CurrentRouteProgressMeters);
+                            boardDiscovery = boardDiscovery with
                             {
-                                IsNetworkWalkConfirmed = true,
-                                IsAlreadyOnboard = true
-                            }
-                        };
+                                Onboard = WalkAccess(
+                                    (anchor.Latitude, anchor.Longitude),
+                                    0,
+                                    GetNearestSampleIndex(
+                                        samples,
+                                        (anchor.Latitude, anchor.Longitude)),
+                                    anchor) with
+                                {
+                                    IsNetworkWalkConfirmed = true,
+                                    IsAlreadyOnboard = true
+                                }
+                            };
+                        }
+
+                        if (isDestinationRoute)
+                        {
+                            var directConnectionStarted = Stopwatch.GetTimestamp();
+                            directConnections = FindBestConnections(
+                                route,
+                                originLatitude,
+                                originLongitude,
+                                destinationLatitude,
+                                destinationLongitude,
+                                boardDiscovery,
+                                maxWalkAccessDistanceMeters,
+                                planningPreferences?.OnboardTransit);
+                            directConnectionMilliseconds = Stopwatch.GetElapsedTime(
+                                directConnectionStarted).TotalMilliseconds;
+                            _telemetry.ObserveRouting(
+                                "direct_connection_discovery_ms",
+                                directConnectionMilliseconds);
+                            _telemetry.IncrementRouting(
+                                "direct_connections_generated",
+                                directConnections.Count);
+                            directConnectionsByRoute[routeId] = directConnections;
+                        }
+
+                        // Origin candidates seed transfer search. Intermediate
+                        // routes remain reachable through the complete
+                        // snapshot interchange graph.
+                        var prefixStarted = Stopwatch.GetTimestamp();
+                        var accessPrefix = ComputePrefixAccessOptions(
+                            routeId,
+                            ConstrainTransitAccessOptions(
+                                boardDiscovery.Projected,
+                                maxWalkAccessDistanceMeters),
+                            directConnections.Select(candidate =>
+                                candidate.BoardAccess));
+                        boardAccessPrefixByRoute[routeId] = ApplyOnboardAccessContext(
+                            routeId,
+                            accessPrefix,
+                            boardDiscovery.Onboard,
+                            planningPreferences?.OnboardTransit);
+                        prefixMilliseconds = Stopwatch.GetElapsedTime(
+                            prefixStarted).TotalMilliseconds;
+                        _telemetry.ObserveRouting(
+                            "prefix_access_computation_ms",
+                            prefixMilliseconds);
+
+                        boardAlternatives =
+                            boardDiscovery.Projected.Sum(candidate =>
+                                candidate.AllAlternatives.Count) +
+                            boardDiscovery.SearchAnchors.Sum(candidate =>
+                                candidate.AllAlternatives.Count) +
+                            (boardDiscovery.Exact?.AllAlternatives.Count ?? 0);
+                        _telemetry.IncrementRouting(
+                            "board_access_alternatives",
+                            boardAlternatives);
                     }
-                    var boardOptions = boardDiscovery.Projected;
 
-                    var directConnectionStarted = Stopwatch.GetTimestamp();
-                    var directConnections = FindBestConnections(
-                        routesById[routeId],
-                        originLatitude,
-                        originLongitude,
-                        destinationLatitude,
-                        destinationLongitude,
-                        boardDiscovery,
-                        maxWalkAccessDistanceMeters,
-                        planningPreferences?.OnboardTransit);
-                    var directConnectionMilliseconds = Stopwatch.GetElapsedTime(
-                        directConnectionStarted).TotalMilliseconds;
-                    _telemetry.ObserveRouting(
-                        "direct_connection_discovery_ms",
-                        directConnectionMilliseconds);
-                    _telemetry.IncrementRouting(
-                        "direct_connections_generated",
-                        directConnections.Count);
-                    directConnectionsByRoute[routeId] = directConnections;
-
-                    // Transfer journeys take their origin access from these bounded
-                    // prefix sets. Seed them with the same route-occurrence-aware
-                    // states selected above for direct search. Applying the same
-                    // transit-access limit keeps one configured walking cap instead
-                    // of allowing a multi-kilometre transfer-only access walk.
-                    var prefixStarted = Stopwatch.GetTimestamp();
-                    var accessPrefix = ComputePrefixAccessOptions(
-                        routeId,
-                        ConstrainTransitAccessOptions(
-                            boardOptions,
-                            maxWalkAccessDistanceMeters),
-                        directConnections.Select(candidate => candidate.BoardAccess));
-                    boardAccessPrefixByRoute[routeId] = ApplyOnboardAccessContext(
-                        routeId,
-                        accessPrefix,
-                        boardDiscovery.Onboard,
-                        planningPreferences?.OnboardTransit);
-                    var prefixMilliseconds = Stopwatch.GetElapsedTime(
-                        prefixStarted).TotalMilliseconds;
-                    _telemetry.ObserveRouting(
-                        "prefix_access_computation_ms",
-                        prefixMilliseconds);
-
-                    var destinationAccessStarted = Stopwatch.GetTimestamp();
-                    var alightOptions =
-                        ComputeAlightAccessOptions(
+                    if (isDestinationRoute)
+                    {
+                        var destinationAccessStarted = Stopwatch.GetTimestamp();
+                        var alightOptions = ComputeAlightAccessOptions(
                             routeId,
                             samples,
                             destinationLatitude,
                             destinationLongitude);
-                    var constrainedAlightOptions =
-                        ConstrainTransitAccessOptions(
-                            alightOptions,
-                            maxWalkAccessDistanceMeters);
-                    destinationAccessByRoute[routeId] = DistinctAccessOccurrences(
-                        constrainedAlightOptions
-                            .Where(access => access is not null)
-                            .Select(access => access!)
-                            .Concat(directConnections.Select(candidate =>
-                                candidate.AlightAccess)));
-                    var destinationAccessMilliseconds = Stopwatch.GetElapsedTime(
-                        destinationAccessStarted).TotalMilliseconds;
+                        var constrainedAlightOptions =
+                            ConstrainTransitAccessOptions(
+                                alightOptions,
+                                maxWalkAccessDistanceMeters);
+                        destinationAccessByRoute[routeId] =
+                            DistinctAccessOccurrences(
+                                constrainedAlightOptions
+                                    .Where(access => access is not null)
+                                    .Select(access => access!)
+                                    .Concat(directConnections.Select(candidate =>
+                                        candidate.AlightAccess)));
+                        destinationAccessMilliseconds = Stopwatch.GetElapsedTime(
+                            destinationAccessStarted).TotalMilliseconds;
+                        destinationAlternatives = alightOptions.Sum(candidate =>
+                            candidate.AllAlternatives.Count);
+                        _telemetry.IncrementRouting(
+                            "destination_access_alternatives",
+                            destinationAlternatives);
+                    }
 
-                    var boardAlternatives =
-                        boardDiscovery.Projected.Sum(candidate =>
-                            candidate.AllAlternatives.Count) +
-                        boardDiscovery.SearchAnchors.Sum(candidate =>
-                            candidate.AllAlternatives.Count) +
-                        (boardDiscovery.Exact?.AllAlternatives.Count ?? 0);
-                    var destinationAlternatives = alightOptions.Sum(candidate =>
-                        candidate.AllAlternatives.Count);
-                    _telemetry.IncrementRouting(
-                        "board_access_alternatives",
-                        boardAlternatives);
-                    _telemetry.IncrementRouting(
-                        "destination_access_alternatives",
-                        destinationAlternatives);
                     _telemetry.ObserveRouting(
                         "access_alternatives_per_route",
                         boardAlternatives + destinationAlternatives);
-
                     var routeDiagnosticCounts =
                         accessDiscoveryDiagnostics.Counts() -
                         routeDiagnosticCountsBefore;
@@ -271,12 +360,14 @@ public partial class RoutingService
 
         // 0 transfers. Keep several boarding variants for each route instead
         // of collapsing to FirstOrDefault before Valhalla can confirm access.
-        foreach (var route in _routes)
+        foreach (var route in directRoutes)
         {
-            if (!_routeSamples.ContainsKey(route.RouteId))
+            if (!directConnectionsByRoute.TryGetValue(
+                    route.RouteId,
+                    out var routeDirectConnections))
                 continue;
 
-            foreach (var direct in directConnectionsByRoute[route.RouteId])
+            foreach (var direct in routeDirectConnections)
             {
                 var legs = new List<JourneyLegCandidate>
                 {
@@ -310,6 +401,7 @@ public partial class RoutingService
         var transferCandidates = FindTransferCandidates(
             boardAccessPrefixByRoute,
             destinationAccessByRoute,
+            originRoutes,
             cancellationToken).ToList();
         candidates.AddRange(transferCandidates);
         _telemetry.IncrementRouting("candidates_generated", candidates.Count);
@@ -699,6 +791,16 @@ public partial class RoutingService
 
         return Math.Max(0, effectiveLimit);
     }
+
+    /// <summary>
+    /// Walking access is the only radial transit-access rule. Tricycle feeder
+    /// reachability is added separately from actual TODA topology because the
+    /// current feeder behavior has no ride-distance cap; treating the
+    /// access-only trip limit as one would remove valid transit journeys.
+    /// </summary>
+    internal double GetConservativeSpatialAccessRadiusMeters(
+        double walkAccessDistanceMeters) =>
+        walkAccessDistanceMeters;
 
     private bool MeetsProvisionalHardConstraints(
         JourneyCandidate candidate,
