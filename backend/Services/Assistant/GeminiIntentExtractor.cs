@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text.Json;
+using backend.Services.Telemetry;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -12,13 +13,16 @@ public sealed class GeminiIntentExtractor : IAssistantIntentExtractor
     private static readonly TimeSpan ModelTimeout = TimeSpan.FromSeconds(15);
     private readonly ChatClient _client;
     private readonly ILogger<GeminiIntentExtractor> _logger;
+    private readonly IAiUsageMetricsStore _aiUsageMetrics;
     private readonly string _model;
 
     public GeminiIntentExtractor(
         IConfiguration configuration,
-        ILogger<GeminiIntentExtractor> logger)
+        ILogger<GeminiIntentExtractor> logger,
+        IAiUsageMetricsStore aiUsageMetrics)
     {
         _logger = logger;
+        _aiUsageMetrics = aiUsageMetrics;
         var apiKey = Environment.GetEnvironmentVariable(
             configuration["Gemini:ApiKeyEnvironmentVariable"] ?? "GEMINI_API_KEY");
 
@@ -83,6 +87,12 @@ public sealed class GeminiIntentExtractor : IAssistantIntentExtractor
             var response = await _client.CompleteChatAsync(
                 messages,
                 cancellationToken: timeout.Token);
+            var usage = response.Value.Usage;
+            _aiUsageMetrics.Record(
+                "intent",
+                _model,
+                usage?.InputTokenCount ?? 0,
+                usage?.OutputTokenCount ?? 0);
             _logger.LogDebug(
                 "AI.Intent.ApiCall.Completed ElapsedMs={ElapsedMs} Model={Model}",
                 ElapsedMilliseconds(started),
