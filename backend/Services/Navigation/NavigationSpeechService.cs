@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using backend.Repositories;
 using backend.Services.Localization;
+using backend.Services.Telemetry;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -33,7 +34,8 @@ public sealed class GeminiNavigationSpeechService(
     IConfiguration configuration,
     IHttpContextAccessor httpContextAccessor,
     IUserProfileRepository userProfiles,
-    ILogger<GeminiNavigationSpeechService> logger)
+    ILogger<GeminiNavigationSpeechService> logger,
+    IAiUsageMetricsStore aiUsageMetrics)
     : INavigationSpeechService
 {
     private const string DisableAiHeader = "X-Tuki-Disable-Ai";
@@ -60,8 +62,9 @@ public sealed class GeminiNavigationSpeechService(
         if (string.IsNullOrWhiteSpace(apiKey))
             return DeterministicNavigationSpeech.Phrase(localizedContext);
 
+        var model = configuration["Gemini:Model"] ?? "gemini-3.5-flash-lite";
         var client = new ChatClient(
-            configuration["Gemini:Model"] ?? "gemini-3.5-flash-lite",
+            model,
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
@@ -79,6 +82,13 @@ public sealed class GeminiNavigationSpeechService(
                 new SystemChatMessage(PromptFor(language)),
                 new UserChatMessage(JsonSerializer.Serialize(localizedContext))
             ], cancellationToken: timeout.Token);
+
+            var usage = response.Value.Usage;
+            aiUsageMetrics.Record(
+                "navigation",
+                model,
+                usage?.InputTokenCount ?? 0,
+                usage?.OutputTokenCount ?? 0);
 
             var text = response.Value.Content.FirstOrDefault()?.Text?.Trim();
             return NavigationSpeechTemplate.Normalize(text, localizedContext);
