@@ -151,23 +151,25 @@ The practical rollout strategy is to make a limited geographic area highly relia
 - `Tuki.Admin/Dockerfile` — container build for the admin web application.
 - `docker-compose.yml` — runs the backend and admin containers together for local/container deployments.
 
-### Docker
+### Production containers
 
-Build and run both ASP.NET Core applications from the repository root:
+The production Compose stack is designed for an Ubuntu 24.04 VM and includes
+the backend, admin application, SQL Server, Valhalla, Pelias, and Caddy.
+Production secrets are held in Ansible Vault. During deployment, Ansible
+renders service-specific files under `runtime/`, and Compose reads those files
+with `env_file`. The root `.env.example` is placeholder-only documentation and
+is not the production secret source. See `infra/ansible/README.md` for Vault
+editing and deployment commands.
 
-```bash
-ConnectionStrings__TukiDbConnection='<sql-server-connection-string>' \
-Valhalla__BaseUrl='https://your-valhalla-instance.example.com' \
-Pelias__BaseUrl='http://your-pelias-instance.example.com:4000' \
-docker compose up --build
-```
+Only Caddy publishes host ports 80 and 443. Backend (`5129`), admin (`5030`),
+SQL Server (`1433`), Valhalla (`8002`), Pelias (`4000`), and Pelias
+Elasticsearch remain on the private Compose network. SSH remains a host service
+on port 22.
 
-The backend is available on `http://localhost:5129` and the admin webapp on
-`http://localhost:5030`. The admin container reaches the backend at
-`http://backend:5129/` over the Compose network. Set `BACKEND_PORT` or
-`ADMIN_PORT` to change the host ports, and provide authentication/API secrets
-as environment variables (for example `GEMINI_API_KEY` and
-`Login__Users__0__Password`) rather than putting them in image layers.
+Persistent data defaults to `/opt/tuki/data`. Compose does not initialize,
+restore, overwrite, or delete the production database. Follow
+`infra/ansible/README.md` for the GCP deployment and separate migration
+workflow.
 
 ## Prerequisites
 

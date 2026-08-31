@@ -1,0 +1,13 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_HOSTNAME} {
+	encode zstd gzip
+	reverse_proxy backend:5129
+}
+
+{$ADMIN_HOSTNAME} {
+	encode zstd gzip
+	reverse_proxy admin:5030
+}
