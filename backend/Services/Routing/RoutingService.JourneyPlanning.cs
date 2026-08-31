@@ -351,14 +351,17 @@ public partial class RoutingService
             _accessDiscoveryDiagnostics = null;
             accessDiscoveryDiagnostics.Flush(_telemetry);
         }
+        var accessDiscoveryElapsedTicks =
+            Stopwatch.GetTimestamp() - accessDiscoveryStarted;
         _telemetry.ObserveRouting(
             "access_discovery_ms",
-            Stopwatch.GetElapsedTime(accessDiscoveryStarted).TotalMilliseconds);
+            StopwatchTicksToMilliseconds(accessDiscoveryElapsedTicks));
 
         var transferCandidateGenerationStarted = Stopwatch.GetTimestamp();
         var transferCandidateGenerationAllocatedBefore =
             GC.GetAllocatedBytesForCurrentThread();
         var candidates = new List<JourneyCandidate>();
+        var directCandidateGenerationStarted = Stopwatch.GetTimestamp();
 
         // 0 transfers. Keep several boarding variants for each route instead
         // of collapsing to FirstOrDefault before Valhalla can confirm access.
@@ -399,12 +402,29 @@ public partial class RoutingService
                         JeepneyBaseFarePesos)));
             }
         }
+        var directCandidateGenerationTicks =
+            Stopwatch.GetTimestamp() - directCandidateGenerationStarted;
+        _telemetry.ObserveRouting(
+            "direct_candidate_generation_ms",
+            StopwatchTicksToMilliseconds(directCandidateGenerationTicks));
 
+        var transferSearchStarted = Stopwatch.GetTimestamp();
+        var transferSearchAllocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         var transferCandidates = FindTransferCandidates(
             boardAccessPrefixByRoute,
             destinationAccessByRoute,
             originRoutes,
             cancellationToken).ToList();
+        var transferSearchTicks = Stopwatch.GetTimestamp() - transferSearchStarted;
+        _telemetry.ObserveRouting(
+            "transfer_search_ms",
+            StopwatchTicksToMilliseconds(transferSearchTicks));
+        _telemetry.ObserveRouting(
+            "transfer_search_allocated_bytes",
+            Math.Max(
+                0,
+                GC.GetAllocatedBytesForCurrentThread() -
+                transferSearchAllocatedBefore));
         candidates.AddRange(transferCandidates);
         _telemetry.IncrementRouting("candidates_generated", candidates.Count);
         _telemetry.IncrementRouting(
@@ -487,22 +507,30 @@ public partial class RoutingService
         var diversitySelectionStarted = Stopwatch.GetTimestamp();
         var ranked = SelectCandidatesToConfirmWithDiversity(
             distinctCandidates, planningPreferences);
+        var diversitySelectionTicks =
+            Stopwatch.GetTimestamp() - diversitySelectionStarted;
         var diversitySelectionAllocatedBytes = Math.Max(
             0,
             GC.GetAllocatedBytesForCurrentThread() -
             diversitySelectionAllocatedBytesBefore);
         _telemetry.ObserveRouting(
             "diversity_selection_ms",
-            Stopwatch.GetElapsedTime(diversitySelectionStarted).TotalMilliseconds);
+            StopwatchTicksToMilliseconds(diversitySelectionTicks));
         _telemetry.ObserveRouting(
             "diversity_selection_allocated_bytes",
             diversitySelectionAllocatedBytes);
+        var terminalCompletionFilterStarted = Stopwatch.GetTimestamp();
         var eligibleDirectCompletionEdges = directCompletionEdges
             .Where(MeetsMeasuredDirectHardConstraints)
             .ToList();
         var eligibleAccessPathCompletionEdges = accessPathCompletionEdges
             .Where(MeetsMeasuredAccessPathHardConstraints)
             .ToList();
+        var terminalCompletionFilterTicks =
+            Stopwatch.GetTimestamp() - terminalCompletionFilterStarted;
+        _telemetry.ObserveRouting(
+            "terminal_completion_filter_ms",
+            StopwatchTicksToMilliseconds(terminalCompletionFilterTicks));
         _telemetry.ObserveRouting(
             "hard_constraint_filter_ms",
             StopwatchTicksToMilliseconds(hardConstraintTicks));
@@ -520,9 +548,23 @@ public partial class RoutingService
             ranked.Count +
             eligibleDirectCompletionEdges.Count +
             eligibleAccessPathCompletionEdges.Count);
+        var candidateGenerationTicks =
+            Stopwatch.GetTimestamp() - candidateGenerationStarted;
+        _telemetry.ObserveRouting(
+            "candidate_generation_pipeline_overhead_ms",
+            StopwatchTicksToMilliseconds(Math.Max(
+                0,
+                candidateGenerationTicks -
+                accessDiscoveryElapsedTicks -
+                directCandidateGenerationTicks -
+                transferSearchTicks -
+                accessExpansionAndFilterTicks -
+                candidateDedupeAndKeyTicks -
+                diversitySelectionTicks -
+                terminalCompletionFilterTicks)));
         _telemetry.ObserveRouting(
             "candidate_generation_ms",
-            Stopwatch.GetElapsedTime(candidateGenerationStarted).TotalMilliseconds);
+            StopwatchTicksToMilliseconds(candidateGenerationTicks));
 
         // Preserve transit sources while confirming all terminal-edge kinds
         // through one boundary. Transit-specific semantic pruning still has

@@ -26,6 +26,33 @@ public sealed class TransferSearchPruningTests
             telemetry.Count("transfer_edge_state_combinations"));
     }
 
+    [Fact]
+    public async Task PlanTripsAsync_MaterializesOnlySelectedTransferExpansions()
+    {
+        var telemetry = new RecordingTelemetry();
+        var service = ProductionTopologyFixture.CreateService(
+            telemetry: telemetry);
+
+        var plans = await service.PlanTripsAsync(
+            ProductionTopologyFixture.Origin.Latitude,
+            ProductionTopologyFixture.Origin.Longitude,
+            ProductionTopologyFixture.Destination.Latitude,
+            ProductionTopologyFixture.Destination.Longitude);
+
+        Assert.NotEmpty(plans);
+        var considered = telemetry.Count(
+            "transfer_expansion_descriptors_considered");
+        var materialized = telemetry.Count(
+            "transfer_expansion_states_materialized");
+        Assert.True(considered > materialized);
+        Assert.Equal(
+            considered - materialized,
+            telemetry.Count("transfer_expansion_states_never_materialized"));
+        Assert.Equal(
+            telemetry.Count("transfer_frontier_states_selected"),
+            materialized);
+    }
+
     private sealed class RecordingTelemetry : ITukiTelemetry
     {
         private readonly Dictionary<string, long> _counts = [];

@@ -55,6 +55,14 @@ public partial class RoutingService
         var destinationMaterializationAllocatedBytes = 0L;
         var destinationPrefixesCreated = 0L;
         var destinationPrefixReuses = 0L;
+        var transferFrontierBuildTicks = 0L;
+        var transferFrontierBuildAllocatedBytes = 0L;
+        var destinationPreparationTicks = 0L;
+        var destinationPreparationAllocatedBytes = 0L;
+        var destinationSelectionTicks = 0L;
+        var destinationSelectionAllocatedBytes = 0L;
+        var transferExpansionDescriptorsConsidered = 0L;
+        var transferFrontierStatesSelected = 0L;
         var routeNames = _routes.ToDictionary(
             route => route.RouteId,
             route => route.RouteName);
@@ -165,10 +173,19 @@ public partial class RoutingService
                 if (depth >= MaxTransfers)
                     break;
 
+                var frontierBuildStarted = Stopwatch.GetTimestamp();
+                var frontierBuildAllocatedBefore =
+                    GC.GetAllocatedBytesForCurrentThread();
                 frontier = BuildNextFrontier(
                     frontier,
                     perLevelLimit,
                     MaxTransfers - depth - 1);
+                transferFrontierBuildAllocatedBytes += Math.Max(
+                    0,
+                    GC.GetAllocatedBytesForCurrentThread() -
+                    frontierBuildAllocatedBefore);
+                transferFrontierBuildTicks +=
+                    Stopwatch.GetTimestamp() - frontierBuildStarted;
             }
         }
 
@@ -264,6 +281,39 @@ public partial class RoutingService
             _telemetry.ObserveRouting(
                 "destination_materialization_allocated_bytes",
                 destinationMaterializationAllocatedBytes);
+            _telemetry.ObserveRouting(
+                "transfer_frontier_build_ms",
+                transferFrontierBuildTicks * 1_000.0 / Stopwatch.Frequency);
+            _telemetry.ObserveRouting(
+                "transfer_frontier_build_allocated_bytes",
+                transferFrontierBuildAllocatedBytes);
+            _telemetry.ObserveRouting(
+                "destination_completion_preparation_ms",
+                destinationPreparationTicks * 1_000.0 / Stopwatch.Frequency);
+            _telemetry.ObserveRouting(
+                "destination_completion_preparation_allocated_bytes",
+                destinationPreparationAllocatedBytes);
+            _telemetry.ObserveRouting(
+                "destination_completion_selection_ms",
+                destinationSelectionTicks * 1_000.0 / Stopwatch.Frequency);
+            _telemetry.ObserveRouting(
+                "destination_completion_selection_allocated_bytes",
+                destinationSelectionAllocatedBytes);
+            _telemetry.IncrementRouting(
+                "transfer_expansion_descriptors_considered",
+                transferExpansionDescriptorsConsidered);
+            _telemetry.IncrementRouting(
+                "transfer_frontier_states_selected",
+                transferFrontierStatesSelected);
+            _telemetry.IncrementRouting(
+                "transfer_expansion_states_materialized",
+                transferFrontierStatesSelected);
+            _telemetry.IncrementRouting(
+                "transfer_expansion_states_never_materialized",
+                Math.Max(
+                    0,
+                    transferExpansionDescriptorsConsidered -
+                    transferFrontierStatesSelected));
         }
 
         yield break;
@@ -399,13 +449,15 @@ public partial class RoutingService
             // independent of repository/interchange enumeration order. Do not
             // publish unselected states to the cross-frontier dominance table:
             // a state that never entered search must not suppress a later one.
-            var bestByDominanceKey = new Dictionary<string, TransferExpansion>(
+            var bestByDominanceKey =
+                new Dictionary<string, TransferExpansionDescriptor>(
                 StringComparer.Ordinal);
             // Exact step occurrences (including the exact walk-distance bits)
             // determine edge eligibility. Origin access is intentionally not
             // part of this cache key because it cannot change future graph
-            // reachability; every access state still builds its own child and
-            // remains available to diversity selection.
+            // reachability. Every access state still contributes its own
+            // descriptor; only the bounded frontier winners pay to copy the
+            // full step and visited-state collections.
             var viableEdgesByPath = new Dictionary<
                 string,
                 IReadOnlyList<RouteInterchange>>(StringComparer.Ordinal);
@@ -437,11 +489,12 @@ public partial class RoutingService
 
                 foreach (var edge in viableEdges)
                 {
-                    var expansion = ExpandState(state, edge);
+                    transferExpansionDescriptorsConsidered++;
+                    var expansion = DescribeExpansion(state, edge);
                     if (dominance.TryGetValue(
                             expansion.DominanceKey,
                             out var priorCost) &&
-                        priorCost <= expansion.State.AccumulatedCost)
+                        priorCost <= expansion.AccumulatedCost)
                     {
                         transferStatesRejectedDominated++;
                         continue;
@@ -472,13 +525,13 @@ public partial class RoutingService
                 .Select(group => (
                     RouteId: group.Key,
                     BestCost: group.Min(expansion =>
-                        expansion.State.AccumulatedCost),
+                        expansion.AccumulatedCost),
                     States: BuildOccurrenceRoundRobin(group)))
                 .OrderBy(group => group.BestCost)
                 .ThenBy(group => group.RouteId, StringComparer.Ordinal)
                 .ToList();
 
-            var selected = new List<TransferExpansion>();
+            var selected = new List<TransferExpansionDescriptor>();
             while (selected.Count < maxStates)
             {
                 var addedAny = false;
@@ -500,34 +553,40 @@ public partial class RoutingService
 
             foreach (var expansion in selected)
                 dominance[expansion.DominanceKey] =
-                    expansion.State.AccumulatedCost;
+                    expansion.AccumulatedCost;
             transferStatesRejectedFrontierLimit +=
                 bestByDominanceKey.Count - selected.Count;
+            transferFrontierStatesSelected += selected.Count;
 
-            return selected.Select(expansion => expansion.State).ToList();
+            var materialized = new List<TransferSearchState>(selected.Count);
+            foreach (var expansion in selected)
+                materialized.Add(MaterializeExpansion(expansion));
+            return materialized;
         }
 
-        Queue<TransferExpansion> BuildOccurrenceRoundRobin(
-            IEnumerable<TransferExpansion> routeExpansions)
+        Queue<TransferExpansionDescriptor> BuildOccurrenceRoundRobin(
+            IEnumerable<TransferExpansionDescriptor> routeExpansions)
         {
             var occurrenceQueues = routeExpansions
                 .GroupBy(expansion => expansion.Bucket)
                 .OrderBy(group => group.Min(expansion =>
-                    expansion.State.AccumulatedCost))
+                    expansion.AccumulatedCost))
                 .ThenBy(group => group.Key.FromRouteId, StringComparer.Ordinal)
                 .ThenBy(group => group.Key.OwnIndex)
                 .ThenBy(group => group.Key.OtherIndex)
-                .Select(group => new Queue<TransferExpansion>(group
-                    .OrderBy(expansion => expansion.State.AccumulatedCost)
-                    .ThenBy(expansion => expansion.State.TransferWalkingMeters)
+                .Select(group => new Queue<TransferExpansionDescriptor>(group
+                    .OrderBy(expansion => expansion.AccumulatedCost)
+                    .ThenBy(expansion => expansion.TransferWalkingMeters)
                     .ThenBy(expansion => GetAccessProgressMeters(
-                        expansion.State.BoardAccess))
-                    .ThenBy(expansion => expansion.State.BoardAccess.Anchor.Latitude)
-                    .ThenBy(expansion => expansion.State.BoardAccess.Anchor.Longitude)
-                    .ThenBy(expansion => TransferPathKey(expansion.State),
+                        expansion.Parent.BoardAccess))
+                    .ThenBy(expansion =>
+                        expansion.Parent.BoardAccess.Anchor.Latitude)
+                    .ThenBy(expansion =>
+                        expansion.Parent.BoardAccess.Anchor.Longitude)
+                    .ThenBy(GetTransferExpansionPathKey,
                         StringComparer.Ordinal)))
                 .ToList();
-            var result = new Queue<TransferExpansion>();
+            var result = new Queue<TransferExpansionDescriptor>();
 
             while (true)
             {
@@ -604,13 +663,10 @@ public partial class RoutingService
             return viable;
         }
 
-        TransferExpansion ExpandState(
+        TransferExpansionDescriptor DescribeExpansion(
             TransferSearchState state,
             RouteInterchange edge)
         {
-            var nextProgressState = new RouteProgressState(
-                edge.OtherRouteId,
-                edge.OtherIndex);
             var totalWalking = state.TransferWalkingMeters + edge.DistanceMeters;
             var accumulatedCost = state.AccumulatedCost + GeneralizedCostFromWalking(
                 edge.DistanceMeters / WalkingSpeedMetersPerSecond,
@@ -619,6 +675,28 @@ public partial class RoutingService
             var key = $"{edge.OtherRouteId}:{edge.OtherIndex}:{state.Steps.Count + 1}:" +
                 $"{AccessOccurrenceKey(state.BoardAccess)}:" +
                 string.Join(',', state.VisitedRoutes.OrderBy(value => value));
+
+            return new TransferExpansionDescriptor(
+                state,
+                edge,
+                new TransferExpansionBucket(
+                    state.CurrentRouteId,
+                    edge.OwnIndex,
+                    edge.OtherRouteId,
+                    edge.OtherIndex),
+                key,
+                totalWalking,
+                accumulatedCost);
+        }
+
+        TransferSearchState MaterializeExpansion(
+            TransferExpansionDescriptor expansion)
+        {
+            var state = expansion.Parent;
+            var edge = expansion.Edge;
+            var nextProgressState = new RouteProgressState(
+                edge.OtherRouteId,
+                edge.OtherIndex);
             var child = new TransferSearchState(
                 edge.OtherRouteId,
                 edge.OtherIndex,
@@ -628,45 +706,50 @@ public partial class RoutingService
                     { edge.OtherRouteId },
                 new HashSet<RouteProgressState>(state.VisitedProgressStates)
                     { nextProgressState },
-                totalWalking,
-                accumulatedCost);
+                expansion.TransferWalkingMeters,
+                expansion.AccumulatedCost);
             transferStatesConstructed++;
-
-            return new TransferExpansion(
-                child,
-                new TransferExpansionBucket(
-                    state.CurrentRouteId,
-                    edge.OwnIndex,
-                    edge.OtherRouteId,
-                    edge.OtherIndex),
-                key);
+            return child;
         }
 
         static int CompareExpansions(
-            TransferExpansion left,
-            TransferExpansion right)
+            TransferExpansionDescriptor left,
+            TransferExpansionDescriptor right)
         {
-            var cost = left.State.AccumulatedCost.CompareTo(
-                right.State.AccumulatedCost);
+            var cost = left.AccumulatedCost.CompareTo(right.AccumulatedCost);
             if (cost != 0)
                 return cost;
 
-            var walking = left.State.TransferWalkingMeters.CompareTo(
-                right.State.TransferWalkingMeters);
+            var walking = left.TransferWalkingMeters.CompareTo(
+                right.TransferWalkingMeters);
             if (walking != 0)
                 return walking;
 
             return StringComparer.Ordinal.Compare(
-                TransferPathKey(left.State),
-                TransferPathKey(right.State));
+                GetTransferExpansionPathKey(left),
+                GetTransferExpansionPathKey(right));
         }
 
-        static string TransferPathKey(TransferSearchState state) =>
-            string.Join('|', state.Steps.Select(step => string.Join(':',
-                step.FromRouteId,
-                step.Edge.OwnIndex,
-                step.Edge.OtherRouteId,
-                step.Edge.OtherIndex))) +
+        static string GetTransferExpansionPathKey(
+            TransferExpansionDescriptor expansion) =>
+            expansion.CachedPathKey ??= TransferExpansionPathKey(
+                expansion.Parent,
+                expansion.Edge);
+
+        static string TransferExpansionPathKey(
+            TransferSearchState state,
+            RouteInterchange edge) =>
+            string.Join('|', state.Steps
+                .Select(step => string.Join(':',
+                    step.FromRouteId,
+                    step.Edge.OwnIndex,
+                    step.Edge.OtherRouteId,
+                    step.Edge.OtherIndex))
+                .Append(string.Join(':',
+                    state.CurrentRouteId,
+                    edge.OwnIndex,
+                    edge.OtherRouteId,
+                    edge.OtherIndex))) +
             $"|{AccessOccurrenceKey(state.BoardAccess)}";
 
         static string TransferPathStructureKey(TransferSearchState state) =>
@@ -681,6 +764,8 @@ public partial class RoutingService
             IReadOnlyList<TransferSearchState> states,
             int maxCandidates)
         {
+            var preparationStarted = Stopwatch.GetTimestamp();
+            var preparationAllocatedBefore = GC.GetAllocatedBytesForCurrentThread();
             var buckets = new List<IReadOnlyList<DestinationCompletionDescriptor>>(
                 states.Count);
             foreach (var state in states)
@@ -709,13 +794,34 @@ public partial class RoutingService
                 buckets.Add(descriptors);
             }
 
-            return LazyRoundRobinSelector.Select(
-                buckets,
-                maxCandidates,
-                MaterializeDestinationCompletion,
-                GetJourneyCandidateKey,
-                cancellationToken,
-                () => transferCandidatesRejectedDuplicate++);
+            destinationPreparationAllocatedBytes += Math.Max(
+                0,
+                GC.GetAllocatedBytesForCurrentThread() -
+                preparationAllocatedBefore);
+            destinationPreparationTicks +=
+                Stopwatch.GetTimestamp() - preparationStarted;
+
+            var selectionStarted = Stopwatch.GetTimestamp();
+            var selectionAllocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+            try
+            {
+                return LazyRoundRobinSelector.Select(
+                    buckets,
+                    maxCandidates,
+                    MaterializeDestinationCompletion,
+                    GetJourneyCandidateKey,
+                    cancellationToken,
+                    () => transferCandidatesRejectedDuplicate++);
+            }
+            finally
+            {
+                destinationSelectionAllocatedBytes += Math.Max(
+                    0,
+                    GC.GetAllocatedBytesForCurrentThread() -
+                    selectionAllocatedBefore);
+                destinationSelectionTicks +=
+                    Stopwatch.GetTimestamp() - selectionStarted;
+            }
         }
 
         List<DestinationCompletionDescriptor>
@@ -949,10 +1055,24 @@ public partial class RoutingService
         int OwnIndex,
         string OtherRouteId,
         int OtherIndex);
-    private sealed record TransferExpansion(
-        TransferSearchState State,
-        TransferExpansionBucket Bucket,
-        string DominanceKey);
+    private sealed class TransferExpansionDescriptor(
+        TransferSearchState parent,
+        RouteInterchange edge,
+        TransferExpansionBucket bucket,
+        string dominanceKey,
+        double transferWalkingMeters,
+        double accumulatedCost)
+    {
+        public TransferSearchState Parent { get; } = parent;
+        public RouteInterchange Edge { get; } = edge;
+        public TransferExpansionBucket Bucket { get; } = bucket;
+        public string DominanceKey { get; } = dominanceKey;
+        public double TransferWalkingMeters { get; } = transferWalkingMeters;
+        public double AccumulatedCost { get; } = accumulatedCost;
+        // This is the unchanged final ordinal tie-break. Cache it only when a
+        // tie actually reaches that comparator dimension.
+        public string? CachedPathKey { get; set; }
+    }
     // These arrays are completely populated before the prefix is published to
     // any descriptor and are never mutated afterward. The prefix remains
     // request-local, so reuse cannot introduce cross-request mutable state.
