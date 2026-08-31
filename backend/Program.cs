@@ -48,6 +48,17 @@ if (!Uri.TryCreate(valhallaBaseUrl, UriKind.Absolute, out var valhallaUri) ||
         "Set Valhalla__BaseUrl in the environment.");
 }
 
+builder.Services.AddSingleton<IValhallaConcurrencyGate, ValhallaConcurrencyGate>();
+builder.Services.AddOptions<ValhallaResultCacheOptions>()
+    .Bind(builder.Configuration.GetSection(
+        ValhallaResultCacheOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        "Valhalla result cache configuration is invalid.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<ValhallaResultCache>();
+builder.Services.AddSingleton<IValhallaResultCache>(services =>
+    services.GetRequiredService<ValhallaResultCache>());
 builder.Services.AddHttpClient<IValhallaService, ValhallaService>(client =>
 {
     client.BaseAddress = valhallaUri;
@@ -61,6 +72,18 @@ builder.Services.AddHttpClient("ValhallaHealth", client =>
 builder.Services.AddOptions<RoutingOptions>()
     .Bind(builder.Configuration.GetSection(RoutingOptions.SectionName))
     .Validate(options => options.IsValid(out _), "Routing configuration is invalid.")
+    .ValidateOnStart();
+builder.Services.AddOptions<RoutingAdmissionOptions>()
+    .Bind(builder.Configuration.GetSection(RoutingAdmissionOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        "Routing admission-control configuration is invalid.")
+    .ValidateOnStart();
+builder.Services.AddOptions<RoutingBenchmarkNetworkOptions>()
+    .Bind(builder.Configuration.GetSection(RoutingBenchmarkNetworkOptions.SectionName))
+    .Validate(
+        options => options.IsValid(out _),
+        "Routing benchmark network configuration is invalid.")
     .ValidateOnStart();
 builder.Services.AddOptions<NavigationOptions>()
     .Bind(builder.Configuration.GetSection(NavigationOptions.SectionName))
@@ -165,13 +188,20 @@ builder.Services.AddScoped<ITricyclePointSubmissionPublishingService, TricyclePo
 builder.Services.AddSingleton<ITricycleProofStorage, FileSystemTricycleProofStorage>();
 builder.Services.AddScoped<ITransportRouteService, TransportRouteService>();
 builder.Services.AddScoped<IRouteGeneratorService, RouteGeneratorService>();
-builder.Services.AddScoped<IAssistantIntentExtractor, NemotronIntentExtractor>();
+builder.Services.AddScoped<IAssistantIntentExtractor, GeminiIntentExtractor>();
 builder.Services.AddScoped<IAssistantPlaceResolver, GoogleAssistantPlaceResolver>();
 builder.Services.AddScoped<ITukiAssistantService, TukiAssistantService>();
 builder.Services.AddScoped<IJourneyPlanPersistenceService, JourneyPlanPersistenceService>();
 builder.Services.AddSingleton<ITukiTelemetry, TukiTelemetry>();
+builder.Services.AddSingleton<IAiUsageMetricsStore, AiUsageMetricsStore>();
 builder.Services.AddSingleton<SystemResourceMetricsSampler>();
-builder.Services.AddScoped<IRoutingService, TransferFallbackRoutingService>();
+builder.Services.AddSingleton<RoutingNetworkSnapshotProvider>();
+builder.Services.AddSingleton<RoutingBenchmarkNetworkFixtureProvider>();
+builder.Services.AddSingleton<IRoutingNetworkChangeNotifier>(services =>
+    services.GetRequiredService<RoutingNetworkSnapshotProvider>());
+builder.Services.AddSingleton<IRoutingAdmissionController, RoutingAdmissionController>();
+builder.Services.AddScoped<IRoutingPlanningPipeline, TransferFallbackRoutingService>();
+builder.Services.AddScoped<IRoutingService, RoutingAdmissionControlledService>();
 builder.Services.AddScoped<IJourneyPlanningFacadeService, JourneyPlanningFacadeService>();
 builder.Services.AddSingleton<ITripSessionStateMachine, TripSessionStateMachine>();
 builder.Services.AddScoped<ITripSessionService, TripSessionService>();
@@ -183,7 +213,7 @@ builder.Services.AddScoped<ILocationTrackingService, LocationTrackingService>();
 builder.Services.AddScoped<ILandmarkService, LandmarkService>();
 builder.Services.AddScoped<ILandmarkCorridorPrefetchService, LandmarkCorridorPrefetchService>();
 builder.Services.AddScoped<IReroutingService, ReroutingService>();
-builder.Services.AddScoped<INavigationSpeechService, NemotronNavigationSpeechService>();
+builder.Services.AddScoped<INavigationSpeechService, GeminiNavigationSpeechService>();
 builder.Services.AddScoped<INavigationFacadeService, NavigationFacadeService>();
 builder.Services.AddSingleton<IServiceArea, BoundingBoxServiceArea>();
 builder.Services.AddSingleton<ITripAreaValidator, TripAreaValidator>();
@@ -229,6 +259,13 @@ if (app.Environment.IsDevelopment())
 app.UseCors("Frontend");
 app.Use(async (context, next) =>
 {
+    var telemetry = context.RequestServices.GetRequiredService<ITukiTelemetry>();
+    using var routingPlan = context.Request.Method == HttpMethods.Post &&
+        context.Request.Path.Equals("/api/journeys/plan")
+            ? telemetry.BeginRoutingPlan(
+                "POST /api/journeys/plan",
+                context.RequestAborted)
+            : null;
     var stopwatch = Stopwatch.StartNew();
     try
     {
@@ -238,7 +275,6 @@ app.Use(async (context, next) =>
     {
         stopwatch.Stop();
         var elapsedMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
-        var telemetry = context.RequestServices.GetRequiredService<ITukiTelemetry>();
         telemetry.RecordRequest(
             context.Request.Path,
             context.Response.StatusCode,
@@ -249,6 +285,7 @@ app.Use(async (context, next) =>
             elapsedMilliseconds);
     }
 });
+app.UseMiddleware<RoutingAdmissionExceptionMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -2,13 +2,15 @@ using backend.Helpers;
 using backend.Models.Database;
 using backend.Models.JeepneyRouteManagement;
 using backend.Repositories;
+using backend.Services.Routing;
 
 namespace backend.Services.Transportation;
 
 public sealed class AdminJeepneyRouteManagementService(
     ITransportRouteRepository routeRepository,
     ITransportModeRepository transportModeRepository,
-    IRouteGeneratorService? routeGeneratorService = null) : IAdminJeepneyRouteManagementService
+    IRouteGeneratorService? routeGeneratorService = null,
+    IRoutingNetworkChangeNotifier? routingNetwork = null) : IAdminJeepneyRouteManagementService
 {
     public async Task<IReadOnlyList<AdminJeepneyRouteResponse>> GetAllAsync(
         bool includeActive = true,
@@ -321,6 +323,7 @@ public sealed class AdminJeepneyRouteManagementService(
                 AdminJeepneyRouteMutationStatus.Conflict,
                 "The route changed or is no longer publishable. Refresh its details and verify readiness again.");
 
+        routingNetwork?.Invalidate("jeepney route draft published");
         return AdminJeepneyRouteMutationResult.Success(Map(published));
     }
 

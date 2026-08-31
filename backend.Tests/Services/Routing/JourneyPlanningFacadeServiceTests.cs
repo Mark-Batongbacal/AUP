@@ -2,12 +2,46 @@ using backend.Models.Database;
 using backend.Models.Routing;
 using backend.Services.Assistant;
 using backend.Services.Routing;
+using backend.Services.Telemetry;
 using Moq;
 
 namespace backend.Tests.Services.Routing;
 
 public sealed class JourneyPlanningFacadeServiceTests
 {
+    [Fact]
+    public async Task Plan_WhenAdmissionIsRejected_PreservesOverloadOutcome()
+    {
+        var routing = new Mock<IRoutingService>();
+        routing.Setup(item => item.PlanTripsAsync(
+                15, 120, 15.1, 120.1, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new RoutingAdmissionRejectedException(
+                RoutingAdmissionRejectionReason.QueueFull,
+                retryAfterSeconds: 5));
+        var telemetryScope = new Mock<IRoutingTelemetryScope>();
+        var telemetry = new Mock<ITukiTelemetry>();
+        telemetry.Setup(item => item.BeginRoutingPlan(
+                "JourneyPlanningFacadeService",
+                It.IsAny<CancellationToken>()))
+            .Returns(telemetryScope.Object);
+        telemetry.Setup(item => item.MeasureRouting("routing_service_ms"))
+            .Returns(Mock.Of<IDisposable>());
+        var service = new JourneyPlanningFacadeService(
+            routing.Object,
+            Mock.Of<IJourneyPlanPersistenceService>(),
+            telemetry: telemetry.Object);
+
+        await Assert.ThrowsAsync<RoutingAdmissionRejectedException>(() =>
+            service.PlanAsync(
+                Guid.Empty,
+                new JourneyPlanRequest(
+                    15, 120, "Market", 15.1, 120.1)));
+
+        telemetryScope.Verify(
+            item => item.Complete("admission_rejected"),
+            Times.Once);
+    }
+
     [Fact]
     public async Task Plan_PersistsDeterministicPlansAndReturnsStartableRecommendationIds()
     {

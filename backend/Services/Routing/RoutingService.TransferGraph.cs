@@ -114,7 +114,7 @@ public partial class RoutingService
 
         List<TransferSearchState> BuildOriginStates(
             string startRouteId,
-            List<RouteInterchange> firstEdges)
+            IReadOnlyList<RouteInterchange> firstEdges)
         {
             var states = new Dictionary<string, TransferSearchState>(
                 StringComparer.Ordinal);
@@ -166,7 +166,7 @@ public partial class RoutingService
 
         List<TransferSearchState> BuildInitialFrontier(
             string startRouteId,
-            List<RouteInterchange> firstEdges)
+            IReadOnlyList<RouteInterchange> firstEdges)
         {
             var states = new List<TransferSearchState>();
 

@@ -5,11 +5,11 @@ namespace backend.Services.Routing;
 
 public partial class RoutingService
 {
-    private Dictionary<string, List<RouteInterchange>>
+    private IReadOnlyDictionary<string, IReadOnlyList<RouteInterchange>>
         BuildInterchangeGraph(
-            Dictionary<string,
-                List<(double Latitude, double Longitude)>> routeSamples,
-            Dictionary<string, string> routeNamesById)
+            IReadOnlyDictionary<string,
+                IReadOnlyList<(double Latitude, double Longitude)>> routeSamples,
+            IReadOnlyDictionary<string, string> routeNamesById)
     {
         var edgesByRoute =
             new Dictionary<string, List<RouteInterchange>>();
@@ -141,7 +141,10 @@ public partial class RoutingService
             AddSelfInterchanges(routeIds[i]);
         }
 
-        return edgesByRoute;
+        return edgesByRoute.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<RouteInterchange>)pair.Value,
+            StringComparer.Ordinal);
 
         void AddSelfInterchanges(string routeId)
         {
@@ -535,7 +538,7 @@ public partial class RoutingService
         string RouteId,
         NearbyJeepneyResponse Response);
 
-    private sealed record FullRouteGeometry(
+    internal sealed record FullRouteGeometry(
         List<(double Latitude, double Longitude)> Points,
         double[] CumulativeMeters);
 
@@ -567,7 +570,7 @@ public partial class RoutingService
         int IndexB,
         double DistanceMeters);
 
-    private sealed record RouteInterchange(
+    internal sealed record RouteInterchange(
         int OwnIndex,
         string OtherRouteId,
         string OtherRouteName,

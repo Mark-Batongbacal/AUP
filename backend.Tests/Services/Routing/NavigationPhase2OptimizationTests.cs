@@ -230,6 +230,235 @@ public sealed class NavigationPhase2OptimizationTests
             reversed.Select(candidate => candidate.TotalGeneralizedCostPesos).Order());
     }
 
+    [Theory]
+    [InlineData("direct")]
+    [InlineData("one-transfer")]
+    [InlineData("two-transfer")]
+    [InlineData("loop-self-transfer")]
+    [InlineData("tricycle-access")]
+    [InlineData("preference-fastest-less-walking")]
+    [InlineData("preference-cheapest-more-walking")]
+    [InlineData("preference-efficient")]
+    public void D2Selection_MatchesD1AndReferenceCandidateKeysInExactOrder(
+        string scenario)
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 20);
+        var (candidates, preferences) = BuildSelectionParityScenario(scenario);
+
+        var reference = service.SelectCandidatesToConfirmWithDiversityReference(
+            candidates,
+            preferences);
+        var d1 = service.SelectCandidatesToConfirmWithDiversityD1Reference(
+            candidates,
+            preferences);
+        var d2 = service.SelectCandidatesToConfirmWithDiversity(
+            candidates,
+            preferences);
+
+        var referenceKeys = reference
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+        var d1Keys = d1
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+        var d2Keys = d2
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+
+        Assert.Equal(referenceKeys, d1Keys);
+        Assert.Equal(d1Keys, d2Keys);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(JourneyOptimizationPreference.Fastest)]
+    [InlineData(JourneyOptimizationPreference.Cheapest)]
+    [InlineData(JourneyOptimizationPreference.Efficient)]
+    public void D2Selection_MatchesD1ForLargeTiedCandidateSets(
+        JourneyOptimizationPreference? optimizationPreference)
+    {
+        const int candidateCount = 1_200;
+        var service = CreateSelectionService(maxCandidatesToConfirm: 300);
+        var random = new Random(7_613);
+        var candidates = Enumerable.Range(0, candidateCount)
+            .Select(index =>
+            {
+                var originMode = index % 5 == 0
+                    ? AccessMode.Trike
+                    : AccessMode.Walk;
+                var candidate = BuildSelectionCandidate(
+                    [
+                        $"R-{index % 41:D2}",
+                        $"T-{index % 17:D2}",
+                        $"U-{index % 7:D2}"
+                    ],
+                    originMode,
+                    originMode == AccessMode.Trike
+                        ? $"TODA-{index % 23:D2}"
+                        : null,
+                    provisionalCost: 20 + index % 9,
+                    alightProgressOffsetMeters: index * 0.137);
+                return candidate with
+                {
+                    OriginAccess = candidate.OriginAccess with
+                    {
+                        WalkDistanceMeters = 25 + index % 31,
+                        WalkTimeSeconds = 20 + index % 13
+                    }
+                };
+            })
+            .OrderBy(_ => random.Next())
+            .ToList();
+        var preferences = optimizationPreference is null
+            ? null
+            : new JourneyPlanningPreferences(
+                WalkingPreference: JourneyWalkingPreference.Less,
+                OptimizationPreference: optimizationPreference.Value);
+
+        var d1Keys = service
+            .SelectCandidatesToConfirmWithDiversityD1Reference(
+                candidates,
+                preferences)
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+        var d2Keys = service
+            .SelectCandidatesToConfirmWithDiversity(candidates, preferences)
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+
+        Assert.Equal(d1Keys, d2Keys);
+    }
+
+    [Fact]
+    public void D2Selection_DuplicateJourneyKeyFallsBackToExactD1Order()
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 20);
+        var duplicate = BuildSelectionCandidate(
+            ["DUPLICATE"],
+            AccessMode.Walk,
+            todaId: null,
+            provisionalCost: 1);
+        var candidates = Enumerable.Range(0, 40)
+            .Select(index => BuildSelectionCandidate(
+                [$"DISTINCT-{index:D2}"],
+                AccessMode.Walk,
+                todaId: null,
+                provisionalCost: 10 + index))
+            .Prepend(duplicate)
+            .Prepend(duplicate)
+            .ToList();
+
+        var d1Keys = service
+            .SelectCandidatesToConfirmWithDiversityD1Reference(candidates)
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+        var d2Keys = service
+            .SelectCandidatesToConfirmWithDiversity(candidates)
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+
+        Assert.Equal(d1Keys, d2Keys);
+    }
+
+    [Fact]
+    public void D2Selection_MatchesD1WhenPhysicalBucketsExhaustUnevenly()
+    {
+        var service = CreateSelectionService(maxCandidatesToConfirm: 20);
+        var sparseBucket = BuildSelectionCandidate(
+            ["SPARSE"],
+            AccessMode.Walk,
+            todaId: null,
+            provisionalCost: 1);
+        var denseBucket = Enumerable.Range(0, 40)
+            .Select(index => BuildSelectionCandidate(
+                ["DENSE"],
+                AccessMode.Walk,
+                todaId: null,
+                provisionalCost: 10 + index,
+                alightProgressOffsetMeters: index + 1))
+            .ToList();
+        List<RoutingService.JourneyCandidate> candidates =
+        [
+            sparseBucket,
+            .. denseBucket
+        ];
+
+        var d1Keys = service
+            .SelectCandidatesToConfirmWithDiversityD1Reference(candidates)
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+        var d2Keys = service
+            .SelectCandidatesToConfirmWithDiversity(candidates)
+            .Select(RoutingService.GetJourneyCandidateSelectionKey)
+            .ToList();
+
+        Assert.Equal(d1Keys, d2Keys);
+    }
+
+    private static (List<RoutingService.JourneyCandidate> Candidates,
+        JourneyPlanningPreferences? Preferences)
+        BuildSelectionParityScenario(string scenario)
+    {
+        JourneyPlanningPreferences? preferences = scenario switch
+        {
+            "preference-fastest-less-walking" => new JourneyPlanningPreferences(
+                MaxFarePesos: 150,
+                MaxWalkingMeters: 2_000,
+                WalkingPreference: JourneyWalkingPreference.Less,
+                OptimizationPreference: JourneyOptimizationPreference.Fastest),
+            "preference-cheapest-more-walking" => new JourneyPlanningPreferences(
+                MaxFarePesos: 150,
+                MaxWalkingMeters: 2_000,
+                WalkingPreference: JourneyWalkingPreference.More,
+                OptimizationPreference: JourneyOptimizationPreference.Cheapest),
+            "preference-efficient" => new JourneyPlanningPreferences(
+                MaxFarePesos: 150,
+                MaxWalkingMeters: 2_000,
+                OptimizationPreference: JourneyOptimizationPreference.Efficient),
+            _ => null
+        };
+
+        var candidates = Enumerable.Range(0, 80)
+            .Select(index =>
+            {
+                IReadOnlyList<string> routeIds = scenario switch
+                {
+                    "direct" => [$"DIRECT-{index % 9:D2}"],
+                    "one-transfer" =>
+                        [$"ONE-A-{index % 7:D2}", $"ONE-B-{index % 5:D2}"],
+                    "two-transfer" =>
+                    [
+                        $"TWO-A-{index % 7:D2}",
+                        $"TWO-B-{index % 5:D2}",
+                        $"TWO-C-{index % 3:D2}"
+                    ],
+                    "loop-self-transfer" =>
+                        [$"LOOP-{index % 4:D2}", $"LOOP-{index % 4:D2}"],
+                    "tricycle-access" =>
+                        [$"TRIKE-A-{index % 6:D2}", $"TRIKE-B-{index % 4:D2}"],
+                    "preference-fastest-less-walking" or
+                    "preference-cheapest-more-walking" or
+                    "preference-efficient" =>
+                        [$"PREF-A-{index % 8:D2}", $"PREF-B-{index % 6:D2}"],
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(scenario),
+                        scenario,
+                        "Unknown selection parity scenario")
+                };
+
+                var usesTrike = scenario == "tricycle-access" && index % 3 != 0;
+                return BuildSelectionCandidate(
+                    routeIds,
+                    usesTrike ? AccessMode.Trike : AccessMode.Walk,
+                    usesTrike ? $"TODA-{index % 5:D2}" : null,
+                    provisionalCost: 10 + index % 11,
+                    alightProgressOffsetMeters: index * 7.25);
+            })
+            .ToList();
+
+        return (candidates, preferences);
+    }
+
     private static RoutingService CreateTransferService()
     {
         var routes = new List<TransportRoute>

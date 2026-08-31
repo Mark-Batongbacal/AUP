@@ -193,7 +193,7 @@ public partial class RoutingService : IJourneyGeometryEnricher
     {
         try
         {
-            var response = await _valhallaService.GetRouteAsync(
+            var response = await GetRouteAsync(
                 leg.OriginLatitude,
                 leg.OriginLongitude,
                 leg.DestinationLatitude,

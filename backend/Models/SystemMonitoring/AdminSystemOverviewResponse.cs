@@ -9,6 +9,9 @@ public sealed record AdminSystemOverviewResponse(
     AdminSystemResourceResponse Resources,
     string ValhallaEndpoint,
     IReadOnlyList<AdminServiceHealthResponse> Services,
+    long? TotalTrips,
+    AdminAiUsageResponse AiUsage,
+    AdminAiEconomicsResponse AiEconomics,
     AdminRequestMetricsResponse Requests,
     IReadOnlyList<AdminRecentRequestResponse> RecentRequests);
 
@@ -36,6 +39,44 @@ public sealed record AdminServiceHealthResponse(
     string Status,
     double? ResponseTimeMs,
     string Detail);
+
+// Live counters for the current backend process. These are useful for immediate
+// verification even before the persistence migration is applied.
+public sealed record AdminAiUsageResponse(
+    DateTimeOffset SinceUtc,
+    long TotalCalls,
+    long IntentCalls,
+    long NavigationCalls,
+    long InputTokens,
+    long OutputTokens,
+    long TotalTokens,
+    string? LastModel,
+    decimal InputUsdPerMillionTokens,
+    decimal OutputUsdPerMillionTokens,
+    decimal UsdToPhp,
+    decimal EstimatedCostUsd,
+    decimal EstimatedCostPhp);
+
+public sealed record AdminAiEconomicsResponse(
+    bool PersistentStorageAvailable,
+    string TimeZone,
+    DateTimeOffset? TrackingStartedAtUtc,
+    string? LastModel,
+    AdminAiUsageWindowResponse Today,
+    AdminAiUsageWindowResponse Last7Days,
+    AdminAiUsageWindowResponse Lifetime);
+
+public sealed record AdminAiUsageWindowResponse(
+    long Trips,
+    long TotalCalls,
+    long IntentCalls,
+    long NavigationCalls,
+    long InputTokens,
+    long OutputTokens,
+    long TotalTokens,
+    decimal EstimatedCostUsd,
+    decimal EstimatedCostPhp,
+    decimal? EstimatedCostPhpPerTrip);
 
 public sealed record AdminRequestMetricsResponse(
     int RetentionHours,

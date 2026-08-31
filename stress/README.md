@@ -55,6 +55,101 @@ k6 run tuki-load.js
 
 This is one VU for 30 seconds.
 
+## Routing optimization benchmark: 1 and 10 VUs
+
+Use the constant-VU benchmark profile before and after every routing optimization
+phase. It keeps navigation speech AI disabled and uses the same duration and trip
+fixtures at both loads.
+
+One-VU control:
+
+```bash
+k6 run \
+  --summary-export=tuki-routing-1vu.json \
+  -e PROFILE=benchmark \
+  -e BENCHMARK_VUS=1 \
+  -e BENCHMARK_DURATION=5m \
+  -e DISABLE_SERVER_AI=true \
+  -e TRIPS_FILE=./tuki-trips.example.json \
+  tuki-load.js
+```
+
+Ten-VU baseline comparison:
+
+```bash
+k6 run \
+  --summary-export=tuki-routing-10vu.json \
+  -e PROFILE=benchmark \
+  -e BENCHMARK_VUS=10 \
+  -e BENCHMARK_DURATION=5m \
+  -e DISABLE_SERVER_AI=true \
+  -e TRIPS_FILE=./tuki-trips.example.json \
+  tuki-load.js
+```
+
+For a remote target, add `BASE_URL` and `ALLOW_REMOTE_LOAD=YES` explicitly. The
+existing latency thresholds are health indicators and may fail against the
+recorded pre-optimization baseline; retain the summary and compare the actual
+average, median, p95, success, HTTP-failure, and flow-success values.
+
+### Frozen routing-network benchmark
+
+Route/TODA changes make comparisons across commits invalid even when the k6 trip
+file is unchanged. The checked-in `fixtures/routing-network-current-152.json`
+freezes the 21 active routes, 8,630 ordered route points, and 152 active TODAs
+used for the August 29 routing diagnosis. Its adjacent `.sha256` file is checked
+both by the launcher and by the backend before routing starts.
+
+Run a clean backend process plus a plan-only benchmark with:
+
+```bash
+cd stress
+BENCHMARK_VUS=1 BENCHMARK_DURATION=3m \
+  ./run-routing-benchmark.sh
+
+BENCHMARK_VUS=10 BENCHMARK_DURATION=3m \
+  ./run-routing-benchmark.sh
+```
+
+The launcher uses a dedicated port, enables the frozen fixture only in that
+process, waits for health, runs k6 without place search/navigation/think time,
+and stops the process afterward. Normal backend launches remain database-backed.
+Use `BENCHMARK_PORT`, `RESULT_PREFIX`, `SUMMARY_PATH`, and `SERVER_LOG_PATH` to
+keep multiple captures separate.
+
+For a single reproducible trip/objective, add for example:
+
+```bash
+BENCHMARK_TRIP_ID=angeles-clark FIXED_PREFERENCE=fastest \
+  BENCHMARK_VUS=10 BENCHMARK_DURATION=3m \
+  ./run-routing-benchmark.sh
+```
+
+`routing-network-current-first-118.json` is a controlled scaling fixture: it has
+the identical routes and the first 118 TODAs in the current fixture's stable
+point-code order. It is not claimed to reconstruct the historical 118-TODA
+dataset. Select it with `ROUTING_FIXTURE=/absolute/path/to/the/file`.
+
+Refresh the canonical fixture only when intentionally establishing a new
+baseline:
+
+```bash
+./capture-routing-network.sh \
+  http://localhost:5129 \
+  fixtures/routing-network-current-152.json \
+  routing-network-current-152
+```
+
+`jq`, `curl`, and `sha256sum` are required. Review route/TODA counts and commit
+the JSON and checksum together.
+
+When routing admission control returns `429`, the workload honors the server's
+`Retry-After` header before beginning another iteration. This is essential for
+15/20-VU overload tests: retrying immediately measures a synthetic rejection
+storm and log throughput rather than bounded route-planning behavior. The
+`tuki_routing_admission_rejections` counter reports these intentional overload
+responses separately.
+
 ## 2. Azure smoke test
 
 ```bash
@@ -205,7 +300,12 @@ Do not set these to `1` during a 1000-user test unless you intentionally want to
 
 | Variable | Default | Purpose |
 | --- | ---: | --- |
-| `PROFILE` | `smoke` | `smoke`, `small`, `load`, `stress`, `spike`, `soak` |
+| `PROFILE` | `smoke` | `smoke`, `benchmark`, `small`, `load`, `stress`, `spike`, `soak` |
+| `BENCHMARK_VUS` | `1` | Constant virtual users for the `benchmark` profile |
+| `BENCHMARK_DURATION` | `5m` | Duration for the `benchmark` profile |
+| `ROUTING_ONLY` | `false` | Skip place search/navigation and plan directly from frozen trip coordinates |
+| `BENCHMARK_TRIP_ID` | all trips | Pin benchmark iterations to one trip fixture |
+| `FIXED_PREFERENCE` | rotating | Pin `efficient`, `fastest`, or `cheapest` |
 | `REROUTE_RATE` | `0.05` | Fraction of trip flows that reroute |
 | `REROUTE_REASON` | `MANUAL` | Reroute reason, e.g. `MANUAL` or `OFF_ROUTE` |
 | `LOCATION_SYNC_RATE` | `0.05` | Fraction sending one meaningful `/location` sync |

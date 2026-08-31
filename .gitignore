@@ -2,4 +2,6 @@ bin/
 obj/
 TestResults/
 .env
+*.log
+*.swp
 backend/tricycle-submission-proofs/
