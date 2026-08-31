@@ -356,6 +356,8 @@ public partial class RoutingService
             Stopwatch.GetElapsedTime(accessDiscoveryStarted).TotalMilliseconds);
 
         var transferCandidateGenerationStarted = Stopwatch.GetTimestamp();
+        var transferCandidateGenerationAllocatedBefore =
+            GC.GetAllocatedBytesForCurrentThread();
         var candidates = new List<JourneyCandidate>();
 
         // 0 transfers. Keep several boarding variants for each route instead
@@ -412,6 +414,12 @@ public partial class RoutingService
             "transfer_candidate_generation_ms",
             Stopwatch.GetElapsedTime(
                 transferCandidateGenerationStarted).TotalMilliseconds);
+        _telemetry.ObserveRouting(
+            "transfer_candidate_generation_allocated_bytes",
+            Math.Max(
+                0,
+                GC.GetAllocatedBytesForCurrentThread() -
+                transferCandidateGenerationAllocatedBefore));
 
         // Access generation stores walking and tricycle choices together on
         // one route anchor. Expand them before ranking; otherwise confirmation

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using backend.Models.Routing;
 
 namespace backend.Services.Routing;
@@ -45,8 +46,15 @@ public partial class RoutingService
         var destinationStateCacheMisses = 0L;
         var transferStatesWithoutDestinationProgress = 0L;
         var transferCandidatesConstructed = 0L;
+        var transferCandidatesEmitted = 0L;
         var transferCandidatesRejectedProgress = 0L;
         var transferCandidatesRejectedDuplicate = 0L;
+        var destinationDescriptorsConsidered = 0L;
+        var destinationMaterializationsRequested = 0L;
+        var destinationMaterializationTicks = 0L;
+        var destinationMaterializationAllocatedBytes = 0L;
+        var destinationPrefixesCreated = 0L;
+        var destinationPrefixReuses = 0L;
         var routeNames = _routes.ToDictionary(
             route => route.RouteId,
             route => route.RouteName);
@@ -117,6 +125,7 @@ public partial class RoutingService
 
                 yield return completion;
                 rootCompletionsEmitted++;
+                transferCandidatesEmitted++;
             }
 
             for (var depth = 1; depth <= MaxTransfers && frontier.Count > 0; depth++)
@@ -132,6 +141,7 @@ public partial class RoutingService
                     yield return candidate;
                     emitted++;
                     emittedAtDepth++;
+                    transferCandidatesEmitted++;
 
                     if (emitted >= globalLimit)
                     {
@@ -214,11 +224,46 @@ public partial class RoutingService
                 "transfer_candidates_constructed",
                 transferCandidatesConstructed);
             _telemetry.IncrementRouting(
+                "transfer_candidates_emitted",
+                transferCandidatesEmitted);
+            _telemetry.IncrementRouting(
                 "transfer_candidates_rejected_progress",
                 transferCandidatesRejectedProgress);
             _telemetry.IncrementRouting(
                 "transfer_candidates_rejected_duplicate_equivalent",
                 transferCandidatesRejectedDuplicate);
+            _telemetry.IncrementRouting(
+                "destination_completion_descriptors_considered",
+                destinationDescriptorsConsidered);
+            _telemetry.IncrementRouting(
+                "destination_completion_materializations_requested",
+                destinationMaterializationsRequested);
+            _telemetry.IncrementRouting(
+                "destination_completion_candidates_materialized",
+                transferCandidatesConstructed);
+            _telemetry.IncrementRouting(
+                "destination_completion_candidates_never_materialized",
+                Math.Max(
+                    0,
+                    destinationDescriptorsConsidered - transferCandidatesConstructed));
+            _telemetry.IncrementRouting(
+                "destination_completion_materializations_avoided",
+                Math.Max(
+                    0,
+                    destinationDescriptorsConsidered - transferCandidatesConstructed));
+            _telemetry.IncrementRouting(
+                "destination_journey_prefixes_created",
+                destinationPrefixesCreated);
+            _telemetry.IncrementRouting(
+                "destination_journey_prefix_reuses",
+                destinationPrefixReuses);
+            _telemetry.ObserveRouting(
+                "destination_materialization_ms",
+                destinationMaterializationTicks * 1_000.0 /
+                Stopwatch.Frequency);
+            _telemetry.ObserveRouting(
+                "destination_materialization_allocated_bytes",
+                destinationMaterializationAllocatedBytes);
         }
 
         yield break;
@@ -636,54 +681,52 @@ public partial class RoutingService
             IReadOnlyList<TransferSearchState> states,
             int maxCandidates)
         {
-            var queues = states
-                .Select(state => new Queue<JourneyCandidate>(
-                    BuildDestinationCandidates(state)
-                        .OrderBy(candidate => candidate.TotalGeneralizedCostPesos)
-                        .ThenBy(candidate => GetAlightProgressMeters(
-                            candidate.Legs[^1]))))
-                .Where(queue => queue.Count > 0)
-                .ToList();
-            var selected = new List<JourneyCandidate>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-
-            while (selected.Count < maxCandidates)
+            var buckets = new List<IReadOnlyList<DestinationCompletionDescriptor>>(
+                states.Count);
+            foreach (var state in states)
             {
-                var addedAny = false;
-                foreach (var queue in queues)
+                cancellationToken.ThrowIfCancellationRequested();
+                var descriptors = BuildDestinationCompletionDescriptors(state);
+                if (descriptors.Count == 0)
+                    continue;
+
+                // List.Sort is not stable, so source ordinal is the final
+                // comparator dimension. This exactly preserves the stable
+                // OrderBy/ThenBy behavior of the eager Phase 2 selector.
+                descriptors.Sort(static (left, right) =>
                 {
-                    while (queue.TryDequeue(out var candidate))
-                    {
-                        if (!seen.Add(GetJourneyCandidateKey(candidate)))
-                        {
-                            transferCandidatesRejectedDuplicate++;
-                            continue;
-                        }
+                    var cost = left.TotalGeneralizedCostPesos.CompareTo(
+                        right.TotalGeneralizedCostPesos);
+                    if (cost != 0)
+                        return cost;
 
-                        selected.Add(candidate);
-                        addedAny = true;
-                        break;
-                    }
-
-                    if (selected.Count >= maxCandidates)
-                        break;
-                }
-
-                if (!addedAny)
-                    break;
+                    var progress = left.AlightProgressMeters.CompareTo(
+                        right.AlightProgressMeters);
+                    return progress != 0
+                        ? progress
+                        : left.SourceOrdinal.CompareTo(right.SourceOrdinal);
+                });
+                buckets.Add(descriptors);
             }
 
-            return selected;
+            return LazyRoundRobinSelector.Select(
+                buckets,
+                maxCandidates,
+                MaterializeDestinationCompletion,
+                GetJourneyCandidateKey,
+                cancellationToken,
+                () => transferCandidatesRejectedDuplicate++);
         }
 
-        IEnumerable<JourneyCandidate> BuildDestinationCandidates(
+        List<DestinationCompletionDescriptor>
+            BuildDestinationCompletionDescriptors(
             TransferSearchState state)
         {
             if (!destinationAccessByRoute.TryGetValue(
                     state.CurrentRouteId,
                     out var allDestinationAccess))
             {
-                yield break;
+                return [];
             }
 
             var currentSamples = _routeSamples[state.CurrentRouteId];
@@ -740,11 +783,66 @@ public partial class RoutingService
             if (usefulDestinationAccess.Count == 0)
             {
                 transferStatesWithoutDestinationProgress++;
-                yield break;
+                return [];
             }
 
+            var prefixLegs = new JourneyLegCandidate[state.Steps.Count];
+            var transferWalks = new WalkSegmentCandidate[state.Steps.Count];
+            var prefixHasInvalidProgress = false;
+            for (var index = 0; index < state.Steps.Count; index++)
+            {
+                var step = state.Steps[index];
+                var samples = _routeSamples[step.FromRouteId];
+                var boardPoint = index == 0
+                    ? state.BoardAccess.Anchor
+                    : _routeSamples[state.Steps[index - 1].Edge.OtherRouteId]
+                        [state.Steps[index - 1].Edge.OtherIndex];
+                var boardIndex = index == 0
+                    ? state.BoardAccess.RouteSampleIndex ??
+                      GetNearestSampleIndex(samples, boardPoint)
+                    : state.Steps[index - 1].Edge.OtherIndex;
+                var alightPoint = samples[step.Edge.OwnIndex];
+                var boardAnchor = index == 0
+                    ? state.BoardAccess.FullRouteAnchor
+                    : GetRouteAnchor(step.FromRouteId, boardIndex, boardPoint);
+                var alightAnchor = GetRouteAnchor(
+                    step.FromRouteId,
+                    step.Edge.OwnIndex,
+                    alightPoint);
+                prefixLegs[index] = new JourneyLegCandidate(
+                    step.FromRouteId,
+                    routeNames[step.FromRouteId],
+                    boardPoint,
+                    alightPoint,
+                    boardIndex,
+                    step.Edge.OwnIndex,
+                    boardAnchor,
+                    alightAnchor);
+                if (RouteDistanceBetweenAnchors(
+                        boardAnchor!,
+                        alightAnchor) <= 0)
+                {
+                    prefixHasInvalidProgress = true;
+                }
+
+                transferWalks[index] = new WalkSegmentCandidate(
+                    _routeSamples[step.FromRouteId][step.Edge.OwnIndex],
+                    _routeSamples[step.Edge.OtherRouteId][step.Edge.OtherIndex],
+                    step.Edge.DistanceMeters);
+            }
+
+            var prefix = new DestinationJourneyPrefix(
+                prefixLegs,
+                transferWalks,
+                state.BoardAccess,
+                EstimateJeepneyTravelTimeSeconds(prefixLegs));
+            destinationPrefixesCreated++;
+            var descriptors = new List<DestinationCompletionDescriptor>(
+                usefulDestinationAccess.Count);
+            var sourceOrdinal = 0;
             foreach (var alight in usefulDestinationAccess)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var alightIndex = alight.RouteSampleIndex ?? GetNearestSampleIndex(
                     currentSamples,
                     alight.Anchor);
@@ -759,40 +857,17 @@ public partial class RoutingService
                     continue;
                 }
 
-                var journeyLegs = new List<JourneyLegCandidate>();
-                for (var index = 0; index < state.Steps.Count; index++)
+                if (prefixHasInvalidProgress)
                 {
-                    var step = state.Steps[index];
-                    var samples = _routeSamples[step.FromRouteId];
-                    var boardPoint = index == 0
-                        ? state.BoardAccess.Anchor
-                        : _routeSamples[state.Steps[index - 1].Edge.OtherRouteId]
-                            [state.Steps[index - 1].Edge.OtherIndex];
-                    var boardIndex = index == 0
-                        ? state.BoardAccess.RouteSampleIndex ??
-                          GetNearestSampleIndex(samples, boardPoint)
-                        : state.Steps[index - 1].Edge.OtherIndex;
-                    var alightPoint = samples[step.Edge.OwnIndex];
-                    journeyLegs.Add(new(
-                        step.FromRouteId,
-                        routeNames[step.FromRouteId],
-                        boardPoint,
-                        alightPoint,
-                        boardIndex,
-                        step.Edge.OwnIndex,
-                        index == 0
-                            ? state.BoardAccess.FullRouteAnchor
-                            : GetRouteAnchor(
-                                step.FromRouteId,
-                                boardIndex,
-                                boardPoint),
-                        GetRouteAnchor(
-                            step.FromRouteId,
-                            step.Edge.OwnIndex,
-                            alightPoint)));
+                    transferCandidatesRejectedProgress++;
+                    continue;
                 }
 
-                journeyLegs.Add(new(
+                var finalLegTimeSeconds = JeepneyBoardingWaitTimeSeconds +
+                    RouteDistanceBetweenAnchors(entryAnchor, alightAnchor) /
+                    JeepneySpeedMetersPerSecond;
+                descriptors.Add(new DestinationCompletionDescriptor(
+                    prefix,
                     state.CurrentRouteId,
                     routeNames[state.CurrentRouteId],
                     entryPoint,
@@ -800,29 +875,58 @@ public partial class RoutingService
                     state.EntryIndex,
                     alightIndex,
                     entryAnchor,
-                    alightAnchor));
-                if (journeyLegs.Any(leg => RouteDistanceBetweenAnchors(
-                        leg.BoardFullRouteAnchor!,
-                        leg.AlightFullRouteAnchor!) <= 0))
-                {
-                    transferCandidatesRejectedProgress++;
-                    continue;
-                }
-
-                var walks = state.Steps.Select(step => new WalkSegmentCandidate(
-                    _routeSamples[step.FromRouteId][step.Edge.OwnIndex],
-                    _routeSamples[step.Edge.OtherRouteId][step.Edge.OtherIndex],
-                    step.Edge.DistanceMeters)).ToList();
-                transferCandidatesConstructed++;
-                yield return new JourneyCandidate(
-                    journeyLegs,
-                    state.BoardAccess,
+                    alightAnchor,
                     alight,
-                    walks,
                     state.AccumulatedCost + alight.GeneralizedCostPesos +
                     GeneralizedCostFromTimeAndFare(
-                        EstimateJeepneyTravelTimeSeconds(journeyLegs),
-                        journeyLegs.Count * JeepneyBaseFarePesos));
+                        prefix.JeepneyTravelTimeSeconds + finalLegTimeSeconds,
+                        (prefix.Legs.Length + 1) * JeepneyBaseFarePesos),
+                    alightAnchor.DistanceFromRouteStartMeters,
+                    sourceOrdinal++));
+            }
+
+            destinationDescriptorsConsidered += descriptors.Count;
+            destinationPrefixReuses += Math.Max(0, descriptors.Count - 1);
+            return descriptors;
+        }
+
+        JourneyCandidate MaterializeDestinationCompletion(
+            DestinationCompletionDescriptor descriptor)
+        {
+            destinationMaterializationsRequested++;
+            var started = Stopwatch.GetTimestamp();
+            var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+            try
+            {
+                var legs = new List<JourneyLegCandidate>(
+                    descriptor.Prefix.Legs.Length + 1);
+                legs.AddRange(descriptor.Prefix.Legs);
+                legs.Add(new JourneyLegCandidate(
+                    descriptor.RouteId,
+                    descriptor.RouteName,
+                    descriptor.Board,
+                    descriptor.Alight,
+                    descriptor.BoardIndex,
+                    descriptor.AlightIndex,
+                    descriptor.BoardFullRouteAnchor,
+                    descriptor.AlightFullRouteAnchor));
+                var walks = new List<WalkSegmentCandidate>(
+                    descriptor.Prefix.TransferWalkSegments);
+                transferCandidatesConstructed++;
+                return new JourneyCandidate(
+                    legs,
+                    descriptor.Prefix.OriginAccess,
+                    descriptor.DestinationAccess,
+                    walks,
+                    descriptor.TotalGeneralizedCostPesos);
+            }
+            finally
+            {
+                destinationMaterializationAllocatedBytes += Math.Max(
+                    0,
+                    GC.GetAllocatedBytesForCurrentThread() - allocatedBefore);
+                destinationMaterializationTicks +=
+                    Stopwatch.GetTimestamp() - started;
             }
         }
 
@@ -849,6 +953,28 @@ public partial class RoutingService
         TransferSearchState State,
         TransferExpansionBucket Bucket,
         string DominanceKey);
+    // These arrays are completely populated before the prefix is published to
+    // any descriptor and are never mutated afterward. The prefix remains
+    // request-local, so reuse cannot introduce cross-request mutable state.
+    private sealed record DestinationJourneyPrefix(
+        JourneyLegCandidate[] Legs,
+        WalkSegmentCandidate[] TransferWalkSegments,
+        AccessCandidate OriginAccess,
+        double JeepneyTravelTimeSeconds);
+    private sealed record DestinationCompletionDescriptor(
+        DestinationJourneyPrefix Prefix,
+        string RouteId,
+        string RouteName,
+        (double Latitude, double Longitude) Board,
+        (double Latitude, double Longitude) Alight,
+        int BoardIndex,
+        int AlightIndex,
+        RouteAnchor BoardFullRouteAnchor,
+        RouteAnchor AlightFullRouteAnchor,
+        AccessCandidate DestinationAccess,
+        double TotalGeneralizedCostPesos,
+        double AlightProgressMeters,
+        int SourceOrdinal);
     private sealed record TransferSearchState(
         string CurrentRouteId, int EntryIndex, AccessCandidate BoardAccess,
         List<TransferSearchStep> Steps, HashSet<string> VisitedRoutes,
