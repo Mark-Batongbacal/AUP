@@ -145,6 +145,10 @@ public partial class RoutingService
         List<DirectAccessDestinationCompletionEdge> directCompletionEdges;
         var accessDiscoveryDiagnostics = new AccessDiscoveryDiagnostics();
         _accessDiscoveryDiagnostics = accessDiscoveryDiagnostics;
+        var alightAccessComputationDiagnostics =
+            new AlightAccessComputationDiagnostics();
+        _alightAccessComputationDiagnostics =
+            alightAccessComputationDiagnostics;
 
         try
         {
@@ -167,6 +171,7 @@ public partial class RoutingService
                     var destinationAlternatives = 0;
                     var directConnections = new List<RouteConnectionCandidate>();
                     BoardAccessDiscovery? boardDiscovery = null;
+                    AccessCandidate[]? alightOptions = null;
 
                     if (isOriginRoute)
                     {
@@ -210,6 +215,17 @@ public partial class RoutingService
 
                         if (isDestinationRoute)
                         {
+                            // Direct discovery and destination-edge construction use
+                            // the same ordered sample set and exact destination. The
+                            // returned array preserves every loop/retrace occurrence,
+                            // so this local reuse avoids recomputing it without
+                            // weakening occurrence identity.
+                            alightOptions = ComputeAlightAccessOptions(
+                                routeId,
+                                samples,
+                                destinationLatitude,
+                                destinationLongitude,
+                                AlightAccessCallerCategory.DirectDiscovery);
                             var directConnectionStarted = Stopwatch.GetTimestamp();
                             directConnections = FindBestConnections(
                                 route,
@@ -219,7 +235,8 @@ public partial class RoutingService
                                 destinationLongitude,
                                 boardDiscovery,
                                 maxWalkAccessDistanceMeters,
-                                planningPreferences?.OnboardTransit);
+                                planningPreferences?.OnboardTransit,
+                                alightOptions);
                             directConnectionMilliseconds = Stopwatch.GetElapsedTime(
                                 directConnectionStarted).TotalMilliseconds;
                             _telemetry.ObserveRouting(
@@ -267,11 +284,22 @@ public partial class RoutingService
                     if (isDestinationRoute)
                     {
                         var destinationAccessStarted = Stopwatch.GetTimestamp();
-                        var alightOptions = ComputeAlightAccessOptions(
-                            routeId,
-                            samples,
-                            destinationLatitude,
-                            destinationLongitude);
+                        if (alightOptions is null)
+                        {
+                            alightOptions = ComputeAlightAccessOptions(
+                                routeId,
+                                samples,
+                                destinationLatitude,
+                                destinationLongitude,
+                                AlightAccessCallerCategory
+                                    .DestinationAccessConstruction);
+                        }
+                        else
+                        {
+                            alightAccessComputationDiagnostics.RecordReuse(
+                                AlightAccessCallerCategory
+                                    .DestinationAccessConstruction);
+                        }
                         var constrainedAlightOptions =
                             ConstrainTransitAccessOptions(
                                 alightOptions,
@@ -349,7 +377,9 @@ public partial class RoutingService
         finally
         {
             _accessDiscoveryDiagnostics = null;
+            _alightAccessComputationDiagnostics = null;
             accessDiscoveryDiagnostics.Flush(_telemetry);
+            alightAccessComputationDiagnostics.Flush(_telemetry);
         }
         var accessDiscoveryElapsedTicks =
             Stopwatch.GetTimestamp() - accessDiscoveryStarted;

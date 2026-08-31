@@ -143,7 +143,8 @@ public partial class RoutingService
         double destinationLongitude,
         BoardAccessDiscovery boardDiscovery,
         double? walkAccessDistanceLimitMeters = null,
-        OnboardTransitPlanningContext? onboardContext = null)
+        OnboardTransitPlanningContext? onboardContext = null,
+        AccessCandidate[]? precomputedAlightAccessOptions = null)
     {
         var walkAccessLimit = walkAccessDistanceLimitMeters ??
             GetWalkAccessDistanceLimit(null);
@@ -153,11 +154,13 @@ public partial class RoutingService
             return [];
 
         var boardAccessOptions = boardDiscovery.Projected;
-        var alightAccessOptions = ComputeAlightAccessOptions(
-            route.RouteId,
-            samples,
-            destinationLatitude,
-            destinationLongitude);
+        var alightAccessOptions = precomputedAlightAccessOptions ??
+            ComputeAlightAccessOptions(
+                route.RouteId,
+                samples,
+                destinationLatitude,
+                destinationLongitude,
+                AlightAccessCallerCategory.DirectDiscovery);
 
         var boardCandidates = boardAccessOptions
             .Select(candidate => ConstrainTransitAccess(

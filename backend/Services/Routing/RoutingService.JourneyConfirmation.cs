@@ -815,9 +815,12 @@ public partial class RoutingService
         string routeId,
         IReadOnlyList<(double Latitude, double Longitude)> samples,
         double destinationLatitude,
-        double destinationLongitude)
+        double destinationLongitude,
+        AlightAccessCallerCategory caller = AlightAccessCallerCategory.Other)
     {
         var computationStarted = Stopwatch.GetTimestamp();
+        var diagnostics = _alightAccessComputationDiagnostics;
+        diagnostics?.BeginComputation(caller);
         var options =
             new AccessCandidate[samples.Count];
 
@@ -883,9 +886,11 @@ public partial class RoutingService
             options[i] = WithAlternatives(alternatives);
         }
 
+        var computationTicks = Stopwatch.GetTimestamp() - computationStarted;
         _telemetry.ObserveRouting(
             "alight_destination_access_computation_ms",
-            Stopwatch.GetElapsedTime(computationStarted).TotalMilliseconds);
+            computationTicks * 1_000d / Stopwatch.Frequency);
+        diagnostics?.CompleteComputation(computationTicks);
         return options;
     }
 
