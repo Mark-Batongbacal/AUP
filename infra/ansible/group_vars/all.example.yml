@@ -1,0 +1,11 @@
+---
+# Copy non-secret settings into group_vars/all.yml. Production secrets belong
+# only in the encrypted group_vars/vault.yml file; see ../README.md.
+tuki_api_hostname: api.example.com
+tuki_admin_hostname: admin.example.com
+tuki_acme_email: ops@example.com
+tuki_database_name: Tuki
+tuki_mssql_pid: Developer
+tuki_image_tag: dev
+tuki_valhalla_tile_urls: https://download.geofabrik.de/asia/philippines-latest.osm.pbf
+tuki_pelias_es_java_opts: "-Xms1g -Xmx1g"

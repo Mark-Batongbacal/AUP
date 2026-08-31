@@ -3,6 +3,7 @@ using backend.Models.Routing;
 using backend.Models.Valhalla;
 using backend.Repositories;
 using backend.Services.Routing;
+using backend.Services.Telemetry;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -196,7 +197,8 @@ internal static class ProductionTopologyFixture
         List<TransportRoute>? routes = null,
         List<TricyclePoint>? trikePoints = null,
         IValhallaResultCache? resultCache = null,
-        RoutingNetworkSnapshotProvider? snapshotProvider = null)
+        RoutingNetworkSnapshotProvider? snapshotProvider = null,
+        ITukiTelemetry? telemetry = null)
     {
         var routeRepository = new Mock<ITransportRouteRepository>();
         routeRepository
@@ -218,7 +220,8 @@ internal static class ProductionTopologyFixture
                 routeRepository.Object,
                 tricycleRepository.Object,
                 NullLogger<RoutingService>.Instance,
-                routingOptions);
+                routingOptions,
+                telemetry: telemetry);
         }
 
         return new RoutingService(
@@ -228,7 +231,7 @@ internal static class ProductionTopologyFixture
             NullLogger<RoutingService>.Instance,
             routingOptions,
             tripAreaValidator: null,
-            telemetry: null,
+            telemetry: telemetry,
             networkSnapshotProvider:
                 snapshotProvider ?? new RoutingNetworkSnapshotProvider(),
             valhallaResultCache: resultCache);

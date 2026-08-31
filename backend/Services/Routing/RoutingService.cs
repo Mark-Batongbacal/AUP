@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using backend.Models.Routing;
 using backend.Models.Valhalla;
 using backend.Repositories;
@@ -83,6 +84,13 @@ public partial class RoutingService : IRoutingService
         _routeSearchAnchors = new Dictionary<string, IReadOnlyList<RouteAnchor>>();
     private IReadOnlyDictionary<string, IReadOnlyList<RouteInterchange>>
         _interchangesByRoute = new Dictionary<string, IReadOnlyList<RouteInterchange>>();
+    private IRouteTransferReachability _transferReachability =
+        RouteTransferReachability.Build(
+            [],
+            new Dictionary<string, IReadOnlyList<RouteInterchange>>());
+    private IRouteSpatialIndex _spatialRouteIndex = RouteSpatialIndex.Build([]);
+    private IReadOnlySet<string> _routesWithTodaAccess =
+        new HashSet<string>(StringComparer.Ordinal);
     private readonly ITransportRouteRepository _transportRouteRepository;
     private readonly ITricyclePointRepository _tricyclePointRepository;
     private readonly IRoutingNetworkSnapshotProvider _networkSnapshotProvider;
@@ -247,6 +255,38 @@ public partial class RoutingService : IRoutingService
         _interchangesByRoute = BuildInterchangeGraph(
             _routeSamples,
             routeNamesById);
+        var transferReachabilityStarted = Stopwatch.GetTimestamp();
+        var transferReachability = RouteTransferReachability.Build(
+            _routes,
+            _interchangesByRoute);
+        _telemetry.ObserveRouting(
+            "transfer_reachability_index_build_ms",
+            Stopwatch.GetElapsedTime(
+                transferReachabilityStarted).TotalMilliseconds);
+
+        IRouteSpatialIndex spatialRouteIndex;
+        try
+        {
+            spatialRouteIndex = RouteSpatialIndex.Build(_routes);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Failed to build routing network spatial index");
+            throw new InvalidOperationException(
+                "The routing network spatial index could not be built.",
+                exception);
+        }
+        var routesWithTodaAccess = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var trikePoint in _trikePoints)
+        {
+            routesWithTodaAccess.UnionWith(
+                spatialRouteIndex.FindNearbyRoutes(
+                    trikePoint.Latitude,
+                    trikePoint.Longitude,
+                    MaxWalkToTrikePointMeters));
+        }
 
         _logger.LogInformation(
             "Loaded {RouteCount} jeepney routes and {TrikePointCount} tricycle points from {NetworkSource}",
@@ -261,7 +301,10 @@ public partial class RoutingService : IRoutingService
             _routeSamples,
             _routeGeometries,
             _routeSearchAnchors,
-            _interchangesByRoute);
+            _interchangesByRoute,
+            transferReachability,
+            spatialRouteIndex,
+            routesWithTodaAccess);
     }
 
     private void ApplyNetworkSnapshot(RoutingNetworkSnapshot snapshot)
@@ -272,6 +315,9 @@ public partial class RoutingService : IRoutingService
         _routeGeometries = snapshot.RouteGeometries;
         _routeSearchAnchors = snapshot.RouteSearchAnchors;
         _interchangesByRoute = snapshot.InterchangesByRoute;
+        _transferReachability = snapshot.TransferReachability;
+        _spatialRouteIndex = snapshot.SpatialRouteIndex;
+        _routesWithTodaAccess = snapshot.RoutesWithTodaAccess;
     }
 
     private void RecordNetworkSizeTelemetry()

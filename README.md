@@ -145,8 +145,31 @@ The practical rollout strategy is to make a limited geographic area highly relia
 
 - `frontend/` — Android app built with Jetpack Compose.
 - `backend/` — ASP.NET Core API.
+- `Tuki.Admin/` — ASP.NET Core admin web application.
 - `database/` — SQL Server schema script and local database setup notes.
 - `Dockerfile` — Render container build for the backend; it must remain at the repository root.
+- `Tuki.Admin/Dockerfile` — container build for the admin web application.
+- `docker-compose.yml` — runs the backend and admin containers together for local/container deployments.
+
+### Production containers
+
+The production Compose stack is designed for an Ubuntu 24.04 VM and includes
+the backend, admin application, SQL Server, Valhalla, Pelias, and Caddy.
+Production secrets are held in Ansible Vault. During deployment, Ansible
+renders service-specific files under `runtime/`, and Compose reads those files
+with `env_file`. The root `.env.example` is placeholder-only documentation and
+is not the production secret source. See `infra/ansible/README.md` for Vault
+editing and deployment commands.
+
+Only Caddy publishes host ports 80 and 443. Backend (`5129`), admin (`5030`),
+SQL Server (`1433`), Valhalla (`8002`), Pelias (`4000`), and Pelias
+Elasticsearch remain on the private Compose network. SSH remains a host service
+on port 22.
+
+Persistent data defaults to `/opt/tuki/data`. Compose does not initialize,
+restore, overwrite, or delete the production database. Follow
+`infra/ansible/README.md` for the GCP deployment and separate migration
+workflow.
 
 ## Prerequisites
 
@@ -189,7 +212,7 @@ Pelias__BaseUrl=<your-pelias-base-url>
 
 Never commit real passwords or API keys. `appsettings.json` contains only non-secret defaults; `appsettings.Development.json` and `.env` are ignored.
 
-For Azure Container Apps, configure ingress with target port `8080`. Add all credentials and service URLs as Container App secrets/environment variables; the production container does not load `backend/.env`.
+For Azure Container Apps, configure ingress with target port `5129`. Add all credentials and service URLs as Container App secrets/environment variables; the production container does not load `backend/.env`.
 
 The SQL Server schema is tracked in `database/TukiDbSchema.sql`; run it against `TukiDb` in SSMS when setting up or reconciling a local database.
 
