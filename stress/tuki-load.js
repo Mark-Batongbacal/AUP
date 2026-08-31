@@ -75,6 +75,24 @@ if (!Array.isArray(TRIPS) || TRIPS.length === 0) throw new Error('TRIPS_FILE mus
 
 function scenario(profile) {
   switch (profile) {
+	case 'hundred':
+  return {
+    realistic_users: {
+      executor: 'ramping-vus',
+      startVUs: 0,
+      stages: [
+        { duration: '30s', target: 10 },
+        { duration: '30s', target: 25 },
+        { duration: '1m', target: 50 },
+        { duration: '1m', target: 75 },
+        { duration: '2m', target: 100 },
+        { duration: '1m', target: 100 },
+        { duration: '1m', target: 0 },
+      ],
+      gracefulRampDown: '30s',
+      gracefulStop: '30s',
+      },
+    };
     case 'smoke':
       return { realistic_users: { executor: 'constant-vus', vus: 1, duration: '30s', gracefulStop: '15s' } };
     case 'small':
