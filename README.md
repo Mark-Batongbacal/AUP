@@ -145,8 +145,29 @@ The practical rollout strategy is to make a limited geographic area highly relia
 
 - `frontend/` — Android app built with Jetpack Compose.
 - `backend/` — ASP.NET Core API.
+- `Tuki.Admin/` — ASP.NET Core admin web application.
 - `database/` — SQL Server schema script and local database setup notes.
 - `Dockerfile` — Render container build for the backend; it must remain at the repository root.
+- `Tuki.Admin/Dockerfile` — container build for the admin web application.
+- `docker-compose.yml` — runs the backend and admin containers together for local/container deployments.
+
+### Docker
+
+Build and run both ASP.NET Core applications from the repository root:
+
+```bash
+ConnectionStrings__TukiDbConnection='<sql-server-connection-string>' \
+Valhalla__BaseUrl='https://your-valhalla-instance.example.com' \
+Pelias__BaseUrl='http://your-pelias-instance.example.com:4000' \
+docker compose up --build
+```
+
+The backend is available on `http://localhost:5129` and the admin webapp on
+`http://localhost:5030`. The admin container reaches the backend at
+`http://backend:5129/` over the Compose network. Set `BACKEND_PORT` or
+`ADMIN_PORT` to change the host ports, and provide authentication/API secrets
+as environment variables (for example `GEMINI_API_KEY` and
+`Login__Users__0__Password`) rather than putting them in image layers.
 
 ## Prerequisites
 
@@ -189,7 +210,7 @@ Pelias__BaseUrl=<your-pelias-base-url>
 
 Never commit real passwords or API keys. `appsettings.json` contains only non-secret defaults; `appsettings.Development.json` and `.env` are ignored.
 
-For Azure Container Apps, configure ingress with target port `8080`. Add all credentials and service URLs as Container App secrets/environment variables; the production container does not load `backend/.env`.
+For Azure Container Apps, configure ingress with target port `5129`. Add all credentials and service URLs as Container App secrets/environment variables; the production container does not load `backend/.env`.
 
 The SQL Server schema is tracked in `database/TukiDbSchema.sql`; run it against `TukiDb` in SSMS when setting up or reconciling a local database.
 

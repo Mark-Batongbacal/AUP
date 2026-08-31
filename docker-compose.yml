@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tuki-backend:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_HTTP_PORTS: 5129
+      # The backend validates these values at startup; set them in .env or on
+      # the command line before starting the stack.
+      ConnectionStrings__TukiDbConnection: ${ConnectionStrings__TukiDbConnection:-}
+      Valhalla__BaseUrl: ${Valhalla__BaseUrl:-}
+      Pelias__BaseUrl: ${Pelias__BaseUrl:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      Cors__AllowedOrigins__0: ${ADMIN_PUBLIC_URL:-http://localhost:5030}
+    ports:
+      - "${BACKEND_PORT:-5129}:5129"
+
+  admin:
+    build:
+      context: .
+      dockerfile: Tuki.Admin/Dockerfile
+    image: tuki-admin:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_HTTP_PORTS: 5030
+      BACKEND_BASE_URL: http://backend:5129/
+    depends_on:
+      - backend
+    ports:
+      - "${ADMIN_PORT:-5030}:5030"
