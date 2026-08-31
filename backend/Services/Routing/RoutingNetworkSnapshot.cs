@@ -38,6 +38,7 @@ internal sealed record RoutingNetworkSnapshot(
         IReadOnlyList<RoutingService.RouteAnchor>> RouteSearchAnchors,
     IReadOnlyDictionary<string,
         IReadOnlyList<RoutingService.RouteInterchange>> InterchangesByRoute,
+    IRouteTransferReachability TransferReachability,
     IRouteSpatialIndex SpatialRouteIndex,
     IReadOnlySet<string> RoutesWithTodaAccess);
 

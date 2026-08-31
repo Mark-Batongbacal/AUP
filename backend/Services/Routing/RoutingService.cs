@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using backend.Models.Routing;
 using backend.Models.Valhalla;
 using backend.Repositories;
@@ -83,6 +84,10 @@ public partial class RoutingService : IRoutingService
         _routeSearchAnchors = new Dictionary<string, IReadOnlyList<RouteAnchor>>();
     private IReadOnlyDictionary<string, IReadOnlyList<RouteInterchange>>
         _interchangesByRoute = new Dictionary<string, IReadOnlyList<RouteInterchange>>();
+    private IRouteTransferReachability _transferReachability =
+        RouteTransferReachability.Build(
+            [],
+            new Dictionary<string, IReadOnlyList<RouteInterchange>>());
     private IRouteSpatialIndex _spatialRouteIndex = RouteSpatialIndex.Build([]);
     private IReadOnlySet<string> _routesWithTodaAccess =
         new HashSet<string>(StringComparer.Ordinal);
@@ -250,6 +255,14 @@ public partial class RoutingService : IRoutingService
         _interchangesByRoute = BuildInterchangeGraph(
             _routeSamples,
             routeNamesById);
+        var transferReachabilityStarted = Stopwatch.GetTimestamp();
+        var transferReachability = RouteTransferReachability.Build(
+            _routes,
+            _interchangesByRoute);
+        _telemetry.ObserveRouting(
+            "transfer_reachability_index_build_ms",
+            Stopwatch.GetElapsedTime(
+                transferReachabilityStarted).TotalMilliseconds);
 
         IRouteSpatialIndex spatialRouteIndex;
         try
@@ -289,6 +302,7 @@ public partial class RoutingService : IRoutingService
             _routeGeometries,
             _routeSearchAnchors,
             _interchangesByRoute,
+            transferReachability,
             spatialRouteIndex,
             routesWithTodaAccess);
     }
@@ -301,6 +315,7 @@ public partial class RoutingService : IRoutingService
         _routeGeometries = snapshot.RouteGeometries;
         _routeSearchAnchors = snapshot.RouteSearchAnchors;
         _interchangesByRoute = snapshot.InterchangesByRoute;
+        _transferReachability = snapshot.TransferReachability;
         _spatialRouteIndex = snapshot.SpatialRouteIndex;
         _routesWithTodaAccess = snapshot.RoutesWithTodaAccess;
     }

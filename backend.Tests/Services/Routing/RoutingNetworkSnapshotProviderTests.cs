@@ -106,6 +106,55 @@ public sealed class RoutingNetworkSnapshotProviderTests
     }
 
     [Fact]
+    public async Task Invalidation_AtomicallyReplacesTransferReachability()
+    {
+        using var provider = new RoutingNetworkSnapshotProvider();
+        var snapshots = (IRoutingNetworkSnapshotProvider)provider;
+        var routes = new[]
+        {
+            SpatialRoute("A", 15.0, 120.5),
+            SpatialRoute("B", 15.1, 120.6)
+        };
+        var connected = true;
+
+        Task<RoutingNetworkSnapshot> Build(CancellationToken _)
+        {
+            var interchanges = connected
+                ? new Dictionary<string,
+                    IReadOnlyList<RoutingService.RouteInterchange>>
+                {
+                    ["A"] =
+                    [
+                        new RoutingService.RouteInterchange(
+                            1,
+                            "B",
+                            "B",
+                            1,
+                            20)
+                    ]
+                }
+                : new Dictionary<string,
+                    IReadOnlyList<RoutingService.RouteInterchange>>();
+            return Task.FromResult(SnapshotWithRoutes(routes, interchanges));
+        }
+
+        var first = await snapshots.GetSnapshotAsync(Build, default);
+        connected = false;
+        provider.Invalidate("interchange topology changed");
+        var second = await snapshots.GetSnapshotAsync(Build, default);
+        IReadOnlySet<string> destination = new HashSet<string>(["B"]);
+
+        Assert.True(first.Snapshot.TransferReachability.CanReachAny(
+            "A",
+            destination,
+            1));
+        Assert.False(second.Snapshot.TransferReachability.CanReachAny(
+            "A",
+            destination,
+            1));
+    }
+
+    [Fact]
     public async Task FailedRebuild_DoesNotPublishAPartialSnapshotAndCanRetry()
     {
         using var provider = new RoutingNetworkSnapshotProvider();
@@ -272,11 +321,21 @@ public sealed class RoutingNetworkSnapshotProviderTests
             IReadOnlyList<RoutingService.RouteAnchor>>(),
         InterchangesByRoute: new Dictionary<string,
             IReadOnlyList<RoutingService.RouteInterchange>>(),
+        TransferReachability: RouteTransferReachability.Build(
+            [],
+            new Dictionary<string,
+                IReadOnlyList<RoutingService.RouteInterchange>>()),
         SpatialRouteIndex: RouteSpatialIndex.Build([]),
         RoutesWithTodaAccess: new HashSet<string>(StringComparer.Ordinal));
 
     private static RoutingNetworkSnapshot SnapshotWithRoutes(
-        IReadOnlyList<backend.Models.Routing.StaticJeepneyRoute> routes) => new(
+        IReadOnlyList<backend.Models.Routing.StaticJeepneyRoute> routes,
+        IReadOnlyDictionary<string,
+            IReadOnlyList<RoutingService.RouteInterchange>>? interchanges = null)
+    {
+        interchanges ??= new Dictionary<string,
+            IReadOnlyList<RoutingService.RouteInterchange>>();
+        return new(
         Version: 0,
         Routes: routes,
         TrikePoints: [],
@@ -285,10 +344,13 @@ public sealed class RoutingNetworkSnapshotProviderTests
         RouteGeometries: new Dictionary<string, RoutingService.FullRouteGeometry>(),
         RouteSearchAnchors: new Dictionary<string,
             IReadOnlyList<RoutingService.RouteAnchor>>(),
-        InterchangesByRoute: new Dictionary<string,
-            IReadOnlyList<RoutingService.RouteInterchange>>(),
+        InterchangesByRoute: interchanges,
+        TransferReachability: RouteTransferReachability.Build(
+            routes,
+            interchanges),
         SpatialRouteIndex: RouteSpatialIndex.Build(routes),
         RoutesWithTodaAccess: new HashSet<string>(StringComparer.Ordinal));
+    }
 
     private static backend.Models.Routing.StaticJeepneyRoute SpatialRoute(
         string id,

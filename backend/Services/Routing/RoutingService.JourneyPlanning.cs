@@ -405,6 +405,9 @@ public partial class RoutingService
             cancellationToken).ToList();
         candidates.AddRange(transferCandidates);
         _telemetry.IncrementRouting("candidates_generated", candidates.Count);
+        _telemetry.IncrementRouting(
+            "candidates_entering_expensive_expansion",
+            candidates.Count);
         _telemetry.ObserveRouting(
             "transfer_candidate_generation_ms",
             Stopwatch.GetElapsedTime(
@@ -415,6 +418,7 @@ public partial class RoutingService
         // accepts only the first valid choice and useful multimodal variants
         // (for example trike -> jeepney -> trike) disappear.
         var hardConstraintTicks = 0L;
+        var candidatesRejectedByHardConstraints = 0L;
         var accessExpansionStarted = Stopwatch.GetTimestamp();
         var expandedCandidates = candidates
             .SelectMany(ExpandAccessAlternatives)
@@ -433,6 +437,9 @@ public partial class RoutingService
             "candidates_after_access_expansion",
             expandedCandidates.Count);
         _telemetry.IncrementRouting("candidates_expanded", expandedCandidates.Count);
+        _telemetry.IncrementRouting(
+            "candidates_rejected_by_hard_constraints",
+            candidatesRejectedByHardConstraints);
 
         var candidateKeyGenerationTicks = 0L;
         var candidateDedupeStarted = Stopwatch.GetTimestamp();
@@ -545,10 +552,13 @@ public partial class RoutingService
             var started = Stopwatch.GetTimestamp();
             try
             {
-                return candidate.Legs.All(HasForwardRouteProgress) &&
+                var accepted = candidate.Legs.All(HasForwardRouteProgress) &&
                     MeetsProvisionalHardConstraints(
                         candidate,
                         planningPreferences);
+                if (!accepted)
+                    candidatesRejectedByHardConstraints++;
+                return accepted;
             }
             finally
             {
@@ -639,8 +649,14 @@ public partial class RoutingService
         var prefixPruned = PruneRedundantTransitPrefix(destinationPruned);
 
         var paretoPruned = PruneDominatedConfirmedCandidates(prefixPruned);
+        _telemetry.IncrementRouting(
+            "confirmed_candidates_rejected_dominated",
+            prefixPruned.Count - paretoPruned.Count);
         var finalEquivalentPruned =
             DeduplicateFinalNearEquivalentJourneys(paretoPruned);
+        _telemetry.IncrementRouting(
+            "confirmed_candidates_rejected_duplicate_equivalent",
+            paretoPruned.Count - finalEquivalentPruned.Count);
         var confirmed = finalEquivalentPruned
             .Select(result => result.Plan)
             .ToList();

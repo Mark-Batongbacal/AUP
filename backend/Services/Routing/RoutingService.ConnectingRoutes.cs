@@ -231,34 +231,63 @@ public partial class RoutingService
 
         var all = new List<RouteConnectionCandidate>();
         var combinationsEvaluated = 0L;
+        var combinationsRejectedProgress = 0L;
+        var connectionCandidatesConstructed = 0L;
+        _telemetry.IncrementRouting(
+            "board_candidates_considered",
+            boardCandidates.Count);
+        _telemetry.IncrementRouting(
+            "alight_candidates_considered",
+            alightCandidates.Count);
 
-        foreach (var alightAccess in alightCandidates)
+        // Route occurrence resolution is invariant across the Cartesian
+        // product. Resolve it once per access alternative so the cheap
+        // progress rejection below does not repeatedly project the same
+        // board or alight point.
+        var resolvedBoards = boardCandidates.Select(access =>
         {
-            var alightIndex = alightAccess.RouteSampleIndex ??
-                GetNearestSampleIndex(samples, alightAccess.Anchor);
-            var alightAnchor = alightAccess.FullRouteAnchor ??
-                GetRouteAnchor(route.RouteId, alightIndex, alightAccess.Anchor);
+            var index = access.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, access.Anchor);
+            return (
+                Access: access,
+                Index: index,
+                Anchor: access.FullRouteAnchor ??
+                    GetRouteAnchor(route.RouteId, index, access.Anchor));
+        }).ToList();
+        var resolvedAlights = alightCandidates.Select(access =>
+        {
+            var index = access.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, access.Anchor);
+            return (
+                Access: access,
+                Index: index,
+                Anchor: access.FullRouteAnchor ??
+                    GetRouteAnchor(route.RouteId, index, access.Anchor));
+        }).ToList();
 
-            foreach (var boardAccess in boardCandidates)
+        foreach (var alight in resolvedAlights)
+        {
+            foreach (var board in resolvedBoards)
             {
                 combinationsEvaluated++;
-                var boardIndex = boardAccess.RouteSampleIndex ??
-                    GetNearestSampleIndex(samples, boardAccess.Anchor);
-                var boardAnchor = boardAccess.FullRouteAnchor ??
-                    GetRouteAnchor(route.RouteId, boardIndex, boardAccess.Anchor);
 
                 // Direction is based on authoritative full-route progress, not
                 // merely sample indices. This remains correct on bends/loops.
-                var rideDistance = RouteDistanceBetweenAnchors(boardAnchor, alightAnchor);
+                var rideDistance = RouteDistanceBetweenAnchors(
+                    board.Anchor,
+                    alight.Anchor);
                 if (rideDistance <= 0)
+                {
+                    combinationsRejectedProgress++;
                     continue;
+                }
 
                 var jeepneyTime = JeepneyBoardingWaitTimeSeconds +
                     rideDistance / JeepneySpeedMetersPerSecond;
 
                 var total =
-                    boardAccess.GeneralizedCostPesos +
-                    alightAccess.GeneralizedCostPesos +
+                    board.Access.GeneralizedCostPesos +
+                    alight.Access.GeneralizedCostPesos +
                     GeneralizedCostFromTimeAndFare(
                         jeepneyTime,
                         JeepneyBaseFarePesos);
@@ -266,16 +295,23 @@ public partial class RoutingService
                 all.Add(new RouteConnectionCandidate(
                     route.RouteId,
                     route.RouteName,
-                    boardAccess,
-                    alightAccess,
-                    boardIndex,
-                    alightIndex,
+                    board.Access,
+                    alight.Access,
+                    board.Index,
+                    alight.Index,
                     total));
+                connectionCandidatesConstructed++;
             }
         }
         _telemetry.IncrementRouting(
             "board_alight_combinations_evaluated",
             combinationsEvaluated);
+        _telemetry.IncrementRouting(
+            "board_alight_combinations_rejected_progress",
+            combinationsRejectedProgress);
+        _telemetry.IncrementRouting(
+            "direct_connection_candidates_constructed",
+            connectionCandidatesConstructed);
 
         if (all.Count == 0)
             return [];
