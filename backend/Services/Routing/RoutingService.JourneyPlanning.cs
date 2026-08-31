@@ -145,6 +145,10 @@ public partial class RoutingService
         List<DirectAccessDestinationCompletionEdge> directCompletionEdges;
         var accessDiscoveryDiagnostics = new AccessDiscoveryDiagnostics();
         _accessDiscoveryDiagnostics = accessDiscoveryDiagnostics;
+        var alightAccessComputationDiagnostics =
+            new AlightAccessComputationDiagnostics();
+        _alightAccessComputationDiagnostics =
+            alightAccessComputationDiagnostics;
 
         try
         {
@@ -167,6 +171,7 @@ public partial class RoutingService
                     var destinationAlternatives = 0;
                     var directConnections = new List<RouteConnectionCandidate>();
                     BoardAccessDiscovery? boardDiscovery = null;
+                    AccessCandidate[]? alightOptions = null;
 
                     if (isOriginRoute)
                     {
@@ -210,6 +215,17 @@ public partial class RoutingService
 
                         if (isDestinationRoute)
                         {
+                            // Direct discovery and destination-edge construction use
+                            // the same ordered sample set and exact destination. The
+                            // returned array preserves every loop/retrace occurrence,
+                            // so this local reuse avoids recomputing it without
+                            // weakening occurrence identity.
+                            alightOptions = ComputeAlightAccessOptions(
+                                routeId,
+                                samples,
+                                destinationLatitude,
+                                destinationLongitude,
+                                AlightAccessCallerCategory.DirectDiscovery);
                             var directConnectionStarted = Stopwatch.GetTimestamp();
                             directConnections = FindBestConnections(
                                 route,
@@ -219,7 +235,8 @@ public partial class RoutingService
                                 destinationLongitude,
                                 boardDiscovery,
                                 maxWalkAccessDistanceMeters,
-                                planningPreferences?.OnboardTransit);
+                                planningPreferences?.OnboardTransit,
+                                alightOptions);
                             directConnectionMilliseconds = Stopwatch.GetElapsedTime(
                                 directConnectionStarted).TotalMilliseconds;
                             _telemetry.ObserveRouting(
@@ -267,11 +284,22 @@ public partial class RoutingService
                     if (isDestinationRoute)
                     {
                         var destinationAccessStarted = Stopwatch.GetTimestamp();
-                        var alightOptions = ComputeAlightAccessOptions(
-                            routeId,
-                            samples,
-                            destinationLatitude,
-                            destinationLongitude);
+                        if (alightOptions is null)
+                        {
+                            alightOptions = ComputeAlightAccessOptions(
+                                routeId,
+                                samples,
+                                destinationLatitude,
+                                destinationLongitude,
+                                AlightAccessCallerCategory
+                                    .DestinationAccessConstruction);
+                        }
+                        else
+                        {
+                            alightAccessComputationDiagnostics.RecordReuse(
+                                AlightAccessCallerCategory
+                                    .DestinationAccessConstruction);
+                        }
                         var constrainedAlightOptions =
                             ConstrainTransitAccessOptions(
                                 alightOptions,
@@ -349,14 +377,21 @@ public partial class RoutingService
         finally
         {
             _accessDiscoveryDiagnostics = null;
+            _alightAccessComputationDiagnostics = null;
             accessDiscoveryDiagnostics.Flush(_telemetry);
+            alightAccessComputationDiagnostics.Flush(_telemetry);
         }
+        var accessDiscoveryElapsedTicks =
+            Stopwatch.GetTimestamp() - accessDiscoveryStarted;
         _telemetry.ObserveRouting(
             "access_discovery_ms",
-            Stopwatch.GetElapsedTime(accessDiscoveryStarted).TotalMilliseconds);
+            StopwatchTicksToMilliseconds(accessDiscoveryElapsedTicks));
 
         var transferCandidateGenerationStarted = Stopwatch.GetTimestamp();
+        var transferCandidateGenerationAllocatedBefore =
+            GC.GetAllocatedBytesForCurrentThread();
         var candidates = new List<JourneyCandidate>();
+        var directCandidateGenerationStarted = Stopwatch.GetTimestamp();
 
         // 0 transfers. Keep several boarding variants for each route instead
         // of collapsing to FirstOrDefault before Valhalla can confirm access.
@@ -397,24 +432,51 @@ public partial class RoutingService
                         JeepneyBaseFarePesos)));
             }
         }
+        var directCandidateGenerationTicks =
+            Stopwatch.GetTimestamp() - directCandidateGenerationStarted;
+        _telemetry.ObserveRouting(
+            "direct_candidate_generation_ms",
+            StopwatchTicksToMilliseconds(directCandidateGenerationTicks));
 
+        var transferSearchStarted = Stopwatch.GetTimestamp();
+        var transferSearchAllocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         var transferCandidates = FindTransferCandidates(
             boardAccessPrefixByRoute,
             destinationAccessByRoute,
             originRoutes,
             cancellationToken).ToList();
+        var transferSearchTicks = Stopwatch.GetTimestamp() - transferSearchStarted;
+        _telemetry.ObserveRouting(
+            "transfer_search_ms",
+            StopwatchTicksToMilliseconds(transferSearchTicks));
+        _telemetry.ObserveRouting(
+            "transfer_search_allocated_bytes",
+            Math.Max(
+                0,
+                GC.GetAllocatedBytesForCurrentThread() -
+                transferSearchAllocatedBefore));
         candidates.AddRange(transferCandidates);
         _telemetry.IncrementRouting("candidates_generated", candidates.Count);
+        _telemetry.IncrementRouting(
+            "candidates_entering_expensive_expansion",
+            candidates.Count);
         _telemetry.ObserveRouting(
             "transfer_candidate_generation_ms",
             Stopwatch.GetElapsedTime(
                 transferCandidateGenerationStarted).TotalMilliseconds);
+        _telemetry.ObserveRouting(
+            "transfer_candidate_generation_allocated_bytes",
+            Math.Max(
+                0,
+                GC.GetAllocatedBytesForCurrentThread() -
+                transferCandidateGenerationAllocatedBefore));
 
         // Access generation stores walking and tricycle choices together on
         // one route anchor. Expand them before ranking; otherwise confirmation
         // accepts only the first valid choice and useful multimodal variants
         // (for example trike -> jeepney -> trike) disappear.
         var hardConstraintTicks = 0L;
+        var candidatesRejectedByHardConstraints = 0L;
         var accessExpansionStarted = Stopwatch.GetTimestamp();
         var expandedCandidates = candidates
             .SelectMany(ExpandAccessAlternatives)
@@ -433,6 +495,9 @@ public partial class RoutingService
             "candidates_after_access_expansion",
             expandedCandidates.Count);
         _telemetry.IncrementRouting("candidates_expanded", expandedCandidates.Count);
+        _telemetry.IncrementRouting(
+            "candidates_rejected_by_hard_constraints",
+            candidatesRejectedByHardConstraints);
 
         var candidateKeyGenerationTicks = 0L;
         var candidateDedupeStarted = Stopwatch.GetTimestamp();
@@ -472,22 +537,30 @@ public partial class RoutingService
         var diversitySelectionStarted = Stopwatch.GetTimestamp();
         var ranked = SelectCandidatesToConfirmWithDiversity(
             distinctCandidates, planningPreferences);
+        var diversitySelectionTicks =
+            Stopwatch.GetTimestamp() - diversitySelectionStarted;
         var diversitySelectionAllocatedBytes = Math.Max(
             0,
             GC.GetAllocatedBytesForCurrentThread() -
             diversitySelectionAllocatedBytesBefore);
         _telemetry.ObserveRouting(
             "diversity_selection_ms",
-            Stopwatch.GetElapsedTime(diversitySelectionStarted).TotalMilliseconds);
+            StopwatchTicksToMilliseconds(diversitySelectionTicks));
         _telemetry.ObserveRouting(
             "diversity_selection_allocated_bytes",
             diversitySelectionAllocatedBytes);
+        var terminalCompletionFilterStarted = Stopwatch.GetTimestamp();
         var eligibleDirectCompletionEdges = directCompletionEdges
             .Where(MeetsMeasuredDirectHardConstraints)
             .ToList();
         var eligibleAccessPathCompletionEdges = accessPathCompletionEdges
             .Where(MeetsMeasuredAccessPathHardConstraints)
             .ToList();
+        var terminalCompletionFilterTicks =
+            Stopwatch.GetTimestamp() - terminalCompletionFilterStarted;
+        _telemetry.ObserveRouting(
+            "terminal_completion_filter_ms",
+            StopwatchTicksToMilliseconds(terminalCompletionFilterTicks));
         _telemetry.ObserveRouting(
             "hard_constraint_filter_ms",
             StopwatchTicksToMilliseconds(hardConstraintTicks));
@@ -505,9 +578,23 @@ public partial class RoutingService
             ranked.Count +
             eligibleDirectCompletionEdges.Count +
             eligibleAccessPathCompletionEdges.Count);
+        var candidateGenerationTicks =
+            Stopwatch.GetTimestamp() - candidateGenerationStarted;
+        _telemetry.ObserveRouting(
+            "candidate_generation_pipeline_overhead_ms",
+            StopwatchTicksToMilliseconds(Math.Max(
+                0,
+                candidateGenerationTicks -
+                accessDiscoveryElapsedTicks -
+                directCandidateGenerationTicks -
+                transferSearchTicks -
+                accessExpansionAndFilterTicks -
+                candidateDedupeAndKeyTicks -
+                diversitySelectionTicks -
+                terminalCompletionFilterTicks)));
         _telemetry.ObserveRouting(
             "candidate_generation_ms",
-            Stopwatch.GetElapsedTime(candidateGenerationStarted).TotalMilliseconds);
+            StopwatchTicksToMilliseconds(candidateGenerationTicks));
 
         // Preserve transit sources while confirming all terminal-edge kinds
         // through one boundary. Transit-specific semantic pruning still has
@@ -545,10 +632,13 @@ public partial class RoutingService
             var started = Stopwatch.GetTimestamp();
             try
             {
-                return candidate.Legs.All(HasForwardRouteProgress) &&
+                var accepted = candidate.Legs.All(HasForwardRouteProgress) &&
                     MeetsProvisionalHardConstraints(
                         candidate,
                         planningPreferences);
+                if (!accepted)
+                    candidatesRejectedByHardConstraints++;
+                return accepted;
             }
             finally
             {
@@ -639,8 +729,14 @@ public partial class RoutingService
         var prefixPruned = PruneRedundantTransitPrefix(destinationPruned);
 
         var paretoPruned = PruneDominatedConfirmedCandidates(prefixPruned);
+        _telemetry.IncrementRouting(
+            "confirmed_candidates_rejected_dominated",
+            prefixPruned.Count - paretoPruned.Count);
         var finalEquivalentPruned =
             DeduplicateFinalNearEquivalentJourneys(paretoPruned);
+        _telemetry.IncrementRouting(
+            "confirmed_candidates_rejected_duplicate_equivalent",
+            paretoPruned.Count - finalEquivalentPruned.Count);
         var confirmed = finalEquivalentPruned
             .Select(result => result.Plan)
             .ToList();
