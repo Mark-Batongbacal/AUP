@@ -23,7 +23,9 @@ object HistoryRouteReuseState {
     @Synchronized
     fun prepare(reuse: PendingHistoryRouteReuse) {
         pendingSelection = reuse
-        autoStartNextRouteDetails = true
+        // Do not arm auto-start until RouteResults actually consumes this handoff. This prevents
+        // a failed/no-op history navigation from accidentally starting an unrelated later route.
+        autoStartNextRouteDetails = false
     }
 
     @Synchronized
@@ -37,8 +39,13 @@ object HistoryRouteReuseState {
         val pending = pendingSelection ?: return null
         val sameOrigin = pending.originName.equals(origin, ignoreCase = true)
         val sameDestination = pending.destinationName.equals(destination, ignoreCase = true)
-        if (!sameOrigin || !sameDestination) return null
+        if (!sameOrigin || !sameDestination) {
+            clear()
+            return null
+        }
+
         pendingSelection = null
+        autoStartNextRouteDetails = true
         return pending
     }
 
