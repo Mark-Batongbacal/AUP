@@ -135,6 +135,8 @@ services:
   pelias-placeholder:
     image: ${PELIAS_PLACEHOLDER_IMAGE:-pelias/placeholder:master}
     restart: unless-stopped
+    environment:
+      PORT: "4100"
     expose:
       - "4100"
     volumes:
@@ -153,6 +155,8 @@ services:
   pelias-interpolation:
     image: ${PELIAS_INTERPOLATION_IMAGE:-pelias/interpolation:master}
     restart: unless-stopped
+    environment:
+      PORT: "4300"
     command:
       - ./interpolate
       - server
