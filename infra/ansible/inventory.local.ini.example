@@ -1,0 +1,7 @@
+# Copy to inventory.local.ini and replace placeholders, or configure matching
+# aliases in ~/.ssh/config and use the committed inventory.ini directly.
+[tuki_gcp]
+gcp ansible_host=GCP_PUBLIC_IP ansible_user=GCP_SSH_USER ansible_ssh_private_key_file=/absolute/path/to/gcp-private-key
+
+[tuki_azure]
+azure ansible_host=AZURE_PUBLIC_IP ansible_user=AZURE_SSH_USER ansible_ssh_private_key_file=/absolute/path/to/azure-private-key
