@@ -8,7 +8,10 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 internal data class MapCameraInsets(
     val left: Int,
@@ -37,6 +40,12 @@ internal fun fitMapCameraToRoute(
         return
     }
 
+    val previewBearing = if (insets.isSymmetricPreviewFrame()) {
+        routeTopToBottomCameraBearing(routePoints.firstOrNull(), routePoints.lastOrNull())
+    } else {
+        null
+    }
+
     if (frame.distinctPointCount == 1) {
         val center = LatLng(
             (frame.south + frame.north) / 2.0,
@@ -44,7 +53,11 @@ internal fun fitMapCameraToRoute(
         )
         map.animateCamera(
             CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder().target(center).zoom(fallbackZoom).build()
+                CameraPosition.Builder()
+                    .target(center)
+                    .zoom(fallbackZoom)
+                    .bearing(previewBearing ?: 0.0)
+                    .build()
             ),
             500
         )
@@ -66,9 +79,52 @@ internal fun fitMapCameraToRoute(
             (insets.right * horizontalScale).roundToInt(),
             (insets.bottom * verticalScale).roundToInt()
         ),
-        600
+        420
     )
+
+    // Route-detail previews use symmetric padding. Once the route has been fitted, rotate that
+    // preview so the trip reads naturally from top (blue/start) to bottom (orange/destination).
+    // Active-navigation framing uses asymmetric insets and keeps its existing camera behavior.
+    if (previewBearing != null) {
+        mapView.postDelayed(
+            {
+                val camera = map.cameraPosition
+                map.animateCamera(
+                    CameraUpdateFactory.newCameraPosition(
+                        CameraPosition.Builder()
+                            .target(camera.target)
+                            .zoom((camera.zoom - 0.35).coerceAtLeast(1.0))
+                            .bearing(previewBearing)
+                            .tilt(camera.tilt)
+                            .build()
+                    ),
+                    260
+                )
+            },
+            440L
+        )
+    }
 }
+
+internal fun routeTopToBottomCameraBearing(start: LatLng?, destination: LatLng?): Double? {
+    if (start == null || destination == null) return null
+    if (start.latitude == destination.latitude && start.longitude == destination.longitude) return null
+
+    val startLatitude = Math.toRadians(start.latitude)
+    val destinationLatitude = Math.toRadians(destination.latitude)
+    val longitudeDelta = Math.toRadians(destination.longitude - start.longitude)
+    val y = sin(longitudeDelta) * cos(destinationLatitude)
+    val x = cos(startLatitude) * sin(destinationLatitude) -
+        sin(startLatitude) * cos(destinationLatitude) * cos(longitudeDelta)
+    val routeBearing = (Math.toDegrees(atan2(y, x)) + 360.0) % 360.0
+
+    // MapLibre's camera bearing describes the direction placed at the top of the screen. Point
+    // the opposite direction upward so the start stays above the destination in route previews.
+    return (routeBearing + 180.0) % 360.0
+}
+
+private fun MapCameraInsets.isSymmetricPreviewFrame(): Boolean =
+    left == right && top == bottom
 
 private fun paddingScale(requestedPadding: Int, availableSize: Int): Double {
     if (requestedPadding <= 0) return 1.0
