@@ -49,7 +49,7 @@ docker run --detach --name "$temp" \
   --volumes-from "$es" \
   --volume "$stage:/snapshots" \
   --env discovery.type=single-node \
-  --env ES_JAVA_OPTS=-Xms512m -Xmx512m \
+  --env "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
   --ulimit nofile=65536:65536 \
   --ulimit memlock=-1:-1 \
   --cap-add IPC_LOCK \
