@@ -21,17 +21,32 @@ image_ref="$(
 
 wait_es() {
   local container="$1"
-  local ready=0
+  local running
+
   for _ in $(seq 1 90); do
+    running="$(
+      docker inspect "$container" |
+      python3 -c 'import json,sys; x=json.load(sys.stdin); print(str(bool(x and x[0]["State"]["Running"])).lower())'
+    )"
+
+    if [[ "$running" != "true" ]]; then
+      echo "Elasticsearch container '$container' exited before becoming healthy." >&2
+      docker logs "$container" >&2 || true
+      return 1
+    fi
+
     if docker exec "$container" curl --fail --silent \
       'http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=2s' \
       >/dev/null 2>&1; then
-      ready=1
-      break
+      return 0
     fi
+
     sleep 2
   done
-  [[ "$ready" -eq 1 ]]
+
+  echo "Timed out waiting for Elasticsearch container '$container'." >&2
+  docker logs "$container" >&2 || true
+  return 1
 }
 
 cleanup() {
@@ -46,12 +61,13 @@ docker stop "$es" >/dev/null
 docker run --detach --name "$temp" \
   --volumes-from "$es" \
   --volume "$repo_dir:/snapshots" \
-  --env discovery.type=single-node \
+  --env "discovery.type=single-node" \
+  --env "path.repo=/snapshots" \
   --env "ES_JAVA_OPTS=-Xms512m -Xmx512m" \
   --ulimit nofile=65536:65536 \
   --ulimit memlock=-1:-1 \
   --cap-add IPC_LOCK \
-  "$image_ref" -Epath.repo=/snapshots >/dev/null
+  "$image_ref" >/dev/null
 
 wait_es "$temp"
 
