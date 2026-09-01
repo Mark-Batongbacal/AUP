@@ -78,16 +78,21 @@ internal fun fitMapCameraToRoute(
     if (routeDetailsBearing != null) {
         val fittedCamera = map.getCameraForLatLngBounds(
             bounds,
-            intArrayOf(left, top, right, bottom)
+            arrayOf(left, top, right, bottom),
+            routeDetailsBearing,
+            map.cameraPosition.tilt
         )
-        map.animateCamera(
-            CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder(fittedCamera)
-                    .bearing(routeDetailsBearing)
-                    .build()
-            ),
-            500
-        )
+        if (fittedCamera != null) {
+            map.animateCamera(
+                CameraUpdateFactory.newCameraPosition(fittedCamera),
+                500
+            )
+        } else {
+            map.animateCamera(
+                CameraUpdateFactory.newLatLngBounds(bounds, left, top, right, bottom),
+                500
+            )
+        }
     } else {
         map.animateCamera(
             CameraUpdateFactory.newLatLngBounds(bounds, left, top, right, bottom),
