@@ -171,11 +171,12 @@
         - { path: "{{ tuki_install_root }}/data/caddy/data", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/caddy/config", owner: "1000", group: "1000", mode: "0775" }
 
-    - name: Clone or update the dev branch
+    - name: Clone or update the configured repository branch
       ansible.builtin.git:
         repo: "{{ tuki_repository_url }}"
         dest: "{{ tuki_install_root }}/AUP"
         version: "{{ tuki_repository_branch }}"
+        refspec: "+refs/heads/{{ tuki_repository_branch }}:refs/remotes/origin/{{ tuki_repository_branch }}"
         single_branch: true
         update: true
         force: false
