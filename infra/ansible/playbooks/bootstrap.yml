@@ -1,6 +1,6 @@
 ---
-- name: Bootstrap and deploy Tuki on GCP Ubuntu
-  hosts: tuki-gcp
+- name: Bootstrap Tuki GCP Ubuntu host
+  hosts: tuki_gcp
   become: true
   vars:
     tuki_repository_url: https://github.com/Mark-Batongbacal/AUP.git
@@ -204,24 +204,9 @@
       changed_when: false
       no_log: true
 
-    - name: Build and start production containers
-      ansible.builtin.command:
-        cmd: docker compose up -d --build --remove-orphans
-        chdir: "{{ tuki_install_root }}/AUP"
-      register: tuki_compose_up
-      changed_when: >-
-        'Started' in tuki_compose_up.stderr or
-        'Created' in tuki_compose_up.stderr or
-        'Recreated' in tuki_compose_up.stderr or
-        'Building' in tuki_compose_up.stderr
-
-    - name: Show production container status
-      ansible.builtin.command:
-        cmd: docker compose ps
-        chdir: "{{ tuki_install_root }}/AUP"
-      register: tuki_compose_ps
-      changed_when: false
-
-    - name: Report production container status
+    - name: Report bootstrap completion
       ansible.builtin.debug:
-        var: tuki_compose_ps.stdout_lines
+        msg: >-
+          GCP host bootstrap is complete. Docker, persistent directories, repository,
+          runtime configuration, and Compose validation are ready. No application or
+          data-service containers were started; prepare/migrate data before deployment.
