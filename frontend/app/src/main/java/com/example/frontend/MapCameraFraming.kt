@@ -78,7 +78,7 @@ internal fun fitMapCameraToRoute(
     if (routeDetailsBearing != null) {
         val fittedCamera = map.getCameraForLatLngBounds(
             bounds,
-            arrayOf(left, top, right, bottom),
+            intArrayOf(left, top, right, bottom),
             routeDetailsBearing,
             map.cameraPosition.tilt
         )
