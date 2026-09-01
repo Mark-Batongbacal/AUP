@@ -8,7 +8,10 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 internal data class MapCameraInsets(
     val left: Int,
@@ -37,6 +40,12 @@ internal fun fitMapCameraToRoute(
         return
     }
 
+    val routeDetailsBearing = if (insets.isSymmetricPreviewFrame()) {
+        routeTopToBottomCameraBearing(routePoints.firstOrNull(), routePoints.lastOrNull())
+    } else {
+        null
+    }
+
     if (frame.distinctPointCount == 1) {
         val center = LatLng(
             (frame.south + frame.north) / 2.0,
@@ -44,9 +53,13 @@ internal fun fitMapCameraToRoute(
         )
         map.animateCamera(
             CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder().target(center).zoom(fallbackZoom).build()
+                CameraPosition.Builder()
+                    .target(center)
+                    .zoom(fallbackZoom)
+                    .bearing(routeDetailsBearing ?: map.cameraPosition.bearing)
+                    .build()
             ),
-            500
+            450
         )
         return
     }
@@ -57,18 +70,51 @@ internal fun fitMapCameraToRoute(
         .build()
     val horizontalScale = paddingScale(insets.left + insets.right, mapView.width)
     val verticalScale = paddingScale(insets.top + insets.bottom, mapView.height)
+    val left = (insets.left * horizontalScale).roundToInt()
+    val top = (insets.top * verticalScale).roundToInt()
+    val right = (insets.right * horizontalScale).roundToInt()
+    val bottom = (insets.bottom * verticalScale).roundToInt()
 
-    map.animateCamera(
-        CameraUpdateFactory.newLatLngBounds(
+    if (routeDetailsBearing != null) {
+        val fittedCamera = map.getCameraForLatLngBounds(
             bounds,
-            (insets.left * horizontalScale).roundToInt(),
-            (insets.top * verticalScale).roundToInt(),
-            (insets.right * horizontalScale).roundToInt(),
-            (insets.bottom * verticalScale).roundToInt()
-        ),
-        600
-    )
+            intArrayOf(left, top, right, bottom)
+        )
+        map.animateCamera(
+            CameraUpdateFactory.newCameraPosition(
+                CameraPosition.Builder(fittedCamera)
+                    .bearing(routeDetailsBearing)
+                    .build()
+            ),
+            500
+        )
+    } else {
+        map.animateCamera(
+            CameraUpdateFactory.newLatLngBounds(bounds, left, top, right, bottom),
+            500
+        )
+    }
 }
+
+internal fun routeTopToBottomCameraBearing(start: LatLng?, destination: LatLng?): Double? {
+    if (start == null || destination == null) return null
+    if (start.latitude == destination.latitude && start.longitude == destination.longitude) return null
+
+    val startLatitude = Math.toRadians(start.latitude)
+    val destinationLatitude = Math.toRadians(destination.latitude)
+    val longitudeDelta = Math.toRadians(destination.longitude - start.longitude)
+    val y = sin(longitudeDelta) * cos(destinationLatitude)
+    val x = cos(startLatitude) * sin(destinationLatitude) -
+        sin(startLatitude) * cos(destinationLatitude) * cos(longitudeDelta)
+    val routeBearing = (Math.toDegrees(atan2(y, x)) + 360.0) % 360.0
+
+    // The camera points the opposite travel direction upward so the start/current-location marker
+    // reads at the top of route-detail previews while the destination reads at the bottom.
+    return (routeBearing + 180.0) % 360.0
+}
+
+private fun MapCameraInsets.isSymmetricPreviewFrame(): Boolean =
+    left == right && top == bottom
 
 private fun paddingScale(requestedPadding: Int, availableSize: Int): Double {
     if (requestedPadding <= 0) return 1.0
