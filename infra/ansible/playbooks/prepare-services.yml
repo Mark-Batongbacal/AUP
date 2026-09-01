@@ -47,7 +47,6 @@
           docker compose --env-file {{ tuki_compose_env }} up -d
           sqlserver pelias-elasticsearch valhalla
         chdir: "{{ tuki_install_root }}/AUP"
-      register: tuki_data_services_up
       changed_when: true
 
     - name: Wait for SQL Server and Elasticsearch to become healthy
@@ -75,21 +74,6 @@
         chdir: "{{ tuki_install_root }}/AUP"
       changed_when: true
 
-    - name: Wait for Pelias API to become healthy
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q pelias)"
-          test -n "$container_id"
-          docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
-        chdir: "{{ tuki_install_root }}/AUP"
-        executable: /bin/bash
-      register: tuki_pelias_health
-      changed_when: false
-      retries: 30
-      delay: 5
-      until: tuki_pelias_health.stdout == "healthy"
-
     - name: Show data-service status
       ansible.builtin.command:
         cmd: >-
@@ -104,6 +88,8 @@
         msg:
           - "{{ tuki_data_service_status.stdout_lines }}"
           - >-
-            Data-service containers are running. This playbook does not restore
-            SQL Server data, import a Pelias index, or replace Valhalla tiles.
+            Data-service containers are running. Pelias and Valhalla are not
+            required to be healthy yet because their data may still need to be
+            imported, migrated, or built. This playbook does not restore SQL
+            Server data, import a Pelias index, or replace Valhalla tiles.
             Complete and validate data preparation before running deploy.yml.
