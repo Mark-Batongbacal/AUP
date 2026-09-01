@@ -17,6 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +36,7 @@ import com.example.frontend.MapVisualStyle
 import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.location.RouteCoordinate
 import com.example.frontend.model.CommuteStep
+import com.example.frontend.navigation.HistoryRouteReuseState
 import com.example.frontend.navigation.joinedNavigationLegs
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
@@ -91,6 +93,12 @@ fun NavigationScreen(
         legRoutePoints.filterIndexed { index, points -> index != selectedLegIndex && points.size >= 2 }
     } else {
         legRoutePoints.filter { points -> points.size >= 2 }.drop(1)
+    }
+
+    LaunchedEffect(Unit) {
+        if (HistoryRouteReuseState.consumeAutoStart() && !hasActiveTrip && !isStartingNavigation) {
+            onStartTracking()
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(NavBg)) {
@@ -328,7 +336,7 @@ private fun RoutePreviewCard(
             }
             MapScreen(
                 routePoints = routePoints,
-                modifier = Modifier.fillMaxWidth().height(218.dp).clip(RoundedCornerShape(15.dp)),
+                modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(15.dp)),
                 startPoint = startPoint,
                 selectedDestination = destinationPoint,
                 finalDestination = finalDestination,
@@ -338,7 +346,8 @@ private fun RoutePreviewCard(
                 visualStyle = MapVisualStyle.LiveTrip,
                 showDeviceLocation = false,
                 fitRouteBounds = true,
-                routeBoundsPoints = routeBoundsPoints
+                routeBoundsPoints = routeBoundsPoints,
+                routeInteractionControlsEnabled = true
             )
         }
     }
