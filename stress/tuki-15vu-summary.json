@@ -1,0 +1,326 @@
+{
+    "metrics": {
+        "http_req_receiving": {
+            "max": 574.033263,
+            "p(90)": 180.602174,
+            "p(95)": 236.29423400000002,
+            "avg": 43.84255072508592,
+            "min": 0,
+            "med": 0.186763
+        },
+        "iteration_duration": {
+            "max": 49946.591128,
+            "p(90)": 35006.0305436,
+            "p(95)": 40339.8321485,
+            "avg": 27839.23328752543,
+            "min": 6821.037708,
+            "med": 27686.620849
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(90)": 16441.9945736,
+            "p(95)": 21244.0982707,
+            "avg": 4377.031707563381,
+            "min": 92.22661,
+            "med": 847.5016075000001,
+            "max": 27489.429257
+        },
+        "checks": {
+            "fails": 0,
+            "passes": 40,
+            "value": 1
+        },
+        "tuki_reroute_success": {
+            "passes": 1,
+            "fails": 1,
+            "value": 0.5
+        },
+        "http_req_failed": {
+            "passes": 7,
+            "fails": 284,
+            "thresholds": {
+                "rate<0.02": true
+            },
+            "value": 0.024054982817869417
+        },
+        "http_req_duration": {
+            "avg": 4548.146895958764,
+            "min": 92.22661,
+            "med": 852.751162,
+            "max": 30000.320264,
+            "p(90)": 17467.267314,
+            "p(95)": 21776.6451305
+        },
+        "vus_max": {
+            "value": 15,
+            "min": 15,
+            "max": 15
+        },
+        "http_req_sending": {
+            "avg": 0.07915366666666662,
+            "min": 0.017228,
+            "med": 0.042216,
+            "max": 2.029705,
+            "p(90)": 0.140341,
+            "p(95)": 0.2411025
+        },
+        "tuki_place_search_duration": {
+            "p(95)": 3224.406132199997,
+            "avg": 843.8807830000001,
+            "min": 98.31291,
+            "med": 205.858841,
+            "max": 5169.155963,
+            "p(90)": 2738.3782709999996,
+            "thresholds": {
+                "p(95)<2500": true
+            }
+        },
+        "tuki_unexpected_status_count": {
+            "rate": 0.0078331607160647,
+            "count": 1
+        },
+        "tuki_start_success": {
+            "passes": 55,
+            "fails": 4,
+            "thresholds": {
+                "rate>0.90": false
+            },
+            "value": 0.9322033898305084
+        },
+        "tuki_place_search_success": {
+            "passes": 73,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.95": false
+            },
+            "value": 1
+        },
+        "data_sent": {
+            "count": 110110,
+            "rate": 862.509326445884
+        },
+        "group_duration": {
+            "avg": 3085.427360986046,
+            "min": 0.00338,
+            "med": 214.067338,
+            "max": 30001.088065,
+            "p(90)": 13049.816983900013,
+            "p(95)": 19707.76024384994
+        },
+        "iterations": {
+            "count": 59,
+            "rate": 0.46215648224781725
+        },
+        "tuki_plan_success": {
+            "passes": 61,
+            "fails": 2,
+            "thresholds": {
+                "rate>0.90": false
+            },
+            "value": 0.9682539682539683
+        },
+        "tuki_cancel_duration": {
+            "med": 294.160435,
+            "max": 6473.434616,
+            "p(90)": 2211.182110800001,
+            "p(95)": 3832.5580368,
+            "avg": 857.0160248113208,
+            "min": 113.550789,
+            "thresholds": {
+                "p(95)<3000": true
+            }
+        },
+        "tuki_plan_duration": {
+            "p(95)": 27152.337110599998,
+            "avg": 16431.381855523807,
+            "min": 2875.068404,
+            "med": 16381.295564,
+            "max": 30000.320264,
+            "p(90)": 24496.17076600001,
+            "thresholds": {
+                "p(95)<8000": true
+            }
+        },
+        "http_reqs": {
+            "count": 291,
+            "rate": 2.2794497683748274
+        },
+        "tuki_auth_duration": {
+            "avg": 119.62261793333332,
+            "min": 107.698897,
+            "med": 117.164792,
+            "max": 133.800636,
+            "p(90)": 131.1084436,
+            "p(95)": 133.3720708,
+            "thresholds": {
+                "p(95)<2000": false
+            }
+        },
+        "vus": {
+            "value": 15,
+            "min": 15,
+            "max": 15
+        },
+        "tuki_reroute_duration": {
+            "avg": 17345.145099,
+            "min": 13548.495315,
+            "med": 17345.145099,
+            "max": 21141.794883,
+            "p(90)": 20382.4649262,
+            "p(95)": 20762.1299046,
+            "thresholds": {
+                "p(95)<9000": true
+            }
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_waiting": {
+            "med": 852.623749,
+            "max": 30000.176247,
+            "p(90)": 17122.178285,
+            "p(95)": 21637.142069,
+            "avg": 4504.225191567016,
+            "min": 91.498517
+        },
+        "data_received": {
+            "count": 5400833,
+            "rate": 42305.592889625856
+        },
+        "tuki_start_duration": {
+            "med": 1308.449507,
+            "max": 6497.592369,
+            "p(90)": 4797.039233200001,
+            "p(95)": 6180.250995399999,
+            "avg": 2200.724979237288,
+            "min": 141.589021,
+            "thresholds": {
+                "p(95)<4000": true
+            }
+        },
+        "http_req_connecting": {
+            "max": 1096.301706,
+            "p(90)": 0,
+            "p(95)": 88.4468325,
+            "avg": 9.102827457044674,
+            "min": 0,
+            "med": 0
+        },
+        "http_req_blocked": {
+            "avg": 9.324450652920959,
+            "min": 0.00543,
+            "med": 0.00907,
+            "max": 1096.801178,
+            "p(90)": 0.032439,
+            "p(95)": 88.5292825
+        },
+        "tuki_cancel_success": {
+            "passes": 53,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.95": false
+            },
+            "value": 1
+        },
+        "tuki_flow_success": {
+            "passes": 52,
+            "fails": 7,
+            "thresholds": {
+                "rate>0.85": false
+            },
+            "value": 0.8813559322033898
+        }
+    },
+    "root_group": {
+        "groups": {
+            "01 auth": {
+                "name": "01 auth",
+                "path": "::01 auth",
+                "id": "a4316dc7a1db1f96e9978ad3726ed5c6",
+                "groups": {},
+                "checks": {
+                        "guest auth 200": {
+                            "name": "guest auth 200",
+                            "path": "::01 auth::guest auth 200",
+                            "id": "d1c1c9a91afe35dceaefba5841c4693f",
+                            "passes": 15,
+                            "fails": 0
+                        }
+                    }
+            },
+            "02 search": {
+                "checks": {},
+                "name": "02 search",
+                "path": "::02 search",
+                "id": "483a92accdb478abbdbf576712c61f67",
+                "groups": {}
+            },
+            "03 plan": {
+                "path": "::03 plan",
+                "id": "6201f72517efe67c8c35e928eb8ec266",
+                "groups": {},
+                "checks": {},
+                "name": "03 plan"
+            },
+            "04 start": {
+                "checks": {},
+                "name": "04 start",
+                "path": "::04 start",
+                "id": "381c286f5edc357304e293581e01e206",
+                "groups": {}
+            },
+            "05 board if requested": {
+                "name": "05 board if requested",
+                "path": "::05 board if requested",
+                "id": "9a3d6ba3f5ef3aa31cc75983b2712184",
+                "groups": {},
+                "checks": {
+                        "boarding 200": {
+                            "name": "boarding 200",
+                            "path": "::05 board if requested::boarding 200",
+                            "id": "31c8cbd5ac67be4a760bba796d49fb60",
+                            "passes": 14,
+                            "fails": 0
+                        }
+                    }
+            },
+            "06 meaningful nav events": {
+                "name": "06 meaningful nav events",
+                "path": "::06 meaningful nav events",
+                "id": "50db8d266b6a66138481ac47975f1a42",
+                "groups": {},
+                "checks": {
+                        "active refresh 200": {
+                            "name": "active refresh 200",
+                            "path": "::06 meaningful nav events::active refresh 200",
+                            "id": "5096d239ed83a90abc7e8b8cf3ba10b6",
+                            "passes": 4,
+                            "fails": 0
+                        },
+                        "location sync 200": {
+                            "passes": 7,
+                            "fails": 0,
+                            "name": "location sync 200",
+                            "path": "::06 meaningful nav events::location sync 200",
+                            "id": "563c43510b66f47afab4f54a53ab34ab"
+                        }
+                    }
+            },
+            "07 cancel": {
+                "path": "::07 cancel",
+                "id": "5664af3a4e6842f78f9fd3ed809a77c9",
+                "groups": {},
+                "checks": {},
+                "name": "07 cancel"
+            }
+        },
+        "checks": {},
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+}

@@ -34,11 +34,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.frontend.data.TukiDataProvider
 import com.example.frontend.data.places.DestinationSearchResultDto
 import com.example.frontend.navigation.TripPreferencePreview
 import kotlinx.coroutines.delay
@@ -101,6 +103,10 @@ fun TripOptionsSheet(
     onDestinationSearch: suspend (String) -> List<DestinationSearchResultDto>,
     onDestinationChange: (DestinationSearchResultDto) -> Unit
 ) {
+    val context = LocalContext.current
+    val placesRepository = remember(context.applicationContext) {
+        TukiDataProvider(context.applicationContext).placesRepository
+    }
     var editor by remember { mutableStateOf<TripOptionEditor?>(null) }
 
     if (editor == null) {
@@ -139,7 +145,7 @@ fun TripOptionsSheet(
                 TripOptionRow(
                     "⌖",
                     "Change destination",
-                    "Calls the backend to replan from your current location to the new destination.",
+                    "Search for a place or pin a new destination on the map, then TUKI will replan from your current location.",
                     isWorking
                 ) { editor = TripOptionEditor.Destination }
                 Spacer(Modifier.height(10.dp))
@@ -161,10 +167,16 @@ fun TripOptionsSheet(
             onDismiss = { editor = null },
             onConfirm = { budget, clear -> editor = null; onDismiss(); onBudgetChange(budget, clear) }
         )
-        TripOptionEditor.Destination -> DestinationSheet(
-            onDismiss = { editor = null },
-            onSearch = onDestinationSearch,
-            onConfirm = { destination -> editor = null; onDismiss(); onDestinationChange(destination) }
+        TripOptionEditor.Destination -> LiveTripDestinationPickerScreen(
+            placesRepository = placesRepository,
+            focusLatitude = null,
+            focusLongitude = null,
+            onBack = { editor = null },
+            onDestinationSelected = { destination ->
+                editor = null
+                onDismiss()
+                onDestinationChange(destination)
+            }
         )
         null -> Unit
     }

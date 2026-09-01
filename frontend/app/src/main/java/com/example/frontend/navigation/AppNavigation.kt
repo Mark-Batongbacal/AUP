@@ -14,6 +14,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.frontend.R
 import com.example.frontend.TodaPointOverlay
 import com.example.frontend.TransitRouteOverlay
+import com.example.frontend.TukiMapOverlayState
 import com.example.frontend.auth.*
 import com.example.frontend.core.findActivity
 import com.example.frontend.core.location.LocationDetectionFailureMessage
@@ -196,7 +197,6 @@ fun AppNavigation(
                     is ApiResult.Failure -> favoritesError = result.message
                 }
             }
-
             favoriteActionRecommendationIds = favoriteActionRecommendationIds - recommendationId
         }
     }
@@ -282,7 +282,7 @@ fun AppNavigation(
                         navController.navigate(AppScreen.SIGNUP.name)
                     },
                     onLoginSuccess = {
-                        navController.navigate(AppScreen.HOME.name) {
+                        navController.navigate(AppScreen.LOGIN_SUCCESS_ANIMATION.name) {
                             popUpTo(AppScreen.LOGIN.name) { inclusive = true }
                         }
                     },
@@ -365,7 +365,7 @@ fun AppNavigation(
                         navController.popBackStack()
                     },
                     onLoginSuccess = {
-                        navController.navigate(AppScreen.HOME.name) {
+                        navController.navigate(AppScreen.LOGIN_SUCCESS_ANIMATION.name) {
                             popUpTo(AppScreen.SIGNUP.name) { inclusive = true }
                         }
                     },
@@ -395,6 +395,16 @@ fun AppNavigation(
                 ForgotPasswordScreen(
                     onBack = { navController.popBackStack() },
                     onResetSent = { navController.popBackStack() }
+                )
+            }
+
+            composable(route = AppScreen.LOGIN_SUCCESS_ANIMATION.name) {
+                LoginSuccessAnimationScreen(
+                    onAnimationComplete = {
+                        navController.navigate(AppScreen.HOME.name) {
+                            popUpTo(AppScreen.LOGIN_SUCCESS_ANIMATION.name) { inclusive = true }
+                        }
+                    }
                 )
             }
 
@@ -667,6 +677,28 @@ fun AppNavigation(
                 )
             }
 
+            composable(route = AppScreen.TODA_SUBMISSION.name) {
+                LocationAwareTricycleSubmissionScreen(
+                    dataProvider = dataProvider,
+                    onBack = { navController.popBackStack() },
+                    onHomeClick = {
+                        navController.navigate(AppScreen.HOME.name) {
+                            popUpTo(AppScreen.HOME.name) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                    onRecentClick = {
+                        navController.navigate(AppScreen.RECENT.name)
+                    },
+                    onFavoritesClick = {
+                        navController.navigate(AppScreen.FAVORITES.name)
+                    },
+                    onProfileClick = {
+                        navController.navigate(AppScreen.PROFILE.name)
+                    }
+                )
+            }
+
             composable(route = AppScreen.COMMUTE_DETAIL.name) {
                 selectedCommute?.let { commute ->
                     LaunchedEffect(commute.id) {
@@ -753,15 +785,19 @@ fun AppNavigation(
                     destinationLatitude = exactDestination?.latitude,
                     destinationLongitude = exactDestination?.longitude,
                     onBack = { navController.popBackStack() },
-                    onRouteSelect = { option ->
+                    onRouteSelect = { option, selectedOrigin, selectedDestination, selectedOriginLatitude, selectedOriginLongitude ->
                         selectedRouteOption = option
+                        selectedRoutingOriginLatitude = selectedOriginLatitude
+                        selectedRoutingOriginLongitude = selectedOriginLongitude
                         resolvedLegGeometries = option.legRoutePoints.map { segment ->
                             segment.map { point -> LatLng(point.latitude, point.longitude) }
                         }
                         liveCurrentLegGeometry = emptyList()
-                        navController.navigate(navigationRoute(origin, destination))
+                        navController.navigate(navigationRoute(selectedOrigin, selectedDestination))
                     },
-                    onSuggestToda = {}
+                    onSuggestToda = {
+                        navController.navigate(AppScreen.TODA_SUBMISSION.name)
+                    }
                 )
             }
 
@@ -1048,6 +1084,25 @@ fun AppNavigation(
                 val destination = backStackEntry.arguments?.getString("destination") ?: ""
                 var isNavigationActionInProgress by remember { mutableStateOf(false) }
 
+                LaunchedEffect(
+                    activeNavigationSnapshot?.sessionId,
+                    activeNavigationSnapshot?.recommendationId,
+                    selectedRouteOption?.id
+                ) {
+                    val activeRecommendationId = activeNavigationSnapshot?.recommendationId
+                        ?: return@LaunchedEffect
+                    val selectedRecommendationId = selectedRouteOption?.id
+                        ?: return@LaunchedEffect
+                    if (selectedRecommendationId != activeRecommendationId) {
+                        // A backend reroute owns a brand-new recommendation. The route card that
+                        // launched navigation is no longer authoritative, so discard every piece
+                        // of geometry/end-point state derived from it before MapLibre can render it.
+                        selectedRouteOption = null
+                        resolvedLegGeometries = emptyList()
+                        liveCurrentLegGeometry = emptyList()
+                    }
+                }
+
                 LaunchedEffect(Unit) {
                     if (transitRouteOverlays.isEmpty()) {
                         when (val routes = transportRouteRepository.getActiveRoutes()) {
@@ -1223,32 +1278,48 @@ fun AppNavigation(
                     }
                 }
 
-                val selectedLegPoints = resolvedLegGeometries.getOrNull(currentLegIndex).orEmpty()
+                val activeRecommendationId = activeNavigationSnapshot?.recommendationId
+                val selectedRouteMatchesActiveRecommendation = selectedRouteOption?.let { option ->
+                    activeRecommendationId == null || option.id == activeRecommendationId
+                } == true
+
+                val selectedLegPoints = if (selectedRouteMatchesActiveRecommendation) {
+                    resolvedLegGeometries.getOrNull(currentLegIndex).orEmpty()
+                } else {
+                    emptyList()
+                }
                 val routePoints = if (liveCurrentLegGeometry.size >= 2) {
                     liveCurrentLegGeometry
                 } else {
                     selectedLegPoints
                 }
 
-                val futureRouteSegments = resolvedLegGeometries
-                    .drop(currentLegIndex + 1)
-                    .filter { it.size >= 2 }
+                val futureRouteSegments = if (selectedRouteMatchesActiveRecommendation) {
+                    resolvedLegGeometries
+                        .drop(currentLegIndex + 1)
+                        .filter { it.size >= 2 }
+                } else {
+                    emptyList()
+                }
 
-                val legDestination = selectedRouteOption
+                // During an active trip the backend snapshot is the source of truth for the
+                // current leg. The selected route card is only a pre-navigation fallback.
+                val legDestination = activeNavigationSnapshot?.currentLeg?.let { leg ->
+                    if (leg.endLatitude != null && leg.endLongitude != null) {
+                        LatLng(leg.endLatitude, leg.endLongitude)
+                    } else {
+                        null
+                    }
+                } ?: selectedRouteOption
+                    ?.takeIf { selectedRouteMatchesActiveRecommendation }
                     ?.legEndPoints
                     ?.getOrNull(currentLegIndex)
                     ?.let { point ->
                         LatLng(point.latitude, point.longitude)
                     }
-                    ?: activeNavigationSnapshot?.currentLeg?.let { leg ->
-                        if (leg.endLatitude != null && leg.endLongitude != null) {
-                            LatLng(leg.endLatitude, leg.endLongitude)
-                        } else {
-                            null
-                        }
-                    }
 
                 val finalDestination = selectedRouteOption
+                    ?.takeIf { selectedRouteMatchesActiveRecommendation }
                     ?.legEndPoints
                     ?.lastOrNull()
                     ?.let { point ->
@@ -1338,12 +1409,31 @@ fun AppNavigation(
                 onBack = {
                     showAskAI = false
                 },
-                onDestinationConfirmed = { destination ->
+                onJourneySelected = { option, destination, planningOrigin ->
                     showAskAI = false
-                    selectedRoutingDestination = null
-                    selectedRoutingOriginLatitude = null
-                    selectedRoutingOriginLongitude = null
-                    navController.navigate(routeResults("Current location", destination))
+                    selectedRoutingDestination = DestinationSearchResultDto(
+                        id = destination.candidateId,
+                        name = destination.name,
+                        latitude = destination.latitude,
+                        longitude = destination.longitude,
+                        category = destination.category,
+                        source = "assistant",
+                        address = destination.address
+                    )
+                    selectedRoutingOriginLatitude = planningOrigin.latitude
+                    selectedRoutingOriginLongitude = planningOrigin.longitude
+                    selectedRouteOption = option
+                    resolvedLegGeometries = option.legRoutePoints.map { segment ->
+                        segment.map { point -> LatLng(point.latitude, point.longitude) }
+                    }
+                    liveCurrentLegGeometry = emptyList()
+                    TukiMapOverlayState.selectJourneyJeepneyRoutes(option.legRouteIds)
+                    navController.navigate(
+                        navigationRoute(
+                            planningOrigin.name ?: "Current location",
+                            destination.name
+                        )
+                    )
                 }
             )
         }

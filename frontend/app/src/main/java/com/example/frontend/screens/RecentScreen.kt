@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,9 +20,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.frontend.LocalTukiDataProvider
 import com.example.frontend.components.BottomBar
+import com.example.frontend.components.PaginationControls
 import com.example.frontend.components.TukiTab
+import com.example.frontend.core.localization.AppLanguagePreference
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.model.RecentCommute
 import java.time.Instant
 import java.time.LocalDateTime
@@ -44,8 +46,10 @@ import com.example.frontend.ui.theme.TukiGold
 import com.example.frontend.ui.theme.TukiSky
 import com.example.frontend.ui.theme.TukiTealSurface
 import com.example.frontend.ui.theme.TukiForestSurface
+import com.example.frontend.ui.theme.TukiSurfaceRaised
 
 private enum class RecentFilter { All, Completed, Cancelled }
+private const val RECENT_PAGE_SIZE = 10
 
 @Composable
 fun RecentScreen(
@@ -62,15 +66,62 @@ fun RecentScreen(
     onFavoritesClick: () -> Unit = {},
     onProfileClick: () -> Unit = {}
 ) {
+    val dataProvider = LocalTukiDataProvider.current
+    val cache = remember(dataProvider) { dataProvider?.recentFavoritesCache }
+    var cachedCommutes by remember(cache) { mutableStateOf(cache?.readRecents().orEmpty()) }
+    var observedRefresh by remember { mutableStateOf(false) }
+    var refreshCompleted by remember { mutableStateOf(false) }
     var filter by rememberSaveable { mutableStateOf(RecentFilter.All) }
+    var currentPage by rememberSaveable { mutableStateOf(0) }
     var pendingFavoriteRemoval by remember { mutableStateOf<RecentCommute?>(null) }
-    val uniqueCommutes = remember(commutes) { commutes.distinctBy { it.uniqueRecentIdentity() } }
+
+    LaunchedEffect(cache, commutes, isLoading, errorMessage) {
+        if (isLoading) {
+            observedRefresh = true
+        }
+
+        if (commutes.isNotEmpty()) {
+            cachedCommutes = commutes
+            cache?.writeRecents(commutes)
+        }
+
+        if (!isLoading && observedRefresh) {
+            if (errorMessage.isNullOrBlank()) {
+                cachedCommutes = commutes
+                cache?.writeRecents(commutes)
+                refreshCompleted = true
+            }
+            observedRefresh = false
+        }
+    }
+
+    val displayCommutes = when {
+        commutes.isNotEmpty() -> commutes
+        !refreshCompleted && cachedCommutes.isNotEmpty() -> cachedCommutes
+        !errorMessage.isNullOrBlank() && cachedCommutes.isNotEmpty() -> cachedCommutes
+        else -> commutes
+    }
+    val uniqueCommutes = remember(displayCommutes) {
+        displayCommutes.distinctBy { it.uniqueRecentIdentity() }
+    }
     val filtered = remember(uniqueCommutes, filter) {
         when (filter) {
             RecentFilter.All -> uniqueCommutes
             RecentFilter.Completed -> uniqueCommutes.filter { it.status.equals("Completed", true) }
             RecentFilter.Cancelled -> uniqueCommutes.filter { it.status.equals("Cancelled", true) }
         }
+    }
+    val totalPages = if (filtered.isEmpty()) 0 else ((filtered.size - 1) / RECENT_PAGE_SIZE) + 1
+    val safePage = currentPage.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+    val pagedCommutes = remember(filtered, safePage) {
+        filtered.drop(safePage * RECENT_PAGE_SIZE).take(RECENT_PAGE_SIZE)
+    }
+
+    LaunchedEffect(filter) {
+        currentPage = 0
+    }
+    LaunchedEffect(safePage, currentPage) {
+        if (safePage != currentPage) currentPage = safePage
     }
 
     Column(Modifier.fillMaxSize().background(TukiCream)) {
@@ -85,7 +136,7 @@ fun RecentScreen(
         ) {
             item {
                 Text(
-                    "Recent Trips",
+                    TukiInterfaceText.recentTrips,
                     color = TukiInk,
                     style = MaterialTheme.typography.displaySmall
                 )
@@ -94,46 +145,62 @@ fun RecentScreen(
                 Spacer(Modifier.height(6.dp))
             }
 
+            if (!errorMessage.isNullOrBlank()) item {
+                Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
+            }
+            if (!favoriteErrorMessage.isNullOrBlank()) item {
+                Text(favoriteErrorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
+            }
+
             when {
-                isLoading -> item {
+                isLoading && filtered.isEmpty() -> item {
                     Box(Modifier.fillMaxWidth().padding(vertical = 60.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = TukiTeal)
                     }
                 }
-                !errorMessage.isNullOrBlank() -> item {
-                    Text(errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
-                }
-                !favoriteErrorMessage.isNullOrBlank() -> item {
-                    Text(favoriteErrorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
-                }
                 filtered.isEmpty() -> item {
                     Surface(
                         Modifier.fillMaxWidth().padding(top = 18.dp),
-                        color = Color.White,
+                        color = TukiSurfaceRaised,
                         shape = RoundedCornerShape(20.dp)
                     ) {
                         Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(if (isGuest) "Sign in to view your recent journeys." else "No trips in this category yet.", color = TukiMuted, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                if (isGuest) TukiInterfaceText.signInToViewJourneys else TukiInterfaceText.noTripsYet,
+                                color = TukiMuted,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
                     }
                 }
-                else -> itemsIndexed(filtered, key = { index, commute -> commute.recentListKey(index) }) { _, commute ->
-                    val recommendationId = commute.recommendationId
-                    val isFavorite = recommendationId != null && recommendationId in favoriteRecommendationIds
-                    RecentTripCard(
-                        commute = commute,
-                        isFavorite = isFavorite,
-                        favoriteWorking = recommendationId != null && recommendationId in favoriteWorkingRecommendationIds,
-                        canFavorite = !isGuest && !recommendationId.isNullOrBlank(),
-                        onFavoriteClick = {
-                            if (isFavorite) {
-                                pendingFavoriteRemoval = commute
-                            } else {
-                                onToggleFavorite(commute)
-                            }
-                        },
-                        onClick = { onCommuteClick(commute) }
-                    )
+                else -> {
+                    itemsIndexed(
+                        pagedCommutes,
+                        key = { index, commute -> commute.recentListKey((safePage * RECENT_PAGE_SIZE) + index) }
+                    ) { _, commute ->
+                        val recommendationId = commute.recommendationId
+                        val isFavorite = recommendationId != null && recommendationId in favoriteRecommendationIds
+                        RecentTripCard(
+                            commute = commute,
+                            isFavorite = isFavorite,
+                            favoriteWorking = recommendationId != null && recommendationId in favoriteWorkingRecommendationIds,
+                            canFavorite = !isGuest && !recommendationId.isNullOrBlank(),
+                            onFavoriteClick = {
+                                if (isFavorite) pendingFavoriteRemoval = commute else onToggleFavorite(commute)
+                            },
+                            onClick = { onCommuteClick(commute) }
+                        )
+                    }
+
+                    if (totalPages > 1) {
+                        item(key = "recent-pagination") {
+                            PaginationControls(
+                                currentPage = safePage,
+                                totalPages = totalPages,
+                                onPageChange = { currentPage = it }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -150,14 +217,14 @@ fun RecentScreen(
     pendingFavoriteRemoval?.let { commute ->
         val recommendationId = commute.recommendationId
         val working = recommendationId != null && recommendationId in favoriteWorkingRecommendationIds
+        val filipino = AppLanguagePreference.isFilipino()
         AlertDialog(
-            onDismissRequest = {
-                if (!working) pendingFavoriteRemoval = null
-            },
-            title = { Text("Remove from favorites?") },
+            onDismissRequest = { if (!working) pendingFavoriteRemoval = null },
+            title = { Text(if (filipino) "Alisin sa Favorites?" else "Remove from favorites?") },
             text = {
                 Text(
-                    "Are you sure you want to remove ${commute.origin} → ${commute.destination} from your favorites?"
+                    if (filipino) "Sigurado ka bang gusto mong alisin ang ${commute.origin} → ${commute.destination} sa Favorites?"
+                    else "Are you sure you want to remove ${commute.origin} → ${commute.destination} from your favorites?"
                 )
             },
             confirmButton = {
@@ -168,15 +235,16 @@ fun RecentScreen(
                         onToggleFavorite(commute)
                     }
                 ) {
-                    Text("Remove", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (filipino) "Alisin" else "Remove",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
-                TextButton(
-                    enabled = !working,
-                    onClick = { pendingFavoriteRemoval = null }
-                ) {
-                    Text("Keep Favorite", color = TukiTeal)
+                TextButton(enabled = !working, onClick = { pendingFavoriteRemoval = null }) {
+                    Text(if (filipino) "Panatilihin" else "Keep Favorite", color = TukiTeal)
                 }
             }
         )
@@ -190,13 +258,22 @@ private fun RecentTabs(selected: RecentFilter, onSelected: (RecentFilter) -> Uni
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         RecentFilter.entries.forEach { item ->
+            val label = when (item) {
+                RecentFilter.All -> TukiInterfaceText.all
+                RecentFilter.Completed -> TukiInterfaceText.completed
+                RecentFilter.Cancelled -> TukiInterfaceText.cancelled
+            }
             Surface(
                 modifier = Modifier.weight(1f).height(38.dp).clickable { onSelected(item) },
                 shape = RoundedCornerShape(19.dp),
                 color = if (selected == item) TukiDeepTeal else Color.Transparent
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    Text(item.name, color = if (selected == item) Color.White else TukiInk, style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        label,
+                        color = if (selected == item) Color.White else TukiInk,
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             }
         }
@@ -222,7 +299,7 @@ private fun RecentTripCard(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = Color.White,
+        color = TukiSurfaceRaised,
         shape = RoundedCornerShape(18.dp),
         shadowElevation = 2.dp
     ) {
@@ -260,7 +337,7 @@ private fun RecentTripCard(
                         color = if (completed) TukiForestSurface else com.example.frontend.ui.theme.TukiDanger.copy(alpha = 0.12f)
                     ) {
                         Text(
-                            commute.status.ifBlank { if (completed) "Completed" else "Cancelled" },
+                            TukiInterfaceText.status(commute.status.ifBlank { if (completed) "Completed" else "Cancelled" }),
                             Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                             color = if (completed) TukiForest else com.example.frontend.ui.theme.TukiDanger,
                             style = MaterialTheme.typography.labelSmall
@@ -290,24 +367,17 @@ private fun RecentTripCard(
 }
 
 private fun formatRecentDate(value: String?): String {
-    if (value.isNullOrBlank()) return "Recent trip"
+    if (value.isNullOrBlank()) return if (AppLanguagePreference.isFilipino()) "Kamakailang biyahe" else "Recent trip"
     val zone = ZoneId.systemDefault()
     val date = runCatching { Instant.parse(value).atZone(zone).toLocalDate() }
         .recoverCatching { OffsetDateTime.parse(value).atZoneSameInstant(zone).toLocalDate() }
         .recoverCatching { LocalDateTime.parse(value).atZone(ZoneOffset.UTC).withZoneSameInstant(zone).toLocalDate() }
-        .getOrNull() ?: return "Recent trip"
+        .getOrNull() ?: return if (AppLanguagePreference.isFilipino()) "Kamakailang biyahe" else "Recent trip"
     return date.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
 }
 
 private fun RecentCommute.uniqueRecentIdentity(): String =
     id.takeIf { it.isNotBlank() }
-        ?: listOf(
-            recommendationId.orEmpty(),
-            origin,
-            destination,
-            endedAt.orEmpty(),
-            status
-        ).joinToString("|")
+        ?: listOf(recommendationId.orEmpty(), origin, destination, endedAt.orEmpty(), status).joinToString("|")
 
-private fun RecentCommute.recentListKey(index: Int): String =
-    "${uniqueRecentIdentity()}-$index"
+private fun RecentCommute.recentListKey(index: Int): String = "${uniqueRecentIdentity()}-$index"

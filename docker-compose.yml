@@ -1,0 +1,174 @@
+name: tuki
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tuki-backend:${TUKI_IMAGE_TAG:-dev}
+    restart: unless-stopped
+    env_file:
+      - ./runtime/backend.env
+    expose:
+      - "5129"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      valhalla:
+        condition: service_started
+      pelias:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/5129"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - tuki-internal
+
+  admin:
+    build:
+      context: .
+      dockerfile: Tuki.Admin/Dockerfile
+    image: tuki-admin:${TUKI_IMAGE_TAG:-dev}
+    restart: unless-stopped
+    env_file:
+      - ./runtime/admin.env
+    expose:
+      - "5030"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/5030"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - tuki-internal
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    env_file:
+      - ./runtime/sqlserver.env
+    expose:
+      - "1433"
+    volumes:
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/sqlserver:/var/opt/mssql
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/1433"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    networks:
+      - tuki-internal
+
+  valhalla:
+    image: ${VALHALLA_IMAGE:-ghcr.io/nilsnolde/docker-valhalla/valhalla:latest}
+    restart: unless-stopped
+    environment:
+      tile_urls: ${VALHALLA_TILE_URLS:-https://download.geofabrik.de/asia/philippines-latest.osm.pbf}
+      serve_tiles: "True"
+      build_tar: "True"
+      force_rebuild: "False"
+      use_tiles_ignore_pbf: "True"
+      build_admins: "True"
+      build_time_zones: "True"
+    expose:
+      - "8002"
+    volumes:
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/valhalla:/custom_files
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8002/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30m
+    networks:
+      - tuki-internal
+
+  pelias:
+    image: ${PELIAS_API_IMAGE:-pelias/api:master}
+    restart: unless-stopped
+    environment:
+      PORT: "4000"
+    expose:
+      - "4000"
+    volumes:
+      - ./infra/pelias/pelias.json:/code/pelias.json:ro
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/pelias/runtime:/data
+    depends_on:
+      pelias-elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:4000/v1/search?text=health&size=1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - tuki-internal
+
+  pelias-elasticsearch:
+    image: ${PELIAS_ELASTICSEARCH_IMAGE:-pelias/elasticsearch:7.17.27}
+    restart: unless-stopped
+    environment:
+      ES_JAVA_OPTS: ${PELIAS_ES_JAVA_OPTS:--Xms1g -Xmx1g}
+      discovery.type: single-node
+    expose:
+      - "9200"
+      - "9300"
+    volumes:
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/pelias/elasticsearch:/usr/share/elasticsearch/data
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=5s"]
+      interval: 20s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    networks:
+      - tuki-internal
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file:
+      - ./runtime/caddy.env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/caddy/data:/data
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/caddy/config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - tuki-internal
+
+networks:
+  tuki-internal:
+    driver: bridge

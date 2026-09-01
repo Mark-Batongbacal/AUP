@@ -36,6 +36,15 @@ For favorite trips, run `migrations/20260819_FavoriteTrips.sql`. For email
 verification and password reset, run
 `migrations/20260820_EmailVerificationAndPasswordReset.sql`. Both are
 transactional and idempotent, following the same pattern as the migration above.
+For persistent API-key sessions used by password, social, and guest login, run
+`migrations/20260823_PersistentApiKeySessions.sql` before deploying backend
+builds that include SQL-backed API-key authentication.
+
+For restorable jeepney-route soft deletion, run
+`migrations/20260827_JeepneyRouteSoftDelete.sql` before deploying backend builds
+that map `TransportRoutes.ArchivedAt`. Archived routes are excluded from normal
+routing and management queries while retaining their previous published/draft
+state so an administrator can restore them later.
 
 Deployments do not modify production schema automatically. Database upgrades
 must be applied explicitly before application code that maps the new columns is

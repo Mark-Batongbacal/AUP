@@ -144,6 +144,54 @@ public sealed class TripSessionServiceTests
         Assert.Equal(13, session.ApproxFareSpent);
     }
 
+    [Fact]
+    public async Task ResolveUnknownAlight_AlreadyOff_CompletesLegAndRecordsFareOnce()
+    {
+        var session = Session(TripNavigationState.ApproachingAlightPoint);
+        session.LastNavigationStatus = "ALIGHT_STATUS_UNKNOWN";
+        session.CurrentProgressMeters = 1_100;
+        session.CurrentRouteProgressMeters = 5_100;
+        SetupTransitSession(session, includeNextWalkingLeg: true);
+        var service = Service();
+
+        var first = await service.ResolveAlightStatusAsync(
+            _userId, session.TripSessionId, alreadyOff: true);
+        var second = await service.ResolveAlightStatusAsync(
+            _userId, session.TripSessionId, alreadyOff: true);
+
+        Assert.True(first.Succeeded);
+        Assert.False(second.Succeeded);
+        Assert.Equal(13, session.ApproxFareSpent);
+        Assert.Equal(1, session.CurrentLegIndex);
+        Assert.Equal(0, session.CurrentProgressMeters);
+        Assert.Null(session.CurrentRouteProgressMeters);
+        Assert.Equal(TripNavigationState.WalkingToDestination,
+            session.CurrentNavigationState);
+    }
+
+    [Fact]
+    public async Task ResolveUnknownAlight_StillRiding_PreservesOnboardRouteContext()
+    {
+        var session = Session(TripNavigationState.ApproachingAlightPoint);
+        session.LastNavigationStatus = "ALIGHT_STATUS_UNKNOWN";
+        session.CurrentProgressMeters = 1_100;
+        session.CurrentRouteProgressMeters = 5_100;
+        var recommendationId = session.RecommendationId;
+        SetupTransitSession(session, includeNextWalkingLeg: true);
+
+        var result = await Service().ResolveAlightStatusAsync(
+            _userId, session.TripSessionId, alreadyOff: false);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("MISSED_ALIGHT", session.LastNavigationStatus);
+        Assert.Equal("MISSED_ALIGHT", session.LastRerouteReason);
+        Assert.Equal(recommendationId, session.RecommendationId);
+        Assert.Equal(5_100, session.CurrentRouteProgressMeters);
+        Assert.Equal(0, session.CurrentLegIndex);
+        Assert.Equal(TripNavigationState.ApproachingAlightPoint,
+            session.CurrentNavigationState);
+    }
+
     private TripSessionService Service()
     {
         _navigation.Setup(service => service.GenerateAsync(

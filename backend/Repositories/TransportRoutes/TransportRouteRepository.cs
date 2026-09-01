@@ -28,10 +28,100 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
             .OrderBy(route => route.RouteName)
             .ToListAsync(cancellationToken);
 
+    public async Task<List<TransportRouteAdminSummary>> GetAdminSummariesByTransportModeCodeAsync(
+        string transportModeCode,
+        bool includeActive,
+        bool includeInactive,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _context.TransportRoutes
+            .AsNoTracking()
+            .Where(route => route.TransportMode.Code == transportModeCode);
+
+        if (!includeActive)
+            query = query.Where(route => !route.IsActive);
+        else if (!includeInactive)
+            query = query.Where(route => route.IsActive);
+
+        var routes = await query
+            .OrderBy(route => route.RouteName)
+            .ThenBy(route => route.RouteCode)
+            .Select(route => new
+            {
+                route.RouteId,
+                route.RouteCode,
+                route.RouteName,
+                route.OriginName,
+                route.DestinationName,
+                route.DirectionName,
+                route.OperatorName,
+                route.RouteDescription,
+                route.BaseFare,
+                route.IsActive,
+                HasPolyline = route.EncodedPolyline != null && route.EncodedPolyline != "",
+                route.CreatedAt,
+                route.UpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        if (routes.Count == 0)
+            return [];
+
+        var routeIds = routes.Select(route => route.RouteId).ToArray();
+        var pointCounts = await _context.RoutePoints
+            .AsNoTracking()
+            .Where(point => routeIds.Contains(point.RouteId))
+            .GroupBy(point => point.RouteId)
+            .Select(group => new { RouteId = group.Key, PointCount = group.Count() })
+            .ToDictionaryAsync(group => group.RouteId, group => group.PointCount, cancellationToken);
+
+        var waypointCounts = await _context.RouteWaypoints
+            .AsNoTracking()
+            .Where(point => routeIds.Contains(point.RouteId))
+            .GroupBy(point => point.RouteId)
+            .Select(group => new { RouteId = group.Key, WaypointCount = group.Count() })
+            .ToDictionaryAsync(group => group.RouteId, group => group.WaypointCount, cancellationToken);
+
+        return routes.Select(route => new TransportRouteAdminSummary(
+                route.RouteId,
+                route.RouteCode,
+                route.RouteName,
+                route.OriginName,
+                route.DestinationName,
+                route.DirectionName,
+                route.OperatorName,
+                route.RouteDescription,
+                route.BaseFare,
+                route.IsActive,
+                pointCounts.GetValueOrDefault(route.RouteId),
+                waypointCounts.GetValueOrDefault(route.RouteId),
+                route.HasPolyline,
+                route.CreatedAt,
+                route.UpdatedAt))
+            .ToList();
+    }
+
     public Task<TransportRoute?> GetByIdAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
+
+    public Task<TransportRoute?> GetByIdWithPointsForAdminAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
+            .AsNoTracking()
+            .Include(route => route.TransportMode)
+            .Include(route => route.RoutePoints.OrderBy(point => point.PointOrder))
+            .Include(route => route.RouteWaypoints.OrderBy(point => point.WaypointOrder))
+            .FirstOrDefaultAsync(route => route.RouteId == routeId, cancellationToken);
+
+    public Task<TransportRoute?> GetTrackedByIdAsync(
+        long routeId,
+        CancellationToken cancellationToken = default) =>
+        _context.TransportRoutes
+            .Include(route => route.TransportMode)
+            .FirstOrDefaultAsync(route => route.RouteId == routeId, cancellationToken);
 
     public Task<TransportRoute?> GetByRouteCodeAsync(string routeCode, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
@@ -53,19 +143,12 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
             .OrderBy(Route => Route.RouteName)
             .ToListAsync(cancellationToken);
 
-    /// <summary>
-    /// Includes the Route's start Stop, end Stop, and transport mode.
-    /// </summary>
     public Task<TransportRoute?> GetWithEndpointsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
             .Include(Route => Route.TransportMode)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    /// <summary>
-    /// Includes Route-Stop rows and each Stop. Use GetOrderedRouteStopsAsync when ordered sequence
-    /// materialization is required.
-    /// </summary>
     public Task<TransportRoute?> GetWithRouteStopsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
@@ -73,9 +156,6 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
                 .ThenInclude(routeStop => routeStop.Stop)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    /// <summary>
-    /// Includes Route-Stop rows and stops ordered by StopOrder.
-    /// </summary>
     public Task<TransportRoute?> GetWithOrderedRouteStopsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
@@ -91,9 +171,6 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
             .OrderBy(routeStop => routeStop.StopOrder)
             .ToListAsync(cancellationToken);
 
-    /// <summary>
-    /// Includes active Route segments and their from/to stops ordered by SegmentOrder.
-    /// </summary>
     public Task<TransportRoute?> GetWithRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.TransportRoutes
             .AsNoTracking()
@@ -105,9 +182,6 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
                     .ThenInclude(routeStop => routeStop.Stop)
             .FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
 
-    /// <summary>
-    /// Returns active Route segments and their from/to stops ordered by SegmentOrder.
-    /// </summary>
     public Task<List<RouteSegment>> GetOrderedRouteSegmentsAsync(long routeId, CancellationToken cancellationToken = default) =>
         _context.RouteSegments
             .AsNoTracking()
@@ -155,6 +229,103 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
         return existing;
     }
 
+    public async Task<TransportRoute?> ReplaceDraftGeometryAsync(
+        long routeId,
+        IReadOnlyList<RoutePoint> routePoints,
+        IReadOnlyList<RouteWaypoint> routeWaypoints,
+        string encodedPolyline,
+        CancellationToken cancellationToken = default)
+    {
+        var route = await _context.TransportRoutes
+            .Include(item => item.TransportMode)
+            .Include(item => item.RoutePoints)
+            .Include(item => item.RouteWaypoints)
+            .SingleOrDefaultAsync(
+                item => item.RouteId == routeId &&
+                        !item.IsActive &&
+                        item.TransportMode.Code == "JEEPNEY",
+                cancellationToken);
+
+        if (route is null)
+            return null;
+
+        _context.RoutePoints.RemoveRange(route.RoutePoints);
+        _context.RouteWaypoints.RemoveRange(route.RouteWaypoints);
+
+        route.RoutePoints = routePoints.ToList();
+        route.RouteWaypoints = routeWaypoints.ToList();
+        route.EncodedPolyline = encodedPolyline;
+        route.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return route;
+    }
+
+    public async Task<TransportRoute?> UpdateJeepneyDraftMetadataAsync(
+        long routeId,
+        string routeCode,
+        string routeName,
+        string originName,
+        string destinationName,
+        string? directionName,
+        string? operatorName,
+        string? description,
+        decimal? baseFare,
+        CancellationToken cancellationToken = default)
+    {
+        var updatedAt = DateTime.UtcNow;
+        var affected = await _context.TransportRoutes
+            .Where(route =>
+                route.RouteId == routeId &&
+                !route.IsActive &&
+                route.TransportMode.Code == "JEEPNEY")
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(route => route.RouteCode, routeCode)
+                .SetProperty(route => route.RouteName, routeName)
+                .SetProperty(route => route.OriginName, originName)
+                .SetProperty(route => route.DestinationName, destinationName)
+                .SetProperty(route => route.DirectionName, directionName)
+                .SetProperty(route => route.OperatorName, operatorName)
+                .SetProperty(route => route.RouteDescription, description)
+                .SetProperty(route => route.BaseFare, baseFare)
+                .SetProperty(route => route.UpdatedAt, updatedAt),
+                cancellationToken);
+
+        if (affected != 1)
+            return null;
+
+        return await GetByIdWithPointsForAdminAsync(routeId, cancellationToken);
+    }
+
+    public async Task<TransportRoute?> PublishReadyJeepneyDraftAsync(
+        long routeId,
+        CancellationToken cancellationToken = default)
+    {
+        var publishedAt = DateTime.UtcNow;
+        var affected = await _context.TransportRoutes
+            .Where(route =>
+                route.RouteId == routeId &&
+                !route.IsActive &&
+                route.TransportMode.Code == "JEEPNEY" &&
+                route.RouteCode != "" &&
+                route.RouteName != "" &&
+                route.OriginName != "" &&
+                route.DestinationName != "" &&
+                route.EncodedPolyline != null &&
+                route.EncodedPolyline != "" &&
+                route.RoutePoints.Count >= 2 &&
+                route.RouteWaypoints.Count >= 2)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(route => route.IsActive, true)
+                .SetProperty(route => route.UpdatedAt, publishedAt),
+                cancellationToken);
+
+        if (affected != 1)
+            return null;
+
+        return await GetByIdWithPointsForAdminAsync(routeId, cancellationToken);
+    }
+
     public async Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default)
     {
         _context.TransportRoutes.Update(Route);
@@ -171,6 +342,20 @@ public sealed class TransportRouteRepository(TukiDbContext context) : ITransport
         }
 
         Route.IsActive = false;
+        Route.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> ActivateAsync(long routeId, CancellationToken cancellationToken = default)
+    {
+        var Route = await _context.TransportRoutes.FirstOrDefaultAsync(Route => Route.RouteId == routeId, cancellationToken);
+        if (Route is null)
+        {
+            return false;
+        }
+
+        Route.IsActive = true;
         Route.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         return true;

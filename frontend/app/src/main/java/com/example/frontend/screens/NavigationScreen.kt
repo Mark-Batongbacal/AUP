@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.MapScreen
 import com.example.frontend.MapVisualStyle
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.location.RouteCoordinate
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.navigation.joinedNavigationLegs
@@ -39,14 +40,14 @@ import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
 import kotlin.math.roundToInt
 
-private val NavBg = com.example.frontend.ui.theme.TukiCream
-private val NavSurface = com.example.frontend.ui.theme.TukiSurfaceRaised
-private val NavDark = com.example.frontend.ui.theme.TukiInk
-private val NavTeal = com.example.frontend.ui.theme.TukiTeal
-private val NavMuted = com.example.frontend.ui.theme.TukiMuted
-private val NavOrange = com.example.frontend.ui.theme.TukiGold
-private val NavIconBlue = com.example.frontend.ui.theme.TukiSky
-private val NavTip = com.example.frontend.ui.theme.TukiForestSurface
+private val NavBg: Color get() = com.example.frontend.ui.theme.TukiCream
+private val NavSurface: Color get() = com.example.frontend.ui.theme.TukiSurfaceRaised
+private val NavDark: Color get() = com.example.frontend.ui.theme.TukiInk
+private val NavTeal: Color get() = com.example.frontend.ui.theme.TukiTeal
+private val NavMuted: Color get() = com.example.frontend.ui.theme.TukiMuted
+private val NavOrange: Color get() = com.example.frontend.ui.theme.TukiGold
+private val NavIconBlue: Color get() = com.example.frontend.ui.theme.TukiSky
+private val NavTip: Color get() = com.example.frontend.ui.theme.TukiForestSurface
 private const val RoutePreviewListIndex = 3
 
 @Composable
@@ -78,37 +79,21 @@ fun NavigationScreen(
     var selectedLegIndex by remember(origin, destination) { mutableStateOf<Int?>(null) }
     val fullRoutePoints = remember(legRoutePoints) {
         joinedNavigationLegs(
-            legRoutePoints.map { leg ->
-                leg.map { point -> RouteCoordinate(point.latitude, point.longitude) }
-            }
+            legRoutePoints.map { leg -> leg.map { point -> RouteCoordinate(point.latitude, point.longitude) } }
         ).map { point -> LatLng(point.latitude, point.longitude) }
     }
-    val selectedLegPoints = selectedLegIndex
-        ?.let { legRoutePoints.getOrNull(it) }
-        ?.takeIf { it.size >= 2 }
+    val selectedLegPoints = selectedLegIndex?.let { legRoutePoints.getOrNull(it) }?.takeIf { it.size >= 2 }
     val displayedRoutePoints = selectedLegPoints ?: fullRoutePoints
-    val displayedStart = selectedLegPoints?.firstOrNull()
-        ?: routeStartPoint
-        ?: displayedRoutePoints.firstOrNull()
-    val displayedDestination = selectedLegPoints?.lastOrNull()
-        ?: routeFinalDestination
-        ?: displayedRoutePoints.lastOrNull()
-    val renderedRoutePoints = selectedLegPoints
-        ?: legRoutePoints.firstOrNull { points -> points.size >= 2 }
-        ?: displayedRoutePoints
+    val displayedStart = selectedLegPoints?.firstOrNull() ?: routeStartPoint ?: displayedRoutePoints.firstOrNull()
+    val displayedDestination = selectedLegPoints?.lastOrNull() ?: routeFinalDestination ?: displayedRoutePoints.lastOrNull()
+    val renderedRoutePoints = selectedLegPoints ?: legRoutePoints.firstOrNull { points -> points.size >= 2 } ?: displayedRoutePoints
     val contextualLegs = if (selectedLegPoints != null) {
-        legRoutePoints.filterIndexed { index, points ->
-            index != selectedLegIndex && points.size >= 2
-        }
+        legRoutePoints.filterIndexed { index, points -> index != selectedLegIndex && points.size >= 2 }
     } else {
         legRoutePoints.filter { points -> points.size >= 2 }.drop(1)
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(NavBg)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().background(NavBg)) {
         LazyColumn(
             state = routeListState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -124,7 +109,7 @@ fun NavigationScreen(
                         Text("←", color = NavDark, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        "Route Details",
+                        TukiInterfaceText.routeDetails,
                         Modifier.weight(1f),
                         color = NavDark,
                         fontSize = 23.sp,
@@ -135,13 +120,7 @@ fun NavigationScreen(
             }
 
             item {
-                Text(
-                    "$origin →\n$destination",
-                    color = NavDark,
-                    fontSize = 17.sp,
-                    lineHeight = 23.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+                Text("$origin →\n$destination", color = NavDark, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.ExtraBold)
             }
 
             item {
@@ -151,7 +130,7 @@ fun NavigationScreen(
                         RouteDivider()
                         RouteMetric("₱", "₱${shownFare.roundToInt().coerceAtLeast(0)}", Modifier.weight(1f))
                         RouteDivider()
-                        RouteMetric("◇", "${shownLegs.coerceAtLeast(0)} legs", Modifier.weight(1f))
+                        RouteMetric("◇", "${shownLegs.coerceAtLeast(0)} ${if (TukiInterfaceText.isFilipino) "hakbang" else "legs"}", Modifier.weight(1f))
                     }
                 }
             }
@@ -171,12 +150,20 @@ fun NavigationScreen(
                 }
             }
 
-            item { Text("Step-by-step guide", color = NavDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold) }
+            item {
+                Text(TukiInterfaceText.stepByStepGuide, color = NavDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+            }
 
             if (steps.isEmpty()) {
                 item {
                     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = NavSurface) {
-                        Text("Choose a route again to see its step-by-step guide.", Modifier.padding(18.dp), color = NavMuted, fontSize = 13.sp)
+                        Text(
+                            if (TukiInterfaceText.isFilipino) "Pumili ulit ng ruta para makita ang Step-by-step guide."
+                            else "Choose a route again to see its step-by-step guide.",
+                            Modifier.padding(18.dp),
+                            color = NavMuted,
+                            fontSize = 13.sp
+                        )
                     }
                 }
             } else {
@@ -204,40 +191,28 @@ fun NavigationScreen(
                             Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                         }
                         Spacer(Modifier.width(10.dp))
-                        Text("Tip: Prepare exact fare or have small bills for a smoother ride.", color = NavDark, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold)
+                        Text(TukiInterfaceText.tipPrepareFare, color = NavDark, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
         }
 
         Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 16.dp, bottom = 22.dp),
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 22.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (hasActiveTrip) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = NavTip
-                ) {
+                Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = NavTip) {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
                         Text(
-                            "Current trip is still active",
+                            if (TukiInterfaceText.isFilipino) "Aktibo pa ang kasalukuyang biyahe" else "Current trip is still active",
                             color = NavDark,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
                         activeTripDescription?.takeIf { it.isNotBlank() }?.let { description ->
                             Spacer(Modifier.height(3.dp))
-                            Text(
-                                description,
-                                color = NavMuted,
-                                fontSize = 12.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Text(description, color = NavMuted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -248,7 +223,7 @@ fun NavigationScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = NavTeal, contentColor = Color.White),
                     shape = RoundedCornerShape(18.dp)
                 ) {
-                    Text("Resume Active Trip", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(if (TukiInterfaceText.isFilipino) "Ipagpatuloy ang Aktibong Biyahe" else "Resume Active Trip", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 OutlinedButton(
                     onClick = { showReplacementConfirmation = true },
@@ -257,7 +232,7 @@ fun NavigationScreen(
                     shape = RoundedCornerShape(18.dp)
                 ) {
                     Text(
-                        "End Current & Start This Trip",
+                        if (TukiInterfaceText.isFilipino) "Tapusin ang Kasalukuyan at Start Trip Ito" else "End Current & Start This Trip",
                         color = NavOrange,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.ExtraBold
@@ -275,9 +250,9 @@ fun NavigationScreen(
                 if (isStartingNavigation) {
                     CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("Working...", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(if (TukiInterfaceText.isFilipino) "Inaayos..." else "Working...", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                 } else {
-                    Text("Start Trip  →", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("${TukiInterfaceText.startTrip}  →", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
         }
@@ -285,13 +260,12 @@ fun NavigationScreen(
 
     if (showReplacementConfirmation) {
         AlertDialog(
-            onDismissRequest = {
-                if (!isStartingNavigation) showReplacementConfirmation = false
-            },
-            title = { Text("Start this trip instead?") },
+            onDismissRequest = { if (!isStartingNavigation) showReplacementConfirmation = false },
+            title = { Text(if (TukiInterfaceText.isFilipino) "Start Trip ang rutang ito?" else "Start this trip instead?") },
             text = {
                 Text(
-                    "Your current trip will end, then TUKI will immediately start the route you selected."
+                    if (TukiInterfaceText.isFilipino) "Tatapusin ang kasalukuyang biyahe at agad sisimulan ng TUKI ang napili mong ruta."
+                    else "Your current trip will end, then TUKI will immediately start the route you selected."
                 )
             },
             confirmButton = {
@@ -302,15 +276,12 @@ fun NavigationScreen(
                         onReplaceActiveTrip()
                     }
                 ) {
-                    Text("End & Start New", color = com.example.frontend.ui.theme.TukiDanger)
+                    Text(if (TukiInterfaceText.isFilipino) "Tapusin at Magsimula" else "End & Start New", color = com.example.frontend.ui.theme.TukiDanger)
                 }
             },
             dismissButton = {
-                TextButton(
-                    enabled = !isStartingNavigation,
-                    onClick = { showReplacementConfirmation = false }
-                ) {
-                    Text("Keep Current Trip", color = NavTeal)
+                TextButton(enabled = !isStartingNavigation, onClick = { showReplacementConfirmation = false }) {
+                    Text(if (TukiInterfaceText.isFilipino) "Panatilihin ang Kasalukuyang Biyahe" else "Keep Current Trip", color = NavTeal)
                 }
             }
         )
@@ -328,12 +299,7 @@ private fun RoutePreviewCard(
     selectedStep: CommuteStep?,
     onShowFullRoute: () -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = NavSurface,
-        shadowElevation = 2.dp
-    ) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = NavSurface, shadowElevation = 2.dp) {
         Column(Modifier.padding(10.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 5.dp, bottom = 6.dp),
@@ -341,7 +307,7 @@ private fun RoutePreviewCard(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        if (selectedStep == null) "Your complete route" else routeStepTitle(selectedStep),
+                        if (selectedStep == null) TukiInterfaceText.yourCompleteRoute else routeStepTitle(selectedStep),
                         color = NavDark,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.ExtraBold,
@@ -349,27 +315,26 @@ private fun RoutePreviewCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        if (selectedStep == null) "Tap a step to inspect its route" else "Selected travel segment",
+                        if (selectedStep == null) TukiInterfaceText.tapStepInspect else TukiInterfaceText.selectedTravelSegment,
                         color = NavMuted,
                         fontSize = 10.sp
                     )
                 }
                 if (selectedStep != null) {
                     TextButton(onClick = onShowFullRoute) {
-                        Text("Full route", color = NavTeal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(TukiInterfaceText.fullRoute, color = NavTeal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
             MapScreen(
                 routePoints = routePoints,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(218.dp)
-                    .clip(RoundedCornerShape(15.dp)),
+                modifier = Modifier.fillMaxWidth().height(218.dp).clip(RoundedCornerShape(15.dp)),
                 startPoint = startPoint,
                 selectedDestination = destinationPoint,
                 finalDestination = finalDestination,
-                futureRouteSegments = contextualLegs,
+                futureRouteSegments = if (selectedStep == null) contextualLegs else emptyList(),
+                transitRoutes = emptyList(),
+                todaPoints = emptyList(),
                 visualStyle = MapVisualStyle.LiveTrip,
                 showDeviceLocation = false,
                 fitRouteBounds = true,
@@ -407,11 +372,7 @@ private fun RouteTimelineSteps(
     onLegSelected: (Int) -> Unit
 ) {
     Box(Modifier.fillMaxWidth()) {
-        Box(
-            Modifier
-                .matchParentSize()
-                .padding(start = 8.dp, top = 20.dp, bottom = 20.dp)
-        ) {
+        Box(Modifier.matchParentSize().padding(start = 8.dp, top = 20.dp, bottom = 20.dp)) {
             Box(Modifier.width(2.dp).fillMaxHeight().background(NavOrange))
         }
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -467,11 +428,7 @@ private fun RouteTimelineCard(
                         Text("• ${step.to}", color = NavMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Text(
-                    "⌖",
-                    color = if (selectable) NavTeal else NavMuted.copy(alpha = 0.45f),
-                    fontSize = 18.sp
-                )
+                Text("⌖", color = if (selectable) NavTeal else NavMuted.copy(alpha = 0.45f), fontSize = 18.sp)
             }
         }
     }
@@ -485,9 +442,9 @@ private fun routeStepIcon(mode: String): String = when {
 }
 
 private fun routeStepTitle(step: CommuteStep): String = when {
-    step.mode.contains("walk", true) -> "Walk to ${step.to}"
-    step.mode.contains("trike", true) || step.mode.contains("tricycle", true) -> "Ride Tricycle"
-    step.mode.contains("jeep", true) || step.mode.contains("bus", true) -> "Ride Jeepney"
+    step.mode.contains("walk", true) -> "${TukiInterfaceText.walkTo} ${step.to}"
+    step.mode.contains("trike", true) || step.mode.contains("tricycle", true) -> TukiInterfaceText.rideTricycle
+    step.mode.contains("jeep", true) || step.mode.contains("bus", true) -> TukiInterfaceText.rideJeepney
     else -> step.mode
 }
 

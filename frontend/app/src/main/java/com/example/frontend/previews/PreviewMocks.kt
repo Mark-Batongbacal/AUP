@@ -21,6 +21,7 @@ import com.example.frontend.data.trips.TripRepository
 object PreviewMocks {
     val authRepository = object : AuthRepository {
         override suspend fun login(userName: String, password: String): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
+        override suspend fun loginAsGuest(): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser> = ApiResult.Failure(null, "Mock")
         override suspend fun requestRegistrationOtp(email: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")
         override suspend fun verifyRegistrationOtp(email: String, code: String): ApiResult<Unit> = ApiResult.Failure(null, "Mock")

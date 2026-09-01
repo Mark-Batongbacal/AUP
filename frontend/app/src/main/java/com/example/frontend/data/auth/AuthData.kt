@@ -73,6 +73,7 @@ data class AuthenticatedUser(val session: AuthSession, val profile: UserProfileD
 
 interface AuthApi {
     @POST("api/auth/login") suspend fun login(@Body request: LoginRequest): Response<LoginResponseDto>
+    @POST("api/auth/guest") suspend fun guest(): Response<LoginResponseDto>
     @POST("api/auth/register/complete") suspend fun register(@Body request: RegisterRequest): Response<RegisterResponseDto>
     @POST("api/auth/register/request-otp") suspend fun requestRegistrationOtp(
         @Body request: RegistrationOtpRequest
@@ -84,7 +85,7 @@ interface AuthApi {
     @POST("api/auth/facebook") suspend fun facebook(@Body request: FacebookLoginRequest): Response<LoginResponseDto>
     @POST("api/auth/facebook/oidc") suspend fun facebookOidc(@Body request: FacebookOidcLoginRequest): Response<LoginResponseDto>
     @GET("api/auth/me") suspend fun me(): Response<AuthIdentityDto>
-    @POST("api/auth/forgot-password") suspend fun forgotPassword(
+    @POST("api/auth/forgot-password/request") suspend fun forgotPassword(
         @Body request: ForgotPasswordRequest
     ): Response<MessageResponseDto>
     @POST("api/auth/forgot-password/verify-otp") suspend fun verifyPasswordResetOtp(
@@ -106,6 +107,7 @@ interface AuthApi {
 
 interface AuthRepository {
     suspend fun login(userName: String, password: String): ApiResult<AuthenticatedUser>
+    suspend fun loginAsGuest(): ApiResult<AuthenticatedUser>
     suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser>
     suspend fun requestRegistrationOtp(email: String): ApiResult<Unit>
     suspend fun verifyRegistrationOtp(email: String, code: String): ApiResult<Unit>
@@ -131,6 +133,12 @@ class AuthRepositoryImpl(
 ) : AuthRepository {
     override suspend fun login(userName: String, password: String) =
         authenticate { authApi.login(LoginRequest(userName, password)) }
+
+    override suspend fun loginAsGuest(): ApiResult<AuthenticatedUser> =
+        when (val result = authenticate { authApi.guest() }) {
+            is ApiResult.Success -> result
+            is ApiResult.Failure -> result.toGuestLoginFailure()
+        }
 
     override suspend fun register(request: RegisterRequest): ApiResult<AuthenticatedUser> {
         return when (val response = apiCall(errors) { authApi.register(request) }) {
@@ -237,4 +245,10 @@ class AuthRepositoryImpl(
 
     private fun LoginResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
     private fun RegisterResponseDto.toSession() = AuthSession(apiKey, expiresAt, authenticationScheme, headerName)
+
+    private fun ApiResult.Failure.toGuestLoginFailure(): ApiResult.Failure = when (statusCode) {
+        404, 405 -> copy(message = "Guest access is not available on this server version.")
+        401 -> copy(message = "Guest access could not be started. Please try again.")
+        else -> this
+    }
 }

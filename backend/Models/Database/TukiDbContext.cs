@@ -13,6 +13,8 @@ public partial class TukiDbContext : DbContext
 
     public virtual DbSet<ChatMessage> ChatMessages { get; set; }
 
+    public virtual DbSet<ApiKeySession> ApiKeySessions { get; set; }
+
     public virtual DbSet<Driver> Drivers { get; set; }
 
     public virtual DbSet<DriverAvailabilitySession> DriverAvailabilitySessions { get; set; }
@@ -70,6 +72,7 @@ public partial class TukiDbContext : DbContext
     {
         modelBuilder.HasDefaultSchema("dbo");
 
+        ConfigureApiKeySessions(modelBuilder);
         ConfigureUserProfiles(modelBuilder);
         ConfigureTransportModes(modelBuilder);
         ConfigureTransportStops(modelBuilder);
@@ -102,6 +105,24 @@ public partial class TukiDbContext : DbContext
         ConfigureChatMessages(modelBuilder);
 
         OnModelCreatingPartial(modelBuilder);
+    }
+
+    private static void ConfigureApiKeySessions(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ApiKeySession>(entity =>
+        {
+            entity.ToTable("ApiKeySessions", "dbo");
+            entity.HasKey(e => e.ApiKeySessionId);
+
+            entity.HasIndex(e => e.KeyHash, "UX_ApiKeySessions_KeyHash").IsUnique();
+            entity.HasIndex(e => new { e.CredentialOwner, e.ExpiresAt }, "IX_ApiKeySessions_OwnerExpiresAt");
+
+            entity.Property(e => e.KeyHash).HasMaxLength(64).IsFixedLength();
+            entity.Property(e => e.CredentialOwner).HasMaxLength(255);
+            entity.Property(e => e.CreatedAt).HasColumnType("datetimeoffset(7)");
+            entity.Property(e => e.ExpiresAt).HasColumnType("datetimeoffset(7)");
+            entity.Property(e => e.RevokedAt).HasColumnType("datetimeoffset(7)");
+        });
     }
 
     private static void ConfigureUserProfiles(ModelBuilder modelBuilder)
@@ -847,6 +868,8 @@ public partial class TukiDbContext : DbContext
             entity.Property(e => e.DistanceMeters).HasColumnType("decimal(12, 2)");
             entity.Property(e => e.EstimatedMinutes).HasColumnType("decimal(10, 2)");
             entity.Property(e => e.EstimatedFare).HasColumnType("decimal(10, 2)");
+            entity.Property(e => e.StartRouteProgressMeters).HasColumnType("float");
+            entity.Property(e => e.EndRouteProgressMeters).HasColumnType("float");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
 
             entity.HasOne(e => e.Recommendation)
@@ -1030,6 +1053,7 @@ public partial class TukiDbContext : DbContext
 
             entity.Property(e => e.ConversationId).HasDefaultValueSql("(newsequentialid())");
             entity.Property(e => e.Title).HasMaxLength(200);
+            entity.Property(e => e.PlanningStateJson).HasColumnType("nvarchar(max)");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("(sysutcdatetime())");
 

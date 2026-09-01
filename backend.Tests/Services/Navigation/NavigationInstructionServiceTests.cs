@@ -73,6 +73,43 @@ public sealed class NavigationInstructionServiceTests
     }
 
     [Fact]
+    public async Task JeepneyInstructions_AlreadyOnboardFirstLeg_SkipsOnlyInitialBoarding()
+    {
+        SetupLegs(
+            new RecommendationLeg
+            {
+                LegOrder = 0,
+                StartsAlreadyOnboard = true,
+                TransportMode = new TransportMode { Code = "JEEPNEY" },
+                Route = new TransportRoute { RouteName = "Current Route" },
+                StartLatitude = 15.1, StartLongitude = 120.5,
+                EndLatitude = 15.2, EndLongitude = 120.6
+            },
+            new RecommendationLeg
+            {
+                LegOrder = 1,
+                StartsAlreadyOnboard = true,
+                TransportMode = new TransportMode { Code = "JEEPNEY" },
+                Route = new TransportRoute { RouteName = "Next Route" },
+                StartLatitude = 15.2, StartLongitude = 120.6,
+                EndLatitude = 15.3, EndLongitude = 120.7
+            });
+
+        var result = await Service().GenerateAsync(Session());
+
+        Assert.DoesNotContain(result, item =>
+            item.LegIndex == 0 && item.Type == NavigationInstructionType.BoardJeepney);
+        Assert.Contains(result, item =>
+            item.LegIndex == 0 &&
+            item.Type == NavigationInstructionType.Continue &&
+            item.Text.Contains("Current Route"));
+        Assert.Contains(result, item =>
+            item.LegIndex == 1 &&
+            item.Type == NavigationInstructionType.BoardJeepney &&
+            item.Text.Contains("Next Route"));
+    }
+
+    [Fact]
     public async Task WalkingProviderFailure_DegradesToDeterministicInstruction()
     {
         SetupLegs(WalkLeg());

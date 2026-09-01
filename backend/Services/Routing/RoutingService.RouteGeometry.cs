@@ -5,11 +5,11 @@ namespace backend.Services.Routing;
 
 public partial class RoutingService
 {
-    private Dictionary<string, List<RouteInterchange>>
+    private IReadOnlyDictionary<string, IReadOnlyList<RouteInterchange>>
         BuildInterchangeGraph(
-            Dictionary<string,
-                List<(double Latitude, double Longitude)>> routeSamples,
-            Dictionary<string, string> routeNamesById)
+            IReadOnlyDictionary<string,
+                IReadOnlyList<(double Latitude, double Longitude)>> routeSamples,
+            IReadOnlyDictionary<string, string> routeNamesById)
     {
         var edgesByRoute =
             new Dictionary<string, List<RouteInterchange>>();
@@ -141,7 +141,10 @@ public partial class RoutingService
             AddSelfInterchanges(routeIds[i]);
         }
 
-        return edgesByRoute;
+        return edgesByRoute.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<RouteInterchange>)pair.Value,
+            StringComparer.Ordinal);
 
         void AddSelfInterchanges(string routeId)
         {
@@ -493,6 +496,35 @@ public partial class RoutingService
             maximumSegment);
     }
 
+    private RouteAnchor GetRouteAnchorAtProgress(
+        string routeId,
+        double progressMeters)
+    {
+        var geometry = _routeGeometries[routeId];
+        var clamped = Math.Clamp(progressMeters, 0, geometry.CumulativeMeters[^1]);
+        var segmentIndex = 0;
+        while (segmentIndex < geometry.CumulativeMeters.Length - 2 &&
+               geometry.CumulativeMeters[segmentIndex + 1] < clamped)
+        {
+            segmentIndex++;
+        }
+
+        var fromProgress = geometry.CumulativeMeters[segmentIndex];
+        var toProgress = geometry.CumulativeMeters[segmentIndex + 1];
+        var fraction = toProgress <= fromProgress
+            ? 0
+            : (clamped - fromProgress) / (toProgress - fromProgress);
+        var from = geometry.Points[segmentIndex];
+        var to = geometry.Points[segmentIndex + 1];
+        return new RouteAnchor(
+            routeId,
+            segmentIndex,
+            fraction,
+            from.Latitude + (to.Latitude - from.Latitude) * fraction,
+            from.Longitude + (to.Longitude - from.Longitude) * fraction,
+            clamped);
+    }
+
     private static double RouteDistanceBetweenAnchors(
         RouteAnchor from,
         RouteAnchor to) =>
@@ -506,11 +538,11 @@ public partial class RoutingService
         string RouteId,
         NearbyJeepneyResponse Response);
 
-    private sealed record FullRouteGeometry(
+    internal sealed record FullRouteGeometry(
         List<(double Latitude, double Longitude)> Points,
         double[] CumulativeMeters);
 
-    private sealed record RouteAnchor(
+    internal sealed record RouteAnchor(
         string RouteId,
         int SegmentIndex,
         double SegmentFraction,
@@ -518,7 +550,7 @@ public partial class RoutingService
         double Longitude,
         double DistanceFromRouteStartMeters);
 
-    private sealed record RouteConnectionCandidate(
+    internal sealed record RouteConnectionCandidate(
         string RouteId,
         string RouteName,
         AccessCandidate BoardAccess,
@@ -527,19 +559,25 @@ public partial class RoutingService
         int AlightIndex,
         double TotalGeneralizedCostPesos);
 
+    private sealed record BoardAccessDiscovery(
+        AccessCandidate[] Projected,
+        AccessCandidate[] SearchAnchors,
+        AccessCandidate? Exact,
+        AccessCandidate? Onboard = null);
+
     private sealed record InterchangePairCandidate(
         int IndexA,
         int IndexB,
         double DistanceMeters);
 
-    private sealed record RouteInterchange(
+    internal sealed record RouteInterchange(
         int OwnIndex,
         string OtherRouteId,
         string OtherRouteName,
         int OtherIndex,
         double DistanceMeters);
 
-    private sealed record JourneyLegCandidate(
+    internal sealed record JourneyLegCandidate(
         string RouteId,
         string RouteName,
         (double Latitude, double Longitude) Board,
@@ -549,17 +587,24 @@ public partial class RoutingService
         RouteAnchor? BoardFullRouteAnchor = null,
         RouteAnchor? AlightFullRouteAnchor = null);
 
-    private sealed record WalkSegmentCandidate(
+    internal sealed record WalkSegmentCandidate(
         (double Latitude, double Longitude) From,
         (double Latitude, double Longitude) To,
         double StraightLineMeters);
 
-    private sealed record JourneyCandidate(
+    /// <summary>
+    /// A terminal edge from a viable journey state. Implementations differ in
+    /// how Valhalla confirms the final traversal, but all compete as complete
+    /// plans before final Pareto/objective selection.
+    /// </summary>
+    internal abstract record DestinationCompletionEdge;
+
+    internal sealed record JourneyCandidate(
         List<JourneyLegCandidate> Legs,
         AccessCandidate OriginAccess,
         AccessCandidate DestinationAccess,
         List<WalkSegmentCandidate> TransferWalkSegments,
-        double? ProvisionalJourneyCostPesos = null)
+        double? ProvisionalJourneyCostPesos = null) : DestinationCompletionEdge
     {
         public double TotalGeneralizedCostPesos =>
             ProvisionalJourneyCostPesos ?? double.PositiveInfinity;
@@ -568,11 +613,11 @@ public partial class RoutingService
             Legs.Count - 1;
     }
 
-    private sealed record DirectTripCandidate(
+    private sealed record DirectAccessDestinationCompletionEdge(
         AccessCandidate Access,
-        double MaximumDistanceMeters);
+        double MaximumDistanceMeters) : DestinationCompletionEdge;
 
-    private sealed record AccessCandidate(
+    internal sealed record AccessCandidate(
         AccessMode Mode,
         (double Latitude, double Longitude) Anchor,
         double WalkDistanceMeters,
@@ -585,7 +630,9 @@ public partial class RoutingService
         double WalkingFatiguePesosPerKilometer,
         int? RouteSampleIndex = null,
         RouteAnchor? FullRouteAnchor = null,
-        IReadOnlyList<AccessCandidate>? Alternatives = null)
+        IReadOnlyList<AccessCandidate>? Alternatives = null,
+        bool IsNetworkWalkConfirmed = false,
+        bool IsAlreadyOnboard = false)
     {
         public IReadOnlyList<AccessCandidate> AllAlternatives =>
             Alternatives ?? [this];

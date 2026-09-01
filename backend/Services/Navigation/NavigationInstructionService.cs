@@ -93,7 +93,9 @@ public sealed class NavigationInstructionService(
         RecommendationLeg leg, IReadOnlyList<RecommendationLeg> legs)
     {
         var route = leg.Route?.RouteName ?? leg.Instructions ?? "the selected jeepney";
-        Add(output, session, leg, NavigationInstructionType.BoardJeepney, $"Board {route}.", true, leg.StartLatitude, leg.StartLongitude);
+        var continuingAlreadyOnboard = leg.LegOrder == 0 && leg.StartsAlreadyOnboard;
+        if (!continuingAlreadyOnboard)
+            Add(output, session, leg, NavigationInstructionType.BoardJeepney, $"Board {route}.", true, leg.StartLatitude, leg.StartLongitude);
         Add(output, session, leg, NavigationInstructionType.Continue, $"Stay on {route}.");
         Add(output, session, leg, NavigationInstructionType.PrepareToAlight, "Prepare to get off.", false, leg.EndLatitude, leg.EndLongitude);
         Add(output, session, leg, NavigationInstructionType.AlightJeepney, "Get off here.", true, leg.EndLatitude, leg.EndLongitude);

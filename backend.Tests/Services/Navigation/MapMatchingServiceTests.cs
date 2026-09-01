@@ -54,4 +54,23 @@ public sealed class MapMatchingServiceTests
             new(15.0, 120.001, 5, DateTime.UtcNow), geometry, 0, 3_000, 1_500);
         Assert.Null(result);
     }
+
+    [Fact]
+    public void ExplicitRange_CanReacquireLegEndBeyondNormalForwardWindow()
+    {
+        var geometry = new List<(double, double)>
+        {
+            (15.0, 120.0),
+            (15.0, 120.04)
+        };
+        var update = new LocationUpdate(15.0, 120.0395, 5, DateTime.UtcNow);
+        var matcher = Matcher();
+
+        var normal = matcher.Match(update, geometry, 0, 5_000, 0);
+        var reacquired = matcher.MatchWithinRange(update, geometry, 0, 3_800, 5_000);
+
+        Assert.Null(normal);
+        Assert.NotNull(reacquired);
+        Assert.True(reacquired!.DistanceFromRouteStartMeters > 4_000);
+    }
 }

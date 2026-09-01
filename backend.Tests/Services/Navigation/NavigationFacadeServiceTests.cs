@@ -200,6 +200,9 @@ public sealed class NavigationFacadeServiceTests
         Assert.Equal("OffRoute", result.Snapshot!.State);
         Assert.True(result.Snapshot.RerouteRequired);
         Assert.Equal("OffRoute", result.Snapshot.NextInstruction!.Type);
+        _rerouting.Verify(item => item.RerouteAsync(
+            It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<NavigationRerouteRequest>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

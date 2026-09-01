@@ -117,8 +117,44 @@ public sealed class UserProfileRepository(TukiDbContext context) : IUserProfileR
             return false;
         }
 
+        // UserProfiles.Email and the external-auth pair are unique. A plain IsActive=false soft
+        // delete would permanently reserve those identities and prevent the person from creating
+        // a fresh account later. Keep the row/UserId for historical foreign keys, but release all
+        // login identities and remove profile PII.
+        existing.Email = $"deleted+{userId:N}@deleted.tuki.invalid";
+        existing.ExternalAuthProvider = null;
+        existing.ExternalAuthId = null;
+        existing.FirstName = null;
+        existing.LastName = null;
+        existing.PhoneNumber = null;
+        existing.ProfileImageUrl = null;
+        existing.IsEmailVerified = false;
         existing.IsActive = false;
         existing.UpdatedAt = DateTime.UtcNow;
+
+        var localCredential = await _context.LocalUserCredentials
+            .FirstOrDefaultAsync(credential => credential.UserId == userId, cancellationToken);
+        if (localCredential is not null)
+        {
+            _context.LocalUserCredentials.Remove(localCredential);
+        }
+
+        var passwordTokens = await _context.PasswordResetTokens
+            .Where(token => token.UserId == userId)
+            .ToListAsync(cancellationToken);
+        if (passwordTokens.Count > 0)
+        {
+            _context.PasswordResetTokens.RemoveRange(passwordTokens);
+        }
+
+        var verificationTokens = await _context.EmailVerificationTokens
+            .Where(token => token.UserId == userId)
+            .ToListAsync(cancellationToken);
+        if (verificationTokens.Count > 0)
+        {
+            _context.EmailVerificationTokens.RemoveRange(verificationTokens);
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
         return true;
     }

@@ -1,16 +1,17 @@
 package com.example.frontend.navigation
 
 import android.content.Context
+import com.example.frontend.TukiMapOverlayState
 import com.example.frontend.core.localization.AppLanguagePreference
 import com.example.frontend.core.location.LocationDetectionFailureMessage
 import com.example.frontend.core.location.NavigationSyncSignal
 import com.example.frontend.core.location.currentDeviceLocation
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
-import com.example.frontend.data.ai.AssistantRequest
+import com.example.frontend.data.ai.ActiveTripAssistantRequest
 import com.example.frontend.data.ai.AssistantResponseDto
 import com.example.frontend.data.navigation.NavigationGeometryResponseDto
-import com.example.frontend.data.navigation.NavigationLocationUpdate
+import com.example.frontend.data.navigation.NavigationRepository
 import com.example.frontend.data.navigation.NavigationRerouteRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.places.DestinationSearchResultDto
@@ -28,6 +29,62 @@ data class TripPreferencePreview(
     val walkMeters: Int
 )
 
+internal data class RerouteGpsFix(
+    val latitude: Double,
+    val longitude: Double,
+    val accuracyMeters: Double,
+    val timestamp: String,
+    val speedMetersPerSecond: Double?,
+    val bearingDegrees: Double?
+)
+
+internal class NavigationRerouteDispatcher(
+    private val navigation: NavigationRepository,
+    private val currentGpsFix: suspend () -> RerouteGpsFix?
+) {
+    suspend fun reroute(
+        sessionId: String,
+        request: NavigationRerouteRequest
+    ): ApiResult<NavigationSnapshotDto> {
+        val location = currentGpsFix()
+            ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
+        val rerouted = navigation.reroute(
+            sessionId,
+            request.copy(
+                latitude = location.latitude,
+                longitude = location.longitude,
+                accuracyMeters = location.accuracyMeters,
+                timestamp = location.timestamp,
+                speedMetersPerSecond = location.speedMetersPerSecond,
+                bearingDegrees = location.bearingDegrees
+            )
+        )
+        if (rerouted is ApiResult.Success) {
+            // AppNavigation owns a different, long-lived repository instance. Force its next
+            // tracking fix to refresh the new backend snapshot and geometry.
+            NavigationSyncSignal.requestImmediateSync(samples = 1)
+        }
+        return rerouted
+    }
+}
+
+internal class AlightStatusRecoveryDispatcher(
+    private val navigation: NavigationRepository,
+    private val recoverMissedAlight: suspend (String) -> ApiResult<NavigationSnapshotDto>
+) {
+    suspend fun resolve(
+        sessionId: String,
+        alreadyOff: Boolean
+    ): ApiResult<NavigationSnapshotDto> {
+        val resolved = navigation.resolveAlightStatus(sessionId, alreadyOff)
+        return if (!alreadyOff && resolved is ApiResult.Success) {
+            recoverMissedAlight(sessionId)
+        } else {
+            resolved
+        }
+    }
+}
+
 class TripOptionsCoordinator(context: Context) {
     private val appContext = context.applicationContext
     private val provider = TukiDataProvider(appContext)
@@ -36,6 +93,12 @@ class TripOptionsCoordinator(context: Context) {
     private val routing = provider.routingRepository
     private val users = provider.userRepository
     private val ai = provider.aiRepository
+    private val rerouteDispatcher = NavigationRerouteDispatcher(navigation, ::currentRerouteGpsFix)
+    private val alightStatusRecovery = AlightStatusRecoveryDispatcher(
+        navigation,
+        ::recoverMissedAlight
+    )
+    private val navigationAssistantConversations = mutableMapOf<String, String>()
 
     suspend fun refreshPreferredLanguage(): String =
         when (val result = users.getCurrentUser()) {
@@ -58,6 +121,20 @@ class TripOptionsCoordinator(context: Context) {
 
     suspend fun recoverMissedLegTarget(sessionId: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "MISSED_LEG_TARGET"))
+
+    suspend fun resolveAlightStatus(
+        sessionId: String,
+        alreadyOff: Boolean
+    ): ApiResult<NavigationSnapshotDto> {
+        val result = alightStatusRecovery.resolve(sessionId, alreadyOff)
+        if (result is ApiResult.Success) {
+            NavigationSyncSignal.requestImmediateSync(samples = 1)
+        }
+        return result
+    }
+
+    suspend fun recoverMissedAlight(sessionId: String): ApiResult<NavigationSnapshotDto> =
+        reroute(sessionId, NavigationRerouteRequest(reason = "MISSED_ALIGHT"))
 
     suspend fun changePreference(sessionId: String, preference: String): ApiResult<NavigationSnapshotDto> =
         reroute(sessionId, NavigationRerouteRequest(reason = "PREFERENCE_CHANGED", preference = preference))
@@ -82,25 +159,55 @@ class TripOptionsCoordinator(context: Context) {
     suspend fun askNavigationAssistant(
         sessionId: String,
         message: String,
-        latitude: Double?,
-        longitude: Double?
+        destinationId: String? = null
     ): ApiResult<AssistantResponseDto> {
-        var originLatitude = latitude
-        var originLongitude = longitude
-        if (originLatitude == null || originLongitude == null) {
-            val location = appContext.currentDeviceLocation()
-                ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
-            originLatitude = location.latitude
-            originLongitude = location.longitude
-        }
-        return ai.ask(
-            AssistantRequest(
+        TukiMapOverlayState.beginRouteReplacement()
+        val result = ai.askTrip(
+            sessionId,
+            ActiveTripAssistantRequest(
                 message = message,
-                originLatitude = originLatitude,
-                originLongitude = originLongitude,
-                tripSessionId = sessionId
+                destinationId = destinationId,
+                conversationId = navigationAssistantConversations[sessionId]
             )
         )
+        if (result is ApiResult.Success) {
+            result.data.conversationId?.let { navigationAssistantConversations[sessionId] = it }
+        }
+
+        val rerouted = result is ApiResult.Success &&
+            result.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true)
+        if (rerouted) {
+            TukiMapOverlayState.clearJourneyJeepneyRoutes()
+            // Keep route suppression active until TripTrackingScreen asks for the replacement
+            // current-leg geometry. That avoids flashing the old route back between API calls.
+        } else {
+            TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+        }
+        return result
+    }
+
+    suspend fun confirmAssistantReplan(
+        sessionId: String,
+        recommendationId: String
+    ): ApiResult<NavigationSnapshotDto> {
+        TukiMapOverlayState.beginRouteReplacement()
+        return when (val confirmation = ai.confirmTripReplan(sessionId, recommendationId)) {
+            is ApiResult.Failure -> {
+                TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                confirmation
+            }
+            is ApiResult.Success -> {
+                TukiMapOverlayState.clearJourneyJeepneyRoutes()
+                NavigationSyncSignal.requestImmediateSync(samples = 1)
+                when (val refreshed = navigation.getActiveNavigation()) {
+                    is ApiResult.Success -> refreshed
+                    is ApiResult.Failure -> {
+                        TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                        refreshed
+                    }
+                }
+            }
+        }
     }
 
     suspend fun refreshActiveNavigation(): ApiResult<NavigationSnapshotDto> =
@@ -184,31 +291,79 @@ class TripOptionsCoordinator(context: Context) {
     }
 
     suspend fun currentLegGeometry(snapshot: NavigationSnapshotDto): ApiResult<NavigationGeometryResponseDto> {
-        val leg = snapshot.currentLeg ?: return ApiResult.Failure(null, "Current route leg is unavailable.")
+        val leg = snapshot.currentLeg
+            ?: return ApiResult.Failure(null, "Current route leg is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
         // Keep the complete planned leg geometry stable. Live GPS is matched onto this geometry
         // locally; using the current location as the start would silently discard already-planned
         // points and make turn/landmark progress anchors drift.
         val startLat = leg.startLatitude ?: snapshot.currentLatitude
-            ?: return ApiResult.Failure(null, "Current route location is unavailable.")
+            ?: return ApiResult.Failure(null, "Current route location is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
         val startLon = leg.startLongitude ?: snapshot.currentLongitude
-            ?: return ApiResult.Failure(null, "Current route location is unavailable.")
-        val endLat = leg.endLatitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
-        val endLon = leg.endLongitude ?: return ApiResult.Failure(null, "Current route destination is unavailable.")
-        return navigation.getGeometry(
-            startLatitude = startLat,
-            startLongitude = startLon,
-            endLatitude = endLat,
-            endLongitude = endLon,
-            mode = leg.transportMode,
-            routeId = leg.routeId
-        )
+            ?: return ApiResult.Failure(null, "Current route location is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
+        val endLat = leg.endLatitude
+            ?: return ApiResult.Failure(null, "Current route destination is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
+        val endLon = leg.endLongitude
+            ?: return ApiResult.Failure(null, "Current route destination is unavailable.").also {
+                if (TukiMapOverlayState.routeReplacementInFlight) {
+                    TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+                }
+            }
+
+        return try {
+            navigation.getGeometry(
+                startLatitude = startLat,
+                startLongitude = startLon,
+                endLatitude = endLat,
+                endLongitude = endLon,
+                mode = leg.transportMode,
+                routeId = leg.routeId,
+                startRouteProgressMeters = leg.startRouteProgressMeters,
+                endRouteProgressMeters = leg.endRouteProgressMeters
+            )
+        } finally {
+            if (TukiMapOverlayState.routeReplacementInFlight) {
+                TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+            }
+        }
     }
 
-    private suspend fun reroute(sessionId: String, request: NavigationRerouteRequest): ApiResult<NavigationSnapshotDto> {
+    private suspend fun reroute(
+        sessionId: String,
+        request: NavigationRerouteRequest
+    ): ApiResult<NavigationSnapshotDto> {
+        TukiMapOverlayState.beginRouteReplacement()
+        val result = rerouteDispatcher.reroute(sessionId, request)
+        return if (result is ApiResult.Success) {
+            TukiMapOverlayState.clearJourneyJeepneyRoutes()
+            // Suppression remains active until currentLegGeometry() loads the new route.
+            result
+        } else {
+            TukiMapOverlayState.finishRouteReplacement(clearPreviousJourneyRoutes = false)
+            result
+        }
+    }
+
+    private suspend fun currentRerouteGpsFix(): RerouteGpsFix? {
         val location = appContext.currentDeviceLocation()
-            ?: return ApiResult.Failure(null, LocationDetectionFailureMessage)
+            ?: return null
         val timestampMillis = if (location.time > 0L) location.time else System.currentTimeMillis()
-        val locationUpdate = NavigationLocationUpdate(
+        return RerouteGpsFix(
             latitude = location.latitude,
             longitude = location.longitude,
             accuracyMeters = location.accuracy.toDouble(),
@@ -216,33 +371,6 @@ class TripOptionsCoordinator(context: Context) {
             speedMetersPerSecond = if (location.hasSpeed()) location.speed.toDouble() else null,
             bearingDegrees = if (location.hasBearing()) location.bearing.toDouble() else null
         )
-        // Replans are meaningful server events. Force exactly this fresh fix through the normally
-        // local repository before asking the backend to calculate the replacement plan.
-        NavigationSyncSignal.requestImmediateSync(samples = 1)
-        val locationResult = when (val update = navigation.updateLocation(sessionId, locationUpdate)) {
-            is ApiResult.Failure -> return update
-            is ApiResult.Success -> update
-        }
-
-        val changesConstraints = request.preference != null ||
-            request.budget != null || request.clearBudget ||
-            request.destinationName != null || request.destinationLatitude != null ||
-            request.destinationLongitude != null
-        if (locationResult.data.status.equals("REROUTE_SUCCEEDED", ignoreCase = true) && !changesConstraints) {
-            // The location sync can itself trigger the backend's authoritative off-route reroute.
-            // Do not immediately calculate a second replacement route for the same GPS fix.
-            NavigationSyncSignal.requestImmediateSync(samples = 1)
-            return locationResult
-        }
-
-        val rerouted = navigation.reroute(sessionId, request)
-        if (rerouted is ApiResult.Success) {
-            // TripTracking owns a short-lived coordinator repository while AppNavigation owns the
-            // long-lived tracking repository. Force the next tracking fix to refresh that parent
-            // cache from the backend so a successful reroute cannot fall back to stale geometry.
-            NavigationSyncSignal.requestImmediateSync(samples = 1)
-        }
-        return rerouted
     }
 
     private fun findTagged(plans: List<PlannedJourney>, tag: String): PlannedJourney? =

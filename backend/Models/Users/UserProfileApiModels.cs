@@ -21,6 +21,7 @@ public sealed record UserProfileResponse(
     public int TripsTaken { get; init; }
     public int FavoritesCount { get; init; }
     public string PreferredLanguage { get; init; } = "English";
+    public DateTime? LastPasswordChangedAt { get; init; }
 }
 
 public sealed record UserProfileErrorResponse(IReadOnlyList<string> Errors);

@@ -137,7 +137,12 @@ public sealed class NearestRouteProjectionRegressionTests
             MaxWalkToTrikePointMeters = 100,
             MaxTotalWalkingMetersPerJourney = 2_500,
             MaxWalkOnlyTripDistanceMeters = 50,
-            MaxWalkTrikeTripDistanceMeters = 50
+            MaxWalkTrikeTripDistanceMeters = 50,
+            // The fixture is deliberately a single ~10.7km segment so that
+            // capping MaxRouteSamples at 2 leaves nothing but the endpoints.
+            // Without this the segment trips the malformed-route guard and the
+            // route is dropped before any of the behaviour under test runs.
+            MaxStaticRouteSegmentJumpMeters = 15_000
         };
 
         return new RoutingService(

@@ -10,6 +10,7 @@ import com.example.frontend.data.navigation.NavigationGeometryResponseDto
 import com.example.frontend.data.navigation.NavigationLocationUpdate
 import com.example.frontend.data.navigation.NavigationRepositoryImpl
 import com.example.frontend.data.navigation.NavigationRerouteRequest
+import com.example.frontend.data.navigation.ResolveAlightStatusRequest
 import com.example.frontend.data.navigation.NavigationSnapshotDto
 import com.example.frontend.data.navigation.StartNavigationRequest
 import com.example.frontend.data.tripsessions.TripSessionDto
@@ -82,6 +83,18 @@ class NavigationRepositoryTest {
     }
 
     @Test
+    fun resolveUnknownAlight_sendsExplicitAlreadyOffDecision() = runBlocking {
+        val api = FakeNavigationApi(snapshot())
+        val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
+
+        val result = repository.resolveAlightStatus("session-1", alreadyOff = true)
+
+        assertTrue(result is ApiResult.Success)
+        assertEquals("session-1", api.resolveAlightSession)
+        assertEquals(true, api.resolveAlightRequest?.alreadyOff)
+    }
+
+    @Test
     fun repository_routineLocationUpdatesStayLocalWithoutBackendCalls() = runBlocking {
         NavigationSyncSignal.reset()
         val api = FakeNavigationApi(snapshot())
@@ -123,7 +136,7 @@ class NavigationRepositoryTest {
     }
 
     @Test
-    fun repository_defaultConfirmationBurstSendsFiveSamplesThenReturnsLocal() = runBlocking {
+    fun repository_defaultConfirmationBurstSendsTwoSamplesThenReturnsLocal() = runBlocking {
         NavigationSyncSignal.reset()
         val api = FakeNavigationApi(snapshot())
         val repository = NavigationRepositoryImpl(api, SessionStore(), ApiErrorParser())
@@ -142,7 +155,7 @@ class NavigationRepositoryTest {
             )
         }
 
-        assertEquals(5, api.locationCalls)
+        assertEquals(2, api.locationCalls)
         NavigationSyncSignal.reset()
     }
 
@@ -153,6 +166,8 @@ class NavigationRepositoryTest {
         var locationCalls = 0
         var boardingCalls = 0
         var alightingCalls = 0
+        var resolveAlightSession: String? = null
+        var resolveAlightRequest: ResolveAlightStatusRequest? = null
 
         override suspend fun start(request: StartNavigationRequest) = Response.success(response)
 
@@ -167,7 +182,9 @@ class NavigationRepositoryTest {
             endLatitude: Double,
             endLongitude: Double,
             mode: String,
-            routeId: Long?
+            routeId: Long?,
+            startRouteProgressMeters: Double?,
+            endRouteProgressMeters: Double?
         ): Response<NavigationGeometryResponseDto> =
             Response.success(NavigationGeometryResponseDto(emptyList()))
 
@@ -185,6 +202,15 @@ class NavigationRepositoryTest {
 
         override suspend fun alighting(sessionId: String): Response<NavigationSnapshotDto> {
             alightingCalls++
+            return Response.success(response)
+        }
+
+        override suspend fun resolveAlightStatus(
+            sessionId: String,
+            request: ResolveAlightStatusRequest
+        ): Response<NavigationSnapshotDto> {
+            resolveAlightSession = sessionId
+            resolveAlightRequest = request
             return Response.success(response)
         }
 
@@ -210,7 +236,9 @@ class NavigationRepositoryTest {
           "currentLegInstructions":[{"sequence":1,"type":"TurnRight","legIndex":0,"text":"Turn right.","streetName":"Mabini Street","latitude":15.02,"longitude":120.02,"distanceFromLegStartMeters":300.0,"triggerDistanceMeters":30.0,"requiresConfirmation":false}],
           "currentLegLandmarks":[{"name":"Jollibee","category":"fast_food","role":"PROGRESS_REFERENCE","relation":"ALONG_ROUTE","latitude":15.05,"longitude":120.05,"distanceFromTargetMeters":0.0,"triggerBeforeMeters":20.0,"triggerAfterMeters":20.0}],
           "requiresBoardingConfirmation":false,"requiresAlightingConfirmation":true,"rerouteRequired":false,
-          "status":"ApproachingAlightPoint","triggeredEvents":[]
+          "status":"ApproachingAlightPoint","triggeredEvents":[],
+          "currentLatitude":null,"currentLongitude":null,
+          "approxFareSpent":0.0,"estimatedRemainingFare":0.0
         }"""
 
         fun snapshot(): NavigationSnapshotDto = Gson().fromJson(

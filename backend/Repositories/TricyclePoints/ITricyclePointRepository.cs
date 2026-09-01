@@ -4,6 +4,8 @@ namespace backend.Repositories;
 
 public interface ITricyclePointRepository
 {
+    Task<List<TricyclePoint>> GetAllAsync(CancellationToken cancellationToken = default);
+
     Task<List<TricyclePoint>> GetAllActiveAsync(CancellationToken cancellationToken = default);
 
     Task<TricyclePoint?> GetByIdAsync(long tricyclePointId, CancellationToken cancellationToken = default);

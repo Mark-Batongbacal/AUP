@@ -1,0 +1,91 @@
+@model Tuki.Admin.ViewModels.TricyclePoints.TricyclePointListViewModel
+@{
+    ViewData["Title"] = "Official Tricycle Points";
+}
+
+<section class="dashboard-header d-flex flex-wrap justify-content-between align-items-end gap-3">
+    <div>
+        <p class="eyebrow">DATA MANAGEMENT</p>
+        <h1>Official tricycle points</h1>
+        <p>Manage verified TODA and tricycle pickup points used by the passenger app.</p>
+    </div>
+    <a asp-action="Create" class="btn btn-tuki">Create official point</a>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+
+<section data-paginated-list>
+    <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3">
+        <div class="btn-group" role="group" aria-label="Point status filters">
+            <a asp-action="Index" asp-route-status="active" class="btn @(Model.Status == "active" ? "btn-tuki" : "btn-outline-secondary")">Active</a>
+            <a asp-action="Index" asp-route-status="archived" class="btn @(Model.Status == "archived" ? "btn-tuki" : "btn-outline-secondary")">Archived</a>
+        </div>
+
+        <div style="min-width: min(100%, 320px);">
+            <label for="tricyclePointSearch" class="form-label small text-muted mb-1">Search tricycle points</label>
+            <input id="tricyclePointSearch"
+                   type="search"
+                   class="form-control"
+                   placeholder="Name, code, operator, address"
+                   data-list-search />
+        </div>
+    </div>
+
+    <div class="d-flex align-items-center justify-content-between gap-3 mb-2">
+        <span class="text-muted small" data-list-summary></span>
+        <span class="text-muted small">10 points per page</span>
+    </div>
+
+    <div class="table-responsive admin-table-card">
+        <table class="table align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th>Operator</th>
+                    <th>Radius</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var point in Model.Points)
+            {
+                var searchText = $"{point.PointName} {point.PointCode} {point.OperatorName} {point.Address} {point.Description}";
+                <tr data-search-text="@searchText">
+                    <td>
+                        <strong>@point.PointName</strong>
+                        @if (!string.IsNullOrWhiteSpace(point.Address))
+                        {
+                            <div class="small text-muted">@point.Address</div>
+                        }
+                    </td>
+                    <td><code>@point.PointCode</code></td>
+                    <td>@(point.OperatorName ?? "—")</td>
+                    <td>@point.RadiusMeters m</td>
+                    <td>
+                        <span class="status-pill @(point.IsActive ? "status-active" : "status-archived")">
+                            @(point.IsActive ? "Active" : "Archived")
+                        </span>
+                    </td>
+                    <td class="text-end">
+                        <a asp-action="Edit" asp-route-id="@point.TricyclePointId" class="btn btn-outline-tuki btn-sm">Manage</a>
+                    </td>
+                </tr>
+            }
+                <tr data-list-empty hidden>
+                    <td colspan="6" class="text-center py-5 text-muted">No official tricycle points match the current search and filter.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex flex-wrap justify-content-center gap-2 mt-3" data-list-pagination aria-label="Tricycle point pages"></div>
+</section>
+
+@section Scripts {
+    <script src="~/js/admin-list-pagination.js" asp-append-version="true"></script>
+}

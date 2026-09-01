@@ -9,33 +9,38 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.frontend.MapScreen
+import com.example.frontend.MapVisualStyle
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RecentCommute
-import org.maplibre.android.geometry.LatLng
-import kotlin.math.roundToInt
-
-import androidx.compose.material3.MaterialTheme
-import com.example.frontend.ui.theme.TukiTeal
-import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiCream
+import com.example.frontend.ui.theme.TukiForestSurface
 import com.example.frontend.ui.theme.TukiInk
 import com.example.frontend.ui.theme.TukiMuted
-import com.example.frontend.ui.theme.TukiDeepTeal
-import com.example.frontend.ui.theme.TukiForest
-import com.example.frontend.ui.theme.TukiGold
+import com.example.frontend.ui.theme.TukiOrange
 import com.example.frontend.ui.theme.TukiSky
 import com.example.frontend.ui.theme.TukiSurfaceRaised
-import com.example.frontend.ui.theme.TukiForestSurface
+import com.example.frontend.ui.theme.TukiTeal
+import org.maplibre.android.geometry.LatLng
+import kotlin.math.roundToInt
 
 @Composable
 fun CommuteDetailScreen(
@@ -45,11 +50,23 @@ fun CommuteDetailScreen(
     onBack: () -> Unit = {},
     onRepeatTrip: () -> Unit = {}
 ) {
+    var selectedLegIndex by remember(commute.id) { mutableStateOf<Int?>(null) }
+    val usableLegs = legGeometries.map { points -> points.takeIf { it.size >= 2 }.orEmpty() }
+    val selectedLeg = selectedLegIndex?.let { index -> usableLegs.getOrNull(index) }?.takeIf { it.size >= 2 }
+    val allRoutePoints = usableLegs.filter { it.size >= 2 }.flatten()
+    val primaryRoute = selectedLeg ?: usableLegs.firstOrNull { it.size >= 2 } ?: emptyList()
+    val contextualLegs = if (selectedLeg != null) emptyList() else usableLegs.filter { it.size >= 2 }.drop(1)
+    val mapBounds = selectedLeg ?: allRoutePoints
+    val mapStart = selectedLeg?.firstOrNull()
+        ?: allRoutePoints.firstOrNull()
+        ?: commute.originLatitude?.let { lat -> commute.originLongitude?.let { lon -> LatLng(lat, lon) } }
+    val mapDestination = selectedLeg?.lastOrNull()
+        ?: allRoutePoints.lastOrNull()
+        ?: commute.destinationLatitude?.let { lat -> commute.destinationLongitude?.let { lon -> LatLng(lat, lon) } }
+    val finalDestination = commute.destinationLatitude?.let { lat -> commute.destinationLongitude?.let { lon -> LatLng(lat, lon) } }
+
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(TukiCream)
-            .statusBarsPadding(),
+        modifier = Modifier.fillMaxSize().background(TukiCream).statusBarsPadding(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 22.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -58,18 +75,11 @@ fun CommuteDetailScreen(
                 Box(Modifier.size(40.dp).clickable(onClick = onBack), contentAlignment = Alignment.Center) {
                     Text("←", color = TukiInk, style = MaterialTheme.typography.displaySmall)
                 }
-                Text(
-                    "Route Details",
-                    Modifier.weight(1f),
-                    color = TukiInk,
-                    style = MaterialTheme.typography.displaySmall
-                )
+                Text(TukiInterfaceText.routeDetails, Modifier.weight(1f), color = TukiInk, style = MaterialTheme.typography.displaySmall)
             }
         }
 
-        item {
-            Text("${commute.origin} →\n${commute.destination}", color = TukiInk, style = MaterialTheme.typography.titleLarge)
-        }
+        item { Text("${commute.origin} →\n${commute.destination}", color = TukiInk, style = MaterialTheme.typography.titleLarge) }
 
         item {
             Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiSurfaceRaised, shadowElevation = 1.dp) {
@@ -78,21 +88,54 @@ fun CommuteDetailScreen(
                     VerticalDivider()
                     SummaryMetric("₱", "₱${commute.totalFare.roundToInt()}", Modifier.weight(1f))
                     VerticalDivider()
-                    SummaryMetric("◇", "${commute.legs} legs", Modifier.weight(1f))
+                    SummaryMetric("◇", "${commute.legs} ${if (TukiInterfaceText.isFilipino) "hakbang" else "legs"}", Modifier.weight(1f))
                 }
             }
         }
 
-        item { Text("Step-by-step guide", color = TukiInk, style = MaterialTheme.typography.titleMedium) }
+        if (isGeometryLoading || primaryRoute.isNotEmpty()) {
+            item {
+                HistoryRoutePreview(
+                    routePoints = primaryRoute,
+                    routeBoundsPoints = mapBounds,
+                    contextualLegs = contextualLegs,
+                    startPoint = mapStart,
+                    destinationPoint = mapDestination,
+                    finalDestination = finalDestination,
+                    selectedStep = selectedLegIndex?.let { index -> commute.steps.getOrNull(index) },
+                    isLoading = isGeometryLoading,
+                    onShowFullRoute = { selectedLegIndex = null }
+                )
+            }
+        }
+
+        item { Text(TukiInterfaceText.stepByStepGuide, color = TukiInk, style = MaterialTheme.typography.titleMedium) }
 
         if (commute.steps.isEmpty()) {
             item {
                 Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = TukiSurfaceRaised) {
-                    Text("No step-by-step breakdown was saved for this trip.", Modifier.padding(18.dp), color = TukiMuted, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        if (TukiInterfaceText.isFilipino) "Walang na-save na Step-by-step guide para sa biyaheng ito."
+                        else "No step-by-step breakdown was saved for this trip.",
+                        Modifier.padding(18.dp),
+                        color = TukiMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
         } else {
-            item { TimelineSteps(commute.steps) }
+            item {
+                TimelineSteps(
+                    steps = commute.steps,
+                    selectedLegIndex = selectedLegIndex,
+                    selectableLegs = usableLegs,
+                    onLegSelected = { index ->
+                        if ((usableLegs.getOrNull(index)?.size ?: 0) >= 2) {
+                            selectedLegIndex = if (selectedLegIndex == index) null else index
+                        }
+                    }
+                )
+            }
         }
 
         item {
@@ -102,7 +145,7 @@ fun CommuteDetailScreen(
                         Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, style = MaterialTheme.typography.labelLarge) }
                     }
                     Spacer(Modifier.width(10.dp))
-                    Text("Tip: Prepare exact fare or have small bills for a smoother ride.", color = TukiInk, style = MaterialTheme.typography.bodySmall)
+                    Text(TukiInterfaceText.tipPrepareFare, color = TukiInk, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -115,23 +158,97 @@ fun CommuteDetailScreen(
                 modifier = Modifier.fillMaxWidth().height(54.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = TukiTeal),
                 shape = RoundedCornerShape(18.dp)
-            ) { Text("Start Trip  →", color = Color.White, style = MaterialTheme.typography.titleMedium) }
+            ) { Text("${TukiInterfaceText.startTrip}  →", color = Color.White, style = MaterialTheme.typography.titleMedium) }
         }
     }
 }
 
 @Composable
-private fun TimelineSteps(steps: List<CommuteStep>) {
+private fun HistoryRoutePreview(
+    routePoints: List<LatLng>,
+    routeBoundsPoints: List<LatLng>,
+    contextualLegs: List<List<LatLng>>,
+    startPoint: LatLng?,
+    destinationPoint: LatLng?,
+    finalDestination: LatLng?,
+    selectedStep: CommuteStep?,
+    isLoading: Boolean,
+    onShowFullRoute: () -> Unit
+) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = TukiSurfaceRaised, shadowElevation = 2.dp) {
+        Column(Modifier.padding(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 5.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (selectedStep == null) {
+                            if (TukiInterfaceText.isFilipino) "Natapos mong ruta" else "Your completed route"
+                        } else stepTitle(selectedStep),
+                        color = TukiInk,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        if (selectedStep == null) TukiInterfaceText.tapStepInspect else TukiInterfaceText.selectedTravelSegment,
+                        color = TukiMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (selectedStep != null) {
+                    TextButton(onClick = onShowFullRoute) {
+                        Text(TukiInterfaceText.fullRoute, color = TukiTeal, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+
+            if (isLoading && routePoints.isEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = TukiTeal)
+                }
+            } else if (routePoints.size >= 2) {
+                MapScreen(
+                    routePoints = routePoints,
+                    modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(15.dp)),
+                    startPoint = startPoint,
+                    selectedDestination = destinationPoint,
+                    finalDestination = finalDestination,
+                    futureRouteSegments = contextualLegs,
+                    transitRoutes = emptyList(),
+                    todaPoints = emptyList(),
+                    visualStyle = MapVisualStyle.LiveTrip,
+                    showDeviceLocation = false,
+                    fitRouteBounds = true,
+                    routeBoundsPoints = routeBoundsPoints.ifEmpty { routePoints },
+                    routeInteractionControlsEnabled = true
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelineSteps(
+    steps: List<CommuteStep>,
+    selectedLegIndex: Int?,
+    selectableLegs: List<List<LatLng>>,
+    onLegSelected: (Int) -> Unit
+) {
     Box(Modifier.fillMaxWidth()) {
-        Box(
-            Modifier
-                .matchParentSize()
-                .padding(start = 8.dp, top = 20.dp, bottom = 20.dp)
-        ) {
+        Box(Modifier.matchParentSize().padding(start = 8.dp, top = 20.dp, bottom = 20.dp)) {
             Box(Modifier.width(2.dp).fillMaxHeight().background(TukiOrange))
         }
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            steps.forEach { step -> StepTimelineCard(step = step) }
+            steps.forEachIndexed { index, step ->
+                StepTimelineCard(
+                    step = step,
+                    selected = selectedLegIndex == index,
+                    selectable = (selectableLegs.getOrNull(index)?.size ?: 0) >= 2,
+                    onClick = { onLegSelected(index) }
+                )
+            }
         }
     }
 }
@@ -141,11 +258,7 @@ private fun SummaryMetric(icon: String, value: String, modifier: Modifier = Modi
     Row(modifier, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         Text(icon, color = TukiInk, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.width(6.dp))
-        Text(
-            value,
-            color = TukiInk,
-            style = MaterialTheme.typography.labelLarge
-        )
+        Text(value, color = TukiInk, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -155,13 +268,23 @@ private fun VerticalDivider() {
 }
 
 @Composable
-private fun StepTimelineCard(step: CommuteStep) {
+private fun StepTimelineCard(
+    step: CommuteStep,
+    selected: Boolean,
+    selectable: Boolean,
+    onClick: () -> Unit
+) {
     Row(Modifier.fillMaxWidth()) {
         Box(Modifier.width(18.dp).padding(top = 18.dp), contentAlignment = Alignment.TopCenter) {
             Box(Modifier.size(10.dp).background(TukiOrange, CircleShape))
         }
         Spacer(Modifier.width(3.dp))
-        Surface(Modifier.weight(1f), shape = RoundedCornerShape(18.dp), color = TukiSurfaceRaised, shadowElevation = 1.dp) {
+        Surface(
+            modifier = Modifier.weight(1f).clickable(enabled = selectable, onClick = onClick),
+            shape = RoundedCornerShape(18.dp),
+            color = if (selected) TukiForestSurface else TukiSurfaceRaised,
+            shadowElevation = 1.dp
+        ) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
                 Surface(Modifier.size(48.dp), shape = RoundedCornerShape(14.dp), color = TukiSky) {
                     Box(contentAlignment = Alignment.Center) { Text(stepIcon(step.mode), style = MaterialTheme.typography.titleLarge) }
@@ -183,7 +306,7 @@ private fun StepTimelineCard(step: CommuteStep) {
                         Text("• ${step.to}", color = TukiMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Text("⌖", color = TukiTeal, style = MaterialTheme.typography.titleMedium)
+                Text("⌖", color = if (selectable) TukiTeal else TukiMuted.copy(alpha = 0.45f), style = MaterialTheme.typography.titleMedium)
             }
         }
     }
@@ -197,9 +320,9 @@ private fun stepIcon(mode: String): String = when {
 }
 
 private fun stepTitle(step: CommuteStep): String = when {
-    step.mode.contains("walk", true) -> "Walk to ${step.to}"
-    step.mode.contains("trike", true) || step.mode.contains("tricycle", true) -> "Ride Tricycle"
-    step.mode.contains("jeep", true) || step.mode.contains("bus", true) -> "Ride Jeepney"
+    step.mode.contains("walk", true) -> "${TukiInterfaceText.walkTo} ${step.to}"
+    step.mode.contains("trike", true) || step.mode.contains("tricycle", true) -> TukiInterfaceText.rideTricycle
+    step.mode.contains("jeep", true) || step.mode.contains("bus", true) -> TukiInterfaceText.rideJeepney
     else -> step.mode
 }
 

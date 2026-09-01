@@ -68,8 +68,7 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
     private static ParsedFacebookOidcToken ParseToken(string idToken)
     {
         var parts = idToken.Trim().Split('.');
-        if (parts.Length != 3 ||
-            parts.Any(part => string.IsNullOrWhiteSpace(part)))
+        if (parts.Length != 3 || parts.Any(part => string.IsNullOrWhiteSpace(part)))
         {
             throw new FacebookOidcTokenValidationException();
         }
@@ -110,10 +109,30 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
 
     private async Task<FacebookJwksResponse> GetJwksAsync(CancellationToken cancellationToken)
     {
-        HttpResponseMessage response;
         try
         {
-            response = await _httpClient.GetAsync(_jwksUri, cancellationToken);
+            using var response = await _httpClient.GetAsync(_jwksUri, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new FacebookOidcTokenValidationUnavailableException();
+            }
+
+            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var jwks = await JsonSerializer.DeserializeAsync<FacebookJwksResponse>(
+                body,
+                JsonOptions,
+                cancellationToken);
+
+            if (jwks?.Keys is null || jwks.Keys.Count == 0)
+            {
+                throw new FacebookOidcTokenValidationUnavailableException();
+            }
+
+            return jwks;
+        }
+        catch (FacebookOidcTokenValidationUnavailableException)
+        {
+            throw;
         }
         catch (HttpRequestException ex)
         {
@@ -123,37 +142,13 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
         {
             throw new FacebookOidcTokenValidationUnavailableException(ex);
         }
-
-        using (response)
+        catch (IOException ex)
         {
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new FacebookOidcTokenValidationUnavailableException();
-            }
-
-            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
-            try
-            {
-                var jwks = await JsonSerializer.DeserializeAsync<FacebookJwksResponse>(
-                    body,
-                    JsonOptions,
-                    cancellationToken);
-
-                if (jwks?.Keys is null || jwks.Keys.Count == 0)
-                {
-                    throw new FacebookOidcTokenValidationUnavailableException();
-                }
-
-                return jwks;
-            }
-            catch (FacebookOidcTokenValidationUnavailableException)
-            {
-                throw;
-            }
-            catch (JsonException ex)
-            {
-                throw new FacebookOidcTokenValidationUnavailableException(ex);
-            }
+            throw new FacebookOidcTokenValidationUnavailableException(ex);
+        }
+        catch (JsonException ex)
+        {
+            throw new FacebookOidcTokenValidationUnavailableException(ex);
         }
     }
 
@@ -200,7 +195,7 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
     {
         var now = _timeProvider.GetUtcNow();
 
-        if (!string.Equals(payload.Issuer, _issuer, StringComparison.Ordinal) ||
+        if (!IsAllowedIssuer(payload.Issuer) ||
             !AudienceContains(payload.Audience, appId) ||
             string.IsNullOrWhiteSpace(payload.Subject) ||
             !string.Equals(payload.Nonce, nonce, StringComparison.Ordinal) ||
@@ -210,6 +205,19 @@ public sealed class FacebookOidcTokenValidator : IFacebookOidcTokenValidator
         {
             throw new FacebookOidcTokenValidationException();
         }
+    }
+
+    private bool IsAllowedIssuer(string? issuer)
+    {
+        if (string.Equals(issuer, _issuer, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // Meta Limited Login tokens have historically used both canonical
+        // facebook.com issuer forms. Keep custom configured issuers exact.
+        return string.Equals(_issuer, FacebookOptions.DefaultOidcIssuer, StringComparison.Ordinal) &&
+            string.Equals(issuer, FacebookOptions.AlternateOidcIssuer, StringComparison.Ordinal);
     }
 
     private static bool AudienceContains(JsonElement audience, string appId)

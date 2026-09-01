@@ -7,7 +7,7 @@ namespace backend.Services.Email;
 
 public interface IPasswordResetService
 {
-    Task RequestResetAsync(string email, CancellationToken cancellationToken = default);
+    Task<bool> RequestResetAsync(string email, CancellationToken cancellationToken = default);
 
     Task<bool> ResetPasswordAsync(
         string email,
@@ -41,22 +41,32 @@ public sealed class PasswordResetService(
     private static readonly TimeSpan OtpSendCooldown = TimeSpan.FromMinutes(3);
     private readonly EmailOptions _options = options.Value;
 
-    public async Task RequestResetAsync(string email, CancellationToken cancellationToken = default)
+    public async Task<bool> RequestResetAsync(string email, CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = email.Trim();
-        var user = await context.UserProfiles
-            .FirstOrDefaultAsync(profile => profile.Email == normalizedEmail && profile.IsActive, cancellationToken);
-        if (user is null)
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+
+        // Forgot-password is only meaningful for active accounts that actually own a local
+        // password credential. Do not let a random/unregistered email, a deleted account, or a
+        // social-only identity enter the reset-OTP flow.
+        var credential = await context.LocalUserCredentials
+            .AsNoTracking()
+            .Include(current => current.User)
+            .FirstOrDefaultAsync(current =>
+                current.User.Email == normalizedEmail &&
+                current.User.IsActive,
+                cancellationToken);
+        if (credential is null)
         {
-            // Do not reveal whether the account exists.
-            return;
+            return false;
         }
 
+        var user = credential.User;
         var code = await CreateOtpAsync(user.UserId, ResetPurpose, ResetCodeLifetime, cancellationToken);
         if (code is null)
         {
-            // Keep the public response generic while enforcing the send cooldown server-side.
-            return;
+            // The account is valid; a code was simply sent too recently. Treat the request as
+            // accepted so the client can return to the existing OTP entry flow.
+            return true;
         }
 
         var subject = $"Reset your {_options.AppDisplayName} password";
@@ -73,6 +83,8 @@ public sealed class PasswordResetService(
             html,
             $"Your {_options.AppDisplayName} password reset code is {code}. It expires in {ResetCodeLifetime.TotalMinutes:0} minutes.",
             cancellationToken);
+
+        return true;
     }
 
     public async Task<bool> ResetPasswordAsync(
@@ -81,7 +93,7 @@ public sealed class PasswordResetService(
         string newPassword,
         CancellationToken cancellationToken = default)
     {
-        var normalizedEmail = email.Trim();
+        var normalizedEmail = email.Trim().ToLowerInvariant();
         var hash = VerificationCode.Hash(code.Trim());
         var now = DateTime.UtcNow;
 
@@ -93,7 +105,17 @@ public sealed class PasswordResetService(
                 t.ConsumedAt == null &&
                 t.ExpiresAt > now)
             .FirstOrDefaultAsync(cancellationToken);
-        if (token is null || !string.Equals(token.User.Email, normalizedEmail, StringComparison.OrdinalIgnoreCase))
+        if (token is null ||
+            !token.User.IsActive ||
+            !string.Equals(token.User.Email, normalizedEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var hasLocalCredential = await context.LocalUserCredentials
+            .AsNoTracking()
+            .AnyAsync(current => current.UserId == token.UserId, cancellationToken);
+        if (!hasLocalCredential)
         {
             return false;
         }

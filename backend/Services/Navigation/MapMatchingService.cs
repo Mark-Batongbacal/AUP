@@ -10,6 +10,12 @@ public interface IMapMatchingService
         double legStartRouteProgressMeters,
         double legEndRouteProgressMeters,
         double? previousRouteProgressMeters);
+    RouteMatch? MatchWithinRange(
+        LocationUpdate update,
+        IReadOnlyList<(double Latitude, double Longitude)> geometry,
+        double legStartRouteProgressMeters,
+        double minimumRouteProgressMeters,
+        double maximumRouteProgressMeters);
     double ProjectProgress(IReadOnlyList<(double Latitude, double Longitude)> geometry, double latitude, double longitude);
     RouteMatch? ProjectClosest(IReadOnlyList<(double Latitude, double Longitude)> geometry, double latitude, double longitude);
 }
@@ -23,12 +29,26 @@ public sealed class MapMatchingService(IOptions<NavigationOptions> options) : IM
         double legStartRouteProgressMeters, double legEndRouteProgressMeters,
         double? previousRouteProgressMeters)
     {
-        if (geometry.Count < 2) return null;
-        var cumulative = Cumulative(geometry);
         var minimum = Math.Max(legStartRouteProgressMeters,
             (previousRouteProgressMeters ?? legStartRouteProgressMeters) - _options.MaxBackwardProgressMeters);
         var maximum = Math.Min(legEndRouteProgressMeters,
             (previousRouteProgressMeters ?? legStartRouteProgressMeters) + _options.MaxForwardProgressMetersPerUpdate);
+        return MatchWithinRange(update, geometry, legStartRouteProgressMeters, minimum, maximum);
+    }
+
+    public RouteMatch? MatchWithinRange(
+        LocationUpdate update,
+        IReadOnlyList<(double Latitude, double Longitude)> geometry,
+        double legStartRouteProgressMeters,
+        double minimumRouteProgressMeters,
+        double maximumRouteProgressMeters)
+    {
+        if (geometry.Count < 2 || maximumRouteProgressMeters < minimumRouteProgressMeters) return null;
+        var cumulative = Cumulative(geometry);
+        var minimum = Math.Max(0, minimumRouteProgressMeters);
+        var maximum = Math.Min(cumulative[^1], maximumRouteProgressMeters);
+        if (maximum < minimum) return null;
+
         RouteMatch? best = null;
         for (var index = 0; index < geometry.Count - 1; index++)
         {

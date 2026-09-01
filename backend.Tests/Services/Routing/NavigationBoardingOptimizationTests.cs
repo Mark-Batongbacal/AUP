@@ -49,8 +49,17 @@ public sealed class NavigationBoardingOptimizationTests
     }
 
     [Fact]
-    public async Task PlanTripsAsync_PreservesFartherBoardWhenFastestGainIsSubstantial()
+    public async Task PlanTripsAsync_RejectsFartherBoardEvenWhenFastestGainIsSubstantial()
     {
+        // The trike here genuinely is confirmed-fast (30 m/s in both the
+        // provisional and confirmed model), so under the OLD invariant a
+        // meaningful time savings excused the farther board. But the trike
+        // still rides almost the entire ~5.4km jeepney corridor to reach a
+        // board near its far end -- extra confirmed feeder distance is a
+        // large fraction of the jeepney progress it skips. That is feeder
+        // replacing transit (routing bug ticket, "DO NOT LET FASTEST
+        // LEGITIMIZE THE BUG"), not a network-access optimization, so no
+        // fastest advantage can excuse it: the near board must survive.
         var service = CreateStraightRouteService(
             confirmedTrikeSpeedMetersPerSecond: 30,
             provisionalTrikeSpeedMetersPerSecond: 30);
@@ -67,8 +76,8 @@ public sealed class NavigationBoardingOptimizationTests
 
         Assert.Equal(AccessMode.Trike, fastest.OriginAccess.Mode);
         Assert.True(
-            firstJeepney.BoardLongitude > 120.5300,
-            $"Expected fastest to retain a genuinely useful downstream board, got {firstJeepney.BoardLongitude:F6}.");
+            firstJeepney.BoardLongitude < 120.5060,
+            $"Expected the near, non-shadowing board, got longitude {firstJeepney.BoardLongitude:F6}.");
     }
 
     private const double OriginLatitude = 15.0018;
@@ -93,23 +102,15 @@ public sealed class NavigationBoardingOptimizationTests
                 Code = "JEEPNEY",
                 Name = "Jeepney"
             },
-            RoutePoints =
-            [
-                new RoutePoint
+            RoutePoints = Enumerable.Range(0, 11)
+                .Select(index => new RoutePoint
                 {
                     RouteId = 1,
-                    PointOrder = 0,
+                    PointOrder = index,
                     Latitude = 15.0000,
-                    Longitude = 120.5000
-                },
-                new RoutePoint
-                {
-                    RouteId = 1,
-                    PointOrder = 1,
-                    Latitude = 15.0000,
-                    Longitude = 120.5500
-                }
-            ]
+                    Longitude = 120.5000 + index * 0.005
+                })
+                .ToList()
         };
 
         var terminal = new TricyclePoint
@@ -148,9 +149,7 @@ public sealed class NavigationBoardingOptimizationTests
             MaxWalkTrikeTripDistanceMeters = 50,
             TrikeSpeedMetersPerSecond = provisionalTrikeSpeedMetersPerSecond,
             FeederShadowingMinProgressMeters = 300,
-            FeederShadowingAccessDistanceRatio = 0.60,
-            FeederShadowingRequiredTimeSavingsSeconds = 120,
-            FeederShadowingRequiredFareSavingsPesos = 10
+            FeederShadowingAccessDistanceRatio = 0.60
         };
 
         return new RoutingService(

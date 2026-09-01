@@ -436,6 +436,9 @@ BEGIN TRY
             StartLongitude float NULL,
             EndLatitude float NULL,
             EndLongitude float NULL,
+            StartRouteProgressMeters float NULL,
+            EndRouteProgressMeters float NULL,
+            StartsAlreadyOnboard bit NOT NULL CONSTRAINT DF_RecommendationLegs_StartsAlreadyOnboard DEFAULT (0),
             DistanceMeters decimal(12, 2) NULL,
             EstimatedMinutes decimal(10, 2) NOT NULL CONSTRAINT DF_RecommendationLegs_EstimatedMinutes DEFAULT (0),
             EstimatedFare decimal(10, 2) NOT NULL CONSTRAINT DF_RecommendationLegs_EstimatedFare DEFAULT (0),
@@ -444,6 +447,14 @@ BEGIN TRY
             CONSTRAINT PK_RecommendationLegs PRIMARY KEY (LegId)
         );
     END;
+
+    IF COL_LENGTH(N'dbo.RecommendationLegs', N'StartRouteProgressMeters') IS NULL
+        ALTER TABLE dbo.RecommendationLegs ADD StartRouteProgressMeters float NULL;
+    IF COL_LENGTH(N'dbo.RecommendationLegs', N'EndRouteProgressMeters') IS NULL
+        ALTER TABLE dbo.RecommendationLegs ADD EndRouteProgressMeters float NULL;
+    IF COL_LENGTH(N'dbo.RecommendationLegs', N'StartsAlreadyOnboard') IS NULL
+        ALTER TABLE dbo.RecommendationLegs ADD StartsAlreadyOnboard bit NOT NULL
+            CONSTRAINT DF_RecommendationLegs_StartsAlreadyOnboard DEFAULT (0);
 
     IF OBJECT_ID(N'dbo.PassengerTrips', N'U') IS NULL
     BEGIN
@@ -488,6 +499,7 @@ BEGIN TRY
             ConversationId uniqueidentifier NOT NULL CONSTRAINT DF_ChatConversations_ConversationId DEFAULT (newsequentialid()),
             UserId uniqueidentifier NOT NULL,
             Title nvarchar(200) NULL,
+            PlanningStateJson nvarchar(max) NULL,
             CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_ChatConversations_CreatedAt DEFAULT (sysutcdatetime()),
             UpdatedAt datetime2(7) NOT NULL CONSTRAINT DF_ChatConversations_UpdatedAt DEFAULT (sysutcdatetime()),
             CONSTRAINT PK_ChatConversations PRIMARY KEY (ConversationId)
@@ -512,6 +524,7 @@ BEGIN TRY
     END;
 
     IF COL_LENGTH(N'dbo.UserProfiles', N'ProfileImageUrl') IS NULL ALTER TABLE dbo.UserProfiles ADD ProfileImageUrl nvarchar(500) NULL;
+    IF COL_LENGTH(N'dbo.ChatConversations', N'PlanningStateJson') IS NULL ALTER TABLE dbo.ChatConversations ADD PlanningStateJson nvarchar(max) NULL;
     IF COL_LENGTH(N'dbo.UserProfiles', N'UpdatedAt') IS NULL ALTER TABLE dbo.UserProfiles ADD UpdatedAt datetime2(7) NULL CONSTRAINT DF_UserProfiles_UpdatedAt_Add DEFAULT (sysutcdatetime());
 
     IF COL_LENGTH(N'dbo.TransportModes', N'IsMotorized') IS NULL ALTER TABLE dbo.TransportModes ADD IsMotorized bit NOT NULL CONSTRAINT DF_TransportModes_IsMotorized_Add DEFAULT (1) WITH VALUES;
@@ -1330,3 +1343,50 @@ SELECT
     COL_LENGTH(N'dbo.TripLandmarkCandidates', N'Role') AS LandmarkRoleBytes,
     COL_LENGTH(N'dbo.TripLandmarkCandidates', N'Relation') AS LandmarkRelationBytes,
     COL_LENGTH(N'dbo.TripLandmarkCandidates', N'DistanceFromTargetMeters') AS LandmarkTargetDistanceBytes;
+
+GO
+
+-- ── Part 5: migrations/20260823_PersistentApiKeySessions.sql ───────────────
+
+SET NOCOUNT ON;
+SET XACT_ABORT ON;
+
+BEGIN TRANSACTION;
+
+IF OBJECT_ID(N'dbo.ApiKeySessions', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.ApiKeySessions
+    (
+        ApiKeySessionId BIGINT IDENTITY(1, 1) NOT NULL,
+        KeyHash CHAR(64) NOT NULL,
+        CredentialOwner NVARCHAR(255) NOT NULL,
+        CreatedAt DATETIMEOFFSET(7) NOT NULL
+            CONSTRAINT DF_ApiKeySessions_CreatedAt
+            DEFAULT TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00'),
+        ExpiresAt DATETIMEOFFSET(7) NOT NULL,
+        RevokedAt DATETIMEOFFSET(7) NULL,
+        CONSTRAINT PK_ApiKeySessions PRIMARY KEY (ApiKeySessionId)
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.ApiKeySessions')
+      AND name = N'UX_ApiKeySessions_KeyHash')
+BEGIN
+    CREATE UNIQUE INDEX UX_ApiKeySessions_KeyHash
+        ON dbo.ApiKeySessions (KeyHash);
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID(N'dbo.ApiKeySessions')
+      AND name = N'IX_ApiKeySessions_OwnerExpiresAt')
+BEGIN
+    CREATE INDEX IX_ApiKeySessions_OwnerExpiresAt
+        ON dbo.ApiKeySessions (CredentialOwner, ExpiresAt);
+END;
+
+COMMIT TRANSACTION;

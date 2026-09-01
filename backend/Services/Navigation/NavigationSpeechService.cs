@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using backend.Repositories;
 using backend.Services.Localization;
+using backend.Services.Telemetry;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -27,17 +28,18 @@ public interface INavigationSpeechService
         CancellationToken cancellationToken = default);
 }
 
-// Kept under the existing class name so current DI wiring remains compatible.
-// Qwen phrases meaningful navigation events, while deterministic speech is always
+// Gemini phrases meaningful navigation events, while deterministic speech is always
 // available as the safety/latency fallback.
-public sealed class NemotronNavigationSpeechService(
+public sealed class GeminiNavigationSpeechService(
     IConfiguration configuration,
     IHttpContextAccessor httpContextAccessor,
     IUserProfileRepository userProfiles,
-    ILogger<NemotronNavigationSpeechService> logger)
+    ILogger<GeminiNavigationSpeechService> logger,
+    IAiUsageMetricsStore aiUsageMetrics)
     : INavigationSpeechService
 {
-    private static readonly TimeSpan QwenTimeout = TimeSpan.FromSeconds(15);
+    private const string DisableAiHeader = "X-Tuki-Disable-Ai";
+    private static readonly TimeSpan GeminiTimeout = TimeSpan.FromSeconds(15);
 
     public async Task<string> PhraseAsync(
         NavigationSpeechContext context,
@@ -46,25 +48,32 @@ public sealed class NemotronNavigationSpeechService(
         var language = await ResolveLanguageAsync(cancellationToken);
         var localizedContext = context with { Language = language };
 
+        // Capacity/load tests can explicitly request deterministic navigation
+        // speech so they measure Tuki's infrastructure without consuming
+        // Gemini quota or mixing external-model latency into the benchmark.
+        // This only changes wording for the current request and does not bypass
+        // authentication, routing, navigation state, or any safety checks.
+        if (IsAiDisabledForRequest())
+            return DeterministicNavigationSpeech.Phrase(localizedContext);
+
         var apiKey = Environment.GetEnvironmentVariable(
-            configuration["Qwen:ApiKeyEnvironmentVariable"] ??
-            configuration["Nvidia:ApiKeyEnvironmentVariable"] ??
-            "NVIDIA_API_KEY");
+            configuration["Gemini:ApiKeyEnvironmentVariable"] ??
+            "GEMINI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
             return DeterministicNavigationSpeech.Phrase(localizedContext);
 
+        var model = configuration["Gemini:Model"] ?? "gemini-3.5-flash-lite";
         var client = new ChatClient(
-            configuration["Qwen:Model"] ?? "qwen/qwen3-next-80b-a3b-instruct",
+            model,
             new System.ClientModel.ApiKeyCredential(apiKey),
             new OpenAIClientOptions
             {
-                Endpoint = new Uri(configuration["Qwen:BaseUrl"] ??
-                    configuration["Nvidia:BaseUrl"] ??
-                    "https://integrate.api.nvidia.com/v1")
+                Endpoint = new Uri(configuration["Gemini:BaseUrl"] ??
+                    "https://generativelanguage.googleapis.com/v1beta/openai/")
             });
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(QwenTimeout);
+        timeout.CancelAfter(GeminiTimeout);
 
         try
         {
@@ -74,21 +83,39 @@ public sealed class NemotronNavigationSpeechService(
                 new UserChatMessage(JsonSerializer.Serialize(localizedContext))
             ], cancellationToken: timeout.Token);
 
+            var usage = response.Value.Usage;
+            aiUsageMetrics.Record(
+                "navigation",
+                model,
+                usage?.InputTokenCount ?? 0,
+                usage?.OutputTokenCount ?? 0);
+
             var text = response.Value.Content.FirstOrDefault()?.Text?.Trim();
             return NavigationSpeechTemplate.Normalize(text, localizedContext);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             logger.LogWarning(
-                "Qwen navigation speech exceeded {TimeoutSeconds}s; using deterministic fallback",
-                QwenTimeout.TotalSeconds);
+                "Gemini navigation speech exceeded {TimeoutSeconds}s; using deterministic fallback",
+                GeminiTimeout.TotalSeconds);
             return DeterministicNavigationSpeech.Phrase(localizedContext);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            logger.LogWarning(exception, "Qwen navigation speech unavailable; using deterministic fallback");
+            logger.LogWarning(exception, "Gemini navigation speech unavailable; using deterministic fallback");
             return DeterministicNavigationSpeech.Phrase(localizedContext);
         }
+    }
+
+    private bool IsAiDisabledForRequest()
+    {
+        var value = httpContextAccessor.HttpContext?
+            .Request.Headers[DisableAiHeader]
+            .ToString();
+
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+               value == "1";
     }
 
     private async Task<string> ResolveLanguageAsync(CancellationToken cancellationToken)
@@ -257,6 +284,7 @@ public static class DeterministicNavigationSpeech
             "Arrived" => "Ayun, nandito na tayo!",
             "Cancelled" => "Okay, cancelled na yung navigation.",
             "MissedAlight" => "Mukhang lumagpas tayo sa babaan. I-check natin yung next route.",
+            "AlightStatusUnknown" => "Nakapagbaba ka na ba? Piliin kung nakababa ka na o nasa jeep ka pa.",
             "OffRoute" => "Mukhang wala na tayo sa planned route. I-check natin yung next step.",
             "Rerouted" => "Okay, updated na yung route. Sundan natin yung next instruction.",
             "TurnLeft" => "Kaliwa tayo dito.",
@@ -314,6 +342,7 @@ public static class DeterministicNavigationSpeech
             "Arrived" => "We're here!",
             "Cancelled" => "Okay, navigation is cancelled.",
             "MissedAlight" => "Looks like we passed the stop. Let's check the next route.",
+            "AlightStatusUnknown" => "Did you already get off? Choose whether you're off or still riding.",
             "OffRoute" => "Looks like we're off the planned route. Let's check the next step.",
             "Rerouted" => "Route updated. Let's follow the next instruction.",
             "TurnLeft" => "Turn left here.",

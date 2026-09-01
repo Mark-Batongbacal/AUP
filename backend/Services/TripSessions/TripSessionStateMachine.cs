@@ -13,7 +13,7 @@ public sealed class TripSessionStateMachine : ITripSessionStateMachine
         new Dictionary<TripNavigationState, HashSet<TripNavigationState>>
         {
             [TripNavigationState.Planned] = [TripNavigationState.Starting, TripNavigationState.Cancelled],
-            [TripNavigationState.Starting] = [TripNavigationState.WalkingToPickup, TripNavigationState.WaitingToBoard, TripNavigationState.WalkingToDestination, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
+            [TripNavigationState.Starting] = [TripNavigationState.WalkingToPickup, TripNavigationState.WaitingToBoard, TripNavigationState.OnJeepney, TripNavigationState.OnTricycle, TripNavigationState.WalkingToDestination, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
             [TripNavigationState.WalkingToPickup] = [TripNavigationState.ApproachingBoardPoint, TripNavigationState.WaitingToBoard, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
             [TripNavigationState.ApproachingBoardPoint] = [TripNavigationState.WaitingToBoard, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],
             [TripNavigationState.WaitingToBoard] = [TripNavigationState.OnJeepney, TripNavigationState.OnTricycle, TripNavigationState.OffRoute, TripNavigationState.Rerouting, TripNavigationState.Cancelled],

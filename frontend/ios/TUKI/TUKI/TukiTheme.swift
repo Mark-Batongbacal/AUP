@@ -1,15 +1,79 @@
+import Combine
 import SwiftUI
 import UIKit
 
+/// Runtime-observable dark mode flag, mirroring Android's `TukiThemeRuntime` (ui/theme/Color.kt):
+/// flipping this one flag updates every `TukiPalette` color everywhere it's read, so existing
+/// screens become theme-aware without each one needing its own light/dark plumbing.
+final class TukiThemeRuntime: ObservableObject {
+    static let shared = TukiThemeRuntime()
+
+    private static let defaultsKey = "tuki.appearance.darkMode"
+    private let defaults: UserDefaults
+
+    @Published var isDarkMode: Bool {
+        didSet {
+            guard isDarkMode != oldValue else { return }
+            defaults.set(isDarkMode, forKey: Self.defaultsKey)
+        }
+    }
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        isDarkMode = defaults.bool(forKey: Self.defaultsKey)
+    }
+}
+
+/// Brand/token values mirror Android's `ui/theme/Color.kt` exactly (light/dark hex pairs)
+/// so both platforms render the same palette. `TukiPalette` members stay computed properties
+/// (not stored constants) so every existing call site reacts to `TukiThemeRuntime` automatically.
 enum TukiPalette {
-    static let teal = Color(red: 21 / 255, green: 145 / 255, blue: 155 / 255)
-    static let orange = Color(red: 255 / 255, green: 147 / 255, blue: 24 / 255)
-    static let cream = Color(red: 255 / 255, green: 248 / 255, blue: 232 / 255)
-    static let creamCard = Color(red: 250 / 255, green: 235 / 255, blue: 199 / 255)
-    static let dark = Color(red: 23 / 255, green: 59 / 255, blue: 67 / 255)
-    static let gray = Color(red: 154 / 255, green: 166 / 255, blue: 169 / 255)
-    static let border = Color(red: 232 / 255, green: 232 / 255, blue: 232 / 255)
-    static let error = Color(red: 176 / 255, green: 0, blue: 32 / 255)
+    // Brand colors stay fixed across themes, per Android.
+    static let teal = Color(red: 13 / 255, green: 139 / 255, blue: 151 / 255) // Android TukiTeal #0D8B97
+    static let orange = Color(red: 244 / 255, green: 139 / 255, blue: 31 / 255) // Android TukiOrange #F48B1F
+    static let error = Color(red: 238 / 255, green: 91 / 255, blue: 87 / 255) // Android TukiDanger #EE5B57
+
+    private static var isDark: Bool { TukiThemeRuntime.shared.isDarkMode }
+
+    static var cream: Color {
+        isDark
+            ? Color(red: 8 / 255, green: 23 / 255, blue: 29 / 255) // Android dark background #08171D
+            : Color(red: 255 / 255, green: 249 / 255, blue: 233 / 255) // Android light background #FFF9E9
+    }
+
+    static var creamCard: Color {
+        isDark
+            ? Color(red: 16 / 255, green: 36 / 255, blue: 45 / 255) // Android dark raised surface #10242D
+            : Color(red: 250 / 255, green: 235 / 255, blue: 199 / 255)
+    }
+
+    static var dark: Color {
+        isDark
+            ? Color(red: 241 / 255, green: 247 / 255, blue: 248 / 255) // Android dark ink #F1F7F8
+            : Color(red: 17 / 255, green: 46 / 255, blue: 54 / 255) // Android light ink #112E36
+    }
+
+    static var gray: Color {
+        isDark
+            ? Color(red: 177 / 255, green: 184 / 255, blue: 187 / 255)
+            : Color(red: 154 / 255, green: 166 / 255, blue: 169 / 255)
+    }
+
+    static var border: Color {
+        isDark
+            ? Color(red: 59 / 255, green: 72 / 255, blue: 78 / 255)
+            : Color(red: 232 / 255, green: 232 / 255, blue: 232 / 255)
+    }
+
+    /// A dark accent-card surface (white text on top) that stays dark in BOTH themes —
+    /// distinct from `dark`, which is the ink/text token that flips light-on-dark-bg.
+    /// Mirrors Android's `HomeAiSurface` (ui/theme/Color.kt pattern: two dark tones,
+    /// never a light one, so white text on it stays legible in light and dark mode).
+    static var accentSurface: Color {
+        isDark
+            ? Color(red: 0x0C / 255, green: 0x30 / 255, blue: 0x3A / 255)
+            : Color(red: 0x15 / 255, green: 0x3E / 255, blue: 0x4B / 255)
+    }
 }
 
 struct TukiLogoHeader: View {
@@ -166,6 +230,11 @@ struct RecentCommute: Identifiable, Hashable {
     var destinationLatitude: Double? = nil
     var destinationLongitude: Double? = nil
     var steps: [CommuteStep] = []
+    /// Nil for guest/local trips that never got a real recommendation — matches Android's
+    /// `canFavorite = !isGuest && recommendationId != null` gate on the favorite-star toggle.
+    var recommendationId: String? = nil
+    var totalFare: Double = 0
+    var endedAt: String? = nil
 }
 
 struct CommuteStep: Hashable {
@@ -182,6 +251,10 @@ struct FavoriteRoute: Identifiable, Hashable {
     let destination: String
     let timesUsed: Int
     let note: String
+    var recommendationId: String? = nil
+    var totalMinutes: Int = 0
+    var totalFare: Double = 0
+    var transferCount: Int = 0
 }
 
 struct RouteOption: Identifiable, Hashable {

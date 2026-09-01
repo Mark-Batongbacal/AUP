@@ -42,11 +42,18 @@ fun Context.navigationLocationUpdates(
     var fallbackListener: LocationListener? = null
     var closed = false
 
+    fun publish(location: Location) {
+        rememberDeviceLocation(location)
+        trySend(location)
+    }
+
     fun startLocationManagerFallback() {
         if (closed || fallbackListener != null) return
 
         val providers = buildList {
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            if (hasPreciseDeviceLocationPermission() &&
+                locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            ) {
                 add(LocationManager.GPS_PROVIDER)
             }
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
@@ -60,7 +67,7 @@ fun Context.navigationLocationUpdates(
         }
 
         val listener = LocationListener { location ->
-            trySend(location)
+            publish(location)
         }
         fallbackListener = listener
 
@@ -90,7 +97,8 @@ fun Context.navigationLocationUpdates(
 
     if (playServicesAvailable) {
         val request = LocationRequest.Builder(
-            Priority.PRIORITY_HIGH_ACCURACY,
+            if (hasPreciseDeviceLocationPermission()) Priority.PRIORITY_HIGH_ACCURACY
+            else Priority.PRIORITY_BALANCED_POWER_ACCURACY,
             minTimeMillis
         )
             .setMinUpdateIntervalMillis((minTimeMillis / 2L).coerceAtLeast(250L))
@@ -99,9 +107,7 @@ fun Context.navigationLocationUpdates(
 
         val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.locations.forEach { location ->
-                    trySend(location)
-                }
+                result.locations.forEach(::publish)
             }
         }
         fusedCallback = callback

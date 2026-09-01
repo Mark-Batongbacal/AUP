@@ -11,9 +11,9 @@ FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 
 ENV ASPNETCORE_ENVIRONMENT=Production
-ENV ASPNETCORE_HTTP_PORTS=8080
+ENV ASPNETCORE_HTTP_PORTS=5129
 
 COPY --from=build /app/publish .
 
-EXPOSE 8080
+EXPOSE 5129
 ENTRYPOINT ["dotnet", "backend.dll"]

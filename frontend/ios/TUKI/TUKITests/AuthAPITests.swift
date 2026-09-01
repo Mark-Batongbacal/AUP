@@ -100,6 +100,98 @@ final class AuthAPITests: XCTestCase {
         XCTAssertEqual(store.savedCredential?.headerName, "X-API-Key")
     }
 
+    func testGuestLoginPostsNoBodyAndSavesReturnedTukiCredential() async throws {
+        let store = RecordingCredentialStore()
+        let api = TukiAuthAPI(
+            baseURL: try XCTUnwrap(URL(string: "https://example.test/")),
+            credentialStore: store,
+            session: makeSession()
+        )
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            try Self.assertAbsoluteHTTPURL(request.url, expected: "https://example.test/api/auth/guest")
+            XCTAssertNil(request.bodyData)
+
+            let data = try XCTUnwrap(Self.validLoginResponseData)
+            let response = try XCTUnwrap(
+                HTTPURLResponse(
+                    url: try XCTUnwrap(request.url),
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )
+            )
+            return (response, data)
+        }
+
+        let result = await api.loginAsGuest()
+
+        XCTAssertEqual(result, .success)
+        XCTAssertEqual(store.savedCredential?.apiKey, "TUKI_API_KEY")
+        XCTAssertEqual(store.savedCredential?.headerName, "X-API-Key")
+    }
+
+    func testGuestLoginReturns401MessageAndDoesNotSaveCredential() async throws {
+        let store = RecordingCredentialStore()
+        let api = TukiAuthAPI(
+            baseURL: try XCTUnwrap(URL(string: "https://example.test/")),
+            credentialStore: store,
+            session: makeSession()
+        )
+
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 401, httpVersion: nil, headerFields: nil)
+            )
+            return (response, Data())
+        }
+
+        let result = await api.loginAsGuest()
+
+        XCTAssertEqual(result, .failure("Guest access could not be started. Please try again."))
+        XCTAssertNil(store.savedCredential)
+    }
+
+    func testGuestLoginReturns404MessageWhenEndpointUnavailable() async throws {
+        let store = RecordingCredentialStore()
+        let api = TukiAuthAPI(
+            baseURL: try XCTUnwrap(URL(string: "https://example.test/")),
+            credentialStore: store,
+            session: makeSession()
+        )
+
+        MockURLProtocol.requestHandler = { request in
+            let response = try XCTUnwrap(
+                HTTPURLResponse(url: try XCTUnwrap(request.url), statusCode: 404, httpVersion: nil, headerFields: nil)
+            )
+            return (response, Data())
+        }
+
+        let result = await api.loginAsGuest()
+
+        XCTAssertEqual(result, .failure("Guest access is not available on this server version."))
+        XCTAssertNil(store.savedCredential)
+    }
+
+    func testGuestLoginWhenNetworkFailsReturnsUserFacingError() async throws {
+        let store = RecordingCredentialStore()
+        let api = TukiAuthAPI(
+            baseURL: try XCTUnwrap(URL(string: "https://example.test/")),
+            credentialStore: store,
+            session: makeSession()
+        )
+
+        MockURLProtocol.requestHandler = { _ in
+            throw URLError(.cannotConnectToHost)
+        }
+
+        let result = await api.loginAsGuest()
+
+        XCTAssertEqual(result, .failure("Network error. Check your connection and try again."))
+        XCTAssertNil(store.savedCredential)
+    }
+
     func testGoogleLoginDoesNotSaveCredentialWhenBackendRejectsToken() async throws {
         let store = RecordingCredentialStore()
         let api = TukiAuthAPI(

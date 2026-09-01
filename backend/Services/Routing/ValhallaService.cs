@@ -1,4 +1,5 @@
 
+using System.Diagnostics;
 using System.Net.Http.Json;
 using backend.Helpers;
 using backend.Models.Valhalla;
@@ -8,29 +9,42 @@ namespace backend.Services.Routing;
 
 public class ValhallaService : IValhallaService
 {
-    private const int DefaultMaxConcurrentRequests = 5;
+    private const double DefaultWalkingSpeedMetersPerSecond = 1.2;
+    private const double DefaultTrikeSpeedMetersPerSecond = 5.6;
+    private const string DefaultTrikeCostingModel = "auto";
 
     private readonly HttpClient _httpClient;
-    private readonly SemaphoreSlim _semaphore;
+    private readonly IValhallaConcurrencyGate _concurrencyGate;
     private readonly ITukiTelemetry _telemetry;
+    private readonly double _walkingSpeedMetersPerSecond;
+    private readonly double _trikeSpeedMetersPerSecond;
+    private readonly string _trikeCostingModel;
 
     public ValhallaService(
         HttpClient httpClient,
         IConfiguration configuration,
-        ITukiTelemetry? telemetry = null)
+        ITukiTelemetry? telemetry = null,
+        IValhallaConcurrencyGate? concurrencyGate = null)
     {
         _httpClient = httpClient;
         _telemetry = telemetry ?? NullTukiTelemetry.Instance;
 
-        var configuredConcurrency = configuration.GetValue<int?>(
-            "Valhalla:MaxConcurrentRequests");
-        var maxConcurrentRequests = configuredConcurrency is > 0
-            ? configuredConcurrency.Value
-            : DefaultMaxConcurrentRequests;
+        _concurrencyGate = concurrencyGate ??
+            new ValhallaConcurrencyGate(configuration);
 
-        _semaphore = new SemaphoreSlim(
-            maxConcurrentRequests,
-            maxConcurrentRequests);
+        _walkingSpeedMetersPerSecond = PositiveOrDefault(
+            configuration.GetValue<double?>(
+                "Routing:WalkingSpeedMetersPerSecond"),
+            DefaultWalkingSpeedMetersPerSecond);
+        _trikeSpeedMetersPerSecond = PositiveOrDefault(
+            configuration.GetValue<double?>(
+                "Routing:TrikeSpeedMetersPerSecond"),
+            DefaultTrikeSpeedMetersPerSecond);
+        _trikeCostingModel = configuration["Routing:TrikeCostingModel"]
+            ?.Trim() is { Length: > 0 } configuredTrikeCosting
+                ? configuredTrikeCosting
+                : DefaultTrikeCostingModel;
+
     }
 
     public async Task<ValhallaRouteResponse> GetRouteAsync(
@@ -86,6 +100,8 @@ public class ValhallaService : IValhallaService
                     })
                     .ToList();
             }
+
+            NormalizeRouteSummaryTime(route.Trip.Summary, costing);
         }
 
         return route;
@@ -119,12 +135,73 @@ public class ValhallaService : IValhallaService
         var result = await response.Content
             .ReadFromJsonAsync<ValhallaMatrixResponse>(cancellationToken);
 
-        return result?.SourcesToTargets
+        var matrix = result?.SourcesToTargets
             .SelectMany(row => row)
             .ToList()
             ?? throw new InvalidOperationException(
                 "Valhalla returned an empty matrix response.");
+
+        NormalizeMatrixTimes(matrix, costing);
+        return matrix;
     }
+
+    /// <summary>
+    /// Valhalla remains authoritative for the traversable road/path and its
+    /// distance. Tuki owns passenger-facing ETA assumptions so provisional
+    /// candidate scoring and confirmed journeys use the same per-mode speeds
+    /// instead of switching to Valhalla's pedestrian/car timing model after
+    /// confirmation.
+    /// </summary>
+    private void NormalizeMatrixTimes(
+        IEnumerable<ValhallaMatrixResult> results,
+        string costing)
+    {
+        var speed = GetConfiguredModeSpeed(costing);
+        if (speed is null)
+            return;
+
+        foreach (var result in results)
+        {
+            if (result.Distance is not { } distanceKilometers ||
+                !double.IsFinite(distanceKilometers) ||
+                distanceKilometers < 0)
+            {
+                continue;
+            }
+
+            result.Time = distanceKilometers * 1_000 / speed.Value;
+        }
+    }
+
+    private void NormalizeRouteSummaryTime(
+        ValhallaSummary? summary,
+        string costing)
+    {
+        var speed = GetConfiguredModeSpeed(costing);
+        if (summary is null || speed is null ||
+            !double.IsFinite(summary.Length) || summary.Length < 0)
+        {
+            return;
+        }
+
+        summary.Time = summary.Length * 1_000 / speed.Value;
+    }
+
+    private double? GetConfiguredModeSpeed(string costing)
+    {
+        if (string.Equals(costing, "pedestrian", StringComparison.OrdinalIgnoreCase))
+            return _walkingSpeedMetersPerSecond;
+
+        if (string.Equals(costing, _trikeCostingModel, StringComparison.OrdinalIgnoreCase))
+            return _trikeSpeedMetersPerSecond;
+
+        return null;
+    }
+
+    private static double PositiveOrDefault(double? configured, double fallback) =>
+        configured is > 0 && double.IsFinite(configured.Value)
+            ? configured.Value
+            : fallback;
 
     private async Task<HttpResponseMessage> PostToValhallaAsync<T>(
         string endpoint,
@@ -132,18 +209,42 @@ public class ValhallaService : IValhallaService
         CancellationToken cancellationToken)
     {
         using var measurement = _telemetry.Measure($"Valhalla{endpoint}");
-        await _semaphore.WaitAsync(cancellationToken);
-
+        _telemetry.SetRoutingValue(
+            "valhalla_concurrency_limit",
+            _concurrencyGate.MaxConcurrency);
+        var waitStarted = Stopwatch.GetTimestamp();
+        IDisposable lease;
         try
         {
-            return await _httpClient.PostAsJsonAsync(
-                endpoint,
-                request,
-                cancellationToken);
+            lease = await _concurrencyGate.AcquireAsync(cancellationToken);
         }
         finally
         {
-            _semaphore.Release();
+            _telemetry.ObserveRouting(
+                "valhalla_gate_wait_ms",
+                Stopwatch.GetElapsedTime(waitStarted).TotalMilliseconds);
+        }
+
+        _telemetry.IncrementRouting(
+            endpoint == "/sources_to_targets"
+                ? "valhalla_matrix_http_calls"
+                : "valhalla_route_http_calls");
+        var executionStarted = Stopwatch.GetTimestamp();
+        using (lease)
+        {
+            try
+            {
+                return await _httpClient.PostAsJsonAsync(
+                    endpoint,
+                    request,
+                    cancellationToken);
+            }
+            finally
+            {
+                _telemetry.ObserveRouting(
+                    "valhalla_execution_ms",
+                    Stopwatch.GetElapsedTime(executionStarted).TotalMilliseconds);
+            }
         }
     }
 }

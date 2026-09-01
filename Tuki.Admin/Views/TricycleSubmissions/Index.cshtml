@@ -1,0 +1,86 @@
+@model Tuki.Admin.ViewModels.TricycleSubmissions.TricycleSubmissionQueueViewModel
+@{
+    ViewData["Title"] = "Tricycle Submissions";
+    var statuses = new[] { "Pending", "NeedsChanges", "Rejected", "Approved" };
+}
+
+<section class="review-page-header">
+    <div>
+        <p class="eyebrow">TRICYCLE POINT REVIEW</p>
+        <h1>Submission queue</h1>
+        <p>Review passenger-submitted proof and location data before it becomes official TUKI transport data.</p>
+    </div>
+    <a asp-controller="Dashboard" asp-action="Index" class="btn btn-outline-tuki">Back to dashboard</a>
+</section>
+
+<div class="status-tabs" role="navigation" aria-label="Submission status filter">
+    @foreach (var status in statuses)
+    {
+        <a asp-action="Index"
+           asp-route-status="@status"
+           class="status-tab @(string.Equals(Model.Status, status, StringComparison.OrdinalIgnoreCase) ? "active" : null)">
+            @status
+        </a>
+    }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="review-alert review-alert-error">@Model.ErrorMessage</div>
+}
+else if (Model.Items.Count == 0)
+{
+    <div class="empty-review-state">
+        <h2>No @Model.Status.ToLowerInvariant() submissions</h2>
+        <p>There are currently no tricycle-point submissions in this status.</p>
+    </div>
+}
+else
+{
+    <div class="submission-table-wrap">
+        <table class="submission-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Suggested TODA</th>
+                    <th>Landmark</th>
+                    <th>Submitted</th>
+                    <th>GPS accuracy</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in Model.Items)
+            {
+                <tr>
+                    <td>#@item.TricyclePointSubmissionId</td>
+                    <td>@(string.IsNullOrWhiteSpace(item.SuggestedTodaName) ? "—" : item.SuggestedTodaName)</td>
+                    <td>@(string.IsNullOrWhiteSpace(item.SuggestedLandmark) ? "—" : item.SuggestedLandmark)</td>
+                    <td>@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</td>
+                    <td>@(item.AccuracyMeters is null ? "Unknown" : $"±{item.AccuracyMeters:0.#} m")</td>
+                    <td><span class="status-pill status-@item.Status.ToLowerInvariant()">@item.Status</span></td>
+                    <td class="text-end">
+                        <a asp-action="Review" asp-route-id="@item.TricyclePointSubmissionId" class="btn btn-sm btn-outline-tuki">Review</a>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav class="review-pagination" aria-label="Submission pages">
+            @if (Model.Page > 1)
+            {
+                <a asp-action="Index" asp-route-status="@Model.Status" asp-route-page="@(Model.Page - 1)" class="btn btn-outline-tuki">Previous</a>
+            }
+            <span>Page @Model.Page of @Model.TotalPages</span>
+            @if (Model.Page < Model.TotalPages)
+            {
+                <a asp-action="Index" asp-route-status="@Model.Status" asp-route-page="@(Model.Page + 1)" class="btn btn-outline-tuki">Next</a>
+            }
+        </nav>
+    }
+}

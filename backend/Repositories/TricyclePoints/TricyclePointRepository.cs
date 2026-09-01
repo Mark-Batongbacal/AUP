@@ -10,6 +10,11 @@ public sealed class TricyclePointRepository(TukiDbContext context) : ITricyclePo
 {
     private readonly TukiDbContext _context = context;
 
+    public Task<List<TricyclePoint>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        QueryWithStop()
+            .OrderBy(point => point.PointName)
+            .ToListAsync(cancellationToken);
+
     public Task<List<TricyclePoint>> GetAllActiveAsync(CancellationToken cancellationToken = default) =>
         QueryWithStop()
             .Where(point => point.IsActive)

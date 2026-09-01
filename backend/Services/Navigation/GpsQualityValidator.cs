@@ -6,6 +6,7 @@ namespace backend.Services.Navigation;
 public interface IGpsQualityValidator
 {
     string? Validate(LocationUpdate update, TripSession session, DateTime utcNow);
+    string? ValidateForReroute(LocationUpdate update, TripSession session, DateTime utcNow);
 }
 
 public sealed class GpsQualityValidator(IOptions<NavigationOptions> options) : IGpsQualityValidator
@@ -13,6 +14,16 @@ public sealed class GpsQualityValidator(IOptions<NavigationOptions> options) : I
     private readonly NavigationOptions _options = options.Value;
 
     public string? Validate(LocationUpdate update, TripSession session, DateTime utcNow)
+        => ValidateCore(update, session, utcNow, allowPreviouslyAcceptedFix: false);
+
+    public string? ValidateForReroute(LocationUpdate update, TripSession session, DateTime utcNow)
+        => ValidateCore(update, session, utcNow, allowPreviouslyAcceptedFix: true);
+
+    private string? ValidateCore(
+        LocationUpdate update,
+        TripSession session,
+        DateTime utcNow,
+        bool allowPreviouslyAcceptedFix)
     {
         if (!double.IsFinite(update.Latitude) || !double.IsFinite(update.Longitude) ||
             update.Latitude is < -90 or > 90 || update.Longitude is < -180 or > 180 ||
@@ -26,9 +37,14 @@ public sealed class GpsQualityValidator(IOptions<NavigationOptions> options) : I
             update.SpeedMetersPerSecond > _options.MaxPlausibleSpeedMetersPerSecond)
             return "IMPLAUSIBLE_SPEED";
         if (session.LastLocationAt is { } previous && update.Timestamp <= previous)
-            return "OUT_OF_ORDER_LOCATION";
+        {
+            var sameAcceptedFix = allowPreviouslyAcceptedFix && update.Timestamp == previous &&
+                session.LastLatitude == update.Latitude && session.LastLongitude == update.Longitude &&
+                session.LastAccuracyMeters == update.AccuracyMeters;
+            if (!sameAcceptedFix) return "OUT_OF_ORDER_LOCATION";
+        }
         if (session.LastLatitude is { } lat && session.LastLongitude is { } lon &&
-            session.LastLocationAt is { } time)
+            session.LastLocationAt is { } time && update.Timestamp > time)
         {
             var seconds = (update.Timestamp - time).TotalSeconds;
             var speed = Geo.DistanceMeters(lat, lon, update.Latitude, update.Longitude) / seconds;

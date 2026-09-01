@@ -9,7 +9,21 @@ public interface ITransportRouteRepository
     Task<List<TransportRoute>> GetAllActiveWithOrderedPointsAsync(
         CancellationToken cancellationToken = default);
 
+    Task<List<TransportRouteAdminSummary>> GetAdminSummariesByTransportModeCodeAsync(
+        string transportModeCode,
+        bool includeActive,
+        bool includeInactive,
+        CancellationToken cancellationToken = default);
+
     Task<TransportRoute?> GetByIdAsync(long routeId, CancellationToken cancellationToken = default);
+
+    Task<TransportRoute?> GetByIdWithPointsForAdminAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
+    Task<TransportRoute?> GetTrackedByIdAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
 
     Task<TransportRoute?> GetByRouteCodeAsync(string routeCode, CancellationToken cancellationToken = default);
 
@@ -33,7 +47,32 @@ public interface ITransportRouteRepository
 
     Task<TransportRoute> ReplaceAsync(long routeId, TransportRoute replacement, CancellationToken cancellationToken = default);
 
+    Task<TransportRoute?> ReplaceDraftGeometryAsync(
+        long routeId,
+        IReadOnlyList<RoutePoint> routePoints,
+        IReadOnlyList<RouteWaypoint> routeWaypoints,
+        string encodedPolyline,
+        CancellationToken cancellationToken = default);
+
+    Task<TransportRoute?> UpdateJeepneyDraftMetadataAsync(
+        long routeId,
+        string routeCode,
+        string routeName,
+        string originName,
+        string destinationName,
+        string? directionName,
+        string? operatorName,
+        string? description,
+        decimal? baseFare,
+        CancellationToken cancellationToken = default);
+
+    Task<TransportRoute?> PublishReadyJeepneyDraftAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
     Task<TransportRoute> UpdateAsync(TransportRoute Route, CancellationToken cancellationToken = default);
 
     Task<bool> DeactivateAsync(long routeId, CancellationToken cancellationToken = default);
+
+    Task<bool> ActivateAsync(long routeId, CancellationToken cancellationToken = default);
 }

@@ -8,6 +8,10 @@ public interface ILocalAuthenticationService
 {
     bool CredentialsAreValid(string userName, string password);
 
+    Task<DateTime?> GetCredentialUpdatedAtAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task StoreCredentialAsync(
         Guid userId,
         string password,
@@ -35,6 +39,17 @@ public sealed class LocalAuthenticationService(TukiDbContext context) : ILocalAu
 
         return credential is not null && VerifyPassword(password, credential.PasswordHash);
     }
+
+    public Task<DateTime?> GetCredentialUpdatedAtAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default) =>
+        _context.LocalUserCredentials
+            .AsNoTracking()
+            .Where(current =>
+                current.UserId == userId &&
+                current.UpdatedAt > current.CreatedAt)
+            .Select(current => (DateTime?)current.UpdatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
 
     public async Task StoreCredentialAsync(
         Guid userId,

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using backend.Models.Routing;
 using backend.Models.Valhalla;
 
@@ -12,8 +13,11 @@ public partial class RoutingService
             double originLongitude,
             double destinationLatitude,
             double destinationLongitude,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var tasks = candidates.Select(async candidate =>
         {
             try
@@ -22,13 +26,15 @@ public partial class RoutingService
                     candidate.OriginAccess,
                     (originLatitude, originLongitude),
                     candidate.OriginAccess.Anchor,
-                    cancellationToken);
+                    cancellationToken,
+                    walkAccessLimit);
 
                 var destinationTask = ConfirmAccessAsync(
                     candidate.DestinationAccess,
                     candidate.DestinationAccess.Anchor,
                     (destinationLatitude, destinationLongitude),
-                    cancellationToken);
+                    cancellationToken,
+                    walkAccessLimit);
 
                 var transferTasks =
                     candidate.TransferWalkSegments
@@ -49,7 +55,8 @@ public partial class RoutingService
                                         }
                                     ],
                                     "pedestrian",
-                                    cancellationToken);
+                                    cancellationToken,
+                                    ValhallaCacheUsage.StaticTransfer);
 
                             var result = results.FirstOrDefault(r =>
                                 r.FromIndex == 0 &&
@@ -210,7 +217,9 @@ public partial class RoutingService
 
         for (var index = 0; index < candidate.Legs.Count; index++)
         {
-            legs.Add(BuildJeepneyLeg(candidate.Legs[index]));
+            legs.Add(BuildJeepneyLeg(
+                candidate.Legs[index],
+                index == 0 && candidate.OriginAccess.IsAlreadyOnboard));
 
             if (index < transfers.Count && transfers[index].Distance > 0)
             {
@@ -284,7 +293,9 @@ public partial class RoutingService
         return legs;
     }
 
-    private JeepneyTripLeg BuildJeepneyLeg(JourneyLegCandidate leg)
+    private JeepneyTripLeg BuildJeepneyLeg(
+        JourneyLegCandidate leg,
+        bool startsAlreadyOnboard = false)
     {
         var samples = _routeSamples[leg.RouteId];
         var boardIndex = leg.BoardIndex ?? GetNearestSampleIndex(samples, leg.Board);
@@ -294,8 +305,9 @@ public partial class RoutingService
         var alightAnchor = leg.AlightFullRouteAnchor ??
             GetRouteAnchor(leg.RouteId, alightIndex, leg.Alight);
         var distance = RouteDistanceBetweenAnchors(boardAnchor, alightAnchor);
-        var time = JeepneyBoardingWaitTimeSeconds +
+        var time = (startsAlreadyOnboard ? 0 : JeepneyBoardingWaitTimeSeconds) +
             distance / JeepneySpeedMetersPerSecond;
+        var fare = startsAlreadyOnboard ? 0 : JeepneyBaseFarePesos;
 
         return new JeepneyTripLeg
         {
@@ -312,12 +324,15 @@ public partial class RoutingService
             DestinationLongitude = leg.Alight.Longitude,
             DistanceMeters = distance,
             DurationSeconds = time,
-            FarePesos = JeepneyBaseFarePesos,
+            FarePesos = fare,
             GeneralizedCostPesos = GeneralizedCostFromTimeAndFare(
                 time,
-                JeepneyBaseFarePesos),
+                fare),
             JeepneyDistanceMeters = distance,
-            JeepneyTimeSeconds = time
+            JeepneyTimeSeconds = time,
+            BoardRouteProgressMeters = boardAnchor.DistanceFromRouteStartMeters,
+            AlightRouteProgressMeters = alightAnchor.DistanceFromRouteStartMeters,
+            StartsAlreadyOnboard = startsAlreadyOnboard
         };
     }
 
@@ -348,8 +363,11 @@ public partial class RoutingService
         AccessCandidate candidate,
         (double Latitude, double Longitude) walkAnchorPoint,
         (double Latitude, double Longitude) rideTargetPoint,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        double? walkAccessDistanceLimitMeters = null)
     {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
         var alternativeIndex = 0;
         foreach (var alternative in candidate.AllAlternatives)
         {
@@ -359,7 +377,7 @@ public partial class RoutingService
                 walkAnchorPoint,
                 rideTargetPoint,
                 alternativeIndex > 0 && alternative.Mode == AccessMode.Walk
-                    ? MaxWalkAccessDistanceMeters
+                    ? walkAccessLimit
                     : null,
                 cancellationToken);
 
@@ -382,6 +400,20 @@ public partial class RoutingService
     {
         if (candidate.Mode == AccessMode.Walk)
         {
+            if (candidate.IsNetworkWalkConfirmed)
+            {
+                if (fallbackWalkMaximumDistanceMeters is not null &&
+                    candidate.WalkDistanceMeters >
+                    fallbackWalkMaximumDistanceMeters.Value)
+                {
+                    return null;
+                }
+
+                return ConfirmedWalkingAccess(
+                    candidate.WalkDistanceMeters,
+                    candidate.WalkTimeSeconds);
+            }
+
             return await ConfirmWalkingAccessAsync(
                 walkAnchorPoint,
                 rideTargetPoint,
@@ -514,7 +546,13 @@ public partial class RoutingService
 
         var time = result.Time!.Value;
 
-        return new JeepneyAccessSegment
+        return ConfirmedWalkingAccess(distance, time);
+    }
+
+    private JeepneyAccessSegment ConfirmedWalkingAccess(
+        double distance,
+        double time) =>
+        new()
         {
             Mode = AccessMode.Walk,
             WalkDistanceMeters = distance,
@@ -523,11 +561,10 @@ public partial class RoutingService
             TotalFarePesos = 0,
             GeneralizedCostPesos = GeneralizedCostFromWalking(time, distance)
         };
-    }
 
     private AccessCandidate[] ComputeBoardAccessOptions(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double originLatitude,
         double originLongitude)
     {
@@ -545,63 +582,245 @@ public partial class RoutingService
                 routeId,
                 i,
                 (originLatitude, originLongitude));
-            var anchor = (fullAnchor.Latitude, fullAnchor.Longitude);
-
-            var directDistance =
-                ApproximateDistanceMeters(
-                    originLatitude,
-                    originLongitude,
-                    anchor.Latitude,
-                    anchor.Longitude);
-
-            var alternatives = new List<AccessCandidate>
-            {
-                WalkAccess(anchor, directDistance, i, fullAnchor)
-            };
-
-            // Trike points are candidates only. The geometric ranking here is
-            // deliberately cheap; the selected option is confirmed through
-            // real Valhalla walking + road routing later.
-            foreach (var candidate in trikeCandidates)
-            {
-                var walkToTrikeMeters =
-                    ApproximateDistanceMeters(
-                        originLatitude,
-                        originLongitude,
-                        candidate.Latitude,
-                        candidate.Longitude);
-
-                var rideDistance =
-                    ApproximateDistanceMeters(
-                        candidate.Latitude,
-                        candidate.Longitude,
-                        anchor.Latitude,
-                        anchor.Longitude);
-
-                var trikeOption =
-                    TrikeAccess(
-                        anchor,
-                        candidate,
-                        walkToTrikeMeters,
-                        rideDistance,
-                        i,
-                        fullAnchor);
-
-                alternatives.Add(trikeOption);
-            }
-
-            options[i] = WithAlternatives(alternatives);
+            options[i] = BuildBoardAccessOption(
+                fullAnchor,
+                i,
+                originLatitude,
+                originLongitude,
+                trikeCandidates);
         }
 
         return options;
     }
 
+    private AccessCandidate[] ComputeSearchAnchorBoardAccessOptions(
+        string routeId,
+        double originLatitude,
+        double originLongitude)
+    {
+        var trikeCandidates = FindNearbyTrikePoints(
+            originLatitude,
+            originLongitude);
+
+        return _routeSearchAnchors[routeId]
+            .Select((anchor, sampleIndex) => BuildBoardAccessOption(
+                anchor,
+                sampleIndex,
+                originLatitude,
+                originLongitude,
+                trikeCandidates))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Uses geometry only to bound the route corridor worth checking, then
+    /// measures every discovered physical board in that corridor with one
+    /// pedestrian one-to-many matrix. Route anchors and their progress remain
+    /// untouched; only the provisional walk burden is replaced with the
+    /// authoritative network distance/time used for pre-confirmation ranking.
+    /// </summary>
+    private async Task<BoardAccessDiscovery> DiscoverBoardAccessOptionsAsync(
+        string routeId,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
+        double originLatitude,
+        double originLongitude,
+        CancellationToken cancellationToken,
+        double? walkAccessDistanceLimitMeters = null)
+    {
+        var walkAccessLimit = walkAccessDistanceLimitMeters ??
+            GetWalkAccessDistanceLimit(null);
+        var candidateGenerationStarted = Stopwatch.GetTimestamp();
+        var projected = ComputeBoardAccessOptions(
+            routeId,
+            samples,
+            originLatitude,
+            originLongitude);
+        var searchAnchors = ComputeSearchAnchorBoardAccessOptions(
+            routeId,
+            originLatitude,
+            originLongitude);
+        var exact = BuildExactFullRouteBoardAccess(
+            routeId,
+            samples,
+            originLatitude,
+            originLongitude,
+            walkAccessLimit);
+        _telemetry.ObserveRouting(
+            "board_access_candidate_generation_ms",
+            Stopwatch.GetElapsedTime(
+                candidateGenerationStarted).TotalMilliseconds);
+
+        var filteringRankingStarted = Stopwatch.GetTimestamp();
+        var all = projected
+            .Concat(searchAnchors)
+            .Concat(exact is null ? [] : [exact])
+            .ToList();
+        var targets = all
+            .Where(candidate => candidate.AllAlternatives.Any(alternative =>
+                alternative.Mode == AccessMode.Walk &&
+                alternative.WalkDistanceMeters <= walkAccessLimit))
+            .GroupBy(candidate => PhysicalAccessPointKey(candidate.Anchor),
+                StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
+        _telemetry.ObserveRouting(
+            "board_access_filtering_ranking_ms",
+            Stopwatch.GetElapsedTime(
+                filteringRankingStarted).TotalMilliseconds);
+        _telemetry.IncrementRouting(
+            "board_access_matrix_targets",
+            targets.Count);
+
+        if (targets.Count == 0)
+            return new BoardAccessDiscovery(projected, searchAnchors, exact);
+
+        IReadOnlyList<ValhallaMatrixResult> results;
+        try
+        {
+            var valhallaStarted = Stopwatch.GetTimestamp();
+            results = await GetMatrixAsync(
+                new ValhallaLocation
+                {
+                    Lat = originLatitude,
+                    Lon = originLongitude
+                },
+                targets.Select(candidate => new ValhallaLocation
+                {
+                    Lat = candidate.Anchor.Latitude,
+                    Lon = candidate.Anchor.Longitude
+                }).ToList(),
+                "pedestrian",
+                cancellationToken);
+            _telemetry.ObserveRouting(
+                "board_access_valhalla_ms",
+                Stopwatch.GetElapsedTime(valhallaStarted).TotalMilliseconds);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed to rank route {RouteId} boarding regions by pedestrian network access; using geometric discovery estimates",
+                routeId);
+            return new BoardAccessDiscovery(projected, searchAnchors, exact);
+        }
+
+        var networkWalkApplicationStarted = Stopwatch.GetTimestamp();
+        var estimates = results
+            .Where(result =>
+                result.FromIndex == 0 &&
+                result.ToIndex >= 0 &&
+                result.ToIndex < targets.Count &&
+                result.Distance is >= 0 &&
+                result.Time is >= 0 &&
+                double.IsFinite(result.Distance.Value) &&
+                double.IsFinite(result.Time.Value))
+            .GroupBy(result => result.ToIndex)
+            .ToDictionary(
+                group => PhysicalAccessPointKey(targets[group.Key].Anchor),
+                group => (
+                    DistanceMeters: group.First().Distance!.Value * 1_000,
+                    TimeSeconds: group.First().Time!.Value),
+                StringComparer.Ordinal);
+
+        AccessCandidate ApplyNetworkWalk(AccessCandidate candidate)
+        {
+            var hasEstimate = estimates.TryGetValue(
+                PhysicalAccessPointKey(candidate.Anchor),
+                out var estimate);
+            var alternatives = candidate.AllAlternatives
+                .Select(alternative => alternative.Mode != AccessMode.Walk
+                    ? alternative
+                    : alternative with
+                    {
+                        WalkDistanceMeters = hasEstimate
+                            ? estimate.DistanceMeters
+                            : double.PositiveInfinity,
+                        WalkTimeSeconds = hasEstimate
+                            ? estimate.TimeSeconds
+                            : double.PositiveInfinity,
+                        IsNetworkWalkConfirmed = true
+                    })
+                .ToList();
+            return WithAlternatives(alternatives);
+        }
+
+        var discovery = new BoardAccessDiscovery(
+            projected.Select(ApplyNetworkWalk).ToArray(),
+            searchAnchors.Select(ApplyNetworkWalk).ToArray(),
+            exact is null ? null : ApplyNetworkWalk(exact));
+        _telemetry.ObserveRouting(
+            "board_network_walk_application_ms",
+            Stopwatch.GetElapsedTime(
+                networkWalkApplicationStarted).TotalMilliseconds);
+        return discovery;
+    }
+
+    private static string PhysicalAccessPointKey(
+        (double Latitude, double Longitude) point) =>
+        $"{point.Latitude:F7},{point.Longitude:F7}";
+
+    private AccessCandidate BuildBoardAccessOption(
+        RouteAnchor fullAnchor,
+        int sampleIndex,
+        double originLatitude,
+        double originLongitude,
+        IReadOnlyList<TrikePoint> trikeCandidates)
+    {
+        var anchor = (fullAnchor.Latitude, fullAnchor.Longitude);
+        var directDistance = ApproximateDistanceMeters(
+            originLatitude,
+            originLongitude,
+            anchor.Latitude,
+            anchor.Longitude);
+        var walkStarted = Stopwatch.GetTimestamp();
+        var alternatives = new List<AccessCandidate>
+        {
+            WalkAccess(anchor, directDistance, sampleIndex, fullAnchor)
+        };
+        _accessDiscoveryDiagnostics?.RecordWalkCandidates(walkStarted, 1);
+
+        // Trike points are candidates only. The geometric ranking here is
+        // deliberately cheap; the selected option is confirmed through real
+        // Valhalla walking + road routing later.
+        var tricycleStarted = Stopwatch.GetTimestamp();
+        foreach (var candidate in trikeCandidates)
+        {
+            var walkToTrikeMeters = ApproximateDistanceMeters(
+                originLatitude,
+                originLongitude,
+                candidate.Latitude,
+                candidate.Longitude);
+            var rideDistance = ApproximateDistanceMeters(
+                candidate.Latitude,
+                candidate.Longitude,
+                anchor.Latitude,
+                anchor.Longitude);
+
+            alternatives.Add(TrikeAccess(
+                anchor,
+                candidate,
+                walkToTrikeMeters,
+                rideDistance,
+                sampleIndex,
+                fullAnchor));
+        }
+        _accessDiscoveryDiagnostics?.RecordTricycleCandidates(
+            tricycleStarted,
+            trikeCandidates.Count);
+
+        return WithAlternatives(alternatives);
+    }
+
     private AccessCandidate[] ComputeAlightAccessOptions(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double destinationLatitude,
-        double destinationLongitude)
+        double destinationLongitude,
+        AlightAccessCallerCategory caller = AlightAccessCallerCategory.Other)
     {
+        var computationStarted = Stopwatch.GetTimestamp();
+        var diagnostics = _alightAccessComputationDiagnostics;
+        diagnostics?.BeginComputation(caller);
         var options =
             new AccessCandidate[samples.Count];
 
@@ -620,16 +839,19 @@ public partial class RoutingService
                     destinationLatitude,
                     destinationLongitude);
 
+            var walkStarted = Stopwatch.GetTimestamp();
             var alternatives = new List<AccessCandidate>
             {
                 WalkAccess(anchor, directDistance, i, fullAnchor)
             };
+            _accessDiscoveryDiagnostics?.RecordWalkCandidates(walkStarted, 1);
 
             var trikeCandidates =
                 FindNearbyTrikePoints(
                     anchor.Latitude,
                     anchor.Longitude);
 
+            var tricycleStarted = Stopwatch.GetTimestamp();
             foreach (var trikePoint in trikeCandidates)
             {
                 var walkToTrikeMeters =
@@ -657,10 +879,18 @@ public partial class RoutingService
 
                 alternatives.Add(trikeOption);
             }
+            _accessDiscoveryDiagnostics?.RecordTricycleCandidates(
+                tricycleStarted,
+                trikeCandidates.Count);
 
             options[i] = WithAlternatives(alternatives);
         }
 
+        var computationTicks = Stopwatch.GetTimestamp() - computationStarted;
+        _telemetry.ObserveRouting(
+            "alight_destination_access_computation_ms",
+            computationTicks * 1_000d / Stopwatch.Frequency);
+        diagnostics?.CompleteComputation(computationTicks);
         return options;
     }
 
@@ -668,7 +898,30 @@ public partial class RoutingService
         double latitude,
         double longitude)
     {
-        return _trikePoints
+        var diagnostics = _accessDiscoveryDiagnostics;
+        if (diagnostics is null)
+        {
+            return _trikePoints
+                .Select(point => new
+                {
+                    Point = point,
+                    Distance = ApproximateDistanceMeters(
+                        latitude,
+                        longitude,
+                        point.Latitude,
+                        point.Longitude)
+                })
+                .Where(candidate =>
+                    candidate.Distance <=
+                    MaxWalkToTrikePointMeters)
+                .OrderBy(candidate => candidate.Distance)
+                .Take(MaxNearbyTrikeCandidates)
+                .Select(candidate => candidate.Point)
+                .ToList();
+        }
+
+        var discoveryStarted = Stopwatch.GetTimestamp();
+        var nearby = _trikePoints
             .Select(point => new
             {
                 Point = point,
@@ -681,18 +934,33 @@ public partial class RoutingService
             .Where(candidate =>
                 candidate.Distance <=
                 MaxWalkToTrikePointMeters)
+            .ToList();
+        var discoveryTicks = Stopwatch.GetTimestamp() - discoveryStarted;
+
+        var rankingStarted = Stopwatch.GetTimestamp();
+        var selected = nearby
             .OrderBy(candidate => candidate.Distance)
             .Take(MaxNearbyTrikeCandidates)
             .Select(candidate => candidate.Point)
             .ToList();
+        var rankingTicks = Stopwatch.GetTimestamp() - rankingStarted;
+        diagnostics.RecordTodaDiscovery(
+            discoveryTicks,
+            rankingTicks,
+            _trikePoints.Count,
+            nearby.Count,
+            selected.Count);
+        return selected;
     }
 
     private AccessCandidate WithAlternatives(List<AccessCandidate> alternatives)
     {
+        var rankingStarted = Stopwatch.GetTimestamp();
         var ordered = alternatives
             .OrderBy(candidate => candidate.GeneralizedCostPesos)
             .ThenBy(candidate => candidate.Mode)
             .ToList();
+        _accessDiscoveryDiagnostics?.RecordAlternativeRanking(rankingStarted);
 
         return ordered[0] with { Alternatives = ordered };
     }
@@ -785,65 +1053,160 @@ public partial class RoutingService
         GeneralizedCostFromTimeAndFare(timeSeconds, 0) +
         distanceMeters / 1_000 * WalkingFatiguePesosPerKilometer;
 
-    // prefix[i] = cheapest access strictly before i.
-    private static (
-        double[] Cost,
-        AccessCandidate?[] Access)
-        ComputePrefixMinAccess(
-            AccessCandidate[] access)
+    /// <summary>
+    /// prefix[i] is a bounded, deterministic set of useful boarding
+    /// occurrences strictly before i. A scalar provisional minimum is not
+    /// sufficient here: straight-line access can make a downstream occurrence
+    /// look cheaper before Valhalla confirms the road route, and replacing the
+    /// prefix with that one occurrence makes transfer search disagree with the
+    /// diverse boarding states retained by direct search.
+    /// </summary>
+    private IReadOnlyList<AccessCandidate>[] ComputePrefixAccessOptions(
+        string routeId,
+        AccessCandidate?[] access,
+        IEnumerable<AccessCandidate>? authoritative = null)
     {
-        var cost = new double[access.Length];
-        var chosen = new AccessCandidate?[access.Length];
-
-        var bestCost = double.PositiveInfinity;
-        AccessCandidate? bestAccess = null;
+        var prefixes = new IReadOnlyList<AccessCandidate>[access.Length];
+        var available = new List<AccessCandidate>();
+        var authoritativeList = DistinctAccessOccurrences(authoritative ?? []);
 
         for (var i = 0; i < access.Length; i++)
         {
-            cost[i] = bestCost;
-            chosen[i] = bestAccess;
-
-            if (access[i].GeneralizedCostPesos < bestCost)
+            var downstreamProgress = _routeSearchAnchors[routeId][i]
+                .DistanceFromRouteStartMeters;
+            var preferred = authoritativeList
+                .Where(candidate => GetAccessProgressMeters(candidate) < downstreamProgress)
+                .ToList();
+            var eligible = available
+                .Where(candidate => GetAccessProgressMeters(candidate) < downstreamProgress)
+                .ToList();
+            prefixes[i] = SelectUsefulAccessStates(eligible, preferred);
+            if (access[i] is { } option)
             {
-                bestCost =
-                    access[i].GeneralizedCostPesos;
-
-                bestAccess = access[i];
+                var duplicateIndex = available.FindIndex(existing =>
+                    IsSameAccessOccurrence(existing, option));
+                if (duplicateIndex < 0)
+                    available.Add(option);
+                else if (option.GeneralizedCostPesos <
+                         available[duplicateIndex].GeneralizedCostPesos)
+                    available[duplicateIndex] = option;
             }
         }
 
-        return (cost, chosen);
+        return prefixes;
     }
 
-    // suffix[i] = cheapest access strictly after i.
-    private static (
-        double[] Cost,
-        AccessCandidate?[] Access)
-        ComputeSuffixMinAccess(
-            AccessCandidate[] access)
+    private IReadOnlyList<AccessCandidate> SelectUsefulAccessStates(
+        IReadOnlyList<AccessCandidate> available,
+        IReadOnlyList<AccessCandidate> authoritative)
     {
-        var cost = new double[access.Length];
-        var chosen = new AccessCandidate?[access.Length];
+        // Search branching multiplies access occurrences by route states, so
+        // both board-prefix and destination-completion callers use the same
+        // configured per-route cap. Objective representatives are
+        // deterministic and remaining capacity is filled by maximum progress
+        // separation, never enumeration order.
+        var prefixLimit = MaxBoardingVariantsPerRoute;
 
-        var bestCost = double.PositiveInfinity;
-        AccessCandidate? bestAccess = null;
+        var distinct = available.OrderBy(GetAccessProgressMeters).ToList();
+        var selected = new List<AccessCandidate>();
 
-        for (var i = access.Length - 1; i >= 0; i--)
+        foreach (var candidate in authoritative)
+            Add(candidate);
+
+        if (selected.Count >= prefixLimit)
+            return selected;
+
+        if (distinct.Count <= prefixLimit - selected.Count)
         {
-            cost[i] = bestCost;
-            chosen[i] = bestAccess;
-
-            if (access[i].GeneralizedCostPesos < bestCost)
-            {
-                bestCost =
-                    access[i].GeneralizedCostPesos;
-
-                bestAccess = access[i];
-            }
+            foreach (var candidate in distinct)
+                Add(candidate);
+            return selected;
         }
 
-        return (cost, chosen);
+        Add(distinct.OrderBy(GetAccessProgressMeters)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+        Add(distinct.OrderBy(candidate => candidate.GeneralizedCostPesos)
+            .ThenBy(GetAccessProgressMeters).First());
+        Add(distinct.OrderBy(candidate => candidate.TotalTimeSeconds)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+        Add(distinct.OrderBy(candidate => candidate.FarePesos)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+        Add(distinct.OrderBy(MinimumAccessWalkMeters)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+        Add(distinct.OrderBy(MinimumAccessTrikeMeters)
+            .ThenBy(candidate => candidate.GeneralizedCostPesos).First());
+
+        while (selected.Count < prefixLimit && selected.Count < distinct.Count)
+        {
+            var before = selected.Count;
+            Add(distinct
+                .Where(candidate => !selected.Any(existing =>
+                    IsSameAccessOccurrence(existing, candidate)))
+                .OrderByDescending(candidate => selected.Min(chosen =>
+                    Math.Abs(GetAccessProgressMeters(candidate) -
+                        GetAccessProgressMeters(chosen))))
+                .ThenBy(candidate => candidate.GeneralizedCostPesos)
+                .First());
+            if (selected.Count == before)
+                break;
+        }
+
+        return selected;
+
+        void Add(AccessCandidate candidate)
+        {
+            if (selected.Count >= prefixLimit)
+                return;
+            if (!selected.Any(existing => IsSameAccessOccurrence(existing, candidate)))
+                selected.Add(candidate);
+        }
     }
+
+    private static List<AccessCandidate> DistinctAccessOccurrences(
+        IEnumerable<AccessCandidate> candidates)
+    {
+        var distinct = new List<AccessCandidate>();
+        foreach (var candidate in candidates
+                     .OrderBy(candidate => candidate.GeneralizedCostPesos)
+                     .ThenBy(GetAccessProgressMeters)
+                     .ThenBy(candidate => candidate.Anchor.Latitude)
+                     .ThenBy(candidate => candidate.Anchor.Longitude))
+        {
+            if (!distinct.Any(existing => IsSameAccessOccurrence(existing, candidate)))
+                distinct.Add(candidate);
+        }
+
+        return distinct.OrderBy(GetAccessProgressMeters).ToList();
+    }
+
+    private static bool IsSameAccessOccurrence(
+        AccessCandidate left,
+        AccessCandidate right) =>
+        ApproximateDistanceMeters(
+            left.Anchor.Latitude,
+            left.Anchor.Longitude,
+            right.Anchor.Latitude,
+            right.Anchor.Longitude) <= 1.0 &&
+        Math.Abs(GetAccessProgressMeters(left) - GetAccessProgressMeters(right)) <= 1.0;
+
+    private static string AccessOccurrenceKey(AccessCandidate candidate) => string.Join(':',
+        Math.Round(candidate.Anchor.Latitude, 6),
+        Math.Round(candidate.Anchor.Longitude, 6),
+        Math.Round(candidate.FullRouteAnchor?.DistanceFromRouteStartMeters ?? -1, 1));
+
+    private static double GetAccessProgressMeters(AccessCandidate candidate) =>
+        candidate.FullRouteAnchor?.DistanceFromRouteStartMeters ??
+        candidate.RouteSampleIndex ?? double.PositiveInfinity;
+
+    private static double MinimumAccessWalkMeters(AccessCandidate candidate) =>
+        candidate.AllAlternatives.Min(alternative => alternative.WalkDistanceMeters);
+
+    private static double MinimumAccessTrikeMeters(AccessCandidate candidate) =>
+        candidate.AllAlternatives
+            .Where(alternative => alternative.Mode == AccessMode.Trike)
+            .Select(alternative => alternative.TrikeRideDistanceMeters ?? double.PositiveInfinity)
+            .DefaultIfEmpty(double.PositiveInfinity)
+            .Min();
 
     // -------------------------------------------------------------------
     // Interchange graph

@@ -50,6 +50,67 @@ public sealed class RoutingBoardingSelectionTests
     }
 
     [Fact]
+    public async Task FindConnectingRoutesAsync_UsesNetworkAccessBeforeBoardingVariantCap()
+    {
+        var route = new StaticJeepneyRoute
+        {
+            RouteId = "L",
+            RouteName = "L route",
+            Coordinates =
+            [
+                [120.5000, 15.0000],
+                [120.5040, 15.0000],
+                [120.5100, 15.0000]
+            ]
+        };
+        var origin = new ValhallaLocation { Lat = 15.0009, Lon = 120.5000 };
+        var valhalla = new FakeValhallaService((source, target, costing) =>
+        {
+            if (!string.Equals(costing, "pedestrian", StringComparison.Ordinal) ||
+                DistanceMeters(source, origin) > 1)
+            {
+                return DistanceMeters(source, target);
+            }
+
+            // A is geometrically closest but requires a 500m network walk.
+            // A middle distractor also looks closer than B, so a two-candidate
+            // geometric quota keeps A + distractor and loses B. The physically
+            // distinct B corridor has the direct 220m pedestrian route.
+            if (target.Lon < 120.5010)
+                return 500;
+            if (target.Lon < 120.5030)
+                return 700;
+            return target.Lon < 120.5050 ? 220 : 1_000;
+        });
+        var service = CreateService(
+            route,
+            valhalla,
+            new RoutingOptions
+            {
+                DefaultSampleIntervalMeters = 100,
+                MaxRouteSamples = 20,
+                MaxBoardingVariantsPerRoute = 2,
+                MaxWalkAccessDistanceMeters = 600,
+                MaxCandidatesToConfirm = 30,
+                MaxTripOptions = 5
+            });
+
+        var options = await service.FindConnectingRoutesAsync(
+            origin.Lat,
+            origin.Lon,
+            15.0000,
+            120.5095);
+
+        var option = Assert.Single(options);
+        Assert.True(
+            option.BoardLongitude is >= 120.5030 and < 120.5050,
+            $"Expected the network-accessible B region, got " +
+            $"{option.BoardLatitude:F6},{option.BoardLongitude:F6}.");
+        Assert.Equal(15.0000, option.BoardLatitude, 6);
+        Assert.True(valhalla.MaxPedestrianTargetCount > 1);
+    }
+
+    [Fact]
     public async Task FindConnectingRoutesAsync_RejectsConfirmedWalkBeyondTransitAccessLimit()
     {
         var route = new StaticJeepneyRoute
@@ -184,6 +245,8 @@ public sealed class RoutingBoardingSelectionTests
         Func<ValhallaLocation, ValhallaLocation, string, double> distance)
         : IValhallaService
     {
+        public int MaxPedestrianTargetCount { get; private set; }
+
         public Task<ValhallaRouteResponse> GetRouteAsync(
             double startLatitude,
             double startLongitude,
@@ -200,6 +263,13 @@ public sealed class RoutingBoardingSelectionTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (string.Equals(costing, "pedestrian", StringComparison.Ordinal))
+            {
+                MaxPedestrianTargetCount = Math.Max(
+                    MaxPedestrianTargetCount,
+                    targets.Count);
+            }
+
             IReadOnlyList<ValhallaMatrixResult> results = targets
                 .Select((target, index) => new ValhallaMatrixResult
                 {

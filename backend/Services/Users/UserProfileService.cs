@@ -8,6 +8,8 @@ namespace backend.Services;
 public sealed class UserProfileService(IUserProfileRepository userProfileRepository) : IUserProfileService
 {
     private const string DefaultRole = "Passenger";
+    private const string GuestRole = "Guest";
+    private const string GuestProvider = "guest";
     private const int MaxCredentialOwnerLength = 255;
     private const int MaxProviderLength = 50;
     private const int MaxExternalAuthIdLength = 255;
@@ -60,6 +62,37 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
                 profile.UserId,
                 profile.Email,
                 Map(profile)));
+    }
+
+    public async Task<UserProfileAuthenticationResult> CreateGuestProfileAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // Every guest receives a unique identity so active navigation, favorites and history are
+        // isolated exactly like registered users. No password or real email is created.
+        var guestSubject = Guid.NewGuid().ToString("N");
+        var credentialOwner = CreateExternalCredentialOwner(GuestProvider, guestSubject);
+        var now = DateTime.UtcNow;
+        var profile = await _userProfileRepository.AddOrUpdateAsync(new UserProfile
+        {
+            UserId = Guid.NewGuid(),
+            ExternalAuthProvider = GuestProvider,
+            ExternalAuthId = guestSubject,
+            Email = credentialOwner,
+            FirstName = "Guest",
+            LastName = null,
+            PhoneNumber = null,
+            Role = GuestRole,
+            PreferredLanguage = TukiLanguage.English,
+            IsActive = true,
+            IsEmailVerified = false,
+            CreatedAt = now,
+            UpdatedAt = now,
+        }, cancellationToken);
+
+        return new UserProfileAuthenticationResult(
+            profile.UserId,
+            credentialOwner,
+            Map(profile));
     }
 
     public async Task<UserProfileAuthenticationResult?> CreateOrUpdateExternalProfileAsync(
@@ -187,12 +220,22 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
             return UserProfileMutationResult.ValidationFailed(validation.Errors);
         }
 
+        var existingProfile = await _userProfileRepository.GetActiveByUserIdAsync(userId, cancellationToken);
+        if (existingProfile is null)
+        {
+            return UserProfileMutationResult.NotFound(userId);
+        }
+
+        // PUT requests in both clients intentionally send only the fields being changed.
+        // Preserve omitted values so an image-only update cannot clear name/phone, and a later
+        // name/phone update cannot accidentally remove the saved profile image. Passing an empty
+        // string is still treated as an explicit clear for optional fields.
         var profile = await _userProfileRepository.UpdateEditableFieldsAsync(
             userId,
-            validation.FirstName,
-            validation.LastName,
-            validation.PhoneNumber,
-            validation.ProfileImageUrl,
+            firstName is null ? existingProfile.FirstName : validation.FirstName,
+            lastName is null ? existingProfile.LastName : validation.LastName,
+            phoneNumber is null ? existingProfile.PhoneNumber : validation.PhoneNumber,
+            profileImageUrl is null ? existingProfile.ProfileImageUrl : validation.ProfileImageUrl,
             cancellationToken);
 
         return profile is null
@@ -348,7 +391,7 @@ public sealed class UserProfileService(IUserProfileRepository userProfileReposit
 
         provider = credentialOwner[..separatorIndex];
         providerSubject = credentialOwner[(separatorIndex + 1)..];
-        return provider is "facebook" or "google";
+        return provider is "facebook" or "google" or GuestProvider;
     }
 
     private static NameParts SplitDisplayName(string? displayName)

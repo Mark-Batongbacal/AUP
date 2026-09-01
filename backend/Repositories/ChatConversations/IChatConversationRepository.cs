@@ -11,4 +11,9 @@ public interface IChatConversationRepository
     Task<ChatConversation> AddAsync(ChatConversation Conversation, CancellationToken cancellationToken = default);
 
     Task<bool> UpdateTitleAsync(Guid conversationId, string? Title, CancellationToken cancellationToken = default);
+
+    Task<bool> UpdatePlanningStateAsync(
+        Guid conversationId,
+        string? planningStateJson,
+        CancellationToken cancellationToken = default);
 }

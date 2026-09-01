@@ -2,7 +2,6 @@ package com.example.frontend.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,24 +40,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.frontend.components.OtpCodeField
 import com.example.frontend.components.OtpResendButton
+import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.network.ApiResult
 import com.example.frontend.data.TukiDataProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private val TukiCream = Color(0xFFFFF8E8)
-private val TukiCream2 = Color(0xFFFAEBC7)
-private val TukiDark = Color(0xFF173B43)
-private val TukiGray = Color(0xFF9AA6A9)
-private val TukiTeal = Color(0xFF15919B)
-private val TukiOrange = Color(0xFFFF9318)
-private val TukiError = Color(0xFFB00020)
+private val TukiCream: Color get() = com.example.frontend.ui.theme.TukiCream
+private val TukiCream2: Color get() = com.example.frontend.ui.theme.TukiSky
+private val TukiDark: Color get() = com.example.frontend.ui.theme.TukiInk
+private val TukiGray: Color get() = com.example.frontend.ui.theme.TukiMuted
+private val TukiTeal: Color get() = com.example.frontend.ui.theme.TukiTeal
+private val TukiOrange: Color get() = com.example.frontend.ui.theme.TukiOrange
+private val TukiError: Color get() = com.example.frontend.ui.theme.TukiDanger
 
-private enum class ChangePasswordStage {
-    CURRENT_PASSWORD,
-    OTP,
-    NEW_PASSWORD
-}
+private enum class ChangePasswordStage { CURRENT_PASSWORD, OTP, NEW_PASSWORD }
 
 @Composable
 fun ChangePasswordScreen(
@@ -75,11 +71,9 @@ fun ChangePasswordScreen(
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var otpSendGeneration by remember { mutableStateOf(0) }
-
     var currentPasswordVisible by remember { mutableStateOf(false) }
     var newPasswordVisible by remember { mutableStateOf(false) }
     var confirmPasswordVisible by remember { mutableStateOf(false) }
-
     var isWorking by remember { mutableStateOf(false) }
     var isSuccess by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -88,7 +82,7 @@ fun ChangePasswordScreen(
     fun requestOtp() {
         if (isWorking || isSuccess) return
         if (currentPassword.isBlank()) {
-            errorMessage = "Enter your current password."
+            errorMessage = if (TukiInterfaceText.isFilipino) "Ilagay ang kasalukuyang password mo." else "Enter your current password."
             return
         }
 
@@ -101,7 +95,7 @@ fun ChangePasswordScreen(
                     stage = ChangePasswordStage.OTP
                     otpCode = ""
                     otpSendGeneration += 1
-                    infoMessage = "We've sent an 8-digit OTP to your account email."
+                    infoMessage = if (TukiInterfaceText.isFilipino) "Nagpadala kami ng 8-digit OTP sa email ng account mo." else "We've sent an 8-digit OTP to your account email."
                 }
                 is ApiResult.Failure -> errorMessage = result.message
             }
@@ -112,7 +106,7 @@ fun ChangePasswordScreen(
     fun verifyOtp() {
         if (isWorking || isSuccess) return
         if (otpCode.length != 8) {
-            errorMessage = "Enter the complete 8-digit code."
+            errorMessage = if (TukiInterfaceText.isFilipino) "Ilagay ang kumpletong 8-digit code." else "Enter the complete 8-digit code."
             return
         }
 
@@ -131,9 +125,9 @@ fun ChangePasswordScreen(
     fun submitChange() {
         if (isWorking || isSuccess) return
         when {
-            newPassword.length < 8 -> errorMessage = "New password must be at least 8 characters."
-            newPassword == currentPassword -> errorMessage = "New password must be different from your current password."
-            newPassword != confirmPassword -> errorMessage = "New password and confirmation do not match."
+            newPassword.length < 8 -> errorMessage = if (TukiInterfaceText.isFilipino) "Dapat hindi bababa sa 8 character ang bagong password." else "New password must be at least 8 characters."
+            newPassword == currentPassword -> errorMessage = if (TukiInterfaceText.isFilipino) "Dapat iba ang bagong password sa kasalukuyang password." else "New password must be different from your current password."
+            newPassword != confirmPassword -> errorMessage = if (TukiInterfaceText.isFilipino) "Hindi magkapareho ang bagong password at confirmation." else "New password and confirmation do not match."
             else -> coroutineScope.launch {
                 isWorking = true
                 errorMessage = null
@@ -141,7 +135,7 @@ fun ChangePasswordScreen(
                 when (val result = authRepository.changePassword(currentPassword, otpCode, newPassword)) {
                     is ApiResult.Success -> {
                         isSuccess = true
-                        infoMessage = "Password changed successfully."
+                        infoMessage = if (TukiInterfaceText.isFilipino) "Matagumpay na napalitan ang password." else "Password changed successfully."
                         currentPassword = ""
                         otpCode = ""
                         newPassword = ""
@@ -192,9 +186,9 @@ fun ChangePasswordScreen(
             Spacer(modifier = Modifier.width(14.dp))
             Text(
                 text = when (stage) {
-                    ChangePasswordStage.CURRENT_PASSWORD -> "Change password"
-                    ChangePasswordStage.OTP -> "Check your email"
-                    ChangePasswordStage.NEW_PASSWORD -> "New password"
+                    ChangePasswordStage.CURRENT_PASSWORD -> TukiInterfaceText.changePassword
+                    ChangePasswordStage.OTP -> TukiInterfaceText.checkYourEmail
+                    ChangePasswordStage.NEW_PASSWORD -> TukiInterfaceText.newPassword
                 },
                 color = TukiDark,
                 fontSize = 22.sp,
@@ -205,9 +199,9 @@ fun ChangePasswordScreen(
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = when (stage) {
-                ChangePasswordStage.CURRENT_PASSWORD -> "Confirm your current password first. We'll send an OTP to your account email."
-                ChangePasswordStage.OTP -> "We've sent an 8-digit OTP to the email on your TUKI account."
-                ChangePasswordStage.NEW_PASSWORD -> "OTP verified. You can now choose your new password."
+                ChangePasswordStage.CURRENT_PASSWORD -> if (TukiInterfaceText.isFilipino) "Kumpirmahin muna ang kasalukuyang password. Magpapadala kami ng OTP sa email ng account mo." else "Confirm your current password first. We'll send an OTP to your account email."
+                ChangePasswordStage.OTP -> if (TukiInterfaceText.isFilipino) "Nagpadala kami ng 8-digit OTP sa email ng TUKI account mo." else "We've sent an 8-digit OTP to the email on your TUKI account."
+                ChangePasswordStage.NEW_PASSWORD -> if (TukiInterfaceText.isFilipino) "Na-verify ang OTP. Maaari ka nang pumili ng bagong password." else "OTP verified. You can now choose your new password."
             },
             color = TukiGray,
             fontSize = 14.sp,
@@ -218,56 +212,34 @@ fun ChangePasswordScreen(
 
         when (stage) {
             ChangePasswordStage.CURRENT_PASSWORD -> PasswordField(
-                label = "Current password",
+                label = if (TukiInterfaceText.isFilipino) "Kasalukuyang password" else "Current password",
                 value = currentPassword,
                 visible = currentPasswordVisible,
                 enabled = !isWorking && !isSuccess,
-                onValueChange = {
-                    currentPassword = it
-                    errorMessage = null
-                },
+                onValueChange = { currentPassword = it; errorMessage = null },
                 onVisibilityToggle = { currentPasswordVisible = !currentPasswordVisible }
             )
-
             ChangePasswordStage.OTP -> {
-                OtpCodeField(
-                    code = otpCode,
-                    onCodeChange = {
-                        otpCode = it
-                        errorMessage = null
-                    },
-                    enabled = !isWorking && !isSuccess
-                )
+                OtpCodeField(code = otpCode, onCodeChange = { otpCode = it; errorMessage = null }, enabled = !isWorking && !isSuccess)
                 Spacer(modifier = Modifier.height(8.dp))
-                OtpResendButton(
-                    sendGeneration = otpSendGeneration,
-                    enabled = !isWorking && !isSuccess,
-                    onResend = { requestOtp() }
-                )
+                OtpResendButton(sendGeneration = otpSendGeneration, enabled = !isWorking && !isSuccess, onResend = { requestOtp() })
             }
-
             ChangePasswordStage.NEW_PASSWORD -> {
                 PasswordField(
-                    label = "New password",
+                    label = TukiInterfaceText.newPassword,
                     value = newPassword,
                     visible = newPasswordVisible,
                     enabled = !isWorking && !isSuccess,
-                    onValueChange = {
-                        newPassword = it
-                        errorMessage = null
-                    },
+                    onValueChange = { newPassword = it; errorMessage = null },
                     onVisibilityToggle = { newPasswordVisible = !newPasswordVisible }
                 )
                 Spacer(modifier = Modifier.height(18.dp))
                 PasswordField(
-                    label = "Confirm new password",
+                    label = TukiInterfaceText.confirmNewPassword,
                     value = confirmPassword,
                     visible = confirmPasswordVisible,
                     enabled = !isWorking && !isSuccess,
-                    onValueChange = {
-                        confirmPassword = it
-                        errorMessage = null
-                    },
+                    onValueChange = { confirmPassword = it; errorMessage = null },
                     onVisibilityToggle = { confirmPasswordVisible = !confirmPasswordVisible }
                 )
             }
@@ -301,9 +273,9 @@ fun ChangePasswordScreen(
             } else {
                 Text(
                     text = when (stage) {
-                        ChangePasswordStage.CURRENT_PASSWORD -> "Send OTP"
-                        ChangePasswordStage.OTP -> "Verify OTP"
-                        ChangePasswordStage.NEW_PASSWORD -> "Change password"
+                        ChangePasswordStage.CURRENT_PASSWORD -> TukiInterfaceText.sendOtp
+                        ChangePasswordStage.OTP -> TukiInterfaceText.verifyOtp
+                        ChangePasswordStage.NEW_PASSWORD -> TukiInterfaceText.changePassword
                     },
                     color = Color.White,
                     fontSize = 16.sp,
@@ -340,9 +312,7 @@ private fun PasswordField(
                     color = TukiTeal,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .padding(end = 12.dp)
-                        .clickable(enabled = enabled, onClick = onVisibilityToggle)
+                    modifier = Modifier.padding(end = 12.dp).clickable(enabled = enabled, onClick = onVisibilityToggle)
                 )
             },
             colors = TextFieldDefaults.colors(

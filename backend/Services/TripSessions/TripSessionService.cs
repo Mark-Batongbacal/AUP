@@ -117,6 +117,52 @@ public sealed class TripSessionService(
         if (!NavigationTripRules.CanConfirmAlighting(current, currentLeg, _options))
             return Fail("ALIGHT_TOO_EARLY");
 
+        return await CompleteCurrentTransitLegAsync(
+            userId, current, legs, "AlightingConfirmed", cancellationToken);
+    }
+
+    public async Task<TripSessionOperation> ResolveAlightStatusAsync(
+        Guid userId,
+        Guid sessionId,
+        bool alreadyOff,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await sessions.GetOwnedAsync(sessionId, userId, cancellationToken);
+        if (current is null) return Fail("TRIP_SESSION_NOT_FOUND");
+        if (!string.Equals(current.LastNavigationStatus, "ALIGHT_STATUS_UNKNOWN", StringComparison.Ordinal) ||
+            current.CurrentNavigationState != TripNavigationState.ApproachingAlightPoint)
+            return Fail("ALIGHT_STATUS_NOT_UNKNOWN");
+
+        var legs = await recommendations.GetOrderedLegsAsync(current.RecommendationId, cancellationToken);
+        var currentLeg = legs.FirstOrDefault(leg => leg.LegOrder == current.CurrentLegIndex);
+        if (currentLeg is null) return Fail("CURRENT_LEG_NOT_FOUND");
+        if (!NavigationTripRules.IsTransit(currentLeg)) return Fail("CURRENT_LEG_NOT_TRANSIT");
+
+        if (alreadyOff)
+            return await CompleteCurrentTransitLegAsync(
+                userId, current, legs, "UnconfirmedAlightingResolved", cancellationToken);
+
+        current.LastNavigationStatus = "MISSED_ALIGHT";
+        current.LastRerouteReason = "MISSED_ALIGHT";
+        current.ConsecutiveStateConfirmationSamples = 0;
+        current.ConsecutiveOffRouteSamples = 0;
+        current.OffRouteSuspectedAt = null;
+        current.UpdatedAt = DateTime.UtcNow;
+        var updated = await sessions.UpdateAsync(current, cancellationToken);
+        _telemetry.Event("MissedAlightConfirmedByPassenger", sessionId);
+        return new(updated);
+    }
+
+    private async Task<TripSessionOperation> CompleteCurrentTransitLegAsync(
+        Guid userId,
+        TripSession current,
+        IReadOnlyList<RecommendationLeg> legs,
+        string telemetryEvent,
+        CancellationToken cancellationToken)
+    {
+        var currentLeg = legs.FirstOrDefault(leg => leg.LegOrder == current.CurrentLegIndex);
+        if (currentLeg is null) return Fail("CURRENT_LEG_NOT_FOUND");
+
         var nextIndex = current.CurrentLegIndex + 1;
         var nextLeg = legs.FirstOrDefault(leg => leg.LegOrder == nextIndex);
         var nextState = nextLeg is null
@@ -131,7 +177,7 @@ public sealed class TripSessionService(
             ? currentLeg.EstimatedFare
             : 0m;
 
-        var result = await TransitionAsync(userId, sessionId, nextState, cancellationToken,
+        var result = await TransitionAsync(userId, current.TripSessionId, nextState, cancellationToken,
             session =>
             {
                 session.ApproxFareSpent += fareToAdd;
@@ -144,11 +190,11 @@ public sealed class TripSessionService(
             });
         if (result.Succeeded)
         {
-            _telemetry.Event("AlightingConfirmed", sessionId);
+            _telemetry.Event(telemetryEvent, current.TripSessionId);
             if (fareToAdd > 0)
-                _telemetry.Event("ApproxFareRecorded", sessionId, fareToAdd.ToString("0.00"));
+                _telemetry.Event("ApproxFareRecorded", current.TripSessionId, fareToAdd.ToString("0.00"));
             if (nextState == TripNavigationState.Arrived)
-                _telemetry.Event("TripArrived", sessionId);
+                _telemetry.Event("TripArrived", current.TripSessionId);
         }
         return result;
     }

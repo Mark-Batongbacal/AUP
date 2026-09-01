@@ -105,10 +105,29 @@ fun LiveTripMapScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val sharedTodaPoints = TukiMapOverlayState.todaPoints
     val effectiveTodaPoints = if (todaPoints.isNotEmpty()) todaPoints else sharedTodaPoints
-    val selectedJourneyRouteIds = TukiMapOverlayState.selectedJourneyJeepneyRouteIds
+    val routeReplacementInFlight = TukiMapOverlayState.routeReplacementInFlight
+    val selectedJourneyRouteIds = if (routeReplacementInFlight) {
+        emptySet()
+    } else {
+        TukiMapOverlayState.selectedJourneyJeepneyRouteIds
+    }
+    val renderedRoutePoints = if (routeReplacementInFlight) emptyList() else routePoints
+    val renderedFutureRouteSegments = if (routeReplacementInFlight) emptyList() else futureRouteSegments
     val activeJeepneyRouteId = remember(legIdentity) { currentJeepneyRouteId(legIdentity) }
-    val visibleJeepneyRoutes = remember(nearbyJeepneyRoutes) {
-        nearbyJeepneyRoutes.filter { it.points.size >= 2 }
+    val visibleJeepneyRoutes = remember(nearbyJeepneyRoutes, routeReplacementInFlight) {
+        if (routeReplacementInFlight) {
+            emptyList()
+        } else {
+            nearbyJeepneyRoutes.filter { it.points.size >= 2 }
+        }
+    }
+    // Once local navigation has trimmed the current leg, every representation of that active leg
+    // should use the same remaining geometry. During route replacement we intentionally render no
+    // route at all so stale geometry cannot survive underneath the loading state.
+    val progressAwareOverviewRoute = when {
+        routeReplacementInFlight -> emptyList()
+        renderedRoutePoints.size >= 2 -> renderedRoutePoints
+        else -> fullLegRoutePoints
     }
 
     var mapLibreMap by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -120,8 +139,8 @@ fun LiveTripMapScreen(
     var selectedJeepneyRoute by remember { mutableStateOf<TransitRouteOverlay?>(null) }
     val latestMap by rememberUpdatedState(mapLibreMap)
     val latestGpsPosition by rememberUpdatedState(gpsPosition)
-    val latestRoutePoints by rememberUpdatedState(routePoints)
-    val latestFullLegRoutePoints by rememberUpdatedState(fullLegRoutePoints)
+    val latestRoutePoints by rememberUpdatedState(renderedRoutePoints)
+    val latestOverviewRoute by rememberUpdatedState(progressAwareOverviewRoute)
     val latestLegDestination by rememberUpdatedState(legDestination)
     val latestOverviewBottomPaddingDp by rememberUpdatedState(overviewBottomPaddingDp)
 
@@ -161,19 +180,20 @@ fun LiveTripMapScreen(
                     routes = visibleJeepneyRoutes,
                     previouslyRenderedRouteIds = emptySet(),
                     activeRouteId = activeJeepneyRouteId,
-                    selectedJourneyRouteIds = selectedJourneyRouteIds
+                    selectedJourneyRouteIds = selectedJourneyRouteIds,
+                    activeRoutePoints = renderedRoutePoints
                 )
                 renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
-                updateLiveTripFutureLayers(style, futureRouteSegments)
-                updateLiveTripRoute(style, routePoints)
-                updateLiveTripCurrentPoint(style, currentPosition)
+                updateLiveTripFutureLayers(style, renderedFutureRouteSegments)
+                updateLiveTripRoute(style, renderedRoutePoints)
                 updateLiveTripDestination(style, legDestination)
                 updateLiveTripTodaPoints(style, effectiveTodaPoints)
                 updateLiveTripFinalDestination(style, finalDestination)
+                updateLiveTripCurrentPoint(style, currentPosition)
 
                 val target = gpsPosition
                     ?: currentPosition
-                    ?: routePoints.firstOrNull()
+                    ?: renderedRoutePoints.firstOrNull()
                     ?: legDestination
                     ?: finalDestination
                     ?: LiveTripDefaultCenter
@@ -193,14 +213,21 @@ fun LiveTripMapScreen(
         onDispose { mapView.setOnTouchListener(null) }
     }
 
-    DisposableEffect(mapLibreMap, visibleJeepneyRoutes) {
+    DisposableEffect(mapLibreMap, visibleJeepneyRoutes, activeJeepneyRouteId, renderedRoutePoints) {
         val map = mapLibreMap
         if (map == null || visibleJeepneyRoutes.isEmpty()) {
             onDispose { }
         } else {
             val listener = MapLibreMap.OnMapClickListener { point ->
                 selectedJeepneyRoute = visibleJeepneyRoutes
-                    .map { route -> route to nearestLiveTripRouteDistanceMeters(point, route.points) }
+                    .map { route ->
+                        val displayedPoints = if (route.routeId == activeJeepneyRouteId) {
+                            renderedRoutePoints
+                        } else {
+                            route.points
+                        }
+                        route to nearestLiveTripRouteDistanceMeters(point, displayedPoints)
+                    }
                     .minByOrNull { it.second }
                     ?.takeIf { (_, distance) -> distance <= LiveTripRouteTapDistanceMeters }
                     ?.first
@@ -219,13 +246,18 @@ fun LiveTripMapScreen(
     }
 
     fun redrawTopMarkers(style: Style) {
+        // Route/future/transit layers are frequently removed and re-added, which moves them to the
+        // top of MapLibre's style stack. Re-add every navigation marker afterward so lines can never
+        // visually cut through the current-location or leg-destination dots.
+        updateLiveTripDestination(style, legDestination)
         updateLiveTripTodaPoints(style, effectiveTodaPoints)
         updateLiveTripFinalDestination(style, finalDestination)
+        updateLiveTripCurrentPoint(style, currentPosition)
     }
 
-    LaunchedEffect(loadedStyle, routePoints, fullLegRoutePoints, showLegOverview) {
+    LaunchedEffect(loadedStyle, renderedRoutePoints, progressAwareOverviewRoute, showLegOverview) {
         loadedStyle?.let { style ->
-            val displayedRoute = if (showLegOverview && fullLegRoutePoints.size >= 2) fullLegRoutePoints else routePoints
+            val displayedRoute = if (showLegOverview) progressAwareOverviewRoute else renderedRoutePoints
             updateLiveTripRoute(style, displayedRoute)
             redrawTopMarkers(style)
         }
@@ -245,20 +277,27 @@ fun LiveTripMapScreen(
     LaunchedEffect(loadedStyle, finalDestination) {
         loadedStyle?.let { updateLiveTripFinalDestination(it, finalDestination) }
     }
-    LaunchedEffect(loadedStyle, futureRouteSegments) {
+    LaunchedEffect(loadedStyle, renderedFutureRouteSegments) {
         loadedStyle?.let {
-            updateLiveTripFutureLayers(it, futureRouteSegments)
+            updateLiveTripFutureLayers(it, renderedFutureRouteSegments)
             redrawTopMarkers(it)
         }
     }
-    LaunchedEffect(loadedStyle, visibleJeepneyRoutes, activeJeepneyRouteId, selectedJourneyRouteIds) {
+    LaunchedEffect(
+        loadedStyle,
+        visibleJeepneyRoutes,
+        activeJeepneyRouteId,
+        selectedJourneyRouteIds,
+        renderedRoutePoints
+    ) {
         loadedStyle?.let { style ->
             updateLiveTripTransitRoutes(
                 style = style,
                 routes = visibleJeepneyRoutes,
                 previouslyRenderedRouteIds = renderedTransitRouteIds,
                 activeRouteId = activeJeepneyRouteId,
-                selectedJourneyRouteIds = selectedJourneyRouteIds
+                selectedJourneyRouteIds = selectedJourneyRouteIds,
+                activeRoutePoints = renderedRoutePoints
             )
             renderedTransitRouteIds = visibleJeepneyRoutes.map { it.routeId }.toSet()
             redrawTopMarkers(style)
@@ -268,40 +307,64 @@ fun LiveTripMapScreen(
         loadedStyle?.let { redrawTopMarkers(it) }
     }
 
-    LaunchedEffect(mapLibreMap, gpsPosition, routePoints, followLocation) {
+    LaunchedEffect(mapLibreMap, gpsPosition, renderedRoutePoints, followLocation) {
         if (!followLocation) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         val point = gpsPosition ?: return@LaunchedEffect
         showLegOverview = false
-        animateLiveTripCamera(map, point, routePoints)
+        animateLiveTripCamera(map, point, renderedRoutePoints)
     }
 
-    LaunchedEffect(loadedStyle, gpsPosition, fullLegRoutePoints) {
+    LaunchedEffect(loadedStyle, gpsPosition, progressAwareOverviewRoute) {
         val map = mapLibreMap ?: return@LaunchedEffect
-        if (loadedStyle == null || gpsPosition != null || fullLegRoutePoints.size < 2) return@LaunchedEffect
+        if (loadedStyle == null || gpsPosition != null || progressAwareOverviewRoute.size < 2) return@LaunchedEffect
         showLegOverview = true
-        fitLiveTripLeg(map, mapView, fullLegRoutePoints, currentPosition, legDestination, context.resources.displayMetrics.density, overviewBottomPaddingDp)
+        fitLiveTripLeg(
+            map,
+            mapView,
+            progressAwareOverviewRoute,
+            currentPosition,
+            legDestination,
+            context.resources.displayMetrics.density,
+            overviewBottomPaddingDp
+        )
     }
 
-    LaunchedEffect(loadedStyle, legIdentity, fullLegRoutePoints) {
+    LaunchedEffect(loadedStyle, legIdentity, progressAwareOverviewRoute) {
         if (loadedStyle == null || legIdentity == null) return@LaunchedEffect
         val previous = previousLegIdentity
         previousLegIdentity = legIdentity
-        if (previous == null || previous == legIdentity || fullLegRoutePoints.size < 2) return@LaunchedEffect
+        if (previous == null || previous == legIdentity || progressAwareOverviewRoute.size < 2) return@LaunchedEffect
         val map = mapLibreMap ?: return@LaunchedEffect
         followLocation = false
         showLegOverview = true
-        fitLiveTripLeg(map, mapView, fullLegRoutePoints, gpsPosition, legDestination, context.resources.displayMetrics.density, overviewBottomPaddingDp)
+        fitLiveTripLeg(
+            map,
+            mapView,
+            progressAwareOverviewRoute,
+            gpsPosition,
+            legDestination,
+            context.resources.displayMetrics.density,
+            overviewBottomPaddingDp
+        )
     }
 
     LaunchedEffect(legOverviewRequestKey) {
         if (legOverviewRequestKey == 0) return@LaunchedEffect
         val map = latestMap ?: return@LaunchedEffect
-        val overviewRoute = latestFullLegRoutePoints
+        val overviewRoute = latestOverviewRoute
         if (overviewRoute.isEmpty()) return@LaunchedEffect
         followLocation = false
         showLegOverview = true
-        fitLiveTripLeg(map, mapView, overviewRoute, latestGpsPosition, latestLegDestination, context.resources.displayMetrics.density, latestOverviewBottomPaddingDp)
+        fitLiveTripLeg(
+            map,
+            mapView,
+            overviewRoute,
+            latestGpsPosition,
+            latestLegDestination,
+            context.resources.displayMetrics.density,
+            latestOverviewBottomPaddingDp
+        )
     }
 
     LaunchedEffect(recenterRequestKey) {
@@ -343,9 +406,11 @@ fun LiveTripMapScreen(
 
 private fun currentJeepneyRouteId(legIdentity: String?): Long? {
     val parts = legIdentity?.split(':').orEmpty()
-    val mode = parts.getOrNull(2)?.uppercase()
-    if (mode != "JEEP" && mode != "JEEPNEY") return null
-    return parts.getOrNull(1)?.toLongOrNull()
+    val modeIndex = parts.indexOfFirst { part ->
+        part.equals("JEEP", ignoreCase = true) || part.equals("JEEPNEY", ignoreCase = true)
+    }
+    if (modeIndex <= 0) return null
+    return parts.getOrNull(modeIndex - 1)?.toLongOrNull()
 }
 
 private fun animateLiveTripCamera(map: MapLibreMap, current: LatLng, route: List<LatLng>) {
@@ -375,7 +440,8 @@ private fun updateLiveTripTransitRoutes(
     routes: List<TransitRouteOverlay>,
     previouslyRenderedRouteIds: Set<Long>,
     activeRouteId: Long?,
-    selectedJourneyRouteIds: Set<Long>
+    selectedJourneyRouteIds: Set<Long>,
+    activeRoutePoints: List<LatLng>
 ) {
     val currentIds = routes.map { it.routeId }.toSet()
     (previouslyRenderedRouteIds - currentIds).forEach { routeId ->
@@ -386,17 +452,18 @@ private fun updateLiveTripTransitRoutes(
     routes.forEachIndexed { index, route ->
         val sourceId = "$LiveTripTransitPrefix-source-${route.routeId}"
         val layerId = "$LiveTripTransitPrefix-layer-${route.routeId}"
-        if (route.points.size < 2) {
+        val isCurrentRoute = route.routeId == activeRouteId
+        val displayedPoints = if (isCurrentRoute) activeRoutePoints else route.points
+        if (displayedPoints.size < 2) {
             style.removeLayer(layerId)
             style.removeSource(sourceId)
             return@forEachIndexed
         }
 
-        val geometry = LineString.fromLngLats(route.points.map { Point.fromLngLat(it.longitude, it.latitude) })
+        val geometry = LineString.fromLngLats(displayedPoints.map { Point.fromLngLat(it.longitude, it.latitude) })
         val source = style.getSourceAs<GeoJsonSource>(sourceId)
         if (source != null) source.setGeoJson(geometry) else style.addSource(GeoJsonSource(sourceId, geometry))
 
-        val isCurrentRoute = route.routeId == activeRouteId
         val isJourneyRoute = route.routeId in selectedJourneyRouteIds
         val width = when {
             isCurrentRoute -> 5.2f
@@ -494,9 +561,14 @@ private fun updateLiveTripCurrentPoint(style: Style, point: LatLng?) {
     val source = style.getSourceAs<GeoJsonSource>(LiveTripCurrentSource)
     if (source != null) {
         source.setGeoJson(geometry)
-        return
+    } else {
+        style.addSource(GeoJsonSource(LiveTripCurrentSource, geometry))
     }
-    style.addSource(GeoJsonSource(LiveTripCurrentSource, geometry))
+
+    // Re-add both layers so the live-location marker remains above any route layer that was
+    // recreated after the marker source was first installed.
+    style.removeLayer(LiveTripCurrentLayer)
+    style.removeLayer(LiveTripCurrentHalo)
     style.addLayer(
         CircleLayer(LiveTripCurrentHalo, LiveTripCurrentSource).withProperties(
             PropertyFactory.circleColor("#4D8DFF"),
@@ -532,9 +604,12 @@ private fun updateLiveTripPoint(style: Style, point: LatLng?, sourceId: String, 
     val source = style.getSourceAs<GeoJsonSource>(sourceId)
     if (source != null) {
         source.setGeoJson(geometry)
-        return
+    } else {
+        style.addSource(GeoJsonSource(sourceId, geometry))
     }
-    style.addSource(GeoJsonSource(sourceId, geometry))
+
+    // Re-add point markers after route redraws so the orange leg target cannot be covered by a line.
+    style.removeLayer(layerId)
     style.addLayer(
         CircleLayer(layerId, sourceId).withProperties(
             PropertyFactory.circleColor(color),
