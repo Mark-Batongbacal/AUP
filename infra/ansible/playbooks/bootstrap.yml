@@ -166,7 +166,7 @@
       loop:
         - { path: "{{ tuki_install_root }}/data/sqlserver", owner: "10001", group: "0", mode: "0770" }
         - { path: "{{ tuki_install_root }}/data/valhalla", owner: "1000", group: "1000", mode: "0775" }
-        - { path: "{{ tuki_install_root }}/data/pelias/runtime", owner: "1000", group: "1000", mode: "0775" }
+        - { path: "{{ tuki_install_root }}/data/pelias", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/pelias/elasticsearch", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/caddy/data", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/caddy/config", owner: "1000", group: "1000", mode: "0775" }

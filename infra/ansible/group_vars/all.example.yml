@@ -10,6 +10,16 @@ tuki_image_tag: dev
 tuki_valhalla_tile_urls: https://download.geofabrik.de/asia/philippines-latest.osm.pbf
 tuki_pelias_es_java_opts: "-Xms1g -Xmx1g"
 
+# Pelias logical index and shared-data migration. Adjust the Azure source path
+# locally when its legacy project checkout differs.
+tuki_pelias_index_name: pelias
+tuki_pelias_verify_query: SM City Clark, Mabalacat, Pampanga
+tuki_azure_pelias_project_root: /path/to/azure/pelias-project
+tuki_gcp_pelias_root: /opt/tuki/data/pelias
+tuki_pelias_es_compose_service: pelias-elasticsearch
+tuki_pelias_es_container_fallback: ""
+tuki_elasticdump_image: elasticdump/elasticsearch-dump@sha256:65c7ad471993b1a5f7b5f9bc1f73ccbf4e51e94c54600260baa51130c3601718
+
 # SQL backup/restore migration paths and Compose service discovery.
 tuki_sql_compose_service: sqlserver
 tuki_sql_backup_filename: "{{ tuki_database_name }}.bak"

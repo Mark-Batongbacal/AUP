@@ -1,4 +1,4 @@
-# Tuki Azure-to-GCP deployment and SQL migration
+# Tuki Azure-to-GCP deployment and data migration
 
 The production workflow keeps host preparation, data-service startup, database
 migration, application deployment, and verification as separate operator-run
@@ -15,6 +15,10 @@ transfer-sql-backup.yml
     ↓
 restore-gcp-sql.yml
     ↓
+transfer-pelias-data.yml (shared placeholder/interpolation data; never Elasticsearch files)
+    ↓
+transfer-pelias-index.yml (logical Elasticsearch export/import)
+    ↓
 operator validates SQL Server, Pelias, and Valhalla data
     ↓
 deploy.yml (backend → admin → Caddy)
@@ -26,6 +30,13 @@ Database restore is intentionally absent from ordinary deployment. The restore
 playbook refuses to run without an explicit acknowledgement and fails when the
 configured target database already exists. It never drops a database and never
 uses `WITH REPLACE`.
+
+Pelias migration is also separate from deployment. Its shared-data playbook
+copies `data/` and `blacklist/` through a secure controller staging directory,
+explicitly excludes `data/elasticsearch`, and publishes verified directories
+on GCP. Its index playbook uses a digest-pinned temporary elasticdump container
+to export/import settings, mappings, and documents through Elasticsearch's
+private container network. It never copies live Elasticsearch filesystem data.
 
 ## Controller and inventory setup
 
@@ -84,6 +95,12 @@ placeholder reference is `group_vars/all.example.yml`. Review these values:
 - `tuki_gcp_backup_incoming_dir`
 - `tuki_sql_container_backup_dir`
 - `tuki_compose_env`
+- `tuki_azure_pelias_project_root`
+- `tuki_gcp_pelias_root`
+- `tuki_pelias_index_name`
+- `tuki_pelias_es_compose_service`
+- `tuki_pelias_es_container_fallback` (legacy Azure only; leave empty when Compose discovery works)
+- `tuki_elasticdump_image` (digest-pinned)
 
 The migration prefers resolving the SQL container with:
 
@@ -154,9 +171,10 @@ ansible-playbook -i inventory.local.ini playbooks/prepare-services.yml \
   --vault-password-file .vault-password
 ```
 
-This starts SQL Server, Pelias Elasticsearch, Pelias API, and Valhalla without
-restoring or replacing production data. Prepare or import Pelias and Valhalla
-data separately.
+This starts SQL Server, Pelias Elasticsearch, Valhalla, and the libpostal,
+placeholder, and interpolation containers without restoring or replacing
+production data. The Pelias API remains stopped so an empty Elasticsearch node
+or missing support data is not presented as ready.
 
 ### 3. Back up Azure SQL Server
 
@@ -236,13 +254,65 @@ The restored files are placed at:
 /var/opt/mssql/data/<database>_log.ldf
 ```
 
-### 6. Validate all migrated data
+### 6. Migrate Pelias shared data and index
+
+First migrate Pelias shared data. The source defaults to the Azure Central
+Luzon project and includes `data/` plus `blacklist/`, while pruning
+`data/elasticsearch` from the archive:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/transfer-pelias-data.yml \
+  --vault-password-file .vault-password
+```
+
+The Azure/controller/GCP archive checksums and recursive file count/byte totals
+must match. If GCP already has non-empty `data/` or `blacklist/`, the playbook
+fails. A deliberate replacement requires:
+
+```bash
+-e tuki_confirm_pelias_data_replace=true
+```
+
+The previous GCP directories are renamed with a timestamp and retained for
+rollback; they are not deleted.
+
+Then migrate the `pelias` index logically:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/transfer-pelias-index.yml \
+  --vault-password-file .vault-password
+```
+
+The playbook discovers Elasticsearch through Compose where possible, verifies
+the Azure source count dynamically, exports settings/mappings/documents with a
+digest-pinned elasticdump image, transfers the logical archive through a secure
+controller temporary directory, and requires the GCP count to match. The
+currently observed Azure count (142,957) is not hardcoded. If the GCP `pelias`
+index already exists, migration fails unless the operator supplies:
+
+```bash
+-e tuki_confirm_pelias_index_replace=true
+```
+
+With that acknowledgement, the existing GCP index is first exported to
+`/opt/tuki/backups/pelias-index/previous-<timestamp>/` before it is replaced.
+Elasticsearch and all Pelias support ports remain private to `tuki-internal`.
+
+For a legacy Azure Pelias Elasticsearch container outside this Compose project,
+set the fallback locally (the known Azure default is already represented in
+`group_vars/all.yml`):
+
+```bash
+-e tuki_pelias_es_container_fallback=pelias_elasticsearch
+```
+
+### 7. Validate all migrated data
 
 Before deploying applications, validate SQL row counts and application-critical
 queries manually. Also validate the Pelias index and Valhalla tiles/routes. The
 deployment acknowledgement means an operator has completed these checks.
 
-### 7. Deploy applications
+### 8. Deploy applications
 
 ```bash
 ansible-playbook -i inventory.local.ini playbooks/deploy.yml \
@@ -250,18 +320,21 @@ ansible-playbook -i inventory.local.ini playbooks/deploy.yml \
   -e tuki_confirm_data_ready=true
 ```
 
-This requires healthy SQL Server, Pelias, Elasticsearch, and Valhalla, then
-starts backend, admin, and Caddy with `--no-deps`.
+This requires healthy SQL Server, Elasticsearch, and Valhalla plus a non-empty
+Pelias index. It then requires healthy libpostal, placeholder, interpolation,
+and Pelias API before starting the backend, admin, and Caddy.
 
-### 8. Verify
+### 9. Verify
 
 ```bash
 ansible-playbook -i inventory.local.ini playbooks/verify.yml \
   --vault-password-file .vault-password
 ```
 
-Verification checks all seven service health states and both public HTTPS
-endpoints with normal certificate validation.
+Verification checks all ten service health states, Elasticsearch index health,
+a non-zero Pelias document count, a real `SM City Clark, Mabalacat, Pampanga`
+search with at least one feature, and both public HTTPS endpoints with
+certificate validation.
 
 ## Rehearsal
 
@@ -285,8 +358,10 @@ done
    backup if needed).
 3. Transfer it through the controller and verify all checksums.
 4. Restore it on GCP with the explicit acknowledgement.
-5. Validate SQL data, Pelias, Valhalla, and application-critical queries.
-6. Run `deploy.yml`, then `verify.yml`.
-7. Switch public DNS to GCP only after verification passes.
-8. Keep Azure intact and unavailable for writes temporarily as a rollback
+5. Transfer Pelias shared data and logically migrate its index; verify dynamic
+   source/destination counts and support-service health.
+6. Validate SQL data, Pelias searches, Valhalla, and application-critical queries.
+7. Run `deploy.yml`, then `verify.yml`.
+8. Switch public DNS to GCP only after verification passes.
+9. Keep Azure intact and unavailable for writes temporarily as a rollback
    source until the cutover is accepted.

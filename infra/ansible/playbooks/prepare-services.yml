@@ -42,15 +42,16 @@
       changed_when: false
       no_log: true
 
-    - name: Start SQL Server, Elasticsearch, and Valhalla
+    - name: Start core data services and Pelias supporting services
       ansible.builtin.command:
         cmd: >-
           docker compose --env-file {{ tuki_compose_env }} up -d
-          sqlserver pelias-elasticsearch valhalla
+          sqlserver pelias-elasticsearch valhalla pelias-libpostal
+          pelias-placeholder pelias-interpolation
         chdir: "{{ tuki_install_root }}/AUP"
       changed_when: true
 
-    - name: Wait for SQL Server and Elasticsearch to become healthy
+    - name: Wait for independently ready core services
       ansible.builtin.shell:
         cmd: |
           set -eu
@@ -62,24 +63,19 @@
       loop:
         - sqlserver
         - pelias-elasticsearch
+        - pelias-libpostal
       register: tuki_core_data_health
       changed_when: false
       retries: 40
       delay: 5
       until: tuki_core_data_health.stdout == "healthy"
 
-    - name: Start Pelias API after Elasticsearch is healthy
-      ansible.builtin.command:
-        cmd: >-
-          docker compose --env-file {{ tuki_compose_env }} up -d pelias
-        chdir: "{{ tuki_install_root }}/AUP"
-      changed_when: true
-
     - name: Show data-service status
       ansible.builtin.command:
         cmd: >-
           docker compose --env-file {{ tuki_compose_env }} ps
-          sqlserver pelias-elasticsearch pelias valhalla
+          sqlserver pelias-elasticsearch valhalla pelias-libpostal
+          pelias-placeholder pelias-interpolation
         chdir: "{{ tuki_install_root }}/AUP"
       register: tuki_data_service_status
       changed_when: false
@@ -89,8 +85,9 @@
         msg:
           - "{{ tuki_data_service_status.stdout_lines }}"
           - >-
-            Data-service containers are running. Pelias and Valhalla are not
-            required to be healthy yet because their data may still need to be
-            imported, migrated, or built. This playbook does not restore SQL
-            Server data, import a Pelias index, or replace Valhalla tiles.
-            Complete and validate data preparation before running deploy.yml.
+            Core data containers and Pelias supporting services have been
+            started. Placeholder/interpolation may remain unready until their
+            shared data is migrated. Pelias API is intentionally not started,
+            and this playbook does not restore SQL, import a Pelias index, or
+            replace Valhalla tiles. Complete both Pelias migrations before
+            running deploy.yml.

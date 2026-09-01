@@ -1,0 +1,444 @@
+---
+- name: Logically transfer the Azure Pelias index to GCP
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    tuki_azure_inventory_host: "{{ groups['tuki_azure'] | first | default('') }}"
+    tuki_gcp_inventory_host: "{{ groups['tuki_gcp'] | first | default('') }}"
+    tuki_pelias_index_suffix: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+    tuki_gcp_pelias_index_backup_root: /opt/tuki/backups/pelias-index
+    tuki_gcp_pelias_index_stage: >-
+      {{ tuki_gcp_pelias_index_backup_root }}/incoming-{{ tuki_pelias_index_suffix }}
+
+  pre_tasks:
+    - name: Validate Pelias index migration scope
+      ansible.builtin.assert:
+        that:
+          - groups['tuki_azure'] | length == 1
+          - groups['tuki_gcp'] | length == 1
+          - tuki_azure_inventory_host | length > 0
+          - tuki_gcp_inventory_host | length > 0
+          - tuki_pelias_index_name is match('^[a-z0-9][a-z0-9._-]*$')
+          - tuki_azure_compose_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_gcp_compose_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_elasticdump_image is match('^[A-Za-z0-9._/@:-]+@sha256:[a-f0-9]{64}$')
+        fail_msg: >-
+          Configure exactly one Azure and GCP host, a safe lowercase index
+          name, safe Compose roots, and a digest-pinned elasticdump image.
+
+  tasks:
+    - name: Create secure controller index staging directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: .tuki-pelias-index
+      register: tuki_pelias_index_controller_temp
+
+    - name: Restrict controller index staging directory
+      ansible.builtin.file:
+        path: "{{ tuki_pelias_index_controller_temp.path }}"
+        state: directory
+        mode: "0700"
+
+    - name: Export, transfer, and import the Pelias index
+      block:
+        - name: Create secure Azure index export directory
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: .tuki-pelias-index
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          register: tuki_pelias_index_azure_temp
+
+        - name: Verify Docker on Azure and GCP
+          ansible.builtin.command: docker info
+          loop:
+            - "{{ tuki_azure_inventory_host }}"
+            - "{{ tuki_gcp_inventory_host }}"
+          delegate_to: "{{ item }}"
+          become: true
+          changed_when: false
+
+        - name: Resolve Azure Pelias Elasticsearch container
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              container_id=''
+              if test -f docker-compose.yml && test -f {{ tuki_compose_env | quote }}; then
+                container_id="$(docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all {{ tuki_pelias_es_compose_service | quote }})"
+              fi
+              if test -z "$container_id" && test -n {{ tuki_pelias_es_container_fallback | default('') | quote }}; then
+                container_id="$(docker inspect --format '{% raw %}{{.Id}}{% endraw %}' {{ tuki_pelias_es_container_fallback | quote }} 2>/dev/null || true)"
+              fi
+              test "$(printf '%s\n' "$container_id" | sed '/^$/d' | wc -l)" -eq 1
+              printf '%s\n' "$container_id"
+            chdir: "{{ tuki_azure_compose_root }}"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          register: tuki_pelias_azure_es
+          changed_when: false
+          no_log: true
+
+        - name: Resolve GCP Pelias Elasticsearch container through Compose
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              docker compose --env-file {{ tuki_compose_env | quote }} config --quiet
+              container_id="$(docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all {{ tuki_pelias_es_compose_service | quote }})"
+              test "$(printf '%s\n' "$container_id" | sed '/^$/d' | wc -l)" -eq 1
+              printf '%s\n' "$container_id"
+            chdir: "{{ tuki_gcp_compose_root }}"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_gcp_es
+          changed_when: false
+          no_log: true
+
+        - name: Require running healthy Elasticsearch containers
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              state="$(docker inspect --format '{% raw %}{{.State.Status}}{% endraw %}' {{ item.container | quote }})"
+              health="$(docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}{% endraw %}' {{ item.container | quote }})"
+              test "$state" = running
+              test "$health" = healthy -o "$health" = none
+            executable: /bin/bash
+          loop:
+            - { host: "{{ tuki_azure_inventory_host }}", container: "{{ tuki_pelias_azure_es.stdout }}" }
+            - { host: "{{ tuki_gcp_inventory_host }}", container: "{{ tuki_pelias_gcp_es.stdout }}" }
+          delegate_to: "{{ item.host }}"
+          become: true
+          changed_when: false
+
+        - name: Read Azure source index document count
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              docker exec {{ tuki_pelias_azure_es.stdout | quote }} \
+                curl --fail --silent http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+                python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'
+            executable: /bin/bash
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          register: tuki_pelias_source_count
+          changed_when: false
+
+        - name: Require a non-empty Azure Pelias index
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_source_count.stdout | int > 0
+            fail_msg: "The Azure Pelias index is missing or empty; refusing migration."
+
+        - name: Pull pinned elasticdump image on Azure and GCP
+          ansible.builtin.command:
+            argv:
+              - docker
+              - pull
+              - "{{ tuki_elasticdump_image }}"
+          loop:
+            - "{{ tuki_azure_inventory_host }}"
+            - "{{ tuki_gcp_inventory_host }}"
+          delegate_to: "{{ item }}"
+          become: true
+          changed_when: true
+
+        - name: Export Azure Pelias settings, mappings, and documents
+          ansible.builtin.command:
+            argv:
+              - docker
+              - run
+              - --rm
+              - --network
+              - "container:{{ tuki_pelias_azure_es.stdout }}"
+              - --user
+              - "0:0"
+              - --volume
+              - "{{ tuki_pelias_index_azure_temp.path }}:/backup"
+              - "{{ tuki_elasticdump_image }}"
+              - --input=http://127.0.0.1:9200/{{ tuki_pelias_index_name }}
+              - --output=/backup/{{ item }}.json
+              - --type={{ item }}
+              - --limit=1000
+          loop:
+            - settings
+            - mapping
+            - data
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          changed_when: true
+
+        - name: Restrict and bundle Azure logical index export
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              chmod 0600 settings.json mapping.json data.json
+              test -s settings.json
+              test -s mapping.json
+              test -s data.json
+              tar -czf pelias-index.tar.gz settings.json mapping.json data.json
+              chmod 0600 pelias-index.tar.gz
+            chdir: "{{ tuki_pelias_index_azure_temp.path }}"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          changed_when: true
+
+        - name: Verify Azure logical export archive
+          ansible.builtin.stat:
+            path: "{{ tuki_pelias_index_azure_temp.path }}/pelias-index.tar.gz"
+            checksum_algorithm: sha256
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          register: tuki_pelias_index_azure_archive
+
+        - name: Fetch logical index export to controller
+          ansible.builtin.fetch:
+            src: "{{ tuki_pelias_index_azure_temp.path }}/pelias-index.tar.gz"
+            dest: "{{ tuki_pelias_index_controller_temp.path }}/pelias-index.tar.gz"
+            flat: true
+            validate_checksum: true
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+
+        - name: Verify controller index archive checksum
+          ansible.builtin.stat:
+            path: "{{ tuki_pelias_index_controller_temp.path }}/pelias-index.tar.gz"
+            checksum_algorithm: sha256
+          register: tuki_pelias_index_controller_archive
+
+        - name: Require controller export to match Azure
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_index_controller_archive.stat.size | int == tuki_pelias_index_azure_archive.stat.size | int
+              - tuki_pelias_index_controller_archive.stat.checksum == tuki_pelias_index_azure_archive.stat.checksum
+
+        - name: Check whether GCP Pelias index already exists
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              code="$(docker exec {{ tuki_pelias_gcp_es.stdout | quote }} curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:9200/{{ tuki_pelias_index_name }})"
+              test "$code" = 200 -o "$code" = 404
+              printf '%s\n' "$code"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_gcp_index_status
+          changed_when: false
+
+        - name: Refuse to overwrite an existing GCP Pelias index
+          ansible.builtin.assert:
+            that:
+              - >-
+                tuki_pelias_gcp_index_status.stdout == '404' or
+                tuki_confirm_pelias_index_replace | default(false) | bool
+            fail_msg: >-
+              The GCP Pelias index already exists. Rerun only after review with
+              -e tuki_confirm_pelias_index_replace=true; the existing index is
+              logically archived before replacement.
+
+        - name: Create restricted GCP logical index directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+          loop:
+            - "{{ tuki_gcp_pelias_index_backup_root }}"
+            - "{{ tuki_gcp_pelias_index_stage }}"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Logically archive existing GCP index before replacement
+          ansible.builtin.command:
+            argv:
+              - docker
+              - run
+              - --rm
+              - --network
+              - "container:{{ tuki_pelias_gcp_es.stdout }}"
+              - --user
+              - "0:0"
+              - --volume
+              - "{{ tuki_gcp_pelias_index_stage }}:/backup"
+              - "{{ tuki_elasticdump_image }}"
+              - --input=http://127.0.0.1:9200/{{ tuki_pelias_index_name }}
+              - --output=/backup/previous-{{ item }}.json
+              - --type={{ item }}
+              - --limit=1000
+          loop:
+            - settings
+            - mapping
+            - data
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+          when:
+            - tuki_pelias_gcp_index_status.stdout == '200'
+            - tuki_confirm_pelias_index_replace | default(false) | bool
+
+        - name: Preserve previous GCP logical export outside staging
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              archive_dir={{ (tuki_gcp_pelias_index_backup_root ~ '/previous-' ~ tuki_pelias_index_suffix) | quote }}
+              test -s previous-settings.json
+              test -s previous-mapping.json
+              test -s previous-data.json
+              install -d -m 0700 "$archive_dir"
+              mv previous-settings.json previous-mapping.json previous-data.json "$archive_dir/"
+              chmod 0600 "$archive_dir"/*.json
+            chdir: "{{ tuki_gcp_pelias_index_stage }}"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+          when:
+            - tuki_pelias_gcp_index_status.stdout == '200'
+            - tuki_confirm_pelias_index_replace | default(false) | bool
+
+        - name: Delete acknowledged existing GCP Pelias index
+          ansible.builtin.command:
+            argv:
+              - docker
+              - exec
+              - "{{ tuki_pelias_gcp_es.stdout }}"
+              - curl
+              - --fail
+              - --silent
+              - --request
+              - DELETE
+              - http://127.0.0.1:9200/{{ tuki_pelias_index_name }}
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+          when:
+            - tuki_pelias_gcp_index_status.stdout == '200'
+            - tuki_confirm_pelias_index_replace | default(false) | bool
+
+        - name: Copy logical index archive to GCP staging
+          ansible.builtin.copy:
+            src: "{{ tuki_pelias_index_controller_temp.path }}/pelias-index.tar.gz"
+            dest: "{{ tuki_gcp_pelias_index_stage }}/pelias-index.tar.gz"
+            owner: root
+            group: root
+            mode: "0600"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Verify GCP logical export checksum
+          ansible.builtin.stat:
+            path: "{{ tuki_gcp_pelias_index_stage }}/pelias-index.tar.gz"
+            checksum_algorithm: sha256
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_index_gcp_archive
+
+        - name: Require GCP logical export to match Azure
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_index_gcp_archive.stat.size | int == tuki_pelias_index_azure_archive.stat.size | int
+              - tuki_pelias_index_gcp_archive.stat.checksum == tuki_pelias_index_azure_archive.stat.checksum
+
+        - name: Extract logical index files on GCP
+          ansible.builtin.unarchive:
+            src: "{{ tuki_gcp_pelias_index_stage }}/pelias-index.tar.gz"
+            dest: "{{ tuki_gcp_pelias_index_stage }}"
+            remote_src: true
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Import Pelias settings, mappings, and documents on GCP
+          ansible.builtin.command:
+            argv:
+              - docker
+              - run
+              - --rm
+              - --network
+              - "container:{{ tuki_pelias_gcp_es.stdout }}"
+              - --user
+              - "0:0"
+              - --volume
+              - "{{ tuki_gcp_pelias_index_stage }}:/backup:ro"
+              - "{{ tuki_elasticdump_image }}"
+              - --input=/backup/{{ item }}.json
+              - --output=http://127.0.0.1:9200/{{ tuki_pelias_index_name }}
+              - --type={{ item }}
+              - --limit=1000
+          loop:
+            - settings
+            - mapping
+            - data
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+
+        - name: Wait for imported GCP index health
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              docker exec {{ tuki_pelias_gcp_es.stdout | quote }} curl --fail --silent \
+                'http://127.0.0.1:9200/_cluster/health/{{ tuki_pelias_index_name }}?wait_for_status=yellow&timeout=10s' |
+                python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d.get("timed_out"); assert d["status"] in ("yellow", "green")'
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_import_health
+          changed_when: false
+          retries: 12
+          delay: 5
+          until: tuki_pelias_import_health.rc == 0
+
+        - name: Read imported GCP index document count
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              docker exec {{ tuki_pelias_gcp_es.stdout | quote }} \
+                curl --fail --silent http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+                python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_destination_count
+          changed_when: false
+          retries: 12
+          delay: 5
+          until: tuki_pelias_destination_count.stdout | int == tuki_pelias_source_count.stdout | int
+
+        - name: Require destination document count to match Azure
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_destination_count.stdout | int == tuki_pelias_source_count.stdout | int
+              - tuki_pelias_destination_count.stdout | int > 0
+            fail_msg: >-
+              Imported GCP Pelias document count does not match the Azure source.
+
+        - name: Report verified logical index migration
+          ansible.builtin.debug:
+            msg: >-
+              Pelias index {{ tuki_pelias_index_name }} was logically migrated
+              and verified at {{ tuki_pelias_destination_count.stdout }} documents.
+              No Elasticsearch data directory was copied.
+      always:
+        - name: Delete temporary controller index staging
+          ansible.builtin.file:
+            path: "{{ tuki_pelias_index_controller_temp.path }}"
+            state: absent
+          when: tuki_pelias_index_controller_temp.path is defined
+
+        - name: Delete temporary Azure logical export
+          ansible.builtin.file:
+            path: "{{ tuki_pelias_index_azure_temp.path }}"
+            state: absent
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          when: tuki_pelias_index_azure_temp.path is defined
+
+        - name: Delete temporary GCP index staging
+          ansible.builtin.file:
+            path: "{{ tuki_gcp_pelias_index_stage }}"
+            state: absent
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
