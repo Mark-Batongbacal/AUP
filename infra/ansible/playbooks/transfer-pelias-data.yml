@@ -1,0 +1,318 @@
+---
+- name: Transfer Azure Pelias shared data to GCP through the Ansible controller
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    tuki_azure_inventory_host: "{{ groups['tuki_azure'] | first | default('') }}"
+    tuki_gcp_inventory_host: "{{ groups['tuki_gcp'] | first | default('') }}"
+    tuki_pelias_transfer_suffix: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+    tuki_gcp_pelias_stage: "{{ tuki_gcp_pelias_root }}.staging-{{ tuki_pelias_transfer_suffix }}"
+
+  pre_tasks:
+    - name: Validate Pelias shared-data migration scope
+      ansible.builtin.assert:
+        that:
+          - groups['tuki_azure'] | length == 1
+          - groups['tuki_gcp'] | length == 1
+          - tuki_azure_inventory_host | length > 0
+          - tuki_gcp_inventory_host | length > 0
+          - tuki_azure_pelias_project_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_gcp_pelias_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_gcp_pelias_root != '/'
+        fail_msg: >-
+          Configure exactly one Azure and GCP host and safe absolute Pelias
+          paths before transferring shared data.
+
+  tasks:
+    - name: Create secure controller staging directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: .tuki-pelias-data
+      register: tuki_pelias_controller_temp
+
+    - name: Restrict controller staging directory
+      ansible.builtin.file:
+        path: "{{ tuki_pelias_controller_temp.path }}"
+        state: directory
+        mode: "0700"
+
+    - name: Transfer and publish Pelias shared data
+      block:
+        - name: Create secure Azure staging directory
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: .tuki-pelias-data
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+          register: tuki_pelias_azure_temp
+
+        - name: Verify Azure Pelias data and blacklist directories
+          ansible.builtin.stat:
+            path: "{{ tuki_azure_pelias_project_root }}/{{ item }}"
+          loop:
+            - data
+            - blacklist
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+          register: tuki_pelias_source_directories
+
+        - name: Require Azure source directories
+          ansible.builtin.assert:
+            that:
+              - item.stat.isdir | default(false)
+              - item.stat.readable | default(false)
+            fail_msg: "Missing or unreadable Azure Pelias source: {{ item.item }}"
+          loop: "{{ tuki_pelias_source_directories.results }}"
+
+        - name: Measure Azure Pelias files excluding Elasticsearch
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              find data blacklist \
+                \( -path data/elasticsearch -o -path 'data/elasticsearch/*' \) -prune -o \
+                -type f -printf '%s\n' |
+                awk '{ bytes += $1; files += 1 } END { printf "%d %d\n", files, bytes }'
+            chdir: "{{ tuki_azure_pelias_project_root }}"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+          register: tuki_pelias_source_metrics
+          changed_when: false
+
+        - name: Require non-empty Azure Pelias shared data
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_source_metrics.stdout.split()[0] | int > 0
+              - tuki_pelias_source_metrics.stdout.split()[1] | int > 0
+
+        - name: Create Azure Pelias transfer archive without Elasticsearch
+          ansible.builtin.command:
+            argv:
+              - tar
+              - --exclude=data/elasticsearch
+              - --exclude=data/elasticsearch/**
+              - -czf
+              - "{{ tuki_pelias_azure_temp.path }}/pelias-shared-data.tar.gz"
+              - -C
+              - "{{ tuki_azure_pelias_project_root }}"
+              - data
+              - blacklist
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+          changed_when: true
+
+        - name: Verify Azure transfer archive
+          ansible.builtin.stat:
+            path: "{{ tuki_pelias_azure_temp.path }}/pelias-shared-data.tar.gz"
+            checksum_algorithm: sha256
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+          register: tuki_pelias_azure_archive
+
+        - name: Require a non-empty Azure transfer archive
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_azure_archive.stat.isreg | default(false)
+              - tuki_pelias_azure_archive.stat.size | int > 0
+
+        - name: Fetch Pelias archive to the controller
+          ansible.builtin.fetch:
+            src: "{{ tuki_pelias_azure_temp.path }}/pelias-shared-data.tar.gz"
+            dest: "{{ tuki_pelias_controller_temp.path }}/pelias-shared-data.tar.gz"
+            flat: true
+            validate_checksum: true
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+
+        - name: Verify controller archive and excluded Elasticsearch path
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              archive={{ (tuki_pelias_controller_temp.path ~ '/pelias-shared-data.tar.gz') | quote }}
+              test "$(sha256sum "$archive" | awk '{print $1}')" = {{ tuki_pelias_azure_archive.stat.checksum | quote }}
+              if tar -tzf "$archive" | grep -Eq '^data/elasticsearch(/|$)'; then
+                echo 'Elasticsearch filesystem data was found in the transfer archive.' >&2
+                exit 1
+              fi
+            executable: /bin/bash
+          changed_when: false
+
+        - name: Create GCP Pelias root and restricted staging directory
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "{{ item.mode }}"
+          loop:
+            - { path: "{{ tuki_gcp_pelias_root }}", mode: "0755" }
+            - { path: "{{ tuki_gcp_pelias_stage }}", mode: "0700" }
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Detect existing GCP shared Pelias data
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              found=0
+              for target in {{ (tuki_gcp_pelias_root ~ '/data') | quote }} {{ (tuki_gcp_pelias_root ~ '/blacklist') | quote }}; do
+                if { test -e "$target" || test -L "$target"; } && \
+                   { ! test -d "$target" || test -n "$(find "$target" -mindepth 1 -print -quit)"; }; then
+                  found=1
+                fi
+              done
+              printf '%s\n' "$found"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_existing_data
+          changed_when: false
+
+        - name: Refuse to overwrite GCP Pelias shared data without acknowledgement
+          ansible.builtin.assert:
+            that:
+              - >-
+                tuki_pelias_existing_data.stdout == '0' or
+                tuki_confirm_pelias_data_replace | default(false) | bool
+            fail_msg: >-
+              GCP Pelias shared data already exists. Preserve it or explicitly
+              rerun with -e tuki_confirm_pelias_data_replace=true. Existing data
+              will be archived, not deleted.
+
+        - name: Copy archive into GCP staging
+          ansible.builtin.copy:
+            src: "{{ tuki_pelias_controller_temp.path }}/pelias-shared-data.tar.gz"
+            dest: "{{ tuki_gcp_pelias_stage }}/pelias-shared-data.tar.gz"
+            owner: root
+            group: root
+            mode: "0600"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Verify GCP staged archive checksum
+          ansible.builtin.stat:
+            path: "{{ tuki_gcp_pelias_stage }}/pelias-shared-data.tar.gz"
+            checksum_algorithm: sha256
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_gcp_archive
+
+        - name: Require GCP archive to match Azure source
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_gcp_archive.stat.size | int == tuki_pelias_azure_archive.stat.size | int
+              - tuki_pelias_gcp_archive.stat.checksum == tuki_pelias_azure_archive.stat.checksum
+
+        - name: Extract GCP staged Pelias data
+          ansible.builtin.unarchive:
+            src: "{{ tuki_gcp_pelias_stage }}/pelias-shared-data.tar.gz"
+            dest: "{{ tuki_gcp_pelias_stage }}"
+            remote_src: true
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Measure staged GCP Pelias data
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              find data blacklist -type f -printf '%s\n' |
+                awk '{ bytes += $1; files += 1 } END { printf "%d %d\n", files, bytes }'
+            chdir: "{{ tuki_gcp_pelias_stage }}"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_gcp_metrics
+          changed_when: false
+
+        - name: Require staged data to match Azure source metrics
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_gcp_metrics.stdout == tuki_pelias_source_metrics.stdout
+
+        - name: Archive existing GCP Pelias shared directories
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              for name in data blacklist; do
+                target={{ tuki_gcp_pelias_root | quote }}/$name
+                if test -e "$target" || test -L "$target"; then
+                  if test -d "$target" && test -z "$(find "$target" -mindepth 1 -print -quit)"; then
+                    rmdir "$target"
+                  else
+                    mv "$target" "$target.previous-{{ tuki_pelias_transfer_suffix }}"
+                  fi
+                fi
+              done
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+          when:
+            - tuki_pelias_existing_data.stdout == '1'
+            - tuki_confirm_pelias_data_replace | default(false) | bool
+
+        - name: Remove empty GCP publication directories
+          ansible.builtin.file:
+            path: "{{ tuki_gcp_pelias_root }}/{{ item }}"
+            state: absent
+          loop:
+            - data
+            - blacklist
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          when: tuki_pelias_existing_data.stdout == '0'
+
+        - name: Publish verified Pelias directories atomically
+          ansible.builtin.command:
+            argv:
+              - mv
+              - "{{ tuki_gcp_pelias_stage }}/{{ item }}"
+              - "{{ tuki_gcp_pelias_root }}/{{ item }}"
+          loop:
+            - data
+            - blacklist
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+
+        - name: Set GCP Pelias shared-data ownership
+          ansible.builtin.file:
+            path: "{{ tuki_gcp_pelias_root }}/{{ item }}"
+            state: directory
+            owner: "1000"
+            group: "1000"
+            recurse: true
+          loop:
+            - data
+            - blacklist
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Report verified Pelias data transfer
+          ansible.builtin.debug:
+            msg: >-
+              Transferred {{ tuki_pelias_gcp_metrics.stdout.split()[0] }} files
+              ({{ tuki_pelias_gcp_metrics.stdout.split()[1] }} bytes) without
+              data/elasticsearch. Azure source data was not modified.
+      always:
+        - name: Delete temporary controller staging directory
+          ansible.builtin.file:
+            path: "{{ tuki_pelias_controller_temp.path }}"
+            state: absent
+          when: tuki_pelias_controller_temp.path is defined
+
+        - name: Delete temporary Azure staging directory
+          ansible.builtin.file:
+            path: "{{ tuki_pelias_azure_temp.path }}"
+            state: absent
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+          when: tuki_pelias_azure_temp.path is defined
+
+        - name: Delete incomplete GCP staging directory
+          ansible.builtin.file:
+            path: "{{ tuki_gcp_pelias_stage }}"
+            state: absent
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true

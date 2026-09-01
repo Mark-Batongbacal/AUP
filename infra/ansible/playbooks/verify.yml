@@ -8,6 +8,9 @@
     tuki_services:
       - sqlserver
       - pelias-elasticsearch
+      - pelias-libpostal
+      - pelias-placeholder
+      - pelias-interpolation
       - pelias
       - valhalla
       - backend
@@ -35,6 +38,38 @@
         executable: /bin/bash
       loop: "{{ tuki_services }}"
       register: tuki_service_health
+      changed_when: false
+
+    - name: Verify Pelias index health and document count
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q pelias-elasticsearch)"
+          test -n "$container_id"
+          docker exec "$container_id" curl --fail --silent \
+            "http://127.0.0.1:9200/_cluster/health/{{ tuki_pelias_index_name }}?wait_for_status=yellow&timeout=10s" |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d.get("timed_out"); assert d["status"] in ("yellow", "green")'
+          docker exec "$container_id" curl --fail --silent \
+            http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+            python3 -c 'import json,sys; count=json.load(sys.stdin)["count"]; print(count); raise SystemExit(count < 1)'
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_pelias_verified_count
+      changed_when: false
+
+    - name: Perform a real Central Luzon Pelias search
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q pelias)"
+          test -n "$container_id"
+          docker exec "$container_id" curl --fail --silent --get \
+            --data-urlencode 'text={{ tuki_pelias_verify_query }}' --data 'size=1' \
+            http://127.0.0.1:4000/v1/search |
+            python3 -c 'import json,sys; features=json.load(sys.stdin).get("features", []); print(len(features)); raise SystemExit(len(features) < 1)'
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_pelias_search_features
       changed_when: false
 
     - name: Verify API HTTPS endpoint and certificate
@@ -87,4 +122,6 @@
         msg:
           - "API HTTPS status: {{ tuki_api_http.stdout }}"
           - "Admin HTTPS status: {{ tuki_admin_http.stdout }}"
+          - "Pelias documents: {{ tuki_pelias_verified_count.stdout }}"
+          - "Pelias '{{ tuki_pelias_verify_query }}' result count (size=1): {{ tuki_pelias_search_features.stdout }}"
           - "{{ tuki_compose_status.stdout_lines }}"

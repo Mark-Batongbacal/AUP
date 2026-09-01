@@ -24,7 +24,7 @@
       changed_when: false
       no_log: true
 
-    - name: Require healthy data services before deployment
+    - name: Require healthy core data services before deployment
       ansible.builtin.shell:
         cmd: |
           set -eu
@@ -38,9 +38,73 @@
       loop:
         - sqlserver
         - pelias-elasticsearch
-        - pelias
         - valhalla
       changed_when: false
+
+    - name: Require a non-empty migrated Pelias index
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q pelias-elasticsearch)"
+          test -n "$container_id"
+          docker exec "$container_id" curl --fail --silent \
+            http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+            python3 -c 'import json,sys; count=json.load(sys.stdin)["count"]; print(count); raise SystemExit(count < 1)'
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_pelias_deploy_count
+      changed_when: false
+
+    - name: Start Pelias supporting services without dependencies
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} up -d --no-deps
+          pelias-libpostal pelias-placeholder pelias-interpolation
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: true
+
+    - name: Require healthy Pelias supporting services
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q {{ item }})"
+          test -n "$container_id"
+          status="$(docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id")"
+          printf '%s' "$status"
+          test "$status" = healthy
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      loop:
+        - pelias-libpostal
+        - pelias-placeholder
+        - pelias-interpolation
+      register: tuki_pelias_support_health
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: tuki_pelias_support_health.stdout == "healthy"
+
+    - name: Start Pelias API without dependencies
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} up -d --no-deps pelias
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: true
+
+    - name: Require healthy Pelias API before backend deployment
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q pelias)"
+          test -n "$container_id"
+          docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_pelias_api_health
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: tuki_pelias_api_health.stdout == "healthy"
 
   tasks:
     - name: Build and start backend without starting dependencies
