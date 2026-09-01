@@ -242,6 +242,22 @@
         that:
           - tuki_container_restore_checksum.stdout.split()[0] == tuki_gcp_backup_stat.stat.checksum
 
+    - name: Verify SQL Server backup integrity before restore
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec "{{ tuki_sql_container_id }}" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -Q "$2"
+          ' -- "{{ tuki_sqlcmd_path.stdout }}" \
+            "RESTORE VERIFYONLY FROM DISK = N'{{ tuki_sql_container_restore_path }}' WITH CHECKSUM;"
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
     - name: Read logical files from SQL backup
       ansible.builtin.shell:
         cmd: |
