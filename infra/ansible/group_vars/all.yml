@@ -1,6 +1,6 @@
 ---
-tuki_api_hostname: api.tuki.pawfect.bar
-tuki_admin_hostname: admin.tuki.pawfect.bar
+tuki_api_hostname: gcp-api.tuki.pawfect.bar
+tuki_admin_hostname: gcp-admin.tuki.pawfect.bar
 
 tuki_acme_email: batongbacalmark@gmail.com
 
