@@ -180,6 +180,7 @@
         cmd: |
           set -eu
           docker exec --user 0 "{{ tuki_sql_container_id }}" mkdir -p "{{ tuki_sql_container_backup_dir }}"
+          docker exec --user 0 "{{ tuki_sql_container_id }}" chown mssql:root "{{ tuki_sql_container_backup_dir }}"
           docker exec --user 0 "{{ tuki_sql_container_id }}" chmod 0750 "{{ tuki_sql_container_backup_dir }}"
         executable: /bin/bash
       changed_when: true
