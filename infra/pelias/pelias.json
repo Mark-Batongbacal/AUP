@@ -22,6 +22,9 @@
     }
   },
   "api": {
+    "targets": {
+      "auto_discover": false
+    },
     "services": {
       "placeholder": { "url": "http://pelias-placeholder:4100" },
       "interpolation": { "url": "http://pelias-interpolation:4300" },
