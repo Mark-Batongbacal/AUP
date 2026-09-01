@@ -5,10 +5,13 @@
   vars:
     tuki_azure_inventory_host: "{{ groups['tuki_azure'] | first | default('') }}"
     tuki_gcp_inventory_host: "{{ groups['tuki_gcp'] | first | default('') }}"
-    tuki_pelias_transfer_suffix: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
     tuki_gcp_pelias_stage: "{{ tuki_gcp_pelias_root }}.staging-{{ tuki_pelias_transfer_suffix }}"
 
   pre_tasks:
+    - name: Freeze Pelias shared-data migration timestamp
+      ansible.builtin.set_fact:
+        tuki_pelias_transfer_suffix: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+
     - name: Validate Pelias shared-data migration scope
       ansible.builtin.assert:
         that:
