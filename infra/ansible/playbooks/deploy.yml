@@ -1,0 +1,125 @@
+---
+- name: Deploy Tuki application services on GCP
+  hosts: tuki_gcp
+  become: true
+  vars:
+    tuki_install_root: /opt/tuki
+    tuki_compose_env: runtime/compose.env
+
+  pre_tasks:
+    - name: Require explicit confirmation that production data is ready
+      ansible.builtin.assert:
+        that:
+          - tuki_confirm_data_ready | default(false) | bool
+        fail_msg: >-
+          Refusing to deploy application services until data readiness is
+          explicitly confirmed. Validate the restored SQL Server database,
+          Pelias data, and Valhalla data, then run deploy.yml with
+          -e tuki_confirm_data_ready=true.
+
+    - name: Validate Docker Compose configuration
+      ansible.builtin.command:
+        cmd: "docker compose --env-file {{ tuki_compose_env }} config --quiet"
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: false
+
+    - name: Require healthy data services before deployment
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q {{ item }})"
+          test -n "$container_id"
+          status="$(docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id")"
+          printf '%s' "$status"
+          test "$status" = "healthy"
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      loop:
+        - sqlserver
+        - pelias-elasticsearch
+        - pelias
+        - valhalla
+      changed_when: false
+
+  tasks:
+    - name: Build and start backend without starting dependencies
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} up -d --build
+          --no-deps backend
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: true
+
+    - name: Wait for backend to become healthy
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q backend)"
+          test -n "$container_id"
+          docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_backend_health
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: tuki_backend_health.stdout == "healthy"
+
+    - name: Build and start admin without starting dependencies
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} up -d --build
+          --no-deps admin
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: true
+
+    - name: Wait for admin to become healthy
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q admin)"
+          test -n "$container_id"
+          docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_admin_health
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: tuki_admin_health.stdout == "healthy"
+
+    - name: Start Caddy without starting dependencies
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} up -d
+          --no-deps caddy
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: true
+
+    - name: Wait for Caddy to become healthy
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q caddy)"
+          test -n "$container_id"
+          docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_caddy_health
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: tuki_caddy_health.stdout == "healthy"
+
+    - name: Show application deployment status
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} ps
+          backend admin caddy
+        chdir: "{{ tuki_install_root }}/AUP"
+      register: tuki_application_status
+      changed_when: false
+
+    - name: Report application deployment status
+      ansible.builtin.debug:
+        var: tuki_application_status.stdout_lines

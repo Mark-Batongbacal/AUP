@@ -19,6 +19,12 @@
           - tuki_admin_hostname | string | length > 0
           - tuki_acme_email is defined
           - tuki_acme_email | string | length > 0
+          - tuki_image_tag is defined
+          - tuki_image_tag | string | length > 0
+          - tuki_valhalla_tile_urls is defined
+          - tuki_valhalla_tile_urls | string | length > 0
+          - tuki_pelias_es_java_opts is defined
+          - tuki_pelias_es_java_opts | string | length > 0
           - tuki_mssql_sa_password is defined
           - tuki_mssql_sa_password | string | length > 0
           - tuki_admin_login_username is defined
@@ -197,9 +203,21 @@
         - { template: caddy.env.j2, destination: caddy.env }
       no_log: true
 
+    - name: Render Docker Compose interpolation variables
+      ansible.builtin.copy:
+        content: |
+          TUKI_IMAGE_TAG={{ tuki_image_tag }}
+          TUKI_DATA_ROOT={{ tuki_install_root }}/data
+          VALHALLA_TILE_URLS={{ tuki_valhalla_tile_urls }}
+          PELIAS_ES_JAVA_OPTS="{{ tuki_pelias_es_java_opts | replace('"', '\\"') }}"
+        dest: "{{ tuki_install_root }}/AUP/runtime/compose.env"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+
     - name: Validate Docker Compose configuration
       ansible.builtin.command:
-        cmd: docker compose config --quiet
+        cmd: docker compose --env-file runtime/compose.env config --quiet
         chdir: "{{ tuki_install_root }}/AUP"
       changed_when: false
       no_log: true
