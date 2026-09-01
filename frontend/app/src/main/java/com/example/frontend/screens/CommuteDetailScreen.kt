@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +32,10 @@ import com.example.frontend.MapVisualStyle
 import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.model.CommuteStep
 import com.example.frontend.model.RecentCommute
+import com.example.frontend.model.RouteOption
+import com.example.frontend.model.RoutePoint
+import com.example.frontend.navigation.HistoryRouteReuseState
+import com.example.frontend.navigation.PendingHistoryRouteReuse
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiForestSurface
 import com.example.frontend.ui.theme.TukiInk
@@ -64,6 +69,9 @@ fun CommuteDetailScreen(
         ?: allRoutePoints.lastOrNull()
         ?: commute.destinationLatitude?.let { lat -> commute.destinationLongitude?.let { lon -> LatLng(lat, lon) } }
     val finalDestination = commute.destinationLatitude?.let { lat -> commute.destinationLongitude?.let { lon -> LatLng(lat, lon) } }
+    val reusableHistoryRoute = remember(commute, legGeometries) {
+        commute.toHistoricalRouteOption(legGeometries)
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(TukiCream).statusBarsPadding(),
@@ -150,15 +158,55 @@ fun CommuteDetailScreen(
             }
         }
 
-        item { Spacer(Modifier.height(34.dp)) }
+        item {
+            OutlinedButton(
+                onClick = {
+                    HistoryRouteReuseState.clear()
+                    onRepeatTrip()
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Text(
+                    if (TukiInterfaceText.isFilipino) "Pumili ng Ibang Ruta" else "Choose Another Route",
+                    color = TukiTeal,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+        }
 
         item {
             Button(
-                onClick = onRepeatTrip,
+                onClick = {
+                    if (reusableHistoryRoute != null) {
+                        HistoryRouteReuseState.prepare(
+                            PendingHistoryRouteReuse(
+                                option = reusableHistoryRoute,
+                                originName = commute.origin,
+                                destinationName = commute.destination,
+                                originLatitude = commute.originLatitude,
+                                originLongitude = commute.originLongitude
+                            )
+                        )
+                    } else {
+                        HistoryRouteReuseState.clear()
+                    }
+                    onRepeatTrip()
+                },
                 modifier = Modifier.fillMaxWidth().height(54.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = TukiTeal),
                 shape = RoundedCornerShape(18.dp)
-            ) { Text("${TukiInterfaceText.startTrip}  →", color = Color.White, style = MaterialTheme.typography.titleMedium) }
+            ) {
+                Text(
+                    if (reusableHistoryRoute != null) {
+                        if (TukiInterfaceText.isFilipino) "Gamitin Ulit ang Rutang Ito  →" else "Use This Route Again  →"
+                    } else {
+                        if (TukiInterfaceText.isFilipino) "Hanapin ang Kasalukuyang Ruta  →" else "Find Current Routes  →"
+                    },
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
         }
     }
 }
@@ -310,6 +358,37 @@ private fun StepTimelineCard(
             }
         }
     }
+}
+
+private fun RecentCommute.toHistoricalRouteOption(legGeometries: List<List<LatLng>>): RouteOption? {
+    val routeId = recommendationId?.takeIf { it.isNotBlank() } ?: return null
+    val mappedLegs = legGeometries.map { geometry ->
+        geometry.map { point -> RoutePoint(point.latitude, point.longitude) }
+    }
+    val endPoints = historyLegs.mapNotNull { leg ->
+        val lat = leg.endLatitude ?: return@mapNotNull null
+        val lon = leg.endLongitude ?: return@mapNotNull null
+        RoutePoint(lat, lon)
+    }
+    val routePoints = mappedLegs.filter { it.size >= 2 }.flatten()
+    val routeIds = if (historyLegs.isNotEmpty()) historyLegs.map { it.routeId } else List(steps.size) { null }
+
+    return RouteOption(
+        id = routeId,
+        label = "Previous route",
+        totalMinutes = minutes,
+        totalFare = totalFare,
+        steps = steps,
+        description = "Route previously used for this journey",
+        walkMeters = walkingMeters,
+        transfers = (steps.size - 1).coerceAtLeast(0),
+        generalCost = totalFare,
+        isRecommended = false,
+        routePoints = routePoints,
+        legRoutePoints = mappedLegs,
+        legEndPoints = endPoints,
+        legRouteIds = routeIds
+    )
 }
 
 private fun stepIcon(mode: String): String = when {

@@ -11,18 +11,22 @@ data class RepeatTripRouteSeed(
 )
 
 fun RecentCommute.toRepeatTripRouteSeed(): RepeatTripRouteSeed? {
-    val destinationLatitude = destinationLatitude ?: return null
-    val destinationLongitude = destinationLongitude ?: return null
+    val firstHistoryLeg = historyLegs.firstOrNull()
+    val lastHistoryLeg = historyLegs.lastOrNull()
+    val resolvedOriginLatitude = originLatitude ?: firstHistoryLeg?.startLatitude
+    val resolvedOriginLongitude = originLongitude ?: firstHistoryLeg?.startLongitude
+    val resolvedDestinationLatitude = destinationLatitude ?: lastHistoryLeg?.endLatitude ?: return null
+    val resolvedDestinationLongitude = destinationLongitude ?: lastHistoryLeg?.endLongitude ?: return null
 
     return RepeatTripRouteSeed(
         originName = origin,
-        originLatitude = originLatitude,
-        originLongitude = originLongitude,
+        originLatitude = resolvedOriginLatitude,
+        originLongitude = resolvedOriginLongitude,
         destination = DestinationSearchResultDto(
             id = "recent-$id",
             name = destination,
-            latitude = destinationLatitude,
-            longitude = destinationLongitude,
+            latitude = resolvedDestinationLatitude,
+            longitude = resolvedDestinationLongitude,
             category = "recent",
             source = "history",
             address = null
