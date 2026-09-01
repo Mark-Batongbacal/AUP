@@ -1,0 +1,109 @@
+---
+- name: Prepare Tuki data services on GCP
+  hosts: tuki_gcp
+  become: true
+  vars:
+    tuki_install_root: /opt/tuki
+    tuki_compose_env: runtime/compose.env
+
+  tasks:
+    - name: Verify Tuki checkout exists
+      ansible.builtin.stat:
+        path: "{{ tuki_install_root }}/AUP/docker-compose.yml"
+      register: tuki_compose_file
+
+    - name: Require bootstrap before service preparation
+      ansible.builtin.assert:
+        that:
+          - tuki_compose_file.stat.exists
+          - tuki_compose_file.stat.isreg
+        fail_msg: >-
+          The Tuki checkout is missing. Run playbooks/bootstrap.yml before
+          preparing data services.
+
+    - name: Verify Compose interpolation environment exists
+      ansible.builtin.stat:
+        path: "{{ tuki_install_root }}/AUP/{{ tuki_compose_env }}"
+      register: tuki_compose_env_file
+
+    - name: Require rendered Compose interpolation variables
+      ansible.builtin.assert:
+        that:
+          - tuki_compose_env_file.stat.exists
+          - tuki_compose_env_file.stat.isreg
+        fail_msg: >-
+          runtime/compose.env is missing. Re-run playbooks/bootstrap.yml before
+          preparing data services.
+
+    - name: Validate Docker Compose configuration
+      ansible.builtin.command:
+        cmd: "docker compose --env-file {{ tuki_compose_env }} config --quiet"
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: false
+
+    - name: Start SQL Server, Elasticsearch, and Valhalla
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} up -d
+          sqlserver pelias-elasticsearch valhalla
+        chdir: "{{ tuki_install_root }}/AUP"
+      register: tuki_data_services_up
+      changed_when: true
+
+    - name: Wait for SQL Server and Elasticsearch to become healthy
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q {{ item }})"
+          test -n "$container_id"
+          docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      loop:
+        - sqlserver
+        - pelias-elasticsearch
+      register: tuki_core_data_health
+      changed_when: false
+      retries: 40
+      delay: 5
+      until: tuki_core_data_health.stdout == "healthy"
+
+    - name: Start Pelias API after Elasticsearch is healthy
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} up -d pelias
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: true
+
+    - name: Wait for Pelias API to become healthy
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q pelias)"
+          test -n "$container_id"
+          docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_pelias_health
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: tuki_pelias_health.stdout == "healthy"
+
+    - name: Show data-service status
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} ps
+          sqlserver pelias-elasticsearch pelias valhalla
+        chdir: "{{ tuki_install_root }}/AUP"
+      register: tuki_data_service_status
+      changed_when: false
+
+    - name: Report data-service preparation status
+      ansible.builtin.debug:
+        msg:
+          - "{{ tuki_data_service_status.stdout_lines }}"
+          - >-
+            Data-service containers are running. This playbook does not restore
+            SQL Server data, import a Pelias index, or replace Valhalla tiles.
+            Complete and validate data preparation before running deploy.yml.
