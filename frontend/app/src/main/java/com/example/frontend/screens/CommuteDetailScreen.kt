@@ -26,7 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.frontend.MapScreen
@@ -202,7 +201,6 @@ fun CommuteDetailScreen(
                             HistoryRouteReuseState.clear()
                         }
                         scope.launch {
-                            // Allow the full-screen progress state to render before navigation changes.
                             delay(180)
                             onRepeatTrip()
                         }
@@ -357,37 +355,26 @@ private fun StepTimelineCard(
 ) {
     Row(Modifier.fillMaxWidth()) {
         Box(Modifier.width(18.dp).padding(top = 18.dp), contentAlignment = Alignment.TopCenter) {
-            Box(Modifier.size(10.dp).background(if (selected) TukiTeal else TukiOrange, CircleShape))
+            Box(Modifier.size(if (selected) 12.dp else 10.dp).background(if (selected) TukiTeal else TukiOrange, CircleShape))
         }
         Spacer(Modifier.width(3.dp))
         Surface(
             modifier = Modifier.weight(1f).clickable(enabled = selectable, onClick = onClick),
             shape = RoundedCornerShape(18.dp),
-            color = if (selected) TukiSky.copy(alpha = 0.32f) else TukiSurfaceRaised,
-            border = if (selected) BorderStroke(1.5.dp, TukiTeal.copy(alpha = 0.72f)) else null,
-            shadowElevation = if (selected) 4.dp else 1.dp
+            color = TukiSurfaceRaised,
+            border = if (selected) BorderStroke(2.dp, TukiTeal) else null,
+            shadowElevation = if (selected) 3.dp else 1.dp
         ) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
                 Surface(
                     Modifier.size(48.dp),
                     shape = RoundedCornerShape(14.dp),
-                    color = if (selected) Color.White.copy(alpha = 0.9f) else TukiSky
+                    color = TukiSky
                 ) {
                     Box(contentAlignment = Alignment.Center) { Text(stepIcon(step.mode), style = MaterialTheme.typography.titleLarge) }
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    if (selected) {
-                        Surface(shape = RoundedCornerShape(10.dp), color = TukiTeal) {
-                            Text(
-                                if (TukiInterfaceText.isFilipino) "NAPILI" else "SELECTED LEG",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                    }
                     Text(stepTitle(step), color = TukiInk, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(2.dp))
                     Text(stepMeta(step), color = TukiMuted, style = MaterialTheme.typography.labelSmall)
@@ -403,18 +390,12 @@ private fun StepTimelineCard(
                         Text("• ${step.to}", color = TukiMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Surface(
-                    modifier = Modifier.size(28.dp),
-                    shape = CircleShape,
-                    color = if (selected) TukiTeal else Color.Transparent
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            if (selected) "✓" else "⌖",
-                            color = if (selected) Color.White else if (selectable) TukiTeal else TukiMuted.copy(alpha = 0.45f),
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
+                Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (selected) "✓" else "⌖",
+                        color = if (selected || selectable) TukiTeal else TukiMuted.copy(alpha = 0.45f),
+                        style = MaterialTheme.typography.titleMedium
+                    )
                 }
             }
         }

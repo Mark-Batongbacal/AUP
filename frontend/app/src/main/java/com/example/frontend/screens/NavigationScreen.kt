@@ -8,10 +8,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -434,38 +434,26 @@ private fun RouteTimelineCard(
 ) {
     Row(Modifier.fillMaxWidth()) {
         Box(Modifier.width(18.dp).padding(top = 18.dp), contentAlignment = Alignment.TopCenter) {
-            Box(Modifier.size(10.dp).background(if (selected) NavTeal else NavOrange, CircleShape))
+            Box(Modifier.size(if (selected) 12.dp else 10.dp).background(if (selected) NavTeal else NavOrange, CircleShape))
         }
         Spacer(Modifier.width(3.dp))
         Surface(
             modifier = Modifier.weight(1f).clickable(enabled = selectable, onClick = onClick),
             shape = RoundedCornerShape(18.dp),
-            color = if (selected) NavIconBlue.copy(alpha = 0.32f) else NavSurface,
-            border = if (selected) BorderStroke(1.5.dp, NavTeal.copy(alpha = 0.72f)) else null,
-            shadowElevation = if (selected) 4.dp else 1.dp
+            color = NavSurface,
+            border = if (selected) BorderStroke(2.dp, NavTeal) else null,
+            shadowElevation = if (selected) 3.dp else 1.dp
         ) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
                 Surface(
                     Modifier.size(48.dp),
                     shape = RoundedCornerShape(14.dp),
-                    color = if (selected) Color.White.copy(alpha = 0.9f) else NavIconBlue
+                    color = NavIconBlue
                 ) {
                     Box(contentAlignment = Alignment.Center) { Text(routeStepIcon(step.mode), fontSize = 23.sp) }
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    if (selected) {
-                        Surface(shape = RoundedCornerShape(10.dp), color = NavTeal) {
-                            Text(
-                                if (TukiInterfaceText.isFilipino) "NAPILI" else "SELECTED LEG",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                color = Color.White,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                    }
                     Text(routeStepTitle(step), color = NavDark, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
                     Spacer(Modifier.height(2.dp))
                     Text(routeStepMeta(step), color = NavMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -481,19 +469,16 @@ private fun RouteTimelineCard(
                         Text("• ${step.to}", color = NavMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Surface(
+                Box(
                     modifier = Modifier.size(28.dp),
-                    shape = CircleShape,
-                    color = if (selected) NavTeal else Color.Transparent
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            if (selected) "✓" else "⌖",
-                            color = if (selected) Color.White else if (selectable) NavTeal else NavMuted.copy(alpha = 0.45f),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Text(
+                        if (selected) "✓" else "⌖",
+                        color = if (selected || selectable) NavTeal else NavMuted.copy(alpha = 0.45f),
+                        fontSize = if (selected) 17.sp else 18.sp,
+                        fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Normal
+                    )
                 }
             }
         }

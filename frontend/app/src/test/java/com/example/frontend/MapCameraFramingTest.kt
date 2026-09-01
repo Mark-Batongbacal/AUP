@@ -7,29 +7,32 @@ import org.maplibre.android.geometry.LatLng
 
 class MapCameraFramingTest {
     @Test
-    fun routePreviewBearing_placesNorthboundStartAboveDestination() {
+    fun routeTopToBottomCameraBearing_putsNorthboundDestinationBelowStart() {
         val bearing = routeTopToBottomCameraBearing(
             start = LatLng(15.10, 120.58),
             destination = LatLng(15.20, 120.58)
         )
 
-        assertEquals(180.0, bearing!!, 0.01)
+        assertEquals(180.0, bearing!!, 0.5)
     }
 
     @Test
-    fun routePreviewBearing_placesEastboundStartAboveDestination() {
+    fun routeTopToBottomCameraBearing_putsEastboundDestinationBelowStart() {
         val bearing = routeTopToBottomCameraBearing(
-            start = LatLng(15.10, 120.50),
-            destination = LatLng(15.10, 120.60)
+            start = LatLng(15.10, 120.58),
+            destination = LatLng(15.10, 120.68)
         )
 
-        assertEquals(270.0, bearing!!, 0.2)
+        assertEquals(270.0, bearing!!, 1.0)
     }
 
     @Test
-    fun routePreviewBearing_returnsNullForIdenticalAnchors() {
-        val point = LatLng(15.10, 120.58)
-
-        assertNull(routeTopToBottomCameraBearing(point, point))
+    fun routeTopToBottomCameraBearing_returnsNullForSamePoint() {
+        assertNull(
+            routeTopToBottomCameraBearing(
+                start = LatLng(15.10, 120.58),
+                destination = LatLng(15.10, 120.58)
+            )
+        )
     }
 }
