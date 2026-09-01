@@ -5,12 +5,15 @@
   vars:
     tuki_azure_inventory_host: "{{ groups['tuki_azure'] | first | default('') }}"
     tuki_gcp_inventory_host: "{{ groups['tuki_gcp'] | first | default('') }}"
-    tuki_pelias_index_suffix: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
     tuki_gcp_pelias_index_backup_root: /opt/tuki/backups/pelias-index
     tuki_gcp_pelias_index_stage: >-
       {{ tuki_gcp_pelias_index_backup_root }}/incoming-{{ tuki_pelias_index_suffix }}
 
   pre_tasks:
+    - name: Freeze Pelias index migration timestamp
+      ansible.builtin.set_fact:
+        tuki_pelias_index_suffix: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+
     - name: Validate Pelias index migration scope
       ansible.builtin.assert:
         that:
