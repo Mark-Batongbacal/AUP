@@ -8,7 +8,6 @@ tuki_database_name: Tuki
 tuki_mssql_pid: Developer
 
 tuki_image_tag: dev
-
 tuki_valhalla_tile_urls: https://download.geofabrik.de/asia/philippines-latest.osm.pbf
 
 tuki_pelias_es_java_opts: "-Xms1g -Xmx1g"
@@ -16,7 +15,7 @@ tuki_pelias_es_java_opts: "-Xms1g -Xmx1g"
 # Pelias logical index and shared-data migration. Elasticsearch files are never
 # included in the shared-data transfer.
 tuki_pelias_index_name: pelias
-tuki_pelias_verify_query: SM City Clark, Mabalacat, Pampanga
+tuki_pelias_verify_query: SM City Clark
 tuki_azure_pelias_project_root: /home/AUP/pelias-central-luzon/projects/central-luzon
 tuki_gcp_pelias_root: /opt/tuki/data/pelias
 tuki_pelias_es_compose_service: pelias-elasticsearch
