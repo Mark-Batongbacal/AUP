@@ -8,6 +8,9 @@
     tuki_services:
       - sqlserver
       - pelias-elasticsearch
+      - pelias-libpostal
+      - pelias-placeholder
+      - pelias-interpolation
       - pelias
       - valhalla
       - backend
@@ -35,6 +38,54 @@
         executable: /bin/bash
       loop: "{{ tuki_services }}"
       register: tuki_service_health
+      changed_when: false
+
+    - name: Verify Pelias index health, count, and phrase fixture
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q pelias-elasticsearch)"
+          test -n "$container_id"
+
+          docker exec "$container_id" curl --fail --silent \
+            "http://127.0.0.1:9200/_cluster/health/{{ tuki_pelias_index_name }}?wait_for_status=yellow&timeout=10s" |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d.get("timed_out"); assert d["status"] in ("yellow", "green")'
+
+          count="$(
+            docker exec "$container_id" curl --fail --silent \
+              http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'
+          )"
+          test "$count" -gt 0
+
+          phrase="$(
+            docker exec "$container_id" curl --fail --silent --get \
+              --data-urlencode {{ ('q=phrase.default:"' ~ tuki_pelias_verify_query ~ '"') | quote }} \
+              http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'
+          )"
+          test "$phrase" -gt 0
+          printf '%s|%s\n' "$count" "$phrase"
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_pelias_verified_index
+      changed_when: false
+
+    - name: Perform a real Central Luzon Pelias autocomplete
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q pelias)"
+          test -n "$container_id"
+          docker exec "$container_id" curl --fail --silent --get \
+            --data-urlencode {{ ('text=' ~ tuki_pelias_verify_query) | quote }} \
+            --data 'size=5' \
+            http://127.0.0.1:4000/v1/autocomplete |
+            python3 -c 'import json,sys; q=sys.argv[1].casefold(); f=json.load(sys.stdin).get("features", []); names=[str(x.get("properties", {}).get("name", "")) for x in f]; print(names); assert any(n.casefold()==q for n in names)' \
+              {{ tuki_pelias_verify_query | quote }}
+        chdir: "{{ tuki_install_root }}/AUP"
+        executable: /bin/bash
+      register: tuki_pelias_autocomplete
       changed_when: false
 
     - name: Verify API HTTPS endpoint and certificate
@@ -87,4 +138,6 @@
         msg:
           - "API HTTPS status: {{ tuki_api_http.stdout }}"
           - "Admin HTTPS status: {{ tuki_admin_http.stdout }}"
+          - "Pelias documents|phrase matches: {{ tuki_pelias_verified_index.stdout }}"
+          - "Pelias '{{ tuki_pelias_verify_query }}' autocomplete exact match: passed"
           - "{{ tuki_compose_status.stdout_lines }}"
