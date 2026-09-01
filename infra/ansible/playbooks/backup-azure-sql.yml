@@ -204,7 +204,7 @@
             export SQLCMDPASSWORD="$password"
             exec "$1" -S localhost -U sa -C -b -Q "$2"
           ' -- "{{ tuki_sqlcmd_path.stdout }}" \
-            "BACKUP DATABASE [{{ tuki_database_name }}] TO DISK = N'{{ tuki_sql_container_backup_path }}' WITH INIT, COMPRESSION, STATS = 10;"
+            "BACKUP DATABASE [{{ tuki_database_name }}] TO DISK = N'{{ tuki_sql_container_backup_path }}' WITH INIT, COMPRESSION, CHECKSUM, STATS = 10;"
         executable: /bin/bash
       changed_when: true
       no_log: true
@@ -270,5 +270,6 @@
         msg: >-
           Azure SQL backup created at {{ tuki_sql_host_backup_path }}
           ({{ tuki_host_backup_partial.stat.size }} bytes, SHA256
-          {{ tuki_host_backup_partial.stat.checksum }}). Production data was
-          not stopped, dropped, or modified.
+          {{ tuki_host_backup_partial.stat.checksum }}). SQL Server page
+          checksums were included in the backup. Production data was not
+          stopped, dropped, or modified.
