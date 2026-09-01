@@ -34,7 +34,7 @@
     - name: Resolve SQL Server container through Docker Compose
       ansible.builtin.command:
         cmd: >-
-          docker compose --env-file {{ tuki_compose_env }} ps -q
+          docker compose --env-file {{ tuki_compose_env }} ps -q --all
           {{ tuki_sql_compose_service }}
         chdir: "{{ tuki_azure_compose_root }}"
       register: tuki_sql_compose_lookup
@@ -153,8 +153,8 @@
       ansible.builtin.assert:
         that:
           - >-
-            not tuki_existing_host_backup.stat.exists and
-            tuki_existing_container_backup.rc != 0 or
+            (not tuki_existing_host_backup.stat.exists and
+            tuki_existing_container_backup.rc != 0) or
             tuki_confirm_backup_replace | default(false) | bool
         fail_msg: >-
           A previous backup exists. Archive it manually or rerun with

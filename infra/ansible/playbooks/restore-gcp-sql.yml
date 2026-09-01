@@ -56,7 +56,7 @@
     - name: Resolve GCP SQL Server container through Docker Compose
       ansible.builtin.command:
         cmd: >-
-          docker compose --env-file {{ tuki_compose_env }} ps -q
+          docker compose --env-file {{ tuki_compose_env }} ps -q --all
           {{ tuki_sql_compose_service }}
         chdir: "{{ tuki_gcp_compose_root }}"
       register: tuki_sql_compose_lookup
