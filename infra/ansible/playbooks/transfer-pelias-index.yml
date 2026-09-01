@@ -1,7 +1,6 @@
 ---
 - name: Logically transfer the Azure Pelias index to GCP
   hosts: localhost
-  connection: local
   gather_facts: false
   vars:
     tuki_azure_inventory_host: "{{ groups['tuki_azure'] | first | default('') }}"
