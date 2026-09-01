@@ -1,7 +1,6 @@
 ---
 - name: Transfer Azure Pelias shared data to GCP through the Ansible controller
   hosts: localhost
-  connection: local
   gather_facts: false
   vars:
     tuki_azure_inventory_host: "{{ groups['tuki_azure'] | first | default('') }}"
