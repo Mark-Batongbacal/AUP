@@ -9,3 +9,17 @@ tuki_mssql_pid: Developer
 tuki_image_tag: dev
 tuki_valhalla_tile_urls: https://download.geofabrik.de/asia/philippines-latest.osm.pbf
 tuki_pelias_es_java_opts: "-Xms1g -Xmx1g"
+
+# SQL backup/restore migration paths and Compose service discovery.
+tuki_sql_compose_service: sqlserver
+tuki_sql_backup_filename: "{{ tuki_database_name }}.bak"
+tuki_sql_container_backup_dir: /var/opt/mssql/backup
+tuki_azure_compose_root: /path/to/azure/AUP
+tuki_azure_backup_dir: /opt/tuki/backups
+tuki_gcp_compose_root: /opt/tuki/AUP
+tuki_gcp_backup_incoming_dir: /opt/tuki/backups/incoming
+tuki_compose_env: runtime/compose.env
+
+# Optional explicit fallback for a legacy SQL container not managed by the
+# repository Compose project. Prefer leaving this empty and using Compose.
+tuki_sql_container_fallback: ""

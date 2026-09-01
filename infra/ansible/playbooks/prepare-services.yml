@@ -40,6 +40,7 @@
         cmd: "docker compose --env-file {{ tuki_compose_env }} config --quiet"
         chdir: "{{ tuki_install_root }}/AUP"
       changed_when: false
+      no_log: true
 
     - name: Start SQL Server, Elasticsearch, and Valhalla
       ansible.builtin.command:

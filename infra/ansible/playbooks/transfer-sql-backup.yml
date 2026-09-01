@@ -1,0 +1,179 @@
+---
+- name: Transfer Azure SQL backup to GCP through the Ansible controller
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    tuki_azure_inventory_host: "{{ groups['tuki_azure'] | first | default('') }}"
+    tuki_gcp_inventory_host: "{{ groups['tuki_gcp'] | first | default('') }}"
+    tuki_azure_backup_path: "{{ tuki_azure_backup_dir }}/{{ tuki_sql_backup_filename }}"
+    tuki_gcp_backup_path: "{{ tuki_gcp_backup_incoming_dir }}/{{ tuki_sql_backup_filename }}"
+    tuki_transfer_archive_suffix: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+
+  pre_tasks:
+    - name: Require exactly one Azure and one GCP migration host
+      ansible.builtin.assert:
+        that:
+          - groups['tuki_azure'] | length == 1
+          - groups['tuki_gcp'] | length == 1
+          - tuki_azure_inventory_host | length > 0
+          - tuki_gcp_inventory_host | length > 0
+          - tuki_sql_backup_filename is match('^[A-Za-z0-9_.-]+\\.bak$')
+          - tuki_azure_backup_dir is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_gcp_backup_incoming_dir is match('^/[-A-Za-z0-9_./]+$')
+        fail_msg: >-
+          Configure exactly one host in each of tuki_azure and tuki_gcp, and
+          use safe absolute backup paths.
+
+  tasks:
+    - name: Create secure temporary controller staging directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: .tuki-sql-transfer
+      register: tuki_controller_staging
+
+    - name: Restrict controller staging directory
+      ansible.builtin.file:
+        path: "{{ tuki_controller_staging.path }}"
+        state: directory
+        mode: "0700"
+
+    - name: Transfer and verify SQL backup
+      block:
+        - name: Verify Azure source backup
+          ansible.builtin.stat:
+            path: "{{ tuki_azure_backup_path }}"
+            checksum_algorithm: sha256
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+          register: tuki_azure_backup_stat
+
+        - name: Require a readable non-empty Azure backup
+          ansible.builtin.assert:
+            that:
+              - tuki_azure_backup_stat.stat.isreg | default(false)
+              - tuki_azure_backup_stat.stat.readable | default(false)
+              - tuki_azure_backup_stat.stat.size | int > 0
+
+        - name: Fetch Azure backup to temporary controller staging
+          ansible.builtin.fetch:
+            src: "{{ tuki_azure_backup_path }}"
+            dest: "{{ tuki_controller_staging.path }}/{{ tuki_sql_backup_filename }}"
+            flat: true
+            validate_checksum: true
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: false
+
+        - name: Restrict staged controller backup
+          ansible.builtin.file:
+            path: "{{ tuki_controller_staging.path }}/{{ tuki_sql_backup_filename }}"
+            mode: "0600"
+
+        - name: Verify staged controller backup checksum
+          ansible.builtin.stat:
+            path: "{{ tuki_controller_staging.path }}/{{ tuki_sql_backup_filename }}"
+            checksum_algorithm: sha256
+          register: tuki_controller_backup_stat
+
+        - name: Require controller copy to match Azure source
+          ansible.builtin.assert:
+            that:
+              - tuki_controller_backup_stat.stat.isreg | default(false)
+              - tuki_controller_backup_stat.stat.size | int == tuki_azure_backup_stat.stat.size | int
+              - tuki_controller_backup_stat.stat.checksum == tuki_azure_backup_stat.stat.checksum
+
+        - name: Create restricted GCP incoming backup directory
+          ansible.builtin.file:
+            path: "{{ tuki_gcp_backup_incoming_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Check for an existing GCP incoming backup
+          ansible.builtin.stat:
+            path: "{{ tuki_gcp_backup_path }}"
+            get_checksum: false
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_existing_gcp_backup
+
+        - name: Refuse to replace an incoming GCP backup without acknowledgement
+          ansible.builtin.assert:
+            that:
+              - >-
+                not tuki_existing_gcp_backup.stat.exists or
+                tuki_confirm_transfer_replace | default(false) | bool
+            fail_msg: >-
+              A GCP incoming backup already exists. Preserve it or rerun with
+              -e tuki_confirm_transfer_replace=true to archive it before the
+              verified replacement is published.
+
+        - name: Archive previous GCP incoming backup
+          ansible.builtin.command:
+            argv:
+              - mv
+              - "{{ tuki_gcp_backup_path }}"
+              - "{{ tuki_gcp_backup_path }}.{{ tuki_transfer_archive_suffix }}.previous.bak"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          when:
+            - tuki_existing_gcp_backup.stat.exists
+            - tuki_confirm_transfer_replace | default(false) | bool
+
+        - name: Remove incomplete GCP transfer from an earlier failed run
+          ansible.builtin.file:
+            path: "{{ tuki_gcp_backup_path }}.partial"
+            state: absent
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Copy staged backup to GCP incoming directory
+          ansible.builtin.copy:
+            src: "{{ tuki_controller_staging.path }}/{{ tuki_sql_backup_filename }}"
+            dest: "{{ tuki_gcp_backup_path }}.partial"
+            owner: root
+            group: root
+            mode: "0600"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Verify GCP backup checksum
+          ansible.builtin.stat:
+            path: "{{ tuki_gcp_backup_path }}.partial"
+            checksum_algorithm: sha256
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_gcp_backup_stat
+
+        - name: Require GCP backup to match Azure source
+          ansible.builtin.assert:
+            that:
+              - tuki_gcp_backup_stat.stat.isreg | default(false)
+              - tuki_gcp_backup_stat.stat.size | int == tuki_azure_backup_stat.stat.size | int
+              - tuki_gcp_backup_stat.stat.checksum == tuki_azure_backup_stat.stat.checksum
+              - tuki_gcp_backup_stat.stat.checksum == tuki_controller_backup_stat.stat.checksum
+
+        - name: Publish verified GCP backup atomically
+          ansible.builtin.command:
+            argv:
+              - mv
+              - "{{ tuki_gcp_backup_path }}.partial"
+              - "{{ tuki_gcp_backup_path }}"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+
+        - name: Report verified transfer
+          ansible.builtin.debug:
+            msg: >-
+              SQL backup transferred to {{ tuki_gcp_backup_path }} and verified
+              at {{ tuki_gcp_backup_stat.stat.size }} bytes with SHA256
+              {{ tuki_gcp_backup_stat.stat.checksum }}.
+      always:
+        - name: Delete temporary controller staging directory
+          ansible.builtin.file:
+            path: "{{ tuki_controller_staging.path }}"
+            state: absent
