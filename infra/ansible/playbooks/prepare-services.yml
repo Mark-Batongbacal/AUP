@@ -42,12 +42,19 @@
       changed_when: false
       no_log: true
 
-    - name: Start core data services and Pelias supporting services
+    - name: Stop Pelias services that require migrated data
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} stop
+          pelias pelias-placeholder pelias-interpolation
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: true
+
+    - name: Start independently ready core data services
       ansible.builtin.command:
         cmd: >-
           docker compose --env-file {{ tuki_compose_env }} up -d
           sqlserver pelias-elasticsearch valhalla pelias-libpostal
-          pelias-placeholder pelias-interpolation
         chdir: "{{ tuki_install_root }}/AUP"
       changed_when: true
 
@@ -75,7 +82,6 @@
         cmd: >-
           docker compose --env-file {{ tuki_compose_env }} ps
           sqlserver pelias-elasticsearch valhalla pelias-libpostal
-          pelias-placeholder pelias-interpolation
         chdir: "{{ tuki_install_root }}/AUP"
       register: tuki_data_service_status
       changed_when: false
@@ -85,9 +91,7 @@
         msg:
           - "{{ tuki_data_service_status.stdout_lines }}"
           - >-
-            Core data containers and Pelias supporting services have been
-            started. Placeholder/interpolation may remain unready until their
-            shared data is migrated. Pelias API is intentionally not started,
-            and this playbook does not restore SQL, import a Pelias index, or
-            replace Valhalla tiles. Complete both Pelias migrations before
-            running deploy.yml.
+            Core data containers are ready. Pelias API, placeholder, and
+            interpolation are intentionally stopped until the shared Pelias
+            data and Elasticsearch index have been migrated. Complete both
+            Pelias migrations before running deploy.yml.
