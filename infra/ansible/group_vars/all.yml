@@ -1,0 +1,14 @@
+---
+tuki_api_hostname: api.tuki.pawfect.bar
+tuki_admin_hostname: admin.tuki.pawfect.bar
+
+tuki_acme_email: batongbacalmark@gmail.com
+
+tuki_database_name: Tuki
+tuki_mssql_pid: Developer
+
+tuki_image_tag: dev
+
+tuki_valhalla_tile_urls: https://download.geofabrik.de/asia/philippines-latest.osm.pbf
+
+tuki_pelias_es_java_opts: "-Xms1g -Xmx1g"
