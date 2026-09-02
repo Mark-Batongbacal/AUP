@@ -81,7 +81,7 @@
             '[data-ai-storage-note]',
             available
                 ? `Persistent SQL history · ${economics.timeZone || 'Asia/Manila'} calendar windows`
-                : 'Live process counters available · apply the AI usage migration for persistent history');
+                : 'Live process counters available · persistent SQL history initializes automatically');
 
         const windows = {
             today: economics?.today,
@@ -269,6 +269,7 @@
         updateServices(snapshot.services);
         updateRecentRequests(snapshot.recentRequests);
         drawChart(snapshot.requests?.timeline);
+        window.tukiInitialServerSnapshot = snapshot;
     };
 
     const showError = message => {
@@ -317,6 +318,7 @@
         window.addEventListener('resize', () => {
             if (window.tukiInitialServerSnapshot) drawChart(window.tukiInitialServerSnapshot.requests?.timeline);
         });
+        refresh();
         refreshTimer = window.setInterval(refresh, 15000);
     });
 

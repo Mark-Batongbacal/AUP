@@ -270,7 +270,7 @@ public sealed class AdminSystemController(
     {
         try
         {
-            var query = dbContext.PassengerTrips.AsNoTracking();
+            var query = dbContext.TripSessions.AsNoTracking();
             if (startUtc.HasValue)
             {
                 var threshold = DateTime.SpecifyKind(startUtc.Value, DateTimeKind.Utc);
@@ -281,7 +281,7 @@ public sealed class AdminSystemController(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            logger.LogWarning(exception, "Could not count passenger trips for Admin monitoring");
+            logger.LogWarning(exception, "Could not count trip sessions for Admin monitoring");
             return null;
         }
     }
