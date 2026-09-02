@@ -1,0 +1,5 @@
+---
+# Azure currently runs SQL Server as the legacy standalone production container.
+# Keep this host-specific so GCP/other Compose-managed hosts do not accidentally
+# target Azure's container naming convention.
+tuki_sql_container_fallback: tuki-sql
