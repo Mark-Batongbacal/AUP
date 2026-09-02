@@ -158,6 +158,8 @@
         argv:
           - docker
           - exec
+          - --user
+          - "0"
           - "{{ tuki_staging_sql_container.stdout }}"
           - chmod
           - "0644"
