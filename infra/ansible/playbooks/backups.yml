@@ -222,7 +222,8 @@
               sort
           )
 
-          excess=$(("${#backups[@]}" - retention))
+          backup_count="$(printf '%s\n' "${backups[@]}" | sed '/^$/d' | wc -l)"
+          excess=$((backup_count - retention))
           if (( excess > 0 )); then
             for ((i = 0; i < excess; i++)); do
               rclone deletefile                 --config "$rclone_config"                 "$remote_dir/${backups[$i]}"
