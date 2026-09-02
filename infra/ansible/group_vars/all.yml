@@ -31,3 +31,15 @@ tuki_gcp_compose_root: /opt/tuki/AUP
 tuki_gcp_backup_incoming_dir: /opt/tuki/backups/incoming
 tuki_compose_env: runtime/compose.env
 tuki_sql_container_fallback: ""
+
+# Automated SQL Server backups to Google Drive.
+tuki_rclone_remote: gdrive
+tuki_backup_remote_root: Tuki/production/database
+tuki_backup_local_dir: /opt/tuki/backups/automated
+tuki_backup_daily_retention: 7
+tuki_backup_weekly_retention: 4
+tuki_backup_monthly_retention: 3
+tuki_backup_daily_calendar: "*-*-* 02:00:00 Asia/Manila"
+tuki_backup_weekly_calendar: "Sun *-*-* 03:00:00 Asia/Manila"
+tuki_backup_monthly_calendar: "*-*-01 04:00:00 Asia/Manila"
+tuki_backup_randomized_delay: 5m
