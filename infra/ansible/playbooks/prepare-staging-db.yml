@@ -227,31 +227,56 @@
           sqlcmd={{ tuki_staging_sqlcmd.stdout | quote }}
           database={{ tuki_staging_database_name | quote }}
 
+          verification_query="$(cat <<'SQL'
+          SET NOCOUNT ON;
+
+          IF DB_NAME() <> N'{{ tuki_staging_database_name }}'
+              THROW 52001, 'Connected to the wrong database', 1;
+
+          IF NOT EXISTS (
+              SELECT 1
+              FROM sys.databases
+              WHERE name = DB_NAME()
+                AND state_desc = N'ONLINE'
+          )
+              THROW 52002, 'Staging database is not online', 1;
+
+          IF OBJECT_ID(N'dbo.UserProfiles', N'U') IS NULL
+              THROW 52003, 'dbo.UserProfiles is missing', 1;
+
+          IF OBJECT_ID(N'dbo.TransportRoutes', N'U') IS NULL
+              THROW 52004, 'dbo.TransportRoutes is missing', 1;
+
+          IF OBJECT_ID(N'dbo.TripSessions', N'U') IS NULL
+              THROW 52005, 'dbo.TripSessions is missing', 1;
+
+          SELECT
+              DB_NAME() AS DatabaseName,
+              (SELECT state_desc FROM sys.databases WHERE name = DB_NAME()) AS DatabaseState,
+              COUNT(*) AS DboTableCount
+          FROM sys.tables
+          WHERE schema_id = SCHEMA_ID(N'dbo');
+          SQL
+          )"
+
           docker exec "$container_id" bash -c '
             set -eu
             password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
             test -n "$password"
             export SQLCMDPASSWORD="$password"
-            exec "$1" -S localhost -U sa -C -b -d "$2" -Q "
-              SET NOCOUNT ON;
-              IF OBJECT_ID(N''dbo.UserProfiles'', N''U'') IS NULL THROW 52001, ''dbo.UserProfiles is missing'', 1;
-              IF OBJECT_ID(N''dbo.TransportRoutes'', N''U'') IS NULL THROW 52002, ''dbo.TransportRoutes is missing'', 1;
-              IF OBJECT_ID(N''dbo.TripSessions'', N''U'') IS NULL THROW 52003, ''dbo.TripSessions is missing'', 1;
-              SELECT DB_NAME() AS DatabaseName, COUNT(*) AS DboTableCount
-              FROM sys.tables
-              WHERE schema_id = SCHEMA_ID(N''dbo'');
-            "
-          ' -- "$sqlcmd" "$database"
+            exec "$1" -S localhost -U sa -C -b -d "$2" -Q "$3"
+          ' -- "$sqlcmd" "$database" "$verification_query"
         executable: /bin/bash
       register: tuki_staging_database_verify
       changed_when: false
-      no_log: true
 
     - name: Remove copied schema scripts from SQL Server container
       ansible.builtin.command:
         argv:
           - docker
           - exec
+          - --user
+          - "0"
           - "{{ tuki_staging_sql_container.stdout }}"
           - rm
           - -f
