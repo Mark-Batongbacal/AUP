@@ -153,34 +153,53 @@
         }}
       changed_when: true
 
-    - name: Apply base schema and ordered migrations
+    - name: Apply base schema scripts
       ansible.builtin.shell:
         cmd: |
           set -euo pipefail
           container_id={{ tuki_staging_sql_container.stdout | quote }}
           sqlcmd={{ tuki_staging_sqlcmd.stdout | quote }}
           database={{ tuki_staging_database_name | quote }}
+          file={{ item | quote }}
 
-          run_sql() {
-            file="$1"
-            echo "Applying $file"
-            docker exec "$container_id" bash -c '
-              set -eu
-              password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
-              test -n "$password"
-              export SQLCMDPASSWORD="$password"
-              exec "$1" -S localhost -U sa -C -b -d "$2" -i "$3"
-            ' -- "$sqlcmd" "$database" "/tmp/$file"
-          }
-
-          run_sql TukiDbSchema.sql
-          run_sql TukiNavigationSchema.sql
-          {% for migration in tuki_staging_migration_files %}
-          run_sql {{ migration | basename | quote }}
-          {% endfor %}
+          echo "Applying $file"
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d "$2" -i "$3"
+          ' -- "$sqlcmd" "$database" "/tmp/$file"
         executable: /bin/bash
+      loop:
+        - TukiDbSchema.sql
+        - TukiNavigationSchema.sql
+      loop_control:
+        label: "{{ item }}"
       changed_when: true
-      no_log: true
+
+    - name: Apply ordered migration scripts
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_staging_sql_container.stdout | quote }}
+          sqlcmd={{ tuki_staging_sqlcmd.stdout | quote }}
+          database={{ tuki_staging_database_name | quote }}
+          file={{ item | basename | quote }}
+
+          echo "Applying $file"
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d "$2" -i "$3"
+          ' -- "$sqlcmd" "$database" "/tmp/$file"
+        executable: /bin/bash
+      loop: "{{ tuki_staging_migration_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      changed_when: true
 
     - name: Verify staging database schema
       ansible.builtin.shell:
