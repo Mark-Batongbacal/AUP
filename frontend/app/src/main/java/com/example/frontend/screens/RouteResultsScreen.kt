@@ -51,6 +51,7 @@ import com.example.frontend.data.routing.JourneyPlanRequest
 import com.example.frontend.data.routing.RoutingRepository
 import com.example.frontend.data.routing.toRouteOption
 import com.example.frontend.model.RouteOption
+import com.example.frontend.navigation.HistoryRouteReuseState
 import com.example.frontend.ui.theme.TukiCream
 import com.example.frontend.ui.theme.TukiDeepTeal
 import com.example.frontend.ui.theme.TukiForest
@@ -79,6 +80,9 @@ fun RouteResultsScreen(
     onSuggestToda: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val pendingHistoryReuse = remember(origin, destinationQuery) {
+        HistoryRouteReuseState.takePendingSelection(origin, destinationQuery)
+    }
     var activeOrigin by remember(origin) { mutableStateOf(origin) }
     var activeDestinationQuery by remember(destinationQuery) { mutableStateOf(destinationQuery) }
     var activeOriginLatitude by remember(originLatitude) { mutableStateOf(originLatitude) }
@@ -97,13 +101,29 @@ fun RouteResultsScreen(
     var showUnsupportedLocationDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
 
+    LaunchedEffect(pendingHistoryReuse) {
+        pendingHistoryReuse?.let { reuse ->
+            com.example.frontend.TukiMapOverlayState.selectJourneyJeepneyRoutes(reuse.option.legRouteIds)
+            onRouteSelect(
+                reuse.option,
+                reuse.originName,
+                reuse.destinationName,
+                reuse.originLatitude,
+                reuse.originLongitude
+            )
+        }
+    }
+
     LaunchedEffect(
         activeDestinationQuery,
         activeOriginLatitude,
         activeOriginLongitude,
         activeDestinationLatitude,
-        activeDestinationLongitude
+        activeDestinationLongitude,
+        pendingHistoryReuse
     ) {
+        if (pendingHistoryReuse != null) return@LaunchedEffect
+
         isLoading = true
         errorMessage = null
         routeOptions = emptyList()
@@ -245,6 +265,25 @@ fun RouteResultsScreen(
             .verticalScroll(rememberScrollState())
             .padding(top = 8.dp, bottom = 16.dp)
     ) {
+        if (pendingHistoryReuse != null) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 100.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = TukiTeal)
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = if (TukiInterfaceText.isFilipino) "Inihahanda ang dati mong ruta..." else "Preparing your previous route...",
+                        color = TukiMuted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            return@Column
+        }
+
         RouteResultsHeader(onBack = onBack)
         Spacer(modifier = Modifier.height(14.dp))
         CurrentAndDestinationCard(

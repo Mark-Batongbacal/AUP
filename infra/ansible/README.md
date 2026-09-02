@@ -1,17 +1,136 @@
-# Tuki production deployment
+# Tuki Azure-to-GCP deployment and data migration
 
-The bootstrap playbook targets the existing `tuki-gcp` inventory group on
-Ubuntu 24.04. It installs Docker Engine and the Compose plugin, keeps host SSH
-enabled, creates `/opt/tuki` and persistent service directories, updates the
-`dev` branch in `/opt/tuki/AUP`, renders service-specific environment files,
-and runs
-`docker compose up -d --build`.
+The production workflow keeps host preparation, data-service startup, database
+migration, application deployment, and verification as separate operator-run
+phases:
 
-Secrets flow through deployment as follows:
+```text
+bootstrap.yml (GCP)
+    ↓
+prepare-services.yml (GCP data containers only)
+    ↓
+backup-azure-sql.yml
+    ↓
+transfer-sql-backup.yml
+    ↓
+restore-gcp-sql.yml
+    ↓
+transfer-pelias-data.yml (shared placeholder/interpolation data; never Elasticsearch files)
+    ↓
+transfer-pelias-index.yml (logical Elasticsearch export/import)
+    ↓
+operator validates SQL Server, Pelias, and Valhalla data
+    ↓
+deploy.yml (backend → admin → Caddy)
+    ↓
+verify.yml
+```
+
+Database restore is intentionally absent from ordinary deployment. The restore
+playbook refuses to run without an explicit acknowledgement and fails when the
+configured target database already exists. It never drops a database and never
+uses `WITH REPLACE`.
+
+Pelias migration is also separate from deployment. Its shared-data playbook
+copies `data/` and `blacklist/` through a secure controller staging directory,
+explicitly excludes `data/elasticsearch`, and publishes verified directories
+on GCP. Its index playbook uses a digest-pinned temporary elasticdump container
+to export/import settings, mappings, and documents through Elasticsearch's
+private container network. It never copies live Elasticsearch filesystem data.
+
+## Controller and inventory setup
+
+Run Ansible from the Debian control laptop. The committed `inventory.ini`
+contains only the aliases `azure` and `gcp`; it contains no public IPs, users,
+or private-key paths. Keep Azure and GCP credentials independent.
+
+Preferred option: configure both aliases in `~/.ssh/config`:
+
+```sshconfig
+Host azure
+    HostName AZURE_PUBLIC_IP
+    User AZURE_SSH_USER
+    IdentityFile /absolute/path/to/azure-private-key
+
+Host gcp
+    HostName GCP_PUBLIC_IP
+    User GCP_SSH_USER
+    IdentityFile /absolute/path/to/gcp-private-key
+```
+
+Alternatively, copy the example inventory and keep the result local:
+
+```bash
+cd infra/ansible
+cp inventory.local.ini.example inventory.local.ini
+chmod 600 inventory.local.ini
+```
+
+`inventory.local.ini` is Git-ignored. CI/CD can generate it from protected
+environment variables or secret-file mounts and pass `-i inventory.local.ini`.
+Never commit a private key or a generated live inventory.
+
+Before any migration phase, verify and trust both SSH host keys, then test:
+
+```bash
+ssh azure
+ssh gcp
+ansible -i inventory.local.ini tuki_azure -m ping
+ansible -i inventory.local.ini tuki_gcp -m ping
+```
+
+If SSH aliases are configured, omit `-i inventory.local.ini` from all commands.
+
+## Configuration and secrets
+
+Non-secret deployment and migration defaults live in `group_vars/all.yml`; the
+placeholder reference is `group_vars/all.example.yml`. Review these values:
+
+- `tuki_database_name`
+- `tuki_sql_compose_service`
+- `tuki_sql_backup_filename`
+- `tuki_azure_compose_root`
+- `tuki_azure_backup_dir`
+- `tuki_gcp_compose_root`
+- `tuki_gcp_backup_incoming_dir`
+- `tuki_sql_container_backup_dir`
+- `tuki_compose_env`
+- `tuki_azure_pelias_project_root`
+- `tuki_gcp_pelias_root`
+- `tuki_pelias_index_name`
+- `tuki_pelias_es_compose_service`
+- `tuki_pelias_es_container_fallback` (legacy Azure only; leave empty when Compose discovery works)
+- `tuki_elasticdump_image` (digest-pinned)
+
+The migration prefers resolving the SQL container with:
+
+```bash
+docker compose --env-file runtime/compose.env ps -q sqlserver
+```
+
+For an existing legacy Azure SQL container that is not managed by this Compose
+project, set `tuki_sql_container_fallback` explicitly for the backup command.
+Do not set a fallback when Compose discovery works.
+
+Application and SQL secrets remain in encrypted `group_vars/vault.yml`:
+
+```bash
+ansible-vault edit group_vars/vault.yml --vault-password-file .vault-password
+```
+
+The SQL migration playbooks do not place the SA password in an Ansible command
+line. They read the already-injected `MSSQL_SA_PASSWORD` inside the SQL Server
+container and expose it only to `sqlcmd` through `SQLCMDPASSWORD`. Relevant SQL
+and Compose validation tasks use `no_log: true`.
+
+Generated `runtime/*.env`, `.vault-password`, `inventory.local.ini`, private
+keys, and `*.bak` files must remain outside Git.
+
+## Secret injection into containers
 
 ```text
 Ansible Vault
-    ↓ decrypt during deployment
+    ↓ decrypt during bootstrap
 Ansible templates
     ↓
 runtime/*.env on server (0600)
@@ -21,65 +140,295 @@ Docker Compose env_file
 containers
 ```
 
-The generated files are scoped by service: `backend.env` contains backend
-configuration and credentials, `sqlserver.env` contains only SQL Server
-settings, `admin.env` contains only the admin application's runtime settings,
-and `caddy.env` contains only public hostnames and the ACME email address.
-They live in `/opt/tuki/AUP/runtime`, which is Git-ignored and mode `0700`;
-each file is mode `0600`. Docker Compose does not consume the root
-`.env.example`; that file is placeholder-only documentation.
-
-## Manage production secrets
-
-`group_vars/vault.yml` is committed only in Ansible Vault-encrypted form. Edit
-it from `infra/ansible` with:
+`backend.env`, `sqlserver.env`, `admin.env`, and `caddy.env` are scoped to their
+services. `compose.env` contains non-secret interpolation values. Manual Compose
+commands must include:
 
 ```bash
-ansible-vault edit group_vars/vault.yml
+docker compose --env-file runtime/compose.env <command>
 ```
 
-Store the Vault password locally in `.vault-password` with mode `0600`, or use
-another secure Ansible-supported password source. Never commit the Vault
-password, decrypted Vault content, or rendered runtime files.
+## Migration and deployment commands
 
-## Configure and deploy
+Run all commands from `infra/ansible`. The examples use an ignored local
+inventory; omit its `-i` argument when using SSH aliases.
 
-1. Review `inventory.ini` and its SSH key path.
-2. Copy non-secret values from `group_vars/all.example.yml` into
-   `group_vars/all.yml`, then edit the encrypted Vault as described above.
-3. Keep `.vault-password` outside Git and transfer it through your password
-   manager.
-4. Point the API and admin DNS records to the VM. In the GCP firewall allow TCP
-   22, 80, and 443, plus UDP 443 if HTTP/3 is desired. Do not expose 1433,
-   4000, 5030, 5129, or 8002.
-5. From `infra/ansible`, run:
+### 1. Bootstrap GCP
 
-   ```bash
-   ansible-playbook playbooks/bootstrap.yml --vault-password-file .vault-password
-   ```
+```bash
+ansible-playbook -i inventory.local.ini playbooks/bootstrap.yml \
+  --vault-password-file .vault-password
+```
 
-Before starting containers, the playbook validates required Vault variables,
-renders the runtime files without logging decrypted content, and runs
-`docker compose config --quiet`. The Git update uses `force: false`, so the
-playbook does not discard changes on the VM. SSH remains on the host at port
-22; neither Compose nor Caddy manages it.
+This installs Docker, creates `/opt/tuki`, persistent data directories, and
+mode-`0600` runtime configuration, updates the `dev` checkout, and validates
+Compose. It starts no containers.
 
-## Separate data migration workflow
+### 2. Start GCP data-service containers
 
-Database backup and restore are deliberately absent from `bootstrap.yml`.
-Deploying the stack never creates, restores, replaces, or deletes the `Tuki`
-database.
+```bash
+ansible-playbook -i inventory.local.ini playbooks/prepare-services.yml \
+  --vault-password-file .vault-password
+```
 
-Migrate production data as a separate, operator-controlled operation:
+This starts SQL Server, Pelias Elasticsearch, Valhalla, and the libpostal,
+placeholder, and interpolation containers without restoring or replacing
+production data. The Pelias API remains stopped so an empty Elasticsearch node
+or missing support data is not presented as ready.
 
-1. Stop writes and create a verified SQL Server backup at the source.
-2. Transfer the backup to a restricted staging directory on the VM.
-3. Restore it manually into `sqlserver` without `WITH REPLACE`; abort if the
-   target database already exists.
-4. Review and apply any additive scripts under `database/` only after another
-   backup.
-5. Validate the restored database before restarting `backend` and `admin`.
+### 3. Back up Azure SQL Server
 
-Valhalla tiles and the Pelias Elasticsearch index must likewise be migrated or
-built in an explicit data preparation step. Compose persists those directories
-but does not overwrite their contents.
+For a Compose-managed Azure SQL container:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/backup-azure-sql.yml \
+  --vault-password-file .vault-password
+```
+
+For the known legacy Azure container, supply its name explicitly rather than
+committing it:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/backup-azure-sql.yml \
+  --vault-password-file .vault-password \
+  -e tuki_sql_container_fallback=tuki-sql
+```
+
+The playbook uses `BACKUP DATABASE ... WITH INIT, COMPRESSION, STATS = 10`,
+copies the result to `/opt/tuki/backups`, and verifies its size and SHA256.
+Production writes continue during this online backup. If a previous backup
+exists, the playbook fails by default. To archive the previous files and create
+a deliberate replacement, add:
+
+```bash
+-e tuki_confirm_backup_replace=true
+```
+
+### 4. Transfer the backup through the controller
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/transfer-sql-backup.yml \
+  --vault-password-file .vault-password
+```
+
+The transfer path is:
+
+```text
+Azure /opt/tuki/backups/Tuki.bak
+    ↓ encrypted SSH fetch
+controller secure temporary directory
+    ↓ encrypted SSH copy
+GCP /opt/tuki/backups/incoming/Tuki.bak
+```
+
+The controller staging directory is removed in an `always` block, including
+when transfer validation fails. Azure, controller, and GCP sizes and SHA256
+checksums must match. An existing GCP incoming backup causes a failure; use
+`-e tuki_confirm_transfer_replace=true` only when intentionally archiving and
+replacing that staged file.
+
+### 5. Restore on GCP
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/restore-gcp-sql.yml \
+  --vault-password-file .vault-password \
+  -e tuki_confirm_sql_restore=true
+```
+
+Restore safety is strict:
+
+- the acknowledgement is mandatory;
+- the transferred backup must be non-empty and checksum-verified;
+- SQL Server must be running and healthy;
+- `RESTORE FILELISTONLY` determines logical data and log names;
+- exactly one data file and one log file are required for this automated path;
+- an existing target database or target MDF/LDF causes failure;
+- restore uses explicit `MOVE` paths;
+- `WITH REPLACE` is never used;
+- the restored database must be `ONLINE` and pass a basic query.
+
+The restored files are placed at:
+
+```text
+/var/opt/mssql/data/<database>.mdf
+/var/opt/mssql/data/<database>_log.ldf
+```
+
+### 6. Migrate Pelias shared data and index
+
+First migrate Pelias shared data. The source defaults to the Azure Central
+Luzon project and includes `data/` plus `blacklist/`, while pruning
+`data/elasticsearch` from the archive:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/transfer-pelias-data.yml \
+  --vault-password-file .vault-password
+```
+
+The Azure/controller/GCP archive checksums and recursive file count/byte totals
+must match. If GCP already has non-empty `data/` or `blacklist/`, the playbook
+fails. A deliberate replacement requires:
+
+```bash
+-e tuki_confirm_pelias_data_replace=true
+```
+
+The previous GCP directories are renamed with a timestamp and retained for
+rollback; they are not deleted.
+
+Then migrate the `pelias` index logically:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/transfer-pelias-index.yml \
+  --vault-password-file .vault-password
+```
+
+The playbook discovers Elasticsearch through Compose where possible, verifies
+the Azure source count dynamically, exports settings/mappings/documents with a
+digest-pinned elasticdump image, transfers the logical archive through a secure
+controller temporary directory, and requires the GCP count to match. The
+currently observed Azure count (142,957) is not hardcoded. If the GCP `pelias`
+index already exists, migration fails unless the operator supplies:
+
+```bash
+-e tuki_confirm_pelias_index_replace=true
+```
+
+With that acknowledgement, the existing GCP index is first exported to
+`/opt/tuki/backups/pelias-index/previous-<timestamp>/` before it is replaced.
+Elasticsearch and all Pelias support ports remain private to `tuki-internal`.
+
+For a legacy Azure Pelias Elasticsearch container outside this Compose project,
+set the fallback locally (the known Azure default is already represented in
+`group_vars/all.yml`):
+
+```bash
+-e tuki_pelias_es_container_fallback=pelias_elasticsearch
+```
+
+### 7. Validate all migrated data
+
+Before deploying applications, validate SQL row counts and application-critical
+queries manually. Also validate the Pelias index and Valhalla tiles/routes. The
+deployment acknowledgement means an operator has completed these checks.
+
+### 8. Deploy applications
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/deploy.yml \
+  --vault-password-file .vault-password \
+  -e tuki_confirm_data_ready=true
+```
+
+This requires healthy SQL Server, Elasticsearch, and Valhalla plus a non-empty
+Pelias index. It then requires healthy libpostal, placeholder, interpolation,
+and Pelias API before starting the backend, admin, and Caddy.
+
+### 9. Verify
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/verify.yml \
+  --vault-password-file .vault-password
+```
+
+Verification checks all ten service health states, Elasticsearch index health,
+a non-zero Pelias document count, a real `SM City Clark, Mabalacat, Pampanga`
+search with at least one feature, and both public HTTPS endpoints with
+certificate validation.
+
+## Rehearsal
+
+Use dedicated rehearsal Azure/GCP hosts or isolated copies of the persistent
+data directories. Point `inventory.local.ini` at those hosts, review all paths,
+and execute the same sequence above. Never rehearse a restore against a GCP SQL
+Server that already holds the production database; the playbook will refuse it
+in any case. Syntax-only validation is safe on the controller:
+
+```bash
+for playbook in playbooks/*.yml; do
+  ansible-playbook -i inventory.local.ini "$playbook" \
+    --syntax-check --vault-password-file .vault-password
+done
+```
+
+## Final production cutover
+
+1. Stop or disable production writes on Azure.
+2. Create a fresh final Azure backup (explicitly archive the earlier rehearsal
+   backup if needed).
+3. Transfer it through the controller and verify all checksums.
+4. Restore it on GCP with the explicit acknowledgement.
+5. Transfer Pelias shared data and logically migrate its index; verify dynamic
+   source/destination counts and support-service health.
+6. Validate SQL data, Pelias searches, Valhalla, and application-critical queries.
+7. Run `deploy.yml`, then `verify.yml`.
+8. Switch public DNS to GCP only after verification passes.
+9. Keep Azure intact and unavailable for writes temporarily as a rollback
+   source until the cutover is accepted.
+
+
+## Automated Google Drive database backups
+
+The `backups.yml` playbook installs rclone, renders the encrypted Google Drive
+configuration to `/etc/rclone/rclone.conf` with mode `0600`, installs the
+database backup script, and enables systemd timers for daily, weekly, and
+monthly SQL Server backups.
+
+Keep the complete working rclone remote in encrypted `group_vars/vault.yml`:
+
+```yaml
+tuki_rclone_config: |
+  [gdrive]
+  type = drive
+  ...
+```
+
+The default retention policy is 7 daily, 4 weekly, and 3 monthly backups under:
+
+```text
+gdrive:Tuki/production/database/
+├── daily/
+├── weekly/
+└── monthly/
+```
+
+Migration snapshots remain separate from this automatic retention policy.
+
+Install or update the backup machinery on one host:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/backups.yml \
+  --limit azure \
+  --vault-password-file .vault-password
+```
+
+Use `--limit gcp` after migration. The same playbook can manage both hosts,
+but normally only the active production database host should have its timers
+enabled to avoid two independent systems writing production backup sets.
+
+The default schedules are evaluated in `Asia/Manila` regardless of VM
+timezone: daily at 02:00, Sunday at 03:00, and the first day of each month at
+04:00. Each timer has up to five minutes of randomized delay. Change the
+`tuki_backup_*_calendar` variables in `group_vars/all.yml` if needed.
+
+Inspect the timers:
+
+```bash
+sudo systemctl list-timers 'tuki-db-backup-*.timer'
+```
+
+Run a daily backup immediately for validation:
+
+```bash
+sudo systemctl start tuki-db-backup@daily.service
+sudo systemctl status tuki-db-backup@daily.service
+sudo journalctl -u tuki-db-backup@daily.service --no-pager
+```
+
+Each run resolves the SQL Server container, creates a compressed SQL Server
+backup with page checksums, copies it to a restricted host staging directory,
+uploads it with rclone, compares the remote and local byte counts, prunes only
+the oldest files in that retention tier, and removes the local copy only after
+the upload verifies successfully. A failed upload leaves the completed local
+`.bak` available for operator recovery. A lock prevents overlapping daily,
+weekly, and monthly jobs.

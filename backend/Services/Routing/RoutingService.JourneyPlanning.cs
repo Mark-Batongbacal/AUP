@@ -728,10 +728,20 @@ public partial class RoutingService
         // same coordinates does not qualify.
         var prefixPruned = PruneRedundantTransitPrefix(destinationPruned);
 
-        var paretoPruned = PruneDominatedConfirmedCandidates(prefixPruned);
+        // A confirmed A -> C journey is authoritative proof that the same
+        // occurrences connected by A -> B -> C can bypass B within the
+        // configured walking limit. Compare those complete journeys here,
+        // after Valhalla confirmation, rather than guessing from geometry or
+        // introducing another walking request during transfer generation.
+        var intermediatePruned = PruneRedundantIntermediateTransitLegs(
+            prefixPruned,
+            planningPreferences,
+            cancellationToken);
+
+        var paretoPruned = PruneDominatedConfirmedCandidates(intermediatePruned);
         _telemetry.IncrementRouting(
             "confirmed_candidates_rejected_dominated",
-            prefixPruned.Count - paretoPruned.Count);
+            intermediatePruned.Count - paretoPruned.Count);
         var finalEquivalentPruned =
             DeduplicateFinalNearEquivalentJourneys(paretoPruned);
         _telemetry.IncrementRouting(
@@ -1513,7 +1523,7 @@ public partial class RoutingService
         return distance;
     }
 
-    private sealed record ConfirmedJourneyCandidate(
+    internal sealed record ConfirmedJourneyCandidate(
         JourneyCandidate Candidate,
         JeepneyTripPlan Plan);
 }

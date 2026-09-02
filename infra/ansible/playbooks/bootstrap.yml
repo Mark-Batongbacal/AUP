@@ -1,6 +1,6 @@
 ---
-- name: Bootstrap and deploy Tuki on GCP Ubuntu
-  hosts: tuki-gcp
+- name: Bootstrap Tuki GCP Ubuntu host
+  hosts: tuki_gcp
   become: true
   vars:
     tuki_repository_url: https://github.com/Mark-Batongbacal/AUP.git
@@ -19,6 +19,12 @@
           - tuki_admin_hostname | string | length > 0
           - tuki_acme_email is defined
           - tuki_acme_email | string | length > 0
+          - tuki_image_tag is defined
+          - tuki_image_tag | string | length > 0
+          - tuki_valhalla_tile_urls is defined
+          - tuki_valhalla_tile_urls | string | length > 0
+          - tuki_pelias_es_java_opts is defined
+          - tuki_pelias_es_java_opts | string | length > 0
           - tuki_mssql_sa_password is defined
           - tuki_mssql_sa_password | string | length > 0
           - tuki_admin_login_username is defined
@@ -160,16 +166,17 @@
       loop:
         - { path: "{{ tuki_install_root }}/data/sqlserver", owner: "10001", group: "0", mode: "0770" }
         - { path: "{{ tuki_install_root }}/data/valhalla", owner: "1000", group: "1000", mode: "0775" }
-        - { path: "{{ tuki_install_root }}/data/pelias/runtime", owner: "1000", group: "1000", mode: "0775" }
+        - { path: "{{ tuki_install_root }}/data/pelias", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/pelias/elasticsearch", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/caddy/data", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/caddy/config", owner: "1000", group: "1000", mode: "0775" }
 
-    - name: Clone or update the dev branch
+    - name: Clone or update the configured repository branch
       ansible.builtin.git:
         repo: "{{ tuki_repository_url }}"
         dest: "{{ tuki_install_root }}/AUP"
         version: "{{ tuki_repository_branch }}"
+        refspec: "+refs/heads/{{ tuki_repository_branch }}:refs/remotes/origin/{{ tuki_repository_branch }}"
         single_branch: true
         update: true
         force: false
@@ -197,31 +204,28 @@
         - { template: caddy.env.j2, destination: caddy.env }
       no_log: true
 
+    - name: Render Docker Compose interpolation variables
+      ansible.builtin.copy:
+        content: |
+          TUKI_IMAGE_TAG={{ tuki_image_tag }}
+          TUKI_DATA_ROOT={{ tuki_install_root }}/data
+          VALHALLA_TILE_URLS={{ tuki_valhalla_tile_urls }}
+          PELIAS_ES_JAVA_OPTS="{{ tuki_pelias_es_java_opts | replace('"', '\\"') }}"
+        dest: "{{ tuki_install_root }}/AUP/runtime/compose.env"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+
     - name: Validate Docker Compose configuration
       ansible.builtin.command:
-        cmd: docker compose config --quiet
+        cmd: docker compose --env-file runtime/compose.env config --quiet
         chdir: "{{ tuki_install_root }}/AUP"
       changed_when: false
       no_log: true
 
-    - name: Build and start production containers
-      ansible.builtin.command:
-        cmd: docker compose up -d --build --remove-orphans
-        chdir: "{{ tuki_install_root }}/AUP"
-      register: tuki_compose_up
-      changed_when: >-
-        'Started' in tuki_compose_up.stderr or
-        'Created' in tuki_compose_up.stderr or
-        'Recreated' in tuki_compose_up.stderr or
-        'Building' in tuki_compose_up.stderr
-
-    - name: Show production container status
-      ansible.builtin.command:
-        cmd: docker compose ps
-        chdir: "{{ tuki_install_root }}/AUP"
-      register: tuki_compose_ps
-      changed_when: false
-
-    - name: Report production container status
+    - name: Report bootstrap completion
       ansible.builtin.debug:
-        var: tuki_compose_ps.stdout_lines
+        msg: >-
+          GCP host bootstrap is complete. Docker, persistent directories, repository,
+          runtime configuration, and Compose validation are ready. No application or
+          data-service containers were started; prepare/migrate data before deployment.

@@ -1,0 +1,400 @@
+---
+- name: Restore the transferred Tuki SQL backup on GCP
+  hosts: tuki_gcp
+  become: true
+  gather_facts: false
+  vars:
+    tuki_gcp_backup_path: "{{ tuki_gcp_backup_incoming_dir }}/{{ tuki_sql_backup_filename }}"
+    tuki_target_data_path: "/var/opt/mssql/data/{{ tuki_database_name }}.mdf"
+    tuki_target_log_path: "/var/opt/mssql/data/{{ tuki_database_name }}_log.ldf"
+
+  pre_tasks:
+    - name: Require explicit SQL restore acknowledgement
+      ansible.builtin.assert:
+        that:
+          - tuki_confirm_sql_restore | default(false) | bool
+        fail_msg: >-
+          Refusing to restore SQL Server without explicit acknowledgement. Run
+          with -e tuki_confirm_sql_restore=true only after verifying the
+          transferred backup and target host.
+
+    - name: Validate SQL restore configuration
+      ansible.builtin.assert:
+        that:
+          - tuki_database_name is match('^[A-Za-z0-9_]+$')
+          - tuki_sql_backup_filename is match('^[A-Za-z0-9_.-]+\\.bak$')
+          - tuki_sql_compose_service is match('^[A-Za-z0-9_.-]+$')
+          - tuki_sql_container_backup_dir is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_gcp_backup_incoming_dir is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_gcp_compose_root is match('^/[-A-Za-z0-9_./]+$')
+        fail_msg: SQL migration names and paths must use safe characters.
+
+  tasks:
+    - name: Verify Docker Engine is available
+      ansible.builtin.command:
+        cmd: docker version --format {% raw %}'{{.Server.Version}}'{% endraw %}
+      changed_when: false
+
+    - name: Verify GCP Compose project
+      ansible.builtin.stat:
+        path: "{{ tuki_gcp_compose_root }}/docker-compose.yml"
+      register: tuki_gcp_compose_file
+
+    - name: Require GCP Compose project
+      ansible.builtin.assert:
+        that:
+          - tuki_gcp_compose_file.stat.isreg | default(false)
+        fail_msg: Run bootstrap.yml before attempting the SQL restore.
+
+    - name: Validate Docker Compose configuration
+      ansible.builtin.command:
+        cmd: "docker compose --env-file {{ tuki_compose_env }} config --quiet"
+        chdir: "{{ tuki_gcp_compose_root }}"
+      changed_when: false
+      no_log: true
+
+    - name: Resolve GCP SQL Server container through Docker Compose
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} ps -q --all
+          {{ tuki_sql_compose_service }}
+        chdir: "{{ tuki_gcp_compose_root }}"
+      register: tuki_sql_compose_lookup
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Select Compose-managed SQL Server container
+      ansible.builtin.set_fact:
+        tuki_sql_container_id: "{{ tuki_sql_compose_lookup.stdout | default('') | trim }}"
+      no_log: true
+
+    - name: Resolve explicitly configured SQL Server container fallback
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{% raw %}{{.Id}}{% endraw %}"
+          - "{{ tuki_sql_container_fallback }}"
+      register: tuki_sql_fallback_lookup
+      changed_when: false
+      no_log: true
+      when:
+        - tuki_sql_container_id | length == 0
+        - tuki_sql_container_fallback | default('') | length > 0
+
+    - name: Select SQL Server container fallback
+      ansible.builtin.set_fact:
+        tuki_sql_container_id: "{{ tuki_sql_fallback_lookup.stdout | default('') | trim }}"
+      no_log: true
+      when: tuki_sql_container_id | length == 0
+
+    - name: Require an unambiguous SQL Server container
+      ansible.builtin.assert:
+        that:
+          - tuki_sql_container_id | length > 0
+          - tuki_sql_container_id is match('^[a-f0-9]{12,64}$')
+        fail_msg: Docker Compose did not resolve the GCP SQL Server container.
+      no_log: true
+
+    - name: Verify GCP SQL Server container is running and healthy
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{% raw %}{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}{% endraw %}"
+          - "{{ tuki_sql_container_id }}"
+      register: tuki_sql_container_health
+      changed_when: false
+
+    - name: Require running and healthy SQL Server
+      ansible.builtin.assert:
+        that:
+          - tuki_sql_container_health.stdout.split('|')[0] == 'running'
+          - tuki_sql_container_health.stdout.split('|')[1] in ['healthy', 'none']
+        fail_msg: The GCP SQL Server container is not ready for restore.
+
+    - name: Locate sqlcmd inside SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          for candidate in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do
+            if docker exec "{{ tuki_sql_container_id }}" test -x "$candidate"; then
+              printf '%s' "$candidate"
+              exit 0
+            fi
+          done
+          exit 1
+        executable: /bin/bash
+      register: tuki_sqlcmd_path
+      changed_when: false
+      no_log: true
+
+    - name: Check whether target database already exists
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec "{{ tuki_sql_container_id }}" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -h -1 -W -Q "$2"
+          ' -- "{{ tuki_sqlcmd_path.stdout }}" \
+            "SET NOCOUNT ON; IF DB_ID(N'{{ tuki_database_name }}') IS NULL PRINT 'ABSENT' ELSE PRINT 'EXISTS';"
+        executable: /bin/bash
+      register: tuki_target_database_state
+      changed_when: false
+      no_log: true
+
+    - name: Refuse to overwrite an existing target database
+      ansible.builtin.assert:
+        that:
+          - tuki_target_database_state.stdout | trim == 'ABSENT'
+        fail_msg: >-
+          The configured target database already exists on GCP. Restore is
+          intentionally blocked; this workflow never drops or replaces it.
+
+    - name: Verify transferred GCP backup
+      ansible.builtin.stat:
+        path: "{{ tuki_gcp_backup_path }}"
+        checksum_algorithm: sha256
+      register: tuki_gcp_backup_stat
+
+    - name: Require a non-empty transferred backup
+      ansible.builtin.assert:
+        that:
+          - tuki_gcp_backup_stat.stat.isreg | default(false)
+          - tuki_gcp_backup_stat.stat.size | int > 0
+
+    - name: Set checksum-addressed container restore path
+      ansible.builtin.set_fact:
+        tuki_sql_container_restore_path: >-
+          {{ tuki_sql_container_backup_dir }}/restore-{{
+          tuki_gcp_backup_stat.stat.checksum[:16] }}.bak
+
+    - name: Create restricted container restore directory
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec --user 0 "{{ tuki_sql_container_id }}" mkdir -p "{{ tuki_sql_container_backup_dir }}"
+          docker exec --user 0 "{{ tuki_sql_container_id }}" chown mssql:root "{{ tuki_sql_container_backup_dir }}"
+          docker exec --user 0 "{{ tuki_sql_container_id }}" chmod 0750 "{{ tuki_sql_container_backup_dir }}"
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Check existing checksum-addressed container backup
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tuki_sql_container_id }}"
+          - sha256sum
+          - "{{ tuki_sql_container_restore_path }}"
+      register: tuki_existing_container_restore_checksum
+      changed_when: false
+      failed_when: false
+
+    - name: Refuse a mismatched checksum-addressed container backup
+      ansible.builtin.assert:
+        that:
+          - >-
+            tuki_existing_container_restore_checksum.rc != 0 or
+            tuki_existing_container_restore_checksum.stdout.split()[0] ==
+            tuki_gcp_backup_stat.stat.checksum
+        fail_msg: >-
+          A container backup exists at the checksum-addressed path but does not
+          match the staged GCP backup.
+
+    - name: Copy staged backup into SQL Server container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - cp
+          - "{{ tuki_gcp_backup_path }}"
+          - "{{ tuki_sql_container_id }}:{{ tuki_sql_container_restore_path }}"
+      changed_when: true
+      when: tuki_existing_container_restore_checksum.rc != 0
+
+    - name: Grant SQL Server read access to container backup
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec --user 0 "{{ tuki_sql_container_id }}" chown mssql:root "{{ tuki_sql_container_restore_path }}"
+          docker exec --user 0 "{{ tuki_sql_container_id }}" chmod 0640 "{{ tuki_sql_container_restore_path }}"
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Verify container backup checksum
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tuki_sql_container_id }}"
+          - sha256sum
+          - "{{ tuki_sql_container_restore_path }}"
+      register: tuki_container_restore_checksum
+      changed_when: false
+
+    - name: Require container backup to match staged backup
+      ansible.builtin.assert:
+        that:
+          - tuki_container_restore_checksum.stdout.split()[0] == tuki_gcp_backup_stat.stat.checksum
+
+    - name: Verify SQL Server backup integrity before restore
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec "{{ tuki_sql_container_id }}" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -Q "$2"
+          ' -- "{{ tuki_sqlcmd_path.stdout }}" \
+            "RESTORE VERIFYONLY FROM DISK = N'{{ tuki_sql_container_restore_path }}' WITH CHECKSUM;"
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Read logical files from SQL backup
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          docker exec "{{ tuki_sql_container_id }}" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -h -1 -W -s "|" -Q "$2"
+          ' -- "{{ tuki_sqlcmd_path.stdout }}" \
+            "RESTORE FILELISTONLY FROM DISK = N'{{ tuki_sql_container_restore_path }}';" \
+          | awk -F '|' '
+              {
+                logical_name = $1
+                file_type = $3
+                gsub(/^[[:space:]]+/, "", logical_name)
+                gsub(/[[:space:]]+$/, "", logical_name)
+                gsub(/^[[:space:]]+/, "", file_type)
+                gsub(/[[:space:]]+$/, "", file_type)
+                if (file_type == "D" || file_type == "L") {
+                  print file_type "|" logical_name
+                }
+              }
+            '
+        executable: /bin/bash
+      register: tuki_backup_logical_files
+      changed_when: false
+      no_log: true
+
+    - name: Select logical data and log file names
+      ansible.builtin.set_fact:
+        tuki_logical_data_files: >-
+          {{ tuki_backup_logical_files.stdout_lines |
+          select('match', '^D[|]') | map('regex_replace', '^D[|]', '') | list }}
+        tuki_logical_log_files: >-
+          {{ tuki_backup_logical_files.stdout_lines |
+          select('match', '^L[|]') | map('regex_replace', '^L[|]', '') | list }}
+      no_log: true
+
+    - name: Require one logical data file and one logical log file
+      ansible.builtin.assert:
+        that:
+          - tuki_logical_data_files | length == 1
+          - tuki_logical_log_files | length == 1
+          - tuki_logical_data_files[0] | length > 0
+          - tuki_logical_log_files[0] | length > 0
+        fail_msg: >-
+          This guarded restore supports exactly one logical data file and one
+          logical log file. Inspect the backup and perform a reviewed custom
+          restore for a multi-file database.
+      no_log: true
+
+    - name: Refuse existing target database files
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tuki_sql_container_id }}"
+          - test
+          - "!"
+          - -e
+          - "{{ item }}"
+      loop:
+        - "{{ tuki_target_data_path }}"
+        - "{{ tuki_target_log_path }}"
+      changed_when: false
+
+    - name: Restore database with explicit data and log moves
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec -i "{{ tuki_sql_container_id }}" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -i /dev/stdin
+          ' -- "{{ tuki_sqlcmd_path.stdout }}" <<'TUKI_RESTORE_SQL'
+          RESTORE DATABASE [{{ tuki_database_name }}]
+          FROM DISK = N'{{ tuki_sql_container_restore_path }}'
+          WITH MOVE N'{{ tuki_logical_data_files[0] | replace("'", "''") }}' TO N'{{ tuki_target_data_path }}',
+               MOVE N'{{ tuki_logical_log_files[0] | replace("'", "''") }}' TO N'{{ tuki_target_log_path }}',
+               STATS = 10;
+          TUKI_RESTORE_SQL
+        executable: /bin/bash
+      changed_when: true
+      no_log: true
+
+    - name: Verify restored database is online
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec "{{ tuki_sql_container_id }}" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -h -1 -W -Q "$2"
+          ' -- "{{ tuki_sqlcmd_path.stdout }}" \
+            "SET NOCOUNT ON; SELECT state_desc FROM sys.databases WHERE name = N'{{ tuki_database_name }}';"
+        executable: /bin/bash
+      register: tuki_restored_database_state
+      changed_when: false
+      no_log: true
+
+    - name: Require restored database to be online
+      ansible.builtin.assert:
+        that:
+          - tuki_restored_database_state.stdout | trim == 'ONLINE'
+
+    - name: Run basic query against restored database
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec "{{ tuki_sql_container_id }}" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d "$2" -h -1 -W -Q "$3"
+          ' -- "{{ tuki_sqlcmd_path.stdout }}" "{{ tuki_database_name }}" \
+            "SET NOCOUNT ON; SELECT CASE WHEN DB_NAME() = N'{{ tuki_database_name }}' THEN 'VALID' ELSE 'INVALID' END;"
+        executable: /bin/bash
+      register: tuki_restored_database_query
+      changed_when: false
+      no_log: true
+
+    - name: Require basic restored database query to pass
+      ansible.builtin.assert:
+        that:
+          - tuki_restored_database_query.stdout | trim == 'VALID'
+
+    - name: Report guarded restore completion
+      ansible.builtin.debug:
+        msg: >-
+          Database {{ tuki_database_name }} was restored from the verified
+          backup and is ONLINE. The backup remains staged on GCP and inside the
+          SQL Server container for operator-controlled retention.

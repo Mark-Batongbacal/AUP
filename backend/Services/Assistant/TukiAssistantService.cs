@@ -895,15 +895,24 @@ public sealed class TukiAssistantService(
         string language,
         CancellationToken cancellationToken)
     {
-        if (session.LastLatitude is not { } originLat ||
+        var locationAssessment = AssistantLocationPolicy.Assess(
+            session.LastLatitude,
+            session.LastLongitude,
+            session.LastAccuracyMeters,
+            session.LastLocationAt,
+            DateTime.UtcNow);
+
+        if (!locationAssessment.CanUseForReroute ||
+            session.LastLatitude is not { } originLat ||
             session.LastLongitude is not { } originLon)
         {
+            _telemetry.Event(
+                "AIReplanLocationRejected",
+                session.TripSessionId,
+                locationAssessment.Reliability);
             return new(
                 "NO_RELIABLE_LOCATION",
-                Text(
-                    language,
-                    "Wala pa akong reliable live location para gumawa ng bagong route proposal. Tuloy muna yung current navigation.",
-                    "I don't have a reliable live location yet for a new route proposal. Your current navigation stays unchanged."),
+                ReplanLocationUnavailableText(language, locationAssessment),
                 Navigation: NavigationState(tripContext));
         }
 
@@ -1142,6 +1151,13 @@ public sealed class TukiAssistantService(
             ? 0m
             : NavigationTripRules.EstimatedRemainingFare(session, legs);
 
+        var locationAssessment = AssistantLocationPolicy.Assess(
+            session.LastLatitude,
+            session.LastLongitude,
+            session.LastAccuracyMeters,
+            session.LastLocationAt,
+            DateTime.UtcNow);
+
         return new AssistantActiveTripContext(
             session.TripSessionId,
             session.CurrentNavigationState.ToString(),
@@ -1161,7 +1177,10 @@ public sealed class TukiAssistantService(
             session.LastLatitude,
             session.LastLongitude,
             session.LastAccuracyMeters,
-            session.LastLocationAt);
+            session.LastLocationAt,
+            locationAssessment.Reliability,
+            locationAssessment.AgeSeconds,
+            locationAssessment.CanUseForReroute);
     }
 
     private async Task<(AssistantConversationContext Context, string? Error)> ResolveConversationAsync(
@@ -1469,6 +1488,39 @@ public sealed class TukiAssistantService(
         if (tags.Contains("fastest"))
             return TukiLanguage.IsFilipino(language) ? "pinakamabilis" : "fastest";
         return TukiLanguage.IsFilipino(language) ? "selected" : "selected";
+    }
+
+    private static string ReplanLocationUnavailableText(
+        string language,
+        AssistantLocationAssessment assessment)
+    {
+        var ageSeconds = assessment.AgeSeconds is { } age
+            ? Math.Max(0, Math.Round(age))
+            : (double?)null;
+
+        return assessment.Reliability switch
+        {
+            AssistantLocationPolicy.LastKnown when ageSeconds is { } seconds => Text(
+                language,
+                $"May last known GPS fix ako pero {seconds:0}s old na. Hindi ko iyon gagamitin bilang current reroute origin; hihintay ako ng fresh location.",
+                $"I have a last-known GPS fix, but it is {seconds:0}s old. I won't use it as the current reroute origin; I'll wait for a fresh location."),
+            AssistantLocationPolicy.Stale => Text(
+                language,
+                "Masyado nang luma yung saved GPS fix para gamitin sa reroute. Tuloy muna yung current navigation habang naghihintay ng fresh location.",
+                "The saved GPS fix is too old to use for rerouting. Your current navigation stays unchanged while we wait for a fresh location."),
+            AssistantLocationPolicy.Inaccurate => Text(
+                language,
+                "Hindi sapat yung accuracy ng latest GPS fix para gumawa ng bagong route. Tuloy muna yung current navigation.",
+                "The latest GPS fix is not accurate enough to build a new route. Your current navigation stays unchanged."),
+            AssistantLocationPolicy.Unknown => Text(
+                language,
+                "May saved location pero hindi ko ma-verify kung fresh at accurate ito, kaya hindi ko gagamitin sa reroute.",
+                "I have a saved location, but I can't verify that it is fresh and accurate, so I won't use it for rerouting."),
+            _ => Text(
+                language,
+                "Wala pa akong reliable live location para gumawa ng bagong route proposal. Tuloy muna yung current navigation.",
+                "I don't have a reliable live location yet for a new route proposal. Your current navigation stays unchanged.")
+        };
     }
 
     private static string FormatDistance(double meters) =>

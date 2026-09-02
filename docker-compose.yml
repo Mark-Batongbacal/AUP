@@ -17,7 +17,7 @@ services:
       valhalla:
         condition: service_started
       pelias:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/5129"]
       interval: 30s
@@ -92,7 +92,7 @@ services:
       - tuki-internal
 
   pelias:
-    image: ${PELIAS_API_IMAGE:-pelias/api:master}
+    image: ${PELIAS_API_IMAGE:-pelias/api@sha256:e4d5d799fb9c048f869c611139d6df7ac10777a3acf387bd52cb528bedda4d3b}
     restart: unless-stopped
     environment:
       PORT: "4000"
@@ -100,12 +100,75 @@ services:
       - "4000"
     volumes:
       - ./infra/pelias/pelias.json:/code/pelias.json:ro
-      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/pelias/runtime:/data
     depends_on:
       pelias-elasticsearch:
         condition: service_healthy
+      pelias-libpostal:
+        condition: service_healthy
+      pelias-placeholder:
+        condition: service_healthy
+      pelias-interpolation:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:4000/v1/search?text=health&size=1"]
+      test: ["CMD", "curl", "--fail", "--silent", "--get", "--data-urlencode", "text=SM City Clark", "--data", "size=1", "http://127.0.0.1:4000/v1/search"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - tuki-internal
+
+  pelias-libpostal:
+    image: ${PELIAS_LIBPOSTAL_IMAGE:-pelias/libpostal-service@sha256:72beeef72e968a7865ad7538854d900de7aa9cf27f3de899f29c00cd4a4d96fe}
+    restart: unless-stopped
+    expose:
+      - "4400"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--get", "--data-urlencode", "address=SM City Clark", "http://127.0.0.1:4400/parse"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - tuki-internal
+
+  pelias-placeholder:
+    image: ${PELIAS_PLACEHOLDER_IMAGE:-pelias/placeholder@sha256:a7c0cde8c11e39b621b383a270c4f6de737b1ec1cb57b25cc8b9c8dfa67deffc}
+    restart: unless-stopped
+    environment:
+      PORT: "4100"
+    expose:
+      - "4100"
+    volumes:
+      - ./infra/pelias/pelias.json:/code/pelias.json:ro
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/pelias/data:/data
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/pelias/blacklist:/data/blacklist
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--get", "--data-urlencode", "text=SM City Clark", "--output", "/dev/null", "http://127.0.0.1:4100/parser/search"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - tuki-internal
+
+  pelias-interpolation:
+    image: ${PELIAS_INTERPOLATION_IMAGE:-pelias/interpolation@sha256:1564696b6f8389770bb25cadf7e3c84d701007d2b9afd08908113d49c39f1de4}
+    restart: unless-stopped
+    environment:
+      PORT: "4300"
+    command:
+      - ./interpolate
+      - server
+      - /data/interpolation/address.db
+      - /data/interpolation/street.db
+    expose:
+      - "4300"
+    volumes:
+      - ./infra/pelias/pelias.json:/code/pelias.json:ro
+      - ${TUKI_DATA_ROOT:-/opt/tuki/data}/pelias/data:/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--get", "--data", "lat=15.168", "--data", "lon=120.58", "--data", "number=1", "--data-urlencode", "street=Manuel Roxas Highway", "--output", "/dev/null", "http://127.0.0.1:4300/search/geojson"]
       interval: 30s
       timeout: 10s
       retries: 10

@@ -1,0 +1,275 @@
+---
+- name: Back up the Tuki SQL Server database on Azure
+  hosts: tuki_azure
+  become: true
+  gather_facts: true
+  vars:
+    tuki_sql_host_backup_path: "{{ tuki_azure_backup_dir }}/{{ tuki_sql_backup_filename }}"
+    tuki_sql_container_backup_path: "{{ tuki_sql_container_backup_dir }}/{{ tuki_sql_backup_filename }}"
+    tuki_backup_archive_suffix: "{{ ansible_date_time.iso8601_basic_short }}"
+
+  pre_tasks:
+    - name: Validate SQL migration configuration
+      ansible.builtin.assert:
+        that:
+          - tuki_database_name is match('^[A-Za-z0-9_]+$')
+          - tuki_sql_backup_filename is match('^[A-Za-z0-9_.-]+\\.bak$')
+          - tuki_sql_compose_service is match('^[A-Za-z0-9_.-]+$')
+          - tuki_sql_container_backup_dir is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_azure_backup_dir is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_azure_compose_root is match('^/[-A-Za-z0-9_./]+$')
+        fail_msg: SQL migration names and paths must use safe characters.
+
+  tasks:
+    - name: Verify Docker Engine is available
+      ansible.builtin.command:
+        cmd: docker version --format {% raw %}'{{.Server.Version}}'{% endraw %}
+      changed_when: false
+
+    - name: Check Azure Compose project
+      ansible.builtin.stat:
+        path: "{{ tuki_azure_compose_root }}/docker-compose.yml"
+      register: tuki_azure_compose_file
+
+    - name: Resolve SQL Server container through Docker Compose
+      ansible.builtin.command:
+        cmd: >-
+          docker compose --env-file {{ tuki_compose_env }} ps -q --all
+          {{ tuki_sql_compose_service }}
+        chdir: "{{ tuki_azure_compose_root }}"
+      register: tuki_sql_compose_lookup
+      changed_when: false
+      failed_when: false
+      no_log: true
+      when: tuki_azure_compose_file.stat.isreg | default(false)
+
+    - name: Select Compose-managed SQL Server container
+      ansible.builtin.set_fact:
+        tuki_sql_container_id: "{{ tuki_sql_compose_lookup.stdout | default('') | trim }}"
+      no_log: true
+
+    - name: Resolve explicitly configured legacy SQL Server container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{% raw %}{{.Id}}{% endraw %}"
+          - "{{ tuki_sql_container_fallback }}"
+      register: tuki_sql_fallback_lookup
+      changed_when: false
+      no_log: true
+      when:
+        - tuki_sql_container_id | length == 0
+        - tuki_sql_container_fallback | default('') | length > 0
+
+    - name: Select legacy SQL Server container fallback
+      ansible.builtin.set_fact:
+        tuki_sql_container_id: "{{ tuki_sql_fallback_lookup.stdout | default('') | trim }}"
+      no_log: true
+      when: tuki_sql_container_id | length == 0
+
+    - name: Require an unambiguous SQL Server container
+      ansible.builtin.assert:
+        that:
+          - tuki_sql_container_id | length > 0
+          - tuki_sql_container_id is match('^[a-f0-9]{12,64}$')
+        fail_msg: >-
+          Docker Compose did not resolve the SQL Server service. Correct the
+          Azure Compose path/service, or explicitly set
+          tuki_sql_container_fallback for a legacy container.
+      no_log: true
+
+    - name: Verify SQL Server container is running
+      ansible.builtin.command:
+        argv:
+          - docker
+          - inspect
+          - --format
+          - "{% raw %}{{.State.Status}}{% endraw %}"
+          - "{{ tuki_sql_container_id }}"
+      register: tuki_sql_container_status
+      changed_when: false
+      failed_when: tuki_sql_container_status.stdout != 'running'
+
+    - name: Locate sqlcmd inside SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          for candidate in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do
+            if docker exec "{{ tuki_sql_container_id }}" test -x "$candidate"; then
+              printf '%s' "$candidate"
+              exit 0
+            fi
+          done
+          exit 1
+        executable: /bin/bash
+      register: tuki_sqlcmd_path
+      changed_when: false
+      no_log: true
+
+    - name: Determine Azure SSH login user
+      ansible.builtin.command:
+        cmd: id -un
+      become: false
+      register: tuki_azure_login_user
+      changed_when: false
+
+    - name: Determine Azure SSH login group
+      ansible.builtin.command:
+        cmd: id -gn
+      become: false
+      register: tuki_azure_login_group
+      changed_when: false
+
+    - name: Create restricted Azure backup directory
+      ansible.builtin.file:
+        path: "{{ tuki_azure_backup_dir }}"
+        state: directory
+        owner: "{{ tuki_azure_login_user.stdout }}"
+        group: "{{ tuki_azure_login_group.stdout }}"
+        mode: "0700"
+
+    - name: Check for an existing Azure host backup
+      ansible.builtin.stat:
+        path: "{{ tuki_sql_host_backup_path }}"
+        get_checksum: false
+      register: tuki_existing_host_backup
+
+    - name: Check for an existing container backup
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tuki_sql_container_id }}"
+          - test
+          - -e
+          - "{{ tuki_sql_container_backup_path }}"
+      register: tuki_existing_container_backup
+      changed_when: false
+      failed_when: false
+
+    - name: Refuse to replace previous backups without acknowledgement
+      ansible.builtin.assert:
+        that:
+          - >-
+            (not tuki_existing_host_backup.stat.exists and
+            tuki_existing_container_backup.rc != 0) or
+            tuki_confirm_backup_replace | default(false) | bool
+        fail_msg: >-
+          A previous backup exists. Archive it manually or rerun with
+          -e tuki_confirm_backup_replace=true to archive it automatically
+          before creating the new backup.
+
+    - name: Archive previous Azure host backup
+      ansible.builtin.command:
+        argv:
+          - mv
+          - "{{ tuki_sql_host_backup_path }}"
+          - "{{ tuki_sql_host_backup_path }}.{{ tuki_backup_archive_suffix }}.previous.bak"
+      when:
+        - tuki_existing_host_backup.stat.exists
+        - tuki_confirm_backup_replace | default(false) | bool
+
+    - name: Archive previous container backup
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tuki_sql_container_id }}"
+          - mv
+          - "{{ tuki_sql_container_backup_path }}"
+          - "{{ tuki_sql_container_backup_path }}.{{ tuki_backup_archive_suffix }}.previous.bak"
+      when:
+        - tuki_existing_container_backup.rc == 0
+        - tuki_confirm_backup_replace | default(false) | bool
+
+    - name: Create restricted backup directory inside SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec "{{ tuki_sql_container_id }}" mkdir -p "{{ tuki_sql_container_backup_dir }}"
+          docker exec "{{ tuki_sql_container_id }}" chmod 0700 "{{ tuki_sql_container_backup_dir }}"
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Back up Tuki database inside SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          docker exec "{{ tuki_sql_container_id }}" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -Q "$2"
+          ' -- "{{ tuki_sqlcmd_path.stdout }}" \
+            "BACKUP DATABASE [{{ tuki_database_name }}] TO DISK = N'{{ tuki_sql_container_backup_path }}' WITH INIT, COMPRESSION, CHECKSUM, STATS = 10;"
+        executable: /bin/bash
+      changed_when: true
+      no_log: true
+
+    - name: Verify container backup is non-empty
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tuki_sql_container_id }}"
+          - stat
+          - -c
+          - "%s"
+          - "{{ tuki_sql_container_backup_path }}"
+      register: tuki_container_backup_size
+      changed_when: false
+      failed_when: tuki_container_backup_size.stdout | int <= 0
+
+    - name: Remove incomplete host-side copy from an earlier failed run
+      ansible.builtin.file:
+        path: "{{ tuki_sql_host_backup_path }}.partial"
+        state: absent
+
+    - name: Copy SQL backup out of the container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - cp
+          - "{{ tuki_sql_container_id }}:{{ tuki_sql_container_backup_path }}"
+          - "{{ tuki_sql_host_backup_path }}.partial"
+      changed_when: true
+
+    - name: Verify copied Azure backup
+      ansible.builtin.stat:
+        path: "{{ tuki_sql_host_backup_path }}.partial"
+        checksum_algorithm: sha256
+      register: tuki_host_backup_partial
+
+    - name: Require a non-empty copied Azure backup
+      ansible.builtin.assert:
+        that:
+          - tuki_host_backup_partial.stat.isreg | default(false)
+          - tuki_host_backup_partial.stat.size | int > 0
+          - tuki_host_backup_partial.stat.size | int == tuki_container_backup_size.stdout | int
+
+    - name: Publish verified Azure backup atomically
+      ansible.builtin.command:
+        argv:
+          - mv
+          - "{{ tuki_sql_host_backup_path }}.partial"
+          - "{{ tuki_sql_host_backup_path }}"
+      changed_when: true
+
+    - name: Restrict final Azure backup permissions
+      ansible.builtin.file:
+        path: "{{ tuki_sql_host_backup_path }}"
+        owner: "{{ tuki_azure_login_user.stdout }}"
+        group: "{{ tuki_azure_login_group.stdout }}"
+        mode: "0600"
+
+    - name: Report Azure backup result
+      ansible.builtin.debug:
+        msg: >-
+          Azure SQL backup created at {{ tuki_sql_host_backup_path }}
+          ({{ tuki_host_backup_partial.stat.size }} bytes, SHA256
+          {{ tuki_host_backup_partial.stat.checksum }}). SQL Server page
+          checksums were included in the backup. Production data was not
+          stopped, dropped, or modified.

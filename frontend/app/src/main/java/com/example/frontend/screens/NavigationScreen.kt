@@ -8,15 +8,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +36,7 @@ import com.example.frontend.MapVisualStyle
 import com.example.frontend.core.localization.TukiInterfaceText
 import com.example.frontend.core.location.RouteCoordinate
 import com.example.frontend.model.CommuteStep
+import com.example.frontend.navigation.HistoryRouteReuseState
 import com.example.frontend.navigation.joinedNavigationLegs
 import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLng
@@ -77,6 +79,7 @@ fun NavigationScreen(
     val scope = rememberCoroutineScope()
     var showReplacementConfirmation by remember { mutableStateOf(false) }
     var selectedLegIndex by remember(origin, destination) { mutableStateOf<Int?>(null) }
+    var isHistoryAutoStarting by remember(origin, destination) { mutableStateOf(false) }
     val fullRoutePoints = remember(legRoutePoints) {
         joinedNavigationLegs(
             legRoutePoints.map { leg -> leg.map { point -> RouteCoordinate(point.latitude, point.longitude) } }
@@ -93,166 +96,199 @@ fun NavigationScreen(
         legRoutePoints.filter { points -> points.size >= 2 }.drop(1)
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(NavBg)) {
-        LazyColumn(
-            state = routeListState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(40.dp).clickable(enabled = !isStartingNavigation, onClick = onBack),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("←", color = NavDark, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Text(
-                        TukiInterfaceText.routeDetails,
-                        Modifier.weight(1f),
-                        color = NavDark,
-                        fontSize = 23.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
-                    )
-                }
-            }
+    LaunchedEffect(Unit) {
+        if (HistoryRouteReuseState.consumeAutoStart() && !hasActiveTrip && !isStartingNavigation) {
+            isHistoryAutoStarting = true
+            onStartTracking()
+        }
+    }
 
-            item {
-                Text("$origin →\n$destination", color = NavDark, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.ExtraBold)
-            }
+    LaunchedEffect(navigationStartError) {
+        if (navigationStartError != null) {
+            isHistoryAutoStarting = false
+        }
+    }
 
-            item {
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = NavSurface, shadowElevation = 1.dp) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RouteMetric("◷", "${shownMinutes.coerceAtLeast(0)} min", Modifier.weight(1f))
-                        RouteDivider()
-                        RouteMetric("₱", "₱${shownFare.roundToInt().coerceAtLeast(0)}", Modifier.weight(1f))
-                        RouteDivider()
-                        RouteMetric("◇", "${shownLegs.coerceAtLeast(0)} ${if (TukiInterfaceText.isFilipino) "hakbang" else "legs"}", Modifier.weight(1f))
-                    }
-                }
-            }
-
-            if (displayedRoutePoints.isNotEmpty()) {
+    Box(modifier = Modifier.fillMaxSize().background(NavBg)) {
+        Column(modifier = Modifier.fillMaxSize().background(NavBg)) {
+            LazyColumn(
+                state = routeListState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 item {
-                    RoutePreviewCard(
-                        routePoints = renderedRoutePoints,
-                        routeBoundsPoints = displayedRoutePoints,
-                        contextualLegs = contextualLegs,
-                        startPoint = displayedStart,
-                        destinationPoint = displayedDestination,
-                        finalDestination = routeFinalDestination,
-                        selectedStep = selectedLegIndex?.let { index -> steps.getOrNull(index) },
-                        onShowFullRoute = { selectedLegIndex = null }
-                    )
-                }
-            }
-
-            item {
-                Text(TukiInterfaceText.stepByStepGuide, color = NavDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-            }
-
-            if (steps.isEmpty()) {
-                item {
-                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = NavSurface) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(40.dp).clickable(enabled = !isStartingNavigation && !isHistoryAutoStarting, onClick = onBack),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("←", color = NavDark, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                        }
                         Text(
-                            if (TukiInterfaceText.isFilipino) "Pumili ulit ng ruta para makita ang Step-by-step guide."
-                            else "Choose a route again to see its step-by-step guide.",
-                            Modifier.padding(18.dp),
-                            color = NavMuted,
-                            fontSize = 13.sp
+                            TukiInterfaceText.routeDetails,
+                            Modifier.weight(1f),
+                            color = NavDark,
+                            fontSize = 23.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = com.example.frontend.ui.theme.TukiDisplayFontFamily
                         )
                     }
                 }
-            } else {
+
                 item {
-                    RouteTimelineSteps(
-                        steps = steps,
-                        selectedLegIndex = selectedLegIndex,
-                        legRoutePoints = legRoutePoints,
-                        onLegSelected = { index ->
-                            selectedLegIndex = if (selectedLegIndex == index) null else index
-                            scope.launch { routeListState.animateScrollToItem(RoutePreviewListIndex) }
+                    Text("$origin →\n$destination", color = NavDark, fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.ExtraBold)
+                }
+
+                item {
+                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = NavSurface, shadowElevation = 1.dp) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            RouteMetric("◷", "${shownMinutes.coerceAtLeast(0)} min", Modifier.weight(1f))
+                            RouteDivider()
+                            RouteMetric("₱", shownFare.roundToInt().coerceAtLeast(0).toString(), Modifier.weight(1f))
+                            RouteDivider()
+                            RouteMetric("◇", "${shownLegs.coerceAtLeast(0)} ${if (TukiInterfaceText.isFilipino) "hakbang" else "legs"}", Modifier.weight(1f))
                         }
-                    )
+                    }
+                }
+
+                if (displayedRoutePoints.isNotEmpty()) {
+                    item {
+                        RoutePreviewCard(
+                            routePoints = renderedRoutePoints,
+                            routeBoundsPoints = displayedRoutePoints,
+                            contextualLegs = contextualLegs,
+                            startPoint = displayedStart,
+                            destinationPoint = displayedDestination,
+                            finalDestination = routeFinalDestination,
+                            selectedStep = selectedLegIndex?.let { index -> steps.getOrNull(index) },
+                            onShowFullRoute = { selectedLegIndex = null }
+                        )
+                    }
+                }
+
+                item {
+                    Text(TukiInterfaceText.stepByStepGuide, color = NavDark, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                }
+
+                if (steps.isEmpty()) {
+                    item {
+                        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = NavSurface) {
+                            Text(
+                                if (TukiInterfaceText.isFilipino) "Pumili ulit ng ruta para makita ang Step-by-step guide."
+                                else "Choose a route again to see its step-by-step guide.",
+                                Modifier.padding(18.dp),
+                                color = NavMuted,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                } else {
+                    item {
+                        RouteTimelineSteps(
+                            steps = steps,
+                            selectedLegIndex = selectedLegIndex,
+                            legRoutePoints = legRoutePoints,
+                            onLegSelected = { index ->
+                                selectedLegIndex = if (selectedLegIndex == index) null else index
+                                scope.launch { routeListState.animateScrollToItem(RoutePreviewListIndex) }
+                            }
+                        )
+                    }
+                }
+
+                navigationStartError?.let { message ->
+                    item { Text(message, color = com.example.frontend.ui.theme.TukiDanger, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                }
+
+                item {
+                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = NavTip) {
+                        Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
+                            Surface(Modifier.size(26.dp), shape = CircleShape, color = NavTeal) {
+                                Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Text(TukiInterfaceText.tipPrepareFare, color = NavDark, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
 
-            navigationStartError?.let { message ->
-                item { Text(message, color = com.example.frontend.ui.theme.TukiDanger, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-            }
-
-            item {
-                Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = NavTip) {
-                    Row(Modifier.padding(15.dp), verticalAlignment = Alignment.Top) {
-                        Surface(Modifier.size(26.dp), shape = CircleShape, color = NavTeal) {
-                            Box(contentAlignment = Alignment.Center) { Text("i", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+            Column(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 22.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (hasActiveTrip) {
+                    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = NavTip) {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
+                            Text(
+                                if (TukiInterfaceText.isFilipino) "Aktibo pa ang kasalukuyang biyahe" else "Current trip is still active",
+                                color = NavDark,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            activeTripDescription?.takeIf { it.isNotBlank() }?.let { description ->
+                                Spacer(Modifier.height(3.dp))
+                                Text(description, color = NavMuted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
                         }
+                    }
+                    Button(
+                        onClick = onResumeActiveTrip,
+                        enabled = !isStartingNavigation,
+                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = NavTeal, contentColor = Color.White),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Text(if (TukiInterfaceText.isFilipino) "Ipagpatuloy ang Aktibong Biyahe" else "Resume Active Trip", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                    OutlinedButton(
+                        onClick = { showReplacementConfirmation = true },
+                        enabled = !isStartingNavigation,
+                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Text(
+                            if (TukiInterfaceText.isFilipino) "Tapusin ang Kasalukuyan at Start Trip Ito" else "End Current & Start This Trip",
+                            color = NavOrange,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = onStartTracking,
+                    enabled = !isStartingNavigation && !hasActiveTrip,
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = NavTeal, contentColor = Color.White),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    if (isStartingNavigation) {
+                        CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
                         Spacer(Modifier.width(10.dp))
-                        Text(TukiInterfaceText.tipPrepareFare, color = NavDark, fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (TukiInterfaceText.isFilipino) "Inaayos..." else "Working...", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    } else {
+                        Text("${TukiInterfaceText.startTrip}  →", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                     }
                 }
             }
         }
 
-        Column(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 22.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (hasActiveTrip) {
-                Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = NavTip) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
-                        Text(
-                            if (TukiInterfaceText.isFilipino) "Aktibo pa ang kasalukuyang biyahe" else "Current trip is still active",
-                            color = NavDark,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        activeTripDescription?.takeIf { it.isNotBlank() }?.let { description ->
-                            Spacer(Modifier.height(3.dp))
-                            Text(description, color = NavMuted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-                Button(
-                    onClick = onResumeActiveTrip,
-                    enabled = !isStartingNavigation,
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NavTeal, contentColor = Color.White),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Text(if (TukiInterfaceText.isFilipino) "Ipagpatuloy ang Aktibong Biyahe" else "Resume Active Trip", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                }
-                OutlinedButton(
-                    onClick = { showReplacementConfirmation = true },
-                    enabled = !isStartingNavigation,
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Text(
-                        if (TukiInterfaceText.isFilipino) "Tapusin ang Kasalukuyan at Start Trip Ito" else "End Current & Start This Trip",
-                        color = NavOrange,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                }
-            }
-
-            Button(
-                onClick = onStartTracking,
-                enabled = !isStartingNavigation && !hasActiveTrip,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = NavTeal, contentColor = Color.White),
-                shape = RoundedCornerShape(18.dp)
+        if (isHistoryAutoStarting) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(NavBg),
+                contentAlignment = Alignment.Center
             ) {
-                if (isStartingNavigation) {
-                    CircularProgressIndicator(Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(if (TukiInterfaceText.isFilipino) "Inaayos..." else "Working...", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                } else {
-                    Text("${TukiInterfaceText.startTrip}  →", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = NavTeal)
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        if (TukiInterfaceText.isFilipino) "Sinisimulan ang dati mong ruta..." else "Starting your previous route...",
+                        color = NavMuted,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
@@ -328,7 +364,7 @@ private fun RoutePreviewCard(
             }
             MapScreen(
                 routePoints = routePoints,
-                modifier = Modifier.fillMaxWidth().height(218.dp).clip(RoundedCornerShape(15.dp)),
+                modifier = Modifier.fillMaxWidth().height(260.dp).clip(RoundedCornerShape(15.dp)),
                 startPoint = startPoint,
                 selectedDestination = destinationPoint,
                 finalDestination = finalDestination,
@@ -338,7 +374,8 @@ private fun RoutePreviewCard(
                 visualStyle = MapVisualStyle.LiveTrip,
                 showDeviceLocation = false,
                 fitRouteBounds = true,
-                routeBoundsPoints = routeBoundsPoints
+                routeBoundsPoints = routeBoundsPoints,
+                routeInteractionControlsEnabled = true
             )
         }
     }
@@ -397,18 +434,22 @@ private fun RouteTimelineCard(
 ) {
     Row(Modifier.fillMaxWidth()) {
         Box(Modifier.width(18.dp).padding(top = 18.dp), contentAlignment = Alignment.TopCenter) {
-            Box(Modifier.size(10.dp).background(NavOrange, CircleShape))
+            Box(Modifier.size(if (selected) 12.dp else 10.dp).background(if (selected) NavTeal else NavOrange, CircleShape))
         }
         Spacer(Modifier.width(3.dp))
         Surface(
             modifier = Modifier.weight(1f).clickable(enabled = selectable, onClick = onClick),
             shape = RoundedCornerShape(18.dp),
-            color = if (selected) NavTip else NavSurface,
-            border = if (selected) BorderStroke(1.dp, NavTeal.copy(alpha = 0.45f)) else null,
-            shadowElevation = 1.dp
+            color = NavSurface,
+            border = if (selected) BorderStroke(2.dp, NavTeal) else null,
+            shadowElevation = if (selected) 3.dp else 1.dp
         ) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
-                Surface(Modifier.size(48.dp), shape = RoundedCornerShape(14.dp), color = NavIconBlue) {
+                Surface(
+                    Modifier.size(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = NavIconBlue
+                ) {
                     Box(contentAlignment = Alignment.Center) { Text(routeStepIcon(step.mode), fontSize = 23.sp) }
                 }
                 Spacer(Modifier.width(12.dp))
@@ -428,7 +469,17 @@ private fun RouteTimelineCard(
                         Text("• ${step.to}", color = NavMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Text("⌖", color = if (selectable) NavTeal else NavMuted.copy(alpha = 0.45f), fontSize = 18.sp)
+                Box(
+                    modifier = Modifier.size(28.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (selected) "✓" else "⌖",
+                        color = if (selected || selectable) NavTeal else NavMuted.copy(alpha = 0.45f),
+                        fontSize = if (selected) 17.sp else 18.sp,
+                        fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Normal
+                    )
+                }
             }
         }
     }
