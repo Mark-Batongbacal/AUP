@@ -432,3 +432,41 @@ the oldest files in that retention tier, and removes the local copy only after
 the upload verifies successfully. A failed upload leaves the completed local
 `.bak` available for operator recovery. A lock prevents overlapping daily,
 weekly, and monthly jobs.
+
+
+## Staging database
+
+The staging database is provisioned by Ansible rather than manually. The
+default database name is `Tuki_Staging`.
+
+Run from `infra/ansible`:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/prepare-staging-db.yml \
+  --limit azure
+```
+
+The playbook:
+
+```text
+resolve SQL Server container
+→ create Tuki_Staging only when missing
+→ copy TukiDbSchema.sql
+→ copy TukiNavigationSchema.sql
+→ copy every database/migrations/*.sql in filename order
+→ apply the full additive schema chain
+→ verify critical tables exist
+```
+
+It reads the SQL Server SA password only from the running SQL Server container
+and passes it to `sqlcmd` through `SQLCMDPASSWORD`; no SQL password is
+required on the command line or stored in this playbook.
+
+Azure currently uses the host-specific
+`group_vars/tuki_azure.yml` fallback `tuki-sql` for its legacy standalone
+SQL Server container. GCP and future Compose-managed hosts continue to prefer
+Compose service discovery.
+
+Because the schema scripts are additive/idempotent, rerunning the playbook is
+the normal way to bring `Tuki_Staging` up to the repository's current schema.
+It does not drop or recreate the staging database.
