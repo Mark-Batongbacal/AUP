@@ -1,0 +1,140 @@
+---
+- name: Synchronize Tuki staging reference data
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    tuki_confirm_staging_reference_sync: false
+    tuki_reference_source_database_name: "{{ tuki_database_name }}"
+    tuki_reference_destination_database_name: "{{ tuki_staging_database_name }}"
+    tuki_staging_reference_sync_dir: /opt/tuki/staging-reference-sync
+    tuki_staging_reference_sync_script: >-
+      {{ tuki_staging_reference_sync_dir }}/sync-staging-reference-data.sql
+    tuki_target_compose_root: >-
+      {{ tuki_gcp_compose_root
+         if 'tuki_gcp' in group_names
+         else tuki_azure_compose_root }}
+
+  pre_tasks:
+    - name: Validate staging reference synchronization configuration
+      ansible.builtin.assert:
+        that:
+          - tuki_confirm_staging_reference_sync | bool
+          - tuki_reference_source_database_name == 'Tuki'
+          - tuki_reference_source_database_name is match('^[A-Za-z0-9_]+$')
+          - tuki_reference_destination_database_name is match('^[A-Za-z0-9_]+$')
+          - >-
+            tuki_reference_source_database_name | lower
+            != tuki_reference_destination_database_name | lower
+          - tuki_reference_destination_database_name | lower != 'tuki'
+          - tuki_sql_compose_service is match('^[A-Za-z0-9_.-]+$')
+          - tuki_target_compose_root is match('^/[-A-Za-z0-9_./]+$')
+        fail_msg: >-
+          Refusing staging reference synchronization. Confirm the operation with
+          -e tuki_confirm_staging_reference_sync=true and verify that the source
+          is Tuki while the distinct destination is not Tuki.
+
+  tasks:
+    - name: Resolve SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id=""
+
+          if [[ -d {{ tuki_target_compose_root | quote }} ]]; then
+            cd {{ tuki_target_compose_root | quote }}
+            if [[ -f {{ tuki_compose_env | quote }} ]]; then
+              container_id="$(docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all {{ tuki_sql_compose_service | quote }} 2>/dev/null || true)"
+            else
+              container_id="$(docker compose ps -q --all {{ tuki_sql_compose_service | quote }} 2>/dev/null || true)"
+            fi
+          fi
+
+          if [[ -z "$container_id" && -n {{ tuki_sql_container_fallback | default('') | quote }} ]]; then
+            container_id="$(docker inspect --format "{% raw %}{{.Id}}{% endraw %}" {{ tuki_sql_container_fallback | default('') | quote }} 2>/dev/null || true)"
+          fi
+
+          if [[ ! "$container_id" =~ ^[a-f0-9]{12,64}$ ]]; then
+            echo "could not resolve SQL Server container" >&2
+            exit 1
+          fi
+
+          printf '%s' "$container_id"
+        executable: /bin/bash
+      register: tuki_staging_reference_sql_container
+      changed_when: false
+
+    - name: Resolve sqlcmd inside SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_staging_reference_sql_container.stdout | quote }}
+
+          for candidate in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do
+            if docker exec "$container_id" test -x "$candidate"; then
+              printf '%s' "$candidate"
+              exit 0
+            fi
+          done
+
+          echo "sqlcmd was not found inside SQL Server container" >&2
+          exit 1
+        executable: /bin/bash
+      register: tuki_staging_reference_sqlcmd
+      changed_when: false
+
+    - name: Create restricted staging reference synchronization directory
+      ansible.builtin.file:
+        path: "{{ tuki_staging_reference_sync_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Stage reference synchronization SQL on target host
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/sync-staging-reference-data.sql"
+        dest: "{{ tuki_staging_reference_sync_script }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Refresh staging reference data transactionally
+      block:
+        - name: Synchronize approved reference tables
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              container_id={{ tuki_staging_reference_sql_container.stdout | quote }}
+              sqlcmd={{ tuki_staging_reference_sqlcmd.stdout | quote }}
+              source_database={{ tuki_reference_source_database_name | quote }}
+              destination_database={{ tuki_reference_destination_database_name | quote }}
+              sync_script={{ tuki_staging_reference_sync_script | quote }}
+
+              docker exec -i "$container_id" bash -c '
+                set -eu
+                password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+                test -n "$password"
+                export SQLCMDPASSWORD="$password"
+                exec "$1" -S localhost -U sa -C -b -d master \
+                  -v "SourceDatabase=$2" "DestinationDatabase=$3"
+              ' -- "$sqlcmd" "$source_database" "$destination_database" \
+                < "$sync_script"
+            executable: /bin/bash
+          register: tuki_staging_reference_sync_result
+          changed_when: true
+      always:
+        - name: Remove staged reference synchronization SQL
+          ansible.builtin.file:
+            path: "{{ tuki_staging_reference_sync_script }}"
+            state: absent
+
+    - name: Report staging reference synchronization
+      ansible.builtin.debug:
+        msg:
+          - >-
+            Reference data synchronized from
+            {{ tuki_reference_source_database_name }} to
+            {{ tuki_reference_destination_database_name }}.
+          - "{{ tuki_staging_reference_sync_result.stdout_lines }}"

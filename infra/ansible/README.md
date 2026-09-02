@@ -470,3 +470,49 @@ Compose service discovery.
 Because the schema scripts are additive/idempotent, rerunning the playbook is
 the normal way to bring `Tuki_Staging` up to the repository's current schema.
 It does not drop or recreate the staging database.
+
+### Staging reference data
+
+Prepare the staging schema before synchronizing transportation reference data,
+then deploy staging services in a later, separate phase:
+
+```text
+prepare-staging-db.yml
+    ↓
+sync-staging-reference-data.yml
+    ↓
+deploy staging services
+```
+
+The reference synchronization copies only these approved tables from `Tuki`
+to `Tuki_Staging`, in foreign-key-safe order:
+
+```text
+TransportModes
+TransportStops
+TransportRoutes
+RoutePoints
+RouteWaypoints
+RouteStops
+RouteSegments
+FareRules
+TricyclePoints
+TransferConnections
+```
+
+Run the synchronization from `infra/ansible` with its explicit confirmation:
+
+```bash
+ansible-playbook -i inventory.local.ini \
+  playbooks/sync-staging-reference-data.yml \
+  --limit azure \
+  -e tuki_confirm_staging_reference_sync=true
+```
+
+The playbook clears and repopulates only those approved tables in
+`Tuki_Staging`. It never writes to `Tuki`, refuses equal source and destination
+database names, preserves identity values and routing relationships, and wraps
+the destination refresh and verification in one transaction. Any SQL or count
+verification failure rolls back the staging changes. It also fails unless the
+staging user, API-key, passenger-trip, trip-session, chat-conversation, and
+chat-message tables remain empty.
