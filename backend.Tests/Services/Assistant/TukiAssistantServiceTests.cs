@@ -377,6 +377,8 @@ public sealed class TukiAssistantServiceTests
             userId, sessionId, TripNavigationState.OnJeepney, "ON_ROUTE");
         session.LastLatitude = 15.1;
         session.LastLongitude = 120.5;
+        session.LastAccuracyMeters = 20;
+        session.LastLocationAt = DateTime.UtcNow;
         session.OriginalBudget = 100;
         session.ApproxFareSpent = 20;
 
@@ -388,7 +390,9 @@ public sealed class TukiAssistantServiceTests
                 It.Is<AssistantContext>(context =>
                     context.Surface == AssistantSurface.ActiveTrip &&
                     context.ActiveTrip != null &&
-                    context.ActiveTrip.TripSessionId == sessionId),
+                    context.ActiveTrip.TripSessionId == sessionId &&
+                    context.ActiveTrip.LocationReliability == AssistantLocationPolicy.Current &&
+                    context.ActiveTrip.CanUseLocationForReroute),
                 default))
             .ReturnsAsync(new AssistantIntent
             {
@@ -418,6 +422,48 @@ public sealed class TukiAssistantServiceTests
         Assert.Equal(proposedRecommendationId, Assert.Single(result.Journeys!).JourneyId);
         _sessions.Verify(item => item.UpdateAsync(
             It.IsAny<TripSession>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ActiveTrip_StaleGps_RemainsInAiContextButCannotStartReplan()
+    {
+        var userId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var session = ActiveSession(
+            userId, sessionId, TripNavigationState.OnJeepney, "ON_ROUTE");
+        session.LastLatitude = 15.1;
+        session.LastLongitude = 120.5;
+        session.LastAccuracyMeters = 20;
+        session.LastLocationAt = DateTime.UtcNow.AddSeconds(-90);
+
+        _sessions.Setup(item => item.GetOwnedAsync(sessionId, userId, default))
+            .ReturnsAsync(session);
+        _instructions.Setup(item => item.GetForOwnedSessionAsync(sessionId, userId, default))
+            .ReturnsAsync([]);
+
+        AssistantContext? capturedContext = null;
+        _extractor.Setup(item => item.ExtractAsync(
+                It.IsAny<AssistantContext>(), default))
+            .Callback<AssistantContext, CancellationToken>((context, _) => capturedContext = context)
+            .ReturnsAsync(new AssistantIntent
+            {
+                Intent = AssistantIntentType.UpdateTripConstraints,
+                Preference = "cheapest"
+            });
+
+        var result = await Service().RespondActiveTripAsync(
+            userId, sessionId, new("Find me a cheaper route"));
+
+        Assert.Equal("NO_RELIABLE_LOCATION", result.Status);
+        Assert.NotNull(capturedContext?.ActiveTrip);
+        Assert.Equal(15.1, capturedContext!.ActiveTrip!.LastLatitude);
+        Assert.Equal(120.5, capturedContext.ActiveTrip.LastLongitude);
+        Assert.Equal(AssistantLocationPolicy.Stale, capturedContext.ActiveTrip.LocationReliability);
+        Assert.False(capturedContext.ActiveTrip.CanUseLocationForReroute);
+        Assert.InRange(capturedContext.ActiveTrip.LocationAgeSeconds ?? 0, 89, 100);
+        _routing.Verify(service => service.PlanTripsAsync(
+            It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(),
+            It.IsAny<JourneyPlanningPreferences>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
