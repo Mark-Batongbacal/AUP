@@ -365,3 +365,70 @@ done
 8. Switch public DNS to GCP only after verification passes.
 9. Keep Azure intact and unavailable for writes temporarily as a rollback
    source until the cutover is accepted.
+
+
+## Automated Google Drive database backups
+
+The `backups.yml` playbook installs rclone, renders the encrypted Google Drive
+configuration to `/etc/rclone/rclone.conf` with mode `0600`, installs the
+database backup script, and enables systemd timers for daily, weekly, and
+monthly SQL Server backups.
+
+Keep the complete working rclone remote in encrypted `group_vars/vault.yml`:
+
+```yaml
+tuki_rclone_config: |
+  [gdrive]
+  type = drive
+  ...
+```
+
+The default retention policy is 7 daily, 4 weekly, and 3 monthly backups under:
+
+```text
+gdrive:Tuki/production/database/
+├── daily/
+├── weekly/
+└── monthly/
+```
+
+Migration snapshots remain separate from this automatic retention policy.
+
+Install or update the backup machinery on one host:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/backups.yml \
+  --limit azure \
+  --vault-password-file .vault-password
+```
+
+Use `--limit gcp` after migration. The same playbook can manage both hosts,
+but normally only the active production database host should have its timers
+enabled to avoid two independent systems writing production backup sets.
+
+The default schedules are evaluated in `Asia/Manila` regardless of VM
+timezone: daily at 02:00, Sunday at 03:00, and the first day of each month at
+04:00. Each timer has up to five minutes of randomized delay. Change the
+`tuki_backup_*_calendar` variables in `group_vars/all.yml` if needed.
+
+Inspect the timers:
+
+```bash
+sudo systemctl list-timers 'tuki-db-backup-*.timer'
+```
+
+Run a daily backup immediately for validation:
+
+```bash
+sudo systemctl start tuki-db-backup@daily.service
+sudo systemctl status tuki-db-backup@daily.service
+sudo journalctl -u tuki-db-backup@daily.service --no-pager
+```
+
+Each run resolves the SQL Server container, creates a compressed SQL Server
+backup with page checksums, copies it to a restricted host staging directory,
+uploads it with rclone, compares the remote and local byte counts, prunes only
+the oldest files in that retention tier, and removes the local copy only after
+the upload verifies successfully. A failed upload leaves the completed local
+`.bak` available for operator recovery. A lock prevents overlapping daily,
+weekly, and monthly jobs.
