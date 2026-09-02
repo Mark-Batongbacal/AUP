@@ -1,6 +1,7 @@
 using backend.Models.Database;
 using backend.Repositories;
 using backend.Helpers;
+using backend.Services.Routing;
 
 namespace backend.Services.Transportation;
 
@@ -9,7 +10,8 @@ public sealed class TransportRouteService(
     ITransportModeRepository transportModeRepository,
     IRouteStopRepository routeStopRepository,
     IRouteSegmentRepository routeSegmentRepository,
-    IFareRuleRepository fareRuleRepository) : ITransportRouteService
+    IFareRuleRepository fareRuleRepository,
+    IRoutingNetworkChangeNotifier? routingNetwork = null) : ITransportRouteService
 {
     private readonly ITransportRouteRepository _transportRouteRepository = transportRouteRepository;
     private readonly ITransportModeRepository _transportModeRepository = transportModeRepository;
@@ -159,6 +161,7 @@ public sealed class TransportRouteService(
         var saved = existingRoute is null
             ? await _transportRouteRepository.AddAsync(route, cancellationToken)
             : await _transportRouteRepository.ReplaceAsync(existingRoute.RouteId, route, cancellationToken);
+        routingNetwork?.Invalidate("active jeepney route created or replaced");
         return TransportRouteCreationResult.Success(saved);
     }
 

@@ -1,0 +1,66 @@
+---
+- name: Configure rclone for Tuki backups
+  hosts:
+    - tuki_gcp
+    - tuki_azure
+  become: true
+
+  vars_files:
+    - "{{ playbook_dir }}/../group_vars/vault.yml"
+
+  pre_tasks:
+    - name: Validate rclone configuration exists
+      ansible.builtin.assert:
+        that:
+          - tuki_rclone_config is defined
+          - tuki_rclone_config | string | length > 0
+        fail_msg: >-
+          tuki_rclone_config must be defined inside the encrypted
+          group_vars/vault.yml.
+      no_log: true
+
+  tasks:
+    - name: Install rclone
+      ansible.builtin.apt:
+        name: rclone
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create rclone configuration directory
+      ansible.builtin.file:
+        path: /etc/rclone
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install encrypted rclone configuration
+      ansible.builtin.copy:
+        content: "{{ tuki_rclone_config }}"
+        dest: /etc/rclone/rclone.conf
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Create local Tuki backup directory
+      ansible.builtin.file:
+        path: /opt/tuki/backups
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Verify Google Drive access
+      ansible.builtin.command:
+        cmd: >-
+          rclone lsd
+          --config /etc/rclone/rclone.conf
+          gdrive:Tuki/production
+      register: tuki_rclone_test
+      changed_when: false
+
+    - name: Show Google Drive backup directories
+      ansible.builtin.debug:
+        var: tuki_rclone_test.stdout_lines

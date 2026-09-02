@@ -112,6 +112,7 @@ dependencies {
     implementation(libs.facebook.login)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
+    implementation(libs.lottie.compose)
     implementation("androidx.navigation:navigation-compose:2.8.0")
     testImplementation(libs.junit)
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")

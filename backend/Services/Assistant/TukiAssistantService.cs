@@ -1109,7 +1109,7 @@ public sealed class TukiAssistantService(
         var explanation = Text(
             language,
             $"Pinili ng routing engine yung route na ito bilang {objective}: humigit-kumulang ₱{recommendation.TotalFare:0.##}, {recommendation.TotalMinutes:0.#} min, {recommendation.WalkingDistanceMeters:0}m na lakad, at {recommendation.TransferCount} transfer{(recommendation.TransferCount == 1 ? string.Empty : "s")}.",
-            $"The routing engine selected this as the {objective} option: about ₱{recommendation.TotalFare:0.##}, {recommendation.TotalMinutes:0.#} min, {recommendation.WalkingDistanceMeters:0}m walking, and {recommendation.TransferCount} transfer{(recommendation.TransferCount == 1 ? string.Empty : "s")}." );
+            $"The routing engine selected this as the {objective} option: about ₱{recommendation.TotalFare:0.##}, {recommendation.TotalMinutes:0.#} min, {recommendation.WalkingDistanceMeters:0}m walking, and {recommendation.TransferCount} transfer{(recommendation.TransferCount == 1 ? string.Empty : "s")}.");
 
         return new(
             "ROUTE_EXPLANATION",

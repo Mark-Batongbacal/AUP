@@ -10,13 +10,23 @@ namespace Tuki.Admin.Controllers;
 public sealed class TricyclePointsController(IAdminTricyclePointRepository repository) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(bool includeArchived = true, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Index(string status = "active", CancellationToken cancellationToken = default)
     {
-        var result = await repository.GetAllAsync(includeArchived, cancellationToken);
+        var normalizedStatus = string.Equals(status, "archived", StringComparison.OrdinalIgnoreCase)
+            ? "archived"
+            : "active";
+
+        var result = await repository.GetAllAsync(includeArchived: normalizedStatus == "archived", cancellationToken);
+        var points = result.Value ?? [];
+        if (normalizedStatus == "archived")
+            points = points.Where(point => !point.IsActive).ToArray();
+        else
+            points = points.Where(point => point.IsActive).ToArray();
+
         return View(new TricyclePointListViewModel
         {
-            Points = result.Value ?? [],
-            IncludeArchived = includeArchived,
+            Points = points,
+            Status = normalizedStatus,
             ErrorMessage = result.Succeeded ? null : result.ErrorMessage
         });
     }

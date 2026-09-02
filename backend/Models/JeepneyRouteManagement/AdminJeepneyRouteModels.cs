@@ -44,7 +44,11 @@ public sealed record AdminJeepneyRouteResponse(
     int WaypointCount,
     bool HasPolyline,
     DateTime CreatedAt,
-    DateTime? UpdatedAt);
+    DateTime? UpdatedAt)
+{
+    public DateTime? ArchivedAt { get; init; }
+    public bool IsArchived => ArchivedAt.HasValue;
+}
 
 public sealed class AdminJeepneyRouteGeometryRequest
 {
@@ -74,6 +78,18 @@ public sealed record AdminJeepneyRouteGeometryResponse(
     IReadOnlyList<AdminJeepneyRouteGeometryPointResponse> Points,
     DateTime? UpdatedAt);
 
+public sealed class AdminJeepneyValhallaRequest
+{
+    [Required, MinLength(2), MaxLength(100)]
+    public List<AdminJeepneyRouteGeometryPointRequest> Waypoints { get; init; } = [];
+}
+
+public sealed record AdminJeepneyValhallaPreviewResponse(
+    long RouteId,
+    IReadOnlyList<AdminJeepneyRouteGeometryPointResponse> Waypoints,
+    IReadOnlyList<AdminJeepneyRouteGeometryPointResponse> GeneratedPoints,
+    string EncodedPolyline);
+
 public sealed record AdminJeepneyRouteReadinessCheckResponse(
     string Code,
     string Label,
@@ -93,7 +109,8 @@ public enum AdminJeepneyRouteMutationStatus
     NotFound,
     Conflict,
     JeepneyModeNotFound,
-    ActiveRouteLocked
+    ActiveRouteLocked,
+    UpstreamFailure
 }
 
 public sealed record AdminJeepneyRouteMutationResult(
@@ -122,6 +139,21 @@ public sealed record AdminJeepneyRouteGeometryMutationResult(
         new(AdminJeepneyRouteMutationStatus.Success, [], geometry);
 
     public static AdminJeepneyRouteGeometryMutationResult Failure(
+        AdminJeepneyRouteMutationStatus status,
+        params string[] errors) => new(status, errors, null);
+}
+
+public sealed record AdminJeepneyValhallaPreviewResult(
+    AdminJeepneyRouteMutationStatus Status,
+    IReadOnlyList<string> Errors,
+    AdminJeepneyValhallaPreviewResponse? Preview)
+{
+    public bool Succeeded => Status == AdminJeepneyRouteMutationStatus.Success;
+
+    public static AdminJeepneyValhallaPreviewResult Success(AdminJeepneyValhallaPreviewResponse preview) =>
+        new(AdminJeepneyRouteMutationStatus.Success, [], preview);
+
+    public static AdminJeepneyValhallaPreviewResult Failure(
         AdminJeepneyRouteMutationStatus status,
         params string[] errors) => new(status, errors, null);
 }

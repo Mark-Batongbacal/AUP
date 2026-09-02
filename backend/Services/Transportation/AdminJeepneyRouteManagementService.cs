@@ -2,12 +2,15 @@ using backend.Helpers;
 using backend.Models.Database;
 using backend.Models.JeepneyRouteManagement;
 using backend.Repositories;
+using backend.Services.Routing;
 
 namespace backend.Services.Transportation;
 
 public sealed class AdminJeepneyRouteManagementService(
     ITransportRouteRepository routeRepository,
-    ITransportModeRepository transportModeRepository) : IAdminJeepneyRouteManagementService
+    ITransportModeRepository transportModeRepository,
+    IRouteGeneratorService? routeGeneratorService = null,
+    IRoutingNetworkChangeNotifier? routingNetwork = null) : IAdminJeepneyRouteManagementService
 {
     public async Task<IReadOnlyList<AdminJeepneyRouteResponse>> GetAllAsync(
         bool includeActive = true,
@@ -221,6 +224,73 @@ public sealed class AdminJeepneyRouteManagementService(
         return AdminJeepneyRouteGeometryMutationResult.Success(MapGeometry(saved));
     }
 
+    public async Task<AdminJeepneyValhallaPreviewResult> PreviewValhallaAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var preparation = await PrepareValhallaAsync(routeId, request, cancellationToken);
+        if (!preparation.Succeeded)
+            return AdminJeepneyValhallaPreviewResult.Failure(preparation.Status, preparation.Errors.ToArray());
+
+        var generated = preparation.GeneratedPoints!;
+        var preview = new AdminJeepneyValhallaPreviewResponse(
+            routeId,
+            preparation.Waypoints!
+                .Select((point, index) => new AdminJeepneyRouteGeometryPointResponse(index + 1, point.Latitude, point.Longitude))
+                .ToArray(),
+            generated
+                .Select((point, index) => new AdminJeepneyRouteGeometryPointResponse(index + 1, point.Latitude, point.Longitude))
+                .ToArray(),
+            PolylineEncoder.EncodePolyline6(generated));
+
+        return AdminJeepneyValhallaPreviewResult.Success(preview);
+    }
+
+    public async Task<AdminJeepneyRouteGeometryMutationResult> SaveValhallaGeometryAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var preparation = await PrepareValhallaAsync(routeId, request, cancellationToken);
+        if (!preparation.Succeeded)
+            return AdminJeepneyRouteGeometryMutationResult.Failure(preparation.Status, preparation.Errors.ToArray());
+
+        var createdAt = DateTime.UtcNow;
+        var generated = preparation.GeneratedPoints!;
+        var waypoints = preparation.Waypoints!;
+
+        var routePoints = generated.Select((point, index) => new RoutePoint
+        {
+            PointOrder = index + 1,
+            Latitude = point.Latitude,
+            Longitude = point.Longitude,
+            CreatedAt = createdAt
+        }).ToList();
+        var routeWaypoints = waypoints.Select((point, index) => new RouteWaypoint
+        {
+            WaypointOrder = index + 1,
+            Latitude = point.Latitude,
+            Longitude = point.Longitude,
+            CreatedAt = createdAt
+        }).ToList();
+        var encodedPolyline = PolylineEncoder.EncodePolyline6(generated);
+
+        var saved = await routeRepository.ReplaceDraftGeometryAsync(
+            routeId,
+            routePoints,
+            routeWaypoints,
+            encodedPolyline,
+            cancellationToken);
+
+        if (saved is null)
+            return AdminJeepneyRouteGeometryMutationResult.Failure(
+                AdminJeepneyRouteMutationStatus.ActiveRouteLocked,
+                "The route is no longer an editable draft. Refresh the route before saving the generated geometry.");
+
+        return AdminJeepneyRouteGeometryMutationResult.Success(MapGeometry(saved));
+    }
+
     public async Task<AdminJeepneyRouteMutationResult> PublishDraftAsync(
         long routeId,
         CancellationToken cancellationToken = default)
@@ -253,7 +323,82 @@ public sealed class AdminJeepneyRouteManagementService(
                 AdminJeepneyRouteMutationStatus.Conflict,
                 "The route changed or is no longer publishable. Refresh its details and verify readiness again.");
 
+        routingNetwork?.Invalidate("jeepney route draft published");
         return AdminJeepneyRouteMutationResult.Success(Map(published));
+    }
+
+    private async Task<ValhallaPreparationResult> PrepareValhallaAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (routeId <= 0)
+            return ValhallaPreparationResult.Failure(
+                AdminJeepneyRouteMutationStatus.NotFound,
+                "Jeepney route was not found.");
+
+        var errors = ValidateWaypoints(request, out var waypoints);
+        if (errors.Count > 0)
+            return ValhallaPreparationResult.Failure(
+                AdminJeepneyRouteMutationStatus.ValidationFailed,
+                errors.ToArray());
+
+        var route = await routeRepository.GetByIdWithPointsForAdminAsync(routeId, cancellationToken);
+        if (route is null || !IsJeepney(route))
+            return ValhallaPreparationResult.Failure(
+                AdminJeepneyRouteMutationStatus.NotFound,
+                "Jeepney route was not found.");
+
+        if (route.IsActive)
+            return ValhallaPreparationResult.Failure(
+                AdminJeepneyRouteMutationStatus.ActiveRouteLocked,
+                "Published jeepney routes cannot be regenerated. Create or edit an inactive draft instead.");
+
+        if (routeGeneratorService is null)
+            return ValhallaPreparationResult.Failure(
+                AdminJeepneyRouteMutationStatus.UpstreamFailure,
+                "Valhalla route generation is not configured for this service instance.");
+
+        try
+        {
+            var input = waypoints
+                .Select(point => new List<double> { point.Latitude, point.Longitude })
+                .ToList();
+            var generatedLists = await routeGeneratorService.GenerateAsync(input, cancellationToken);
+            var generated = generatedLists
+                .Select(point => (Latitude: point[0], Longitude: point[1]))
+                .ToList();
+
+            if (generated.Count < 2)
+                return ValhallaPreparationResult.Failure(
+                    AdminJeepneyRouteMutationStatus.UpstreamFailure,
+                    "Valhalla returned no usable route geometry.");
+
+            if (generated.Count > 5000)
+                return ValhallaPreparationResult.Failure(
+                    AdminJeepneyRouteMutationStatus.ValidationFailed,
+                    "Valhalla generated more than 5000 route points. Reduce or adjust the waypoint set.");
+
+            return ValhallaPreparationResult.Success(waypoints, generated);
+        }
+        catch (HttpRequestException exception)
+        {
+            return ValhallaPreparationResult.Failure(
+                AdminJeepneyRouteMutationStatus.UpstreamFailure,
+                $"Valhalla could not generate the route: {exception.Message}");
+        }
+        catch (InvalidOperationException exception)
+        {
+            return ValhallaPreparationResult.Failure(
+                AdminJeepneyRouteMutationStatus.UpstreamFailure,
+                exception.Message);
+        }
+        catch (ArgumentException exception)
+        {
+            return ValhallaPreparationResult.Failure(
+                AdminJeepneyRouteMutationStatus.ValidationFailed,
+                exception.Message);
+        }
     }
 
     private static bool IsJeepney(TransportRoute route) =>
@@ -370,6 +515,39 @@ public sealed class AdminJeepneyRouteManagementService(
         return errors;
     }
 
+    private static List<string> ValidateWaypoints(
+        AdminJeepneyValhallaRequest request,
+        out List<(double Latitude, double Longitude)> waypoints)
+    {
+        waypoints = [];
+        var errors = new List<string>();
+        if (request.Waypoints is null || request.Waypoints.Count < 2)
+        {
+            errors.Add("At least 2 ordered waypoints are required for Valhalla generation.");
+            return errors;
+        }
+
+        if (request.Waypoints.Count > 100)
+        {
+            errors.Add("Valhalla preview accepts at most 100 ordered waypoints. Use selected anchors rather than every route geometry point.");
+            return errors;
+        }
+
+        for (var index = 0; index < request.Waypoints.Count; index++)
+        {
+            var point = request.Waypoints[index];
+            if (!double.IsFinite(point.Latitude) || point.Latitude is < -90 or > 90)
+                errors.Add($"Waypoint {index + 1} latitude must be a finite number between -90 and 90.");
+            if (!double.IsFinite(point.Longitude) || point.Longitude is < -180 or > 180)
+                errors.Add($"Waypoint {index + 1} longitude must be a finite number between -180 and 180.");
+            waypoints.Add((point.Latitude, point.Longitude));
+        }
+
+        if (errors.Count > 0)
+            waypoints = [];
+        return errors;
+    }
+
     private static void Required(string? value, string label, int max, ICollection<string> errors)
     {
         if (string.IsNullOrWhiteSpace(value)) errors.Add($"{label} is required.");
@@ -435,4 +613,22 @@ public sealed class AdminJeepneyRouteManagementService(
                 point.Longitude))
             .ToArray(),
         route.UpdatedAt);
+
+    private sealed record ValhallaPreparationResult(
+        AdminJeepneyRouteMutationStatus Status,
+        IReadOnlyList<string> Errors,
+        List<(double Latitude, double Longitude)>? Waypoints,
+        List<(double Latitude, double Longitude)>? GeneratedPoints)
+    {
+        public bool Succeeded => Status == AdminJeepneyRouteMutationStatus.Success;
+
+        public static ValhallaPreparationResult Success(
+            List<(double Latitude, double Longitude)> waypoints,
+            List<(double Latitude, double Longitude)> generatedPoints) =>
+            new(AdminJeepneyRouteMutationStatus.Success, [], waypoints, generatedPoints);
+
+        public static ValhallaPreparationResult Failure(
+            AdminJeepneyRouteMutationStatus status,
+            params string[] errors) => new(status, errors, null, null);
+    }
 }

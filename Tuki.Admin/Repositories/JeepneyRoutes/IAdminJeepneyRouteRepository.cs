@@ -9,6 +9,9 @@ public interface IAdminJeepneyRouteRepository
         bool includeDrafts = true,
         CancellationToken cancellationToken = default);
 
+    Task<AdminJeepneyRepositoryResult<IReadOnlyList<AdminJeepneyRoute>>> GetArchivedAsync(
+        CancellationToken cancellationToken = default);
+
     Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> GetByIdAsync(
         long routeId,
         CancellationToken cancellationToken = default);
@@ -35,7 +38,25 @@ public interface IAdminJeepneyRouteRepository
         AdminJeepneyRouteGeometryRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<AdminJeepneyRepositoryResult<AdminJeepneyValhallaPreview>> PreviewValhallaAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRepositoryResult<AdminJeepneyRouteGeometry>> SaveValhallaGeometryAsync(
+        long routeId,
+        AdminJeepneyValhallaRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<AdminJeepneyRepositoryResult<AdminJeepneyRoute>> PublishAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRepositoryResult<bool>> ArchiveAsync(
+        long routeId,
+        CancellationToken cancellationToken = default);
+
+    Task<AdminJeepneyRepositoryResult<bool>> RestoreAsync(
         long routeId,
         CancellationToken cancellationToken = default);
 }

@@ -190,7 +190,7 @@ public partial class RoutingService
         {
             if (!boardRoutes.TryGetValue(context.Key, out var task))
             {
-                task = _valhallaService.GetRouteAsync(
+                task = GetRouteAsync(
                     context.TrikeLeg.OriginLatitude,
                     context.TrikeLeg.OriginLongitude,
                     context.TrikeLeg.DestinationLatitude,
@@ -213,7 +213,7 @@ public partial class RoutingService
                 destinationLongitude.ToString("F7"));
             if (!directRoutes.TryGetValue(key, out var task))
             {
-                task = _valhallaService.GetRouteAsync(
+                task = GetRouteAsync(
                     context.TrikeLeg.OriginLatitude,
                     context.TrikeLeg.OriginLongitude,
                     destinationLatitude,

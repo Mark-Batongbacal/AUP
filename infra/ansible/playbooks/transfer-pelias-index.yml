@@ -1,0 +1,381 @@
+---
+- name: Snapshot-transfer the Azure Pelias index to GCP
+  hosts: localhost
+  gather_facts: false
+  vars:
+    tuki_azure_inventory_host: "{{ groups['tuki_azure'] | first | default('') }}"
+    tuki_gcp_inventory_host: "{{ groups['tuki_gcp'] | first | default('') }}"
+    tuki_gcp_pelias_index_backup_root: /opt/tuki/backups/pelias-index
+    tuki_gcp_pelias_index_stage: >-
+      {{ tuki_gcp_pelias_index_backup_root }}/incoming-{{ tuki_pelias_index_suffix }}
+
+  pre_tasks:
+    - name: Freeze Pelias migration timestamp
+      ansible.builtin.set_fact:
+        tuki_pelias_index_suffix: "{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+
+    - name: Freeze Pelias snapshot identifiers
+      ansible.builtin.set_fact:
+        tuki_pelias_snapshot_repo: tuki_migration
+        tuki_pelias_snapshot_name: "pelias-{{ tuki_pelias_index_suffix | lower }}"
+
+    - name: Validate Pelias migration scope
+      ansible.builtin.assert:
+        that:
+          - groups['tuki_azure'] | length == 1
+          - groups['tuki_gcp'] | length == 1
+          - tuki_azure_inventory_host | length > 0
+          - tuki_gcp_inventory_host | length > 0
+          - tuki_pelias_index_name is match('^[a-z0-9][a-z0-9._-]*$')
+          - tuki_pelias_verify_query | length > 0
+          - tuki_azure_compose_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_gcp_compose_root is match('^/[-A-Za-z0-9_./]+$')
+        fail_msg: >-
+          Configure exactly one Azure and GCP host, a safe lowercase Pelias
+          index name, a non-empty verification query, and safe Compose roots.
+
+  tasks:
+    - name: Create secure controller snapshot staging
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: .tuki-pelias-index
+      register: tuki_pelias_controller_temp
+
+    - name: Snapshot, transfer, and restore Pelias
+      block:
+        - name: Resolve Azure Pelias Elasticsearch container
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              container_id=''
+              if test -f docker-compose.yml && test -f {{ tuki_compose_env | quote }}; then
+                container_id="$(docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all {{ tuki_pelias_es_compose_service | quote }})"
+              fi
+              if test -z "$container_id" && test -n {{ tuki_pelias_es_container_fallback | default('') | quote }}; then
+                container_id="$(
+                  docker inspect {{ tuki_pelias_es_container_fallback | quote }} 2>/dev/null |
+                  python3 -c 'import json,sys; x=json.load(sys.stdin); print(x[0]["Id"] if x else "")' ||
+                  true
+                )"
+              fi
+              test -n "$container_id"
+              printf '%s\n' "$container_id"
+            chdir: "{{ tuki_azure_compose_root }}"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          register: tuki_pelias_azure_es
+          changed_when: false
+          no_log: true
+
+        - name: Resolve GCP Pelias Elasticsearch container
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              docker compose --env-file {{ tuki_compose_env | quote }} config --quiet
+              container_id="$(docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all {{ tuki_pelias_es_compose_service | quote }})"
+              test -n "$container_id"
+              printf '%s\n' "$container_id"
+            chdir: "{{ tuki_gcp_compose_root }}"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_gcp_es
+          changed_when: false
+          no_log: true
+
+        - name: Read Elasticsearch image identity and version
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              docker inspect {{ item.container | quote }} |
+              python3 -c 'import json,sys; x=json.load(sys.stdin)[0]; print(x["Image"]+"|"+x["Config"]["Image"])'
+              docker exec {{ item.container | quote }} curl --fail --silent http://127.0.0.1:9200 |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["version"]["number"])'
+            executable: /bin/bash
+          loop:
+            - { host: "{{ tuki_azure_inventory_host }}", container: "{{ tuki_pelias_azure_es.stdout }}" }
+            - { host: "{{ tuki_gcp_inventory_host }}", container: "{{ tuki_pelias_gcp_es.stdout }}" }
+          delegate_to: "{{ item.host }}"
+          become: true
+          register: tuki_pelias_es_identity
+          changed_when: false
+          no_log: true
+
+        - name: Require identical Elasticsearch image and version
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_es_identity.results[0].stdout == tuki_pelias_es_identity.results[1].stdout
+            fail_msg: >-
+              Azure and GCP must run the exact same Elasticsearch image and
+              version before snapshot/restore migration.
+
+        - name: Read Azure source count and phrase fixture
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              count="$(
+                docker exec {{ tuki_pelias_azure_es.stdout | quote }} curl --fail --silent \
+                  http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+                python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'
+              )"
+              phrase="$(
+                docker exec {{ tuki_pelias_azure_es.stdout | quote }} curl --fail --silent --get \
+                  --data-urlencode {{ ('q=phrase.default:"' ~ tuki_pelias_verify_query ~ '"') | quote }} \
+                  http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+                python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'
+              )"
+              printf '%s|%s\n' "$count" "$phrase"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          register: tuki_pelias_source_facts
+          changed_when: false
+
+        - name: Require a usable Azure Pelias source
+          ansible.builtin.assert:
+            that:
+              - (tuki_pelias_source_facts.stdout.split('|')[0] | int) > 0
+              - (tuki_pelias_source_facts.stdout.split('|')[1] | int) > 0
+            fail_msg: >-
+              Azure Pelias is empty or the configured phrase verification
+              fixture is not indexed.
+
+        - name: Check whether GCP Pelias index already exists
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              code="$(
+                docker exec {{ tuki_pelias_gcp_es.stdout | quote }} curl --silent \
+                  --output /dev/null --write-out '%{http_code}' \
+                  http://127.0.0.1:9200/{{ tuki_pelias_index_name }}
+              )"
+              test "$code" = 200 -o "$code" = 404
+              printf '%s\n' "$code"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_target_status
+          changed_when: false
+
+        - name: Refuse unacknowledged target replacement
+          ansible.builtin.assert:
+            that:
+              - >-
+                tuki_pelias_target_status.stdout == '404' or
+                tuki_confirm_pelias_index_replace | default(false) | bool
+            fail_msg: >-
+              GCP already has a Pelias index. Rerun only after review with
+              -e tuki_confirm_pelias_index_replace=true. The existing target
+              is snapshotted before replacement.
+
+        - name: Create Azure snapshot staging
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: .tuki-pelias-snapshot
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          register: tuki_pelias_azure_temp
+
+        - name: Prepare writable Azure snapshot repository
+          ansible.builtin.file:
+            path: "{{ tuki_pelias_azure_temp.path }}/repo"
+            state: directory
+            owner: "1000"
+            group: "0"
+            mode: "0770"
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+
+        - name: Create Azure Elasticsearch filesystem snapshot
+          ansible.builtin.script:
+            cmd: >-
+              {{ playbook_dir }}/../scripts/pelias-snapshot-source.sh
+              {{ tuki_pelias_azure_es.stdout | quote }}
+              {{ (tuki_pelias_azure_temp.path ~ '/repo') | quote }}
+              {{ (tuki_pelias_azure_temp.path ~ '/pelias-snapshot.tar.gz') | quote }}
+              {{ tuki_pelias_index_name | quote }}
+              {{ tuki_pelias_snapshot_repo | quote }}
+              {{ tuki_pelias_snapshot_name | quote }}
+            executable: /bin/bash
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          changed_when: true
+
+        - name: Checksum Azure snapshot archive
+          ansible.builtin.stat:
+            path: "{{ tuki_pelias_azure_temp.path }}/pelias-snapshot.tar.gz"
+            checksum_algorithm: sha256
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          register: tuki_pelias_azure_archive
+
+        - name: Fetch snapshot archive to controller
+          ansible.builtin.fetch:
+            src: "{{ tuki_pelias_azure_temp.path }}/pelias-snapshot.tar.gz"
+            dest: "{{ tuki_pelias_controller_temp.path }}/pelias-snapshot.tar.gz"
+            flat: true
+            validate_checksum: true
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+
+        - name: Checksum controller snapshot archive
+          ansible.builtin.stat:
+            path: "{{ tuki_pelias_controller_temp.path }}/pelias-snapshot.tar.gz"
+            checksum_algorithm: sha256
+          register: tuki_pelias_controller_archive
+
+        - name: Require controller archive parity
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_controller_archive.stat.size | int == tuki_pelias_azure_archive.stat.size | int
+              - tuki_pelias_controller_archive.stat.checksum == tuki_pelias_azure_archive.stat.checksum
+
+        - name: Create GCP snapshot staging directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0700"
+          loop:
+            - "{{ tuki_gcp_pelias_index_backup_root }}"
+            - "{{ tuki_gcp_pelias_index_stage }}"
+            - "{{ tuki_gcp_pelias_index_stage }}/source"
+            - "{{ tuki_gcp_pelias_index_stage }}/previous"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Copy snapshot archive to GCP
+          ansible.builtin.copy:
+            src: "{{ tuki_pelias_controller_temp.path }}/pelias-snapshot.tar.gz"
+            dest: "{{ tuki_gcp_pelias_index_stage }}/pelias-snapshot.tar.gz"
+            owner: root
+            group: root
+            mode: "0600"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Checksum GCP snapshot archive
+          ansible.builtin.stat:
+            path: "{{ tuki_gcp_pelias_index_stage }}/pelias-snapshot.tar.gz"
+            checksum_algorithm: sha256
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_gcp_archive
+
+        - name: Require GCP archive parity
+          ansible.builtin.assert:
+            that:
+              - tuki_pelias_gcp_archive.stat.size | int == tuki_pelias_azure_archive.stat.size | int
+              - tuki_pelias_gcp_archive.stat.checksum == tuki_pelias_azure_archive.stat.checksum
+
+        - name: Extract source snapshot repository on GCP
+          ansible.builtin.unarchive:
+            src: "{{ tuki_gcp_pelias_index_stage }}/pelias-snapshot.tar.gz"
+            dest: "{{ tuki_gcp_pelias_index_stage }}/source"
+            remote_src: true
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+        - name: Grant temporary Elasticsearch access to snapshot staging
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              chown -R 1000:0 {{ tuki_gcp_pelias_index_stage | quote }}
+              find {{ tuki_gcp_pelias_index_stage | quote }} -type d -exec chmod 0770 {} +
+              find {{ tuki_gcp_pelias_index_stage | quote }} -type f -exec chmod 0660 {} +
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+
+        - name: Restore Elasticsearch snapshot on GCP
+          ansible.builtin.script:
+            cmd: >-
+              {{ playbook_dir }}/../scripts/pelias-snapshot-restore.sh
+              {{ tuki_pelias_gcp_es.stdout | quote }}
+              {{ tuki_gcp_pelias_index_stage | quote }}
+              {{ tuki_pelias_index_name | quote }}
+              {{ tuki_pelias_snapshot_repo | quote }}
+              {{ tuki_pelias_snapshot_name | quote }}
+              {{ tuki_pelias_source_facts.stdout.split('|')[0] | int }}
+              {{ tuki_pelias_verify_query | quote }}
+              {{ tuki_pelias_target_status.stdout | quote }}
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+
+        - name: Verify restored GCP count and phrase fixture
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              count="$(
+                docker exec {{ tuki_pelias_gcp_es.stdout | quote }} curl --fail --silent \
+                  http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+                python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'
+              )"
+              phrase="$(
+                docker exec {{ tuki_pelias_gcp_es.stdout | quote }} curl --fail --silent --get \
+                  --data-urlencode {{ ('q=phrase.default:"' ~ tuki_pelias_verify_query ~ '"') | quote }} \
+                  http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+                python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'
+              )"
+              printf '%s|%s\n' "$count" "$phrase"
+              test "$count" -eq {{ tuki_pelias_source_facts.stdout.split('|')[0] | int }}
+              test "$phrase" -gt 0
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          register: tuki_pelias_restored_facts
+          changed_when: false
+
+        - name: Preserve previous GCP snapshot when replacing
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              dest={{ (tuki_gcp_pelias_index_backup_root ~ '/previous-' ~ tuki_pelias_index_suffix) | quote }}
+              install -d -m 0700 "$dest"
+              cp -a {{ (tuki_gcp_pelias_index_stage ~ '/previous/.') | quote }} "$dest/"
+              chown -R root:root "$dest"
+            executable: /bin/bash
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          changed_when: true
+          when:
+            - tuki_pelias_target_status.stdout == '200'
+            - tuki_confirm_pelias_index_replace | default(false) | bool
+
+        - name: Preserve source snapshot archive on GCP
+          ansible.builtin.copy:
+            src: "{{ tuki_gcp_pelias_index_stage }}/pelias-snapshot.tar.gz"
+            dest: "{{ tuki_gcp_pelias_index_backup_root }}/source-{{ tuki_pelias_index_suffix }}.tar.gz"
+            remote_src: true
+            owner: root
+            group: root
+            mode: "0600"
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+
+      always:
+        - name: Remove Azure temporary snapshot staging
+          ansible.builtin.file:
+            path: "{{ tuki_pelias_azure_temp.path | default('/nonexistent') }}"
+            state: absent
+          delegate_to: "{{ tuki_azure_inventory_host }}"
+          become: true
+          when: tuki_pelias_azure_temp is defined
+
+        - name: Remove controller temporary snapshot staging
+          ansible.builtin.file:
+            path: "{{ tuki_pelias_controller_temp.path }}"
+            state: absent
+
+        - name: Remove successful GCP incoming snapshot staging
+          ansible.builtin.file:
+            path: "{{ tuki_gcp_pelias_index_stage }}"
+            state: absent
+          delegate_to: "{{ tuki_gcp_inventory_host }}"
+          become: true
+          when: tuki_pelias_restored_facts is defined and not (tuki_pelias_restored_facts is failed)

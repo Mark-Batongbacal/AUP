@@ -1,5 +1,13 @@
 bin/
 obj/
 TestResults/
+runtime/
 .env
+*.env
+!*.env.example
+.vault-password
+*.bak
+*.bak.*
+*.log
+*.swp
 backend/tricycle-submission-proofs/

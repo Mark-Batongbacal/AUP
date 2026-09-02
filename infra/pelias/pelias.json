@@ -1,0 +1,53 @@
+{
+  "logger": {
+    "level": "info",
+    "timestamp": false
+  },
+  "esclient": {
+    "apiVersion": "7.5",
+    "hosts": [
+      {
+        "host": "pelias-elasticsearch",
+        "port": 9200
+      }
+    ]
+  },
+  "elasticsearch": {
+    "settings": {
+      "index": {
+        "refresh_interval": "10s",
+        "number_of_replicas": "0",
+        "number_of_shards": "1"
+      }
+    }
+  },
+  "api": {
+    "services": {
+      "placeholder": { "url": "http://pelias-placeholder:4100" },
+      "interpolation": { "url": "http://pelias-interpolation:4300" },
+      "libpostal": { "url": "http://pelias-libpostal:4400" }
+    }
+  },
+  "imports": {
+    "adminLookup": {
+      "enabled": true
+    },
+    "openstreetmap": {
+      "datapath": "/data/openstreetmap",
+      "leveldbpath": "/tmp",
+      "import": [
+        {
+          "filename": "central-luzon.osm.pbf"
+        }
+      ]
+    },
+    "whosonfirst": {
+      "datapath": "/data/whosonfirst",
+      "countryCode": "PH",
+      "importPostalcodes": true,
+      "importPlace": [
+        "85632535"
+      ]
+    }
+  }
+}

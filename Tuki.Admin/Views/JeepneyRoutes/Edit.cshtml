@@ -9,7 +9,7 @@
         <a asp-action="Index" class="review-back-link">← Back to jeepney routes</a>
         <p class="eyebrow">JEEPNEY ROUTE</p>
         <h1>@(Model.IsCreate ? "Create route draft" : Model.Route?.RouteName ?? "Route draft")</h1>
-        <p>Define verified route metadata, plot and refine its geometry, then publish it when every readiness check passes.</p>
+        <p>Define verified route metadata, edit its geometry, verify that saved geometry against Valhalla, then publish it when every readiness check passes.</p>
     </div>
     @if (Model.Route is not null)
     {
@@ -46,7 +46,7 @@
         </div>
         <div class="d-flex gap-2 flex-wrap mt-3">
             <a asp-action="Plot" asp-route-id="@Model.Route.RouteId" class="btn btn-tuki">
-                @(Model.Route.IsActive ? "View route geometry" : Model.Route.HasPolyline ? "Open geometry editor" : "Plot route geometry")
+                @(Model.Route.IsActive ? "View route geometry" : Model.Route.HasPolyline ? "Open geometry editor & verify route" : "Plot route geometry")
             </a>
         </div>
     </section>
@@ -122,7 +122,7 @@
         <div>
             <span class="card-kicker">ROUTE METADATA</span>
             <h2>@(canEdit ? "Draft details" : "Published route details")</h2>
-            <p>@(canEdit ? "Maintain the draft metadata here and use the geometry editor for ordered route points." : "Published routes remain read-only after activation.")</p>
+            <p>@(canEdit ? "Maintain the draft metadata here and use the geometry editor to save and verify the actual jeepney path." : "Published routes remain read-only after activation.")</p>
         </div>
     </div>
 

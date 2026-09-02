@@ -73,6 +73,16 @@ public sealed class TransportRouteRepositoryTests
 
         var routeListSql = string.Join('\n', sqlLogs);
         Assert.Contains("COUNT", routeListSql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(sqlLogs, sql =>
+            sql.Contains("TransportRoutes", StringComparison.OrdinalIgnoreCase) &&
+            (sql.Contains("RoutePoints", StringComparison.OrdinalIgnoreCase) ||
+             sql.Contains("RouteWaypoints", StringComparison.OrdinalIgnoreCase)));
+        Assert.Contains(sqlLogs, sql =>
+            sql.Contains("RoutePoints", StringComparison.OrdinalIgnoreCase) &&
+            sql.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(sqlLogs, sql =>
+            sql.Contains("RouteWaypoints", StringComparison.OrdinalIgnoreCase) &&
+            sql.Contains("GROUP BY", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain("Latitude", routeListSql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Longitude", routeListSql, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PointOrder", routeListSql, StringComparison.OrdinalIgnoreCase);
@@ -260,6 +270,7 @@ public sealed class TransportRouteRepositoryTests
                     IsActive INTEGER NOT NULL,
                     CreatedAt TEXT NOT NULL,
                     UpdatedAt TEXT NULL,
+                    ArchivedAt TEXT NULL,
                     CONSTRAINT FK_TransportRoutes_TransportModes
                         FOREIGN KEY (TransportModeId)
                         REFERENCES TransportModes (TransportModeId)

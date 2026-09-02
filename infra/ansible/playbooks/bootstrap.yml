@@ -1,0 +1,231 @@
+---
+- name: Bootstrap Tuki GCP Ubuntu host
+  hosts: tuki_gcp
+  become: true
+  vars:
+    tuki_repository_url: https://github.com/Mark-Batongbacal/AUP.git
+    tuki_repository_branch: dev
+    tuki_install_root: /opt/tuki
+  vars_files:
+    - "{{ playbook_dir }}/../group_vars/vault.yml"
+
+  pre_tasks:
+    - name: Validate required deployment variables
+      ansible.builtin.assert:
+        that:
+          - tuki_api_hostname is defined
+          - tuki_api_hostname | string | length > 0
+          - tuki_admin_hostname is defined
+          - tuki_admin_hostname | string | length > 0
+          - tuki_acme_email is defined
+          - tuki_acme_email | string | length > 0
+          - tuki_image_tag is defined
+          - tuki_image_tag | string | length > 0
+          - tuki_valhalla_tile_urls is defined
+          - tuki_valhalla_tile_urls | string | length > 0
+          - tuki_pelias_es_java_opts is defined
+          - tuki_pelias_es_java_opts | string | length > 0
+          - tuki_mssql_sa_password is defined
+          - tuki_mssql_sa_password | string | length > 0
+          - tuki_admin_login_username is defined
+          - tuki_admin_login_username | string | length > 0
+          - tuki_admin_login_password is defined
+          - tuki_admin_login_password | string | length > 0
+          - tuki_login_users is defined
+          - tuki_login_users | length > 0
+          - tuki_login_users[0].username | string | length > 0
+          - tuki_login_users[0].password | string | length > 0
+          - tuki_gemini_api_key is defined
+          - tuki_gemini_api_key | string | length > 0
+          - tuki_google_places_api_key is defined
+          - tuki_google_places_api_key | string | length > 0
+          - tuki_google_client_id is defined
+          - tuki_google_client_id | string | length > 0
+          - tuki_facebook_app_id is defined
+          - tuki_facebook_app_id | string | length > 0
+          - tuki_facebook_app_secret is defined
+          - tuki_facebook_app_secret | string | length > 0
+          - tuki_email_connection_string is defined
+          - tuki_email_connection_string | string | length > 0
+          - tuki_email_sender_address is defined
+          - tuki_email_sender_address | string | length > 0
+        fail_msg: >-
+          Define deployment values in group_vars/all.yml and keep secrets in an
+          Ansible Vault-encrypted group_vars/vault.yml.
+      no_log: true
+
+    - name: Validate every configured application login
+      ansible.builtin.assert:
+        that:
+          - item.username is defined
+          - item.username | string | length > 0
+          - item.password is defined
+          - item.password | string | length > 0
+      loop: "{{ tuki_login_users }}"
+      no_log: true
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - git
+          - gnupg
+          - rsync
+          - unzip
+          - btop
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create Docker APT keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install Docker repository signing key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure Docker Engine APT repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}
+          signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/ubuntu
+          {{ ansible_distribution_release }} stable
+        filename: docker
+        state: present
+        update_cache: true
+
+    - name: Install Docker Engine and Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Enable and start Docker Engine
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Keep host SSH enabled on port 22
+      ansible.builtin.service:
+        name: ssh
+        state: started
+        enabled: true
+
+    - name: Add SSH user to Docker group
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+
+    - name: Configure virtual memory for Pelias Elasticsearch
+      ansible.builtin.copy:
+        content: "vm.max_map_count=262144\n"
+        dest: /etc/sysctl.d/99-tuki-elasticsearch.conf
+        owner: root
+        group: root
+        mode: "0644"
+      register: tuki_sysctl
+
+    - name: Apply virtual memory configuration
+      ansible.builtin.command: sysctl --system
+      when: tuki_sysctl.changed
+      changed_when: true
+
+    - name: Create Tuki installation directory
+      ansible.builtin.file:
+        path: "{{ tuki_install_root }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Create persistent service directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ tuki_install_root }}/data/sqlserver", owner: "10001", group: "0", mode: "0770" }
+        - { path: "{{ tuki_install_root }}/data/valhalla", owner: "1000", group: "1000", mode: "0775" }
+        - { path: "{{ tuki_install_root }}/data/pelias", owner: "1000", group: "1000", mode: "0775" }
+        - { path: "{{ tuki_install_root }}/data/pelias/elasticsearch", owner: "1000", group: "1000", mode: "0775" }
+        - { path: "{{ tuki_install_root }}/data/caddy/data", owner: "1000", group: "1000", mode: "0775" }
+        - { path: "{{ tuki_install_root }}/data/caddy/config", owner: "1000", group: "1000", mode: "0775" }
+
+    - name: Clone or update the configured repository branch
+      ansible.builtin.git:
+        repo: "{{ tuki_repository_url }}"
+        dest: "{{ tuki_install_root }}/AUP"
+        version: "{{ tuki_repository_branch }}"
+        refspec: "+refs/heads/{{ tuki_repository_branch }}:refs/remotes/origin/{{ tuki_repository_branch }}"
+        single_branch: true
+        update: true
+        force: false
+      become: false
+
+    - name: Create private runtime configuration directory
+      ansible.builtin.file:
+        path: "{{ tuki_install_root }}/AUP/runtime"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: Render service-specific runtime environment files
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/{{ item.template }}"
+        dest: "{{ tuki_install_root }}/AUP/runtime/{{ item.destination }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+      loop:
+        - { template: backend.env.j2, destination: backend.env }
+        - { template: sqlserver.env.j2, destination: sqlserver.env }
+        - { template: admin.env.j2, destination: admin.env }
+        - { template: caddy.env.j2, destination: caddy.env }
+      no_log: true
+
+    - name: Render Docker Compose interpolation variables
+      ansible.builtin.copy:
+        content: |
+          TUKI_IMAGE_TAG={{ tuki_image_tag }}
+          TUKI_DATA_ROOT={{ tuki_install_root }}/data
+          VALHALLA_TILE_URLS={{ tuki_valhalla_tile_urls }}
+          PELIAS_ES_JAVA_OPTS="{{ tuki_pelias_es_java_opts | replace('"', '\\"') }}"
+        dest: "{{ tuki_install_root }}/AUP/runtime/compose.env"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+
+    - name: Validate Docker Compose configuration
+      ansible.builtin.command:
+        cmd: docker compose --env-file runtime/compose.env config --quiet
+        chdir: "{{ tuki_install_root }}/AUP"
+      changed_when: false
+      no_log: true
+
+    - name: Report bootstrap completion
+      ansible.builtin.debug:
+        msg: >-
+          GCP host bootstrap is complete. Docker, persistent directories, repository,
+          runtime configuration, and Compose validation are ready. No application or
+          data-service containers were started; prepare/migrate data before deployment.

@@ -1,12 +1,14 @@
 using backend.Models.Database;
 using backend.Models.TricyclePointManagement;
 using backend.Repositories;
+using backend.Services.Routing;
 
 namespace backend.Services.Transportation;
 
 public sealed class AdminTricyclePointManagementService(
     ITricyclePointRepository tricyclePointRepository,
-    ITricyclePointService tricyclePointService) : IAdminTricyclePointManagementService
+    ITricyclePointService tricyclePointService,
+    IRoutingNetworkChangeNotifier? routingNetwork = null) : IAdminTricyclePointManagementService
 {
     private const double EarthRadiusMeters = 6_371_000;
     private const double DefaultDuplicateThresholdMeters = 75;
@@ -182,6 +184,8 @@ public sealed class AdminTricyclePointManagementService(
         point.IsActive = isActive;
         point.UpdatedAt = DateTime.UtcNow;
         var updated = await _tricyclePointRepository.UpdateAsync(point, cancellationToken);
+        routingNetwork?.Invalidate(
+            isActive ? "TODA point activated" : "TODA point deactivated");
         return AdminTricyclePointMutationResult.Success(
             new AdminTricyclePointMutationResponse(Map(updated), []));
     }

@@ -17,7 +17,11 @@ public sealed record AdminJeepneyRoute(
     int WaypointCount,
     bool HasPolyline,
     DateTime CreatedAt,
-    DateTime? UpdatedAt);
+    DateTime? UpdatedAt)
+{
+    public DateTime? ArchivedAt { get; init; }
+    public bool IsArchived => ArchivedAt.HasValue;
+}
 
 public sealed class AdminJeepneyRouteRequest
 {
@@ -72,6 +76,17 @@ public sealed class AdminJeepneyRouteGeometryPointRequest
     public double Latitude { get; set; }
     public double Longitude { get; set; }
 }
+
+public sealed class AdminJeepneyValhallaRequest
+{
+    public List<AdminJeepneyRouteGeometryPointRequest> Waypoints { get; set; } = [];
+}
+
+public sealed record AdminJeepneyValhallaPreview(
+    long RouteId,
+    IReadOnlyList<AdminJeepneyRouteGeometryPoint> Waypoints,
+    IReadOnlyList<AdminJeepneyRouteGeometryPoint> GeneratedPoints,
+    string EncodedPolyline);
 
 public sealed record AdminJeepneyRouteReadinessCheck(
     string Code,

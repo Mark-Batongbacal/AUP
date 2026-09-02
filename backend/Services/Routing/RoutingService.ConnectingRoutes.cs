@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using backend.Models.Routing;
 using backend.Models.Valhalla;
 
@@ -142,7 +143,8 @@ public partial class RoutingService
         double destinationLongitude,
         BoardAccessDiscovery boardDiscovery,
         double? walkAccessDistanceLimitMeters = null,
-        OnboardTransitPlanningContext? onboardContext = null)
+        OnboardTransitPlanningContext? onboardContext = null,
+        AccessCandidate[]? precomputedAlightAccessOptions = null)
     {
         var walkAccessLimit = walkAccessDistanceLimitMeters ??
             GetWalkAccessDistanceLimit(null);
@@ -152,11 +154,13 @@ public partial class RoutingService
             return [];
 
         var boardAccessOptions = boardDiscovery.Projected;
-        var alightAccessOptions = ComputeAlightAccessOptions(
-            route.RouteId,
-            samples,
-            destinationLatitude,
-            destinationLongitude);
+        var alightAccessOptions = precomputedAlightAccessOptions ??
+            ComputeAlightAccessOptions(
+                route.RouteId,
+                samples,
+                destinationLatitude,
+                destinationLongitude,
+                AlightAccessCallerCategory.DirectDiscovery);
 
         var boardCandidates = boardAccessOptions
             .Select(candidate => ConstrainTransitAccess(
@@ -229,33 +233,64 @@ public partial class RoutingService
         AddUniqueAccessCandidate(alightCandidates, exactAlight);
 
         var all = new List<RouteConnectionCandidate>();
+        var combinationsEvaluated = 0L;
+        var combinationsRejectedProgress = 0L;
+        var connectionCandidatesConstructed = 0L;
+        _telemetry.IncrementRouting(
+            "board_candidates_considered",
+            boardCandidates.Count);
+        _telemetry.IncrementRouting(
+            "alight_candidates_considered",
+            alightCandidates.Count);
 
-        foreach (var alightAccess in alightCandidates)
+        // Route occurrence resolution is invariant across the Cartesian
+        // product. Resolve it once per access alternative so the cheap
+        // progress rejection below does not repeatedly project the same
+        // board or alight point.
+        var resolvedBoards = boardCandidates.Select(access =>
         {
-            var alightIndex = alightAccess.RouteSampleIndex ??
-                GetNearestSampleIndex(samples, alightAccess.Anchor);
-            var alightAnchor = alightAccess.FullRouteAnchor ??
-                GetRouteAnchor(route.RouteId, alightIndex, alightAccess.Anchor);
+            var index = access.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, access.Anchor);
+            return (
+                Access: access,
+                Index: index,
+                Anchor: access.FullRouteAnchor ??
+                    GetRouteAnchor(route.RouteId, index, access.Anchor));
+        }).ToList();
+        var resolvedAlights = alightCandidates.Select(access =>
+        {
+            var index = access.RouteSampleIndex ??
+                GetNearestSampleIndex(samples, access.Anchor);
+            return (
+                Access: access,
+                Index: index,
+                Anchor: access.FullRouteAnchor ??
+                    GetRouteAnchor(route.RouteId, index, access.Anchor));
+        }).ToList();
 
-            foreach (var boardAccess in boardCandidates)
+        foreach (var alight in resolvedAlights)
+        {
+            foreach (var board in resolvedBoards)
             {
-                var boardIndex = boardAccess.RouteSampleIndex ??
-                    GetNearestSampleIndex(samples, boardAccess.Anchor);
-                var boardAnchor = boardAccess.FullRouteAnchor ??
-                    GetRouteAnchor(route.RouteId, boardIndex, boardAccess.Anchor);
+                combinationsEvaluated++;
 
                 // Direction is based on authoritative full-route progress, not
                 // merely sample indices. This remains correct on bends/loops.
-                var rideDistance = RouteDistanceBetweenAnchors(boardAnchor, alightAnchor);
+                var rideDistance = RouteDistanceBetweenAnchors(
+                    board.Anchor,
+                    alight.Anchor);
                 if (rideDistance <= 0)
+                {
+                    combinationsRejectedProgress++;
                     continue;
+                }
 
                 var jeepneyTime = JeepneyBoardingWaitTimeSeconds +
                     rideDistance / JeepneySpeedMetersPerSecond;
 
                 var total =
-                    boardAccess.GeneralizedCostPesos +
-                    alightAccess.GeneralizedCostPesos +
+                    board.Access.GeneralizedCostPesos +
+                    alight.Access.GeneralizedCostPesos +
                     GeneralizedCostFromTimeAndFare(
                         jeepneyTime,
                         JeepneyBaseFarePesos);
@@ -263,13 +298,23 @@ public partial class RoutingService
                 all.Add(new RouteConnectionCandidate(
                     route.RouteId,
                     route.RouteName,
-                    boardAccess,
-                    alightAccess,
-                    boardIndex,
-                    alightIndex,
+                    board.Access,
+                    alight.Access,
+                    board.Index,
+                    alight.Index,
                     total));
+                connectionCandidatesConstructed++;
             }
         }
+        _telemetry.IncrementRouting(
+            "board_alight_combinations_evaluated",
+            combinationsEvaluated);
+        _telemetry.IncrementRouting(
+            "board_alight_combinations_rejected_progress",
+            combinationsRejectedProgress);
+        _telemetry.IncrementRouting(
+            "direct_connection_candidates_constructed",
+            connectionCandidatesConstructed);
 
         if (all.Count == 0)
             return [];
@@ -601,7 +646,7 @@ public partial class RoutingService
 
     private AccessCandidate? BuildExactFullRouteBoardAccess(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double originLatitude,
         double originLongitude,
         double? walkAccessDistanceLimitMeters = null)
@@ -621,6 +666,7 @@ public partial class RoutingService
             originLongitude,
             anchor.Latitude,
             anchor.Longitude);
+        var walkStarted = Stopwatch.GetTimestamp();
         if (walkDistance <= walkAccessLimit)
         {
             alternatives.Add(WalkAccess(
@@ -629,7 +675,12 @@ public partial class RoutingService
                 sampleIndex,
                 anchor));
         }
+        _accessDiscoveryDiagnostics?.RecordWalkCandidates(
+            walkStarted,
+            walkDistance <= walkAccessLimit ? 1 : 0);
 
+        var tricycleStarted = Stopwatch.GetTimestamp();
+        var tricycleCount = 0;
         foreach (var trikePoint in FindNearbyTrikePoints(
                      originLatitude,
                      originLongitude))
@@ -652,7 +703,11 @@ public partial class RoutingService
                 rideDistanceMeters,
                 sampleIndex,
                 anchor));
+            tricycleCount++;
         }
+        _accessDiscoveryDiagnostics?.RecordTricycleCandidates(
+            tricycleStarted,
+            tricycleCount);
 
         if (alternatives.Count == 0)
             return null;
@@ -664,7 +719,7 @@ public partial class RoutingService
 
     private AccessCandidate? BuildExactFullRouteAlightAccess(
         string routeId,
-        List<(double Latitude, double Longitude)> samples,
+        IReadOnlyList<(double Latitude, double Longitude)> samples,
         double destinationLatitude,
         double destinationLongitude,
         double? walkAccessDistanceLimitMeters = null)
@@ -684,6 +739,7 @@ public partial class RoutingService
             anchor.Longitude,
             destinationLatitude,
             destinationLongitude);
+        var walkStarted = Stopwatch.GetTimestamp();
         if (walkDistance <= walkAccessLimit)
         {
             alternatives.Add(WalkAccess(
@@ -692,7 +748,12 @@ public partial class RoutingService
                 sampleIndex,
                 anchor));
         }
+        _accessDiscoveryDiagnostics?.RecordWalkCandidates(
+            walkStarted,
+            walkDistance <= walkAccessLimit ? 1 : 0);
 
+        var tricycleStarted = Stopwatch.GetTimestamp();
+        var tricycleCount = 0;
         foreach (var trikePoint in FindNearbyTrikePoints(
                      anchor.Latitude,
                      anchor.Longitude))
@@ -715,7 +776,11 @@ public partial class RoutingService
                 rideDistanceMeters,
                 sampleIndex,
                 anchor));
+            tricycleCount++;
         }
+        _accessDiscoveryDiagnostics?.RecordTricycleCandidates(
+            tricycleStarted,
+            tricycleCount);
 
         if (alternatives.Count == 0)
             return null;
