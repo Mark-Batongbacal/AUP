@@ -92,3 +92,98 @@ jobs:
 
       - name: Validate Compose configuration
         run: docker compose --env-file runtime/compose.env config --quiet
+
+
+  database:
+    name: Database schema and smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      MSSQL_SA_PASSWORD: "TukiCi-Only-9x7!Safe"
+      SQL_CONTAINER: tuki-ci-sql
+      SQL_DATABASE: TukiCi
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Start disposable SQL Server
+        run: |
+          docker run -d             --name "$SQL_CONTAINER"             -e ACCEPT_EULA=Y             -e MSSQL_PID=Developer             -e MSSQL_SA_PASSWORD="$MSSQL_SA_PASSWORD"             -v "$GITHUB_WORKSPACE/database:/work/database:ro"             mcr.microsoft.com/mssql/server:2022-latest
+
+      - name: Wait for SQL Server
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 60); do
+            SQLCMD="$(docker exec "$SQL_CONTAINER" sh -c '
+              if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then
+                printf %s /opt/mssql-tools18/bin/sqlcmd
+              elif [ -x /opt/mssql-tools/bin/sqlcmd ]; then
+                printf %s /opt/mssql-tools/bin/sqlcmd
+              fi
+            ')"
+
+            if [ -n "$SQLCMD" ] &&                docker exec                  -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"                  "$SQL_CONTAINER"                  "$SQLCMD" -S localhost -U sa -C -b -Q "SELECT 1"                  >/dev/null 2>&1; then
+              echo "SQL Server is ready."
+              echo "SQLCMD=$SQLCMD" >> "$GITHUB_ENV"
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "SQL Server did not become ready in time." >&2
+          docker logs "$SQL_CONTAINER" >&2
+          exit 1
+
+      - name: Create disposable database
+        run: |
+          docker exec             -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"             "$SQL_CONTAINER"             "$SQLCMD" -S localhost -U sa -C -b             -Q "CREATE DATABASE [$SQL_DATABASE];"
+
+      - name: Apply schema and migrations from scratch
+        run: |
+          set -euo pipefail
+
+          run_sql_file() {
+            local path="$1"
+            echo "Applying $path"
+            docker exec               -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"               "$SQL_CONTAINER"               "$SQLCMD" -S localhost -U sa -C -b               -d "$SQL_DATABASE"               -i "/work/$path"
+          }
+
+          run_sql_file database/TukiDbSchema.sql
+          run_sql_file database/TukiNavigationSchema.sql
+
+          while IFS= read -r migration; do
+            run_sql_file "$migration"
+          done < <(find database/migrations -maxdepth 1 -type f -name '*.sql' -print | sort)
+
+      - name: Reapply schema to verify idempotence
+        run: |
+          set -euo pipefail
+
+          run_sql_file() {
+            local path="$1"
+            echo "Reapplying $path"
+            docker exec               -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"               "$SQL_CONTAINER"               "$SQLCMD" -S localhost -U sa -C -b               -d "$SQL_DATABASE"               -i "/work/$path"
+          }
+
+          run_sql_file database/TukiDbSchema.sql
+          run_sql_file database/TukiNavigationSchema.sql
+
+          while IFS= read -r migration; do
+            run_sql_file "$migration"
+          done < <(find database/migrations -maxdepth 1 -type f -name '*.sql' -print | sort)
+
+      - name: Run database health and behavior smoke tests
+        run: |
+          docker exec             -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"             "$SQL_CONTAINER"             "$SQLCMD" -S localhost -U sa -C -b             -d "$SQL_DATABASE"             -i /work/database/ci/SmokeTests.sql
+
+      - name: Show SQL Server logs on failure
+        if: failure()
+        run: docker logs "$SQL_CONTAINER"
+
+      - name: Remove disposable SQL Server
+        if: always()
+        run: docker rm -f "$SQL_CONTAINER" >/dev/null 2>&1 || true
