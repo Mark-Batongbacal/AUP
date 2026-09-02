@@ -139,7 +139,10 @@ public sealed record AssistantActiveTripContext(
     double? LastLatitude,
     double? LastLongitude,
     double? LastAccuracyMeters,
-    DateTime? LastLocationAt);
+    DateTime? LastLocationAt,
+    string LocationReliability,
+    double? LocationAgeSeconds,
+    bool CanUseLocationForReroute);
 
 public sealed record AssistantContext(
     AssistantSurface Surface,

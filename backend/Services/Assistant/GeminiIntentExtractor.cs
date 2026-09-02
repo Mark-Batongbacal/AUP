@@ -182,6 +182,8 @@ public sealed class GeminiIntentExtractor : IAssistantIntentExtractor
             ? """
                 ACTIVE-TRIP SURFACE RULES:
                 - The supplied ActiveTrip object is authoritative. Never invent trip state, route, fare, distance, stop, location, or database IDs.
+                - ActiveTrip.LocationReliability describes the GPS context: CURRENT is a fresh trustworthy fix; LAST_KNOWN is approximate context only; STALE, INACCURATE, UNAVAILABLE, and UNKNOWN must never be described as the passenger's exact current position.
+                - ActiveTrip.CanUseLocationForReroute is backend-owned. Never imply that a route can be recalculated from the saved coordinates when it is false; the deterministic backend will wait for a fresh reliable fix.
                 - Use NavigationQuestion for questions about the current/next instruction, stop, route correctness, remaining fare/distance, or current trip state.
                 - Use Lost when the passenger says they are lost, went the wrong way, missed a stop, or asks whether they have gone past their stop.
                 - Use ExplainRoute when the passenger asks why this route or recommendation was chosen.
