@@ -94,6 +94,7 @@ jobs:
         run: docker compose --env-file runtime/compose.env config --quiet
 
 
+
   database:
     name: Database schema and smoke tests
     runs-on: ubuntu-latest
@@ -109,8 +110,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Start disposable SQL Server
-        run: |
-          docker run -d             --name "$SQL_CONTAINER"             -e ACCEPT_EULA=Y             -e MSSQL_PID=Developer             -e MSSQL_SA_PASSWORD="$MSSQL_SA_PASSWORD"             -v "$GITHUB_WORKSPACE/database:/work/database:ro"             mcr.microsoft.com/mssql/server:2022-latest
+        run: docker run -d --name "$SQL_CONTAINER" -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e MSSQL_SA_PASSWORD="$MSSQL_SA_PASSWORD" -p 1433:1433 -v "$GITHUB_WORKSPACE/database:/work/database:ro" mcr.microsoft.com/mssql/server:2022-latest
 
       - name: Wait for SQL Server
         run: |
@@ -125,7 +125,7 @@ jobs:
               fi
             ')"
 
-            if [ -n "$SQLCMD" ] &&                docker exec                  -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"                  "$SQL_CONTAINER"                  "$SQLCMD" -S localhost -U sa -C -b -Q "SELECT 1"                  >/dev/null 2>&1; then
+            if [ -n "$SQLCMD" ] && docker exec -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" "$SQL_CONTAINER" "$SQLCMD" -S localhost -U sa -C -b -Q "SELECT 1" >/dev/null 2>&1; then
               echo "SQL Server is ready."
               echo "SQLCMD=$SQLCMD" >> "$GITHUB_ENV"
               exit 0
@@ -139,8 +139,7 @@ jobs:
           exit 1
 
       - name: Create disposable database
-        run: |
-          docker exec             -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"             "$SQL_CONTAINER"             "$SQLCMD" -S localhost -U sa -C -b             -Q "CREATE DATABASE [$SQL_DATABASE];"
+        run: docker exec -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" "$SQL_CONTAINER" "$SQLCMD" -S localhost -U sa -C -b -Q "CREATE DATABASE [$SQL_DATABASE];"
 
       - name: Apply schema and migrations from scratch
         run: |
@@ -149,7 +148,7 @@ jobs:
           run_sql_file() {
             local path="$1"
             echo "Applying $path"
-            docker exec               -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"               "$SQL_CONTAINER"               "$SQLCMD" -S localhost -U sa -C -b               -d "$SQL_DATABASE"               -i "/work/$path"
+            docker exec -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" "$SQL_CONTAINER" "$SQLCMD" -S localhost -U sa -C -b -d "$SQL_DATABASE" -i "/work/$path"
           }
 
           run_sql_file database/TukiDbSchema.sql
@@ -166,7 +165,7 @@ jobs:
           run_sql_file() {
             local path="$1"
             echo "Reapplying $path"
-            docker exec               -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"               "$SQL_CONTAINER"               "$SQLCMD" -S localhost -U sa -C -b               -d "$SQL_DATABASE"               -i "/work/$path"
+            docker exec -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" "$SQL_CONTAINER" "$SQLCMD" -S localhost -U sa -C -b -d "$SQL_DATABASE" -i "/work/$path"
           }
 
           run_sql_file database/TukiDbSchema.sql
@@ -177,8 +176,34 @@ jobs:
           done < <(find database/migrations -maxdepth 1 -type f -name '*.sql' -print | sort)
 
       - name: Run database health and behavior smoke tests
-        run: |
-          docker exec             -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD"             "$SQL_CONTAINER"             "$SQLCMD" -S localhost -U sa -C -b             -d "$SQL_DATABASE"             -i /work/database/ci/SmokeTests.sql
+        run: docker exec -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" "$SQL_CONTAINER" "$SQLCMD" -S localhost -U sa -C -b -d "$SQL_DATABASE" -i /work/database/ci/SmokeTests.sql
+
+      - name: Set up .NET 9 for database integration tests
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+          cache: true
+          cache-dependency-path: |
+            backend/backend.csproj
+            backend.Tests/backend.Tests.csproj
+
+      - name: Restore database integration test project
+        run: dotnet restore backend.Tests/backend.Tests.csproj
+
+      - name: Run TukiDbContext SQL Server integration tests
+        env:
+          TUKI_REQUIRE_SQLSERVER_INTEGRATION: "true"
+          TUKI_SQLSERVER_INTEGRATION_CONNECTION: "Server=localhost,1433;Database=TukiCi;User Id=sa;Password=TukiCi-Only-9x7!Safe;Encrypt=True;TrustServerCertificate=True"
+        run: dotnet test backend.Tests/backend.Tests.csproj --configuration Release --no-restore --filter "Category=SqlServerIntegration" --logger "trx;LogFileName=sqlserver-integration-tests.trx"
+
+      - name: Upload database integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-integration-test-results
+          path: backend.Tests/TestResults/**/sqlserver-integration-tests.trx
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Show SQL Server logs on failure
         if: failure()
