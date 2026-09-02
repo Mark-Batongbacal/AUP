@@ -5,6 +5,7 @@ tuki_admin_hostname: gcp-admin.tuki.pawfect.bar
 tuki_acme_email: batongbacalmark@gmail.com
 
 tuki_database_name: Tuki
+tuki_staging_database_name: Tuki_Staging
 tuki_mssql_pid: Developer
 
 tuki_image_tag: dev
