@@ -1,0 +1,313 @@
+---
+- name: Configure automated Tuki SQL Server backups
+  hosts: tuki_gcp:tuki_azure
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - "{{ playbook_dir }}/../group_vars/vault.yml"
+
+  vars:
+    tuki_backup_compose_root: >-
+      {{ tuki_gcp_compose_root
+         if 'tuki_gcp' in group_names
+         else tuki_azure_compose_root }}
+
+  pre_tasks:
+    - name: Validate automated backup configuration
+      ansible.builtin.assert:
+        that:
+          - tuki_rclone_config is defined
+          - tuki_rclone_config | string | length > 0
+          - tuki_rclone_remote is match('^[A-Za-z0-9_.-]+$')
+          - tuki_backup_remote_root | string | length > 0
+          - tuki_database_name is match('^[A-Za-z0-9_]+$')
+          - tuki_sql_compose_service is match('^[A-Za-z0-9_.-]+$')
+          - tuki_sql_container_backup_dir is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_backup_compose_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_backup_local_dir is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_backup_daily_retention | int > 0
+          - tuki_backup_weekly_retention | int > 0
+          - tuki_backup_monthly_retention | int > 0
+        fail_msg: >-
+          Review the backup variables in group_vars/all.yml and keep
+          tuki_rclone_config in encrypted group_vars/vault.yml.
+      no_log: true
+
+  tasks:
+    - name: Install rclone
+      ansible.builtin.apt:
+        name: rclone
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create restricted rclone configuration directory
+      ansible.builtin.file:
+        path: /etc/rclone
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Install encrypted rclone configuration
+      ansible.builtin.copy:
+        content: "{{ tuki_rclone_config }}"
+        dest: /etc/rclone/rclone.conf
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Create restricted local backup directory
+      ansible.builtin.file:
+        path: "{{ tuki_backup_local_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Verify Google Drive backup destination is reachable
+      ansible.builtin.command:
+        argv:
+          - rclone
+          - lsd
+          - --config
+          - /etc/rclone/rclone.conf
+          - "{{ tuki_rclone_remote }}:{{ tuki_backup_remote_root }}"
+      changed_when: false
+
+    - name: Install Tuki database backup script
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/tuki-db-backup
+        owner: root
+        group: root
+        mode: "0700"
+        content: |
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          tier="${1:-}"
+          case "$tier" in
+            daily)
+              retention={{ tuki_backup_daily_retention | int }}
+              ;;
+            weekly)
+              retention={{ tuki_backup_weekly_retention | int }}
+              ;;
+            monthly)
+              retention={{ tuki_backup_monthly_retention | int }}
+              ;;
+            *)
+              echo "usage: $0 {daily|weekly|monthly}" >&2
+              exit 64
+              ;;
+          esac
+
+          database={{ tuki_database_name | quote }}
+          compose_root={{ tuki_backup_compose_root | quote }}
+          compose_env={{ tuki_compose_env | quote }}
+          sql_service={{ tuki_sql_compose_service | quote }}
+          sql_container_fallback={{ tuki_sql_container_fallback | default('') | quote }}
+          container_backup_dir={{ tuki_sql_container_backup_dir | quote }}
+          local_backup_dir={{ tuki_backup_local_dir | quote }}
+          rclone_config=/etc/rclone/rclone.conf
+          remote_root={{ (tuki_rclone_remote ~ ':' ~ tuki_backup_remote_root) | quote }}
+          remote_dir="$remote_root/$tier"
+
+          exec 9>/run/lock/tuki-db-backup.lock
+          if ! flock -n 9; then
+            echo "another Tuki database backup is already running" >&2
+            exit 75
+          fi
+
+          container_id=""
+          if [[ -f "$compose_root/docker-compose.yml" || -f "$compose_root/compose.yml" || -f "$compose_root/compose.yaml" ]]; then
+            if [[ -f "$compose_root/$compose_env" ]]; then
+              container_id="$(
+                cd "$compose_root"
+                docker compose --env-file "$compose_env" ps -q --all "$sql_service" 2>/dev/null || true
+              )"
+            else
+              container_id="$(
+                cd "$compose_root"
+                docker compose ps -q --all "$sql_service" 2>/dev/null || true
+              )"
+            fi
+          fi
+
+          if [[ -z "$container_id" && -n "$sql_container_fallback" ]]; then
+            container_id="$(docker inspect --format '{{'{{'}}.Id{{'}}'}}' "$sql_container_fallback" 2>/dev/null || true)"
+          fi
+
+          if [[ ! "$container_id" =~ ^[a-f0-9]{12,64}$ ]]; then
+            echo "could not resolve the SQL Server container" >&2
+            exit 1
+          fi
+
+          if [[ "$(docker inspect --format '{{'{{'}}.State.Status{{'}}'}}' "$container_id")" != "running" ]]; then
+            echo "SQL Server container is not running" >&2
+            exit 1
+          fi
+
+          sqlcmd=""
+          for candidate in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do
+            if docker exec "$container_id" test -x "$candidate"; then
+              sqlcmd="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$sqlcmd" ]]; then
+            echo "sqlcmd was not found inside the SQL Server container" >&2
+            exit 1
+          fi
+
+          timestamp="$(date -u +%Y-%m-%dT%H%M%SZ)"
+          filename="${database}-${timestamp}.bak"
+          container_file="${container_backup_dir}/${filename}"
+          local_file="${local_backup_dir}/${filename}"
+          partial_file="${local_file}.partial"
+          remote_file="${remote_dir}/${filename}"
+
+          cleanup() {
+            rm -f "$partial_file"
+            docker exec "$container_id" rm -f "$container_file" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          mkdir -p "$local_backup_dir"
+          rm -f "$partial_file"
+
+          docker exec "$container_id" mkdir -p "$container_backup_dir"
+          docker exec "$container_id" chmod 0700 "$container_backup_dir"
+
+          sql_query="BACKUP DATABASE [$database] TO DISK = N'$container_file' WITH INIT, COMPRESSION, CHECKSUM, STATS = 10;"
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -Q "$2"
+          ' -- "$sqlcmd" "$sql_query"
+
+          container_size="$(docker exec "$container_id" stat -c %s "$container_file")"
+          if [[ "$container_size" -le 0 ]]; then
+            echo "SQL Server produced an empty backup" >&2
+            exit 1
+          fi
+
+          docker cp "$container_id:$container_file" "$partial_file"
+          local_size="$(stat -c %s "$partial_file")"
+          if [[ "$local_size" -ne "$container_size" ]]; then
+            echo "copied backup size does not match the container backup" >&2
+            exit 1
+          fi
+
+          mv "$partial_file" "$local_file"
+
+          rclone copyto             --config "$rclone_config"             --retries 5             --low-level-retries 10             "$local_file"             "$remote_file"
+
+          remote_size="$(
+            rclone ls --config "$rclone_config" "$remote_file" |
+              awk 'NR == 1 { print $1 }'
+          )"
+          if [[ -z "$remote_size" || "$remote_size" -ne "$local_size" ]]; then
+            echo "remote backup verification failed" >&2
+            exit 1
+          fi
+
+          mapfile -t backups < <(
+            rclone lsf               --config "$rclone_config"               --files-only               --include "${database}-*.bak"               "$remote_dir" |
+              sort
+          )
+
+          excess=$(("${#backups[@]}" - retention))
+          if (( excess > 0 )); then
+            for ((i = 0; i < excess; i++)); do
+              rclone deletefile                 --config "$rclone_config"                 "$remote_dir/${backups[$i]}"
+            done
+          fi
+
+          rm -f "$local_file"
+          echo "Tuki $tier backup uploaded and verified: $remote_file"
+
+    - name: Install parameterized Tuki backup systemd service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/tuki-db-backup@.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Tuki SQL Server %i backup to Google Drive
+          Wants=docker.service
+          After=docker.service network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/tuki-db-backup %i
+          User=root
+          Group=root
+          UMask=0077
+          Nice=10
+          IOSchedulingClass=best-effort
+          IOSchedulingPriority=7
+          TimeoutStartSec=2h
+
+    - name: Install Tuki backup timers
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/tuki-db-backup-{{ item.name }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Schedule Tuki {{ item.name }} SQL Server backup
+
+          [Timer]
+          OnCalendar={{ item.calendar }}
+          Persistent=true
+          RandomizedDelaySec={{ tuki_backup_randomized_delay }}
+          Unit=tuki-db-backup@{{ item.name }}.service
+
+          [Install]
+          WantedBy=timers.target
+      loop:
+        - name: daily
+          calendar: "{{ tuki_backup_daily_calendar }}"
+        - name: weekly
+          calendar: "{{ tuki_backup_weekly_calendar }}"
+        - name: monthly
+          calendar: "{{ tuki_backup_monthly_calendar }}"
+      register: tuki_backup_timer_units
+
+    - name: Reload systemd after installing backup units
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Enable and start Tuki backup timers
+      ansible.builtin.systemd_service:
+        name: "tuki-db-backup-{{ item }}.timer"
+        enabled: true
+        state: started
+      loop:
+        - daily
+        - weekly
+        - monthly
+
+    - name: Report installed backup schedules
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - list-timers
+          - --all
+          - --no-pager
+          - "tuki-db-backup-*.timer"
+      register: tuki_backup_timers
+      changed_when: false
+
+    - name: Show installed backup schedules
+      ansible.builtin.debug:
+        var: tuki_backup_timers.stdout_lines
