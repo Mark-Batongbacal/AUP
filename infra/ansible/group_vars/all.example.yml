@@ -5,6 +5,7 @@ tuki_api_hostname: api.example.com
 tuki_admin_hostname: admin.example.com
 tuki_acme_email: ops@example.com
 tuki_database_name: Tuki
+tuki_staging_database_name: Tuki_Staging
 tuki_mssql_pid: Developer
 tuki_image_tag: dev
 tuki_valhalla_tile_urls: https://download.geofabrik.de/asia/philippines-latest.osm.pbf
