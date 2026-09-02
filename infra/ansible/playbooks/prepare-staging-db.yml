@@ -153,6 +153,22 @@
         }}
       changed_when: true
 
+    - name: Make copied schema scripts readable by sqlcmd
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tuki_staging_sql_container.stdout }}"
+          - chmod
+          - "0644"
+          - "/tmp/{{ item }}"
+      loop: >-
+        {{
+          ['TukiDbSchema.sql', 'TukiNavigationSchema.sql']
+          + (tuki_staging_migration_files | map('basename') | list)
+        }}
+      changed_when: true
+
     - name: Apply base schema scripts
       ansible.builtin.shell:
         cmd: |
