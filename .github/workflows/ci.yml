@@ -101,13 +101,20 @@ jobs:
     timeout-minutes: 15
 
     env:
-      MSSQL_SA_PASSWORD: "TukiCi-Only-9x7!Safe"
       SQL_CONTAINER: tuki-ci-sql
       SQL_DATABASE: TukiCi
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Generate disposable SQL password
+        shell: bash
+        run: |
+          set -euo pipefail
+          password="TukiCi-$(openssl rand -hex 18)-Aa1!"
+          echo "::add-mask::$password"
+          echo "MSSQL_SA_PASSWORD=$password" >> "$GITHUB_ENV"
 
       - name: Start disposable SQL Server
         run: docker run -d --name "$SQL_CONTAINER" -e ACCEPT_EULA=Y -e MSSQL_PID=Developer -e MSSQL_SA_PASSWORD="$MSSQL_SA_PASSWORD" -p 1433:1433 -v "$GITHUB_WORKSPACE/database:/work/database:ro" mcr.microsoft.com/mssql/server:2022-latest
@@ -193,7 +200,7 @@ jobs:
       - name: Run TukiDbContext SQL Server integration tests
         env:
           TUKI_REQUIRE_SQLSERVER_INTEGRATION: "true"
-          TUKI_SQLSERVER_INTEGRATION_CONNECTION: "Server=localhost,1433;Database=TukiCi;User Id=sa;Password=TukiCi-Only-9x7!Safe;Encrypt=True;TrustServerCertificate=True"
+          TUKI_SQLSERVER_INTEGRATION_CONNECTION: "Server=localhost,1433;Database=TukiCi;User Id=sa;Password=${{ env.MSSQL_SA_PASSWORD }};Encrypt=True;TrustServerCertificate=True"
         run: dotnet test backend.Tests/backend.Tests.csproj --configuration Release --no-restore --filter "Category=SqlServerIntegration" --logger "trx;LogFileName=sqlserver-integration-tests.trx"
 
       - name: Upload database integration test results
