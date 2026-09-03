@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/staging' }}
 
 jobs:
   dotnet:
@@ -81,6 +81,8 @@ jobs:
           mkdir -p runtime
           touch runtime/backend.env
           touch runtime/admin.env
+          touch runtime/backend-staging.env
+          touch runtime/admin-staging.env
           touch runtime/sqlserver.env
           touch runtime/caddy.env
           cat > runtime/compose.env <<'EOF'
@@ -89,10 +91,18 @@ jobs:
           VALHALLA_TILE_URLS=https://download.geofabrik.de/asia/philippines-latest.osm.pbf
           PELIAS_ES_JAVA_OPTS=-Xms1g -Xmx1g
           EOF
+          cat > runtime/staging-compose.env <<'EOF'
+          TUKI_STAGING_IMAGE_TAG=ci
+          TUKI_STAGING_NETWORK=tuki-staging-internal
+          TUKI_STAGING_BACKEND_HOST_PORT=5130
+          TUKI_STAGING_ADMIN_HOST_PORT=5031
+          EOF
 
-      - name: Validate Compose configuration
+      - name: Validate production Compose configuration
         run: docker compose --env-file runtime/compose.env config --quiet
 
+      - name: Validate isolated staging Compose configuration
+        run: docker compose --env-file runtime/staging-compose.env -f docker-compose.staging.yml config --quiet
 
 
   database:
@@ -219,3 +229,15 @@ jobs:
       - name: Remove disposable SQL Server
         if: always()
         run: docker rm -f "$SQL_CONTAINER" >/dev/null 2>&1 || true
+
+  deploy-staging:
+    name: Staging CD after CI
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    needs:
+      - dotnet
+      - compose
+      - database
+    uses: ./.github/workflows/deploy-staging.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit

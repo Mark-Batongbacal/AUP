@@ -1,0 +1,84 @@
+name: Staging CD
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: Exact CI-tested staging commit to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy CI-tested commit to Azure staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+
+    steps:
+      - name: Check out exact staging commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+
+      - name: Verify checked-out commit
+        env:
+          EXPECTED_COMMIT: ${{ inputs.commit_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+
+      - name: Install Ansible
+        run: python -m pip install 'ansible-core~=2.18.0'
+
+      - name: Configure strict Azure SSH access
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+          AZURE_SSH_USER: ${{ secrets.AZURE_SSH_USER }}
+          AZURE_SSH_PRIVATE_KEY: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+          AZURE_SSH_HOST_KEY: ${{ secrets.AZURE_SSH_HOST_KEY }}
+          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$AZURE_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/azure-key"
+          chmod 600 "$RUNNER_TEMP/azure-key"
+          printf '%s\n' "$AZURE_SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$ANSIBLE_VAULT_PASSWORD" > "$RUNNER_TEMP/vault-password"
+          chmod 600 "$RUNNER_TEMP/vault-password"
+          cat > infra/ansible/inventory.cd.ini <<EOF
+          [tuki_azure]
+          azure ansible_host=$AZURE_HOST ansible_user=$AZURE_SSH_USER ansible_ssh_private_key_file=$RUNNER_TEMP/azure-key
+          EOF
+
+      - name: Verify staging DNS targets the Azure host
+        env:
+          AZURE_HOST: ${{ secrets.AZURE_HOST }}
+        run: |
+          set -euo pipefail
+          azure_ip="$(getent ahostsv4 "$AZURE_HOST" | awk '$2 == "STREAM" { print $1; exit }')"
+          test -n "$azure_ip"
+
+          for hostname in staging-api.tuki.ph staging-admin.tuki.ph; do
+            getent ahostsv4 "$hostname" |
+              awk '$2 == "STREAM" { print $1 }' |
+              grep -Fqx "$azure_ip" || {
+                echo "$hostname does not resolve to the Azure deployment host." >&2
+                exit 1
+              }
+          done
+
+      - name: Deploy isolated staging services
+        env:
+          STAGING_COMMIT: ${{ inputs.commit_sha }}
+        run: |
+          ansible-playbook \
+            -i infra/ansible/inventory.cd.ini \
+            infra/ansible/playbooks/deploy-staging.yml \
+            --limit azure \
+            --vault-password-file "$RUNNER_TEMP/vault-password" \
+            -e tuki_confirm_staging_reference_sync=true \
+            -e "tuki_staging_git_revision=$STAGING_COMMIT" \
+            -e "tuki_staging_image_tag=$STAGING_COMMIT"

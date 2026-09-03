@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Tuki.Admin.Repositories.AdminAuth;
 using Tuki.Admin.Repositories.Common;
 using Tuki.Admin.Repositories.JeepneyRoutes;
@@ -84,6 +85,8 @@ app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapStaticAssets();
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .AllowAnonymous();
 
 app.MapControllerRoute(
         name: "default",

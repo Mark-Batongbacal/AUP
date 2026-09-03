@@ -1,0 +1,456 @@
+---
+- import_playbook: prepare-staging-db.yml
+
+- import_playbook: sync-staging-reference-data.yml
+
+- name: Deploy isolated Tuki staging application services on Azure
+  hosts: tuki_azure
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - "{{ playbook_dir }}/../group_vars/vault.yml"
+
+  vars:
+    tuki_staging_checkout: "{{ tuki_staging_install_root }}/AUP"
+    tuki_staging_runtime_dir: "{{ tuki_staging_checkout }}/runtime"
+    tuki_staging_compose_env: runtime/staging-compose.env
+    tuki_staging_compose_command: >-
+      docker compose --env-file {{ tuki_staging_compose_env }}
+      -f docker-compose.staging.yml
+    tuki_staging_git_revision_value: "{{ tuki_staging_git_revision | default('') }}"
+    tuki_target_compose_root: "{{ tuki_azure_compose_root }}"
+    tuki_caddy_staging_fragment: /etc/caddy/conf.d/tuki-staging.caddy
+    tuki_caddy_staging_candidate_fragment: /etc/caddy/conf.d/tuki-staging.caddy.candidate
+    tuki_caddy_candidate_file: /etc/caddy/Caddyfile.tuki-staging.candidate
+
+  pre_tasks:
+    - name: Validate staging deployment configuration
+      ansible.builtin.assert:
+        that:
+          - tuki_staging_git_revision_value is match('^[0-9a-f]{40}$')
+          - tuki_staging_image_tag == tuki_staging_git_revision_value
+          - tuki_staging_database_name == 'Tuki_Staging'
+          - tuki_staging_database_name | lower != tuki_database_name | lower
+          - tuki_staging_api_hostname is match('^[A-Za-z0-9.-]+$')
+          - tuki_staging_admin_hostname is match('^[A-Za-z0-9.-]+$')
+          - tuki_staging_install_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_staging_network is match('^[A-Za-z0-9_.-]+$')
+          - tuki_staging_backend_host_port | int > 1024
+          - tuki_staging_backend_host_port | int < 65536
+          - tuki_staging_admin_host_port | int > 1024
+          - tuki_staging_admin_host_port | int < 65536
+          - tuki_staging_backend_host_port | int != tuki_staging_admin_host_port | int
+          - tuki_repository_url | length > 0
+          - tuki_caddyfile_path == '/etc/caddy/Caddyfile'
+          - tuki_mssql_sa_password | length > 0
+          - tuki_admin_login_username | length > 0
+          - tuki_admin_login_password | length > 0
+          - tuki_login_users | length > 0
+          - tuki_gemini_api_key | length > 0
+          - tuki_google_places_api_key | length > 0
+          - tuki_google_client_id | length > 0
+          - tuki_facebook_app_id | length > 0
+          - tuki_facebook_app_secret | length > 0
+          - tuki_email_connection_string | length > 0
+          - tuki_email_sender_address | length > 0
+        fail_msg: >-
+          Refusing staging deployment. Supply the exact 40-character staging
+          commit as tuki_staging_git_revision and review staging configuration
+          and encrypted Vault values.
+      no_log: true
+
+    - name: Verify host Caddy service is active
+      ansible.builtin.command: systemctl is-active caddy
+      register: tuki_staging_caddy_active
+      changed_when: false
+      failed_when: tuki_staging_caddy_active.stdout != 'active'
+
+  tasks:
+    - name: Create isolated staging installation directory
+      ansible.builtin.file:
+        path: "{{ tuki_staging_install_root }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Check out exact staging commit separately from production
+      ansible.builtin.git:
+        repo: "{{ tuki_repository_url }}"
+        dest: "{{ tuki_staging_checkout }}"
+        version: "{{ tuki_staging_git_revision_value }}"
+        refspec: +refs/heads/staging:refs/remotes/origin/staging
+        single_branch: true
+        update: true
+        force: false
+      become: false
+
+    - name: Create private staging runtime directory
+      ansible.builtin.file:
+        path: "{{ tuki_staging_runtime_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: Render staging service environment files
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/{{ item.template }}"
+        dest: "{{ tuki_staging_runtime_dir }}/{{ item.destination }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+      loop:
+        - { template: backend-staging.env.j2, destination: backend-staging.env }
+        - { template: admin-staging.env.j2, destination: admin-staging.env }
+      no_log: true
+
+    - name: Render staging Compose interpolation variables
+      ansible.builtin.copy:
+        content: |
+          TUKI_STAGING_IMAGE_TAG={{ tuki_staging_image_tag }}
+          TUKI_STAGING_NETWORK={{ tuki_staging_network }}
+          TUKI_STAGING_BACKEND_HOST_PORT={{ tuki_staging_backend_host_port }}
+          TUKI_STAGING_ADMIN_HOST_PORT={{ tuki_staging_admin_host_port }}
+        dest: "{{ tuki_staging_runtime_dir }}/staging-compose.env"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+
+    - name: Verify staging connection string targets only Tuki_Staging
+      ansible.builtin.slurp:
+        src: "{{ tuki_staging_runtime_dir }}/backend-staging.env"
+      register: tuki_staging_backend_environment
+      no_log: true
+
+    - name: Enforce staging database connection isolation
+      ansible.builtin.assert:
+        that:
+          - >-
+            'Database=' ~ tuki_staging_database_name ~ ';'
+            in (tuki_staging_backend_environment.content | b64decode)
+          - >-
+            'Database=' ~ tuki_database_name ~ ';'
+            not in (tuki_staging_backend_environment.content | b64decode)
+        fail_msg: Staging backend connection string does not target Tuki_Staging exclusively.
+      no_log: true
+
+    - name: Validate isolated staging Compose configuration
+      ansible.builtin.command:
+        cmd: "{{ tuki_staging_compose_command }} config --quiet"
+        chdir: "{{ tuki_staging_checkout }}"
+      changed_when: false
+      no_log: true
+
+    - name: Create private staging application network
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          network={{ tuki_staging_network | quote }}
+          if docker network inspect "$network" >/dev/null 2>&1; then
+            exit 0
+          fi
+          docker network create --driver bridge "$network" >/dev/null
+          printf 'created'
+        executable: /bin/bash
+      register: tuki_staging_network_create
+      changed_when: tuki_staging_network_create.stdout == 'created'
+
+    - name: Resolve existing shared data-service containers
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          service={{ item.service | quote }}
+          fallback={{ item.fallback | default('') | quote }}
+          container_id=""
+
+          if [[ -d {{ tuki_target_compose_root | quote }} ]]; then
+            cd {{ tuki_target_compose_root | quote }}
+            if [[ -f {{ tuki_compose_env | quote }} ]]; then
+              container_id="$(docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all "$service" 2>/dev/null || true)"
+            else
+              container_id="$(docker compose ps -q --all "$service" 2>/dev/null || true)"
+            fi
+          fi
+
+          if [[ -z "$container_id" && -n "$fallback" ]]; then
+            container_id="$(docker inspect --format "{% raw %}{{.Id}}{% endraw %}" "$fallback" 2>/dev/null || true)"
+          fi
+
+          if [[ ! "$container_id" =~ ^[a-f0-9]{12,64}$ ]]; then
+            echo "could not resolve existing $service container" >&2
+            exit 1
+          fi
+
+          running="$(docker inspect --format "{% raw %}{{.State.Running}}{% endraw %}" "$container_id")"
+          test "$running" = true
+          printf '%s' "$container_id"
+        executable: /bin/bash
+      loop:
+        - service: "{{ tuki_sql_compose_service }}"
+          fallback: "{{ tuki_sql_container_fallback | default('') }}"
+          alias: sqlserver-staging
+        - service: "{{ tuki_pelias_compose_service }}"
+          fallback: "{{ tuki_pelias_container_fallback | default('') }}"
+          alias: pelias-staging
+        - service: "{{ tuki_valhalla_compose_service }}"
+          fallback: "{{ tuki_valhalla_container_fallback | default('') }}"
+          alias: valhalla-staging
+      loop_control:
+        label: "{{ item.service }}"
+      register: tuki_staging_data_containers
+      changed_when: false
+
+    - name: Connect shared data services to private staging network
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ item.stdout | quote }}
+          network={{ tuki_staging_network | quote }}
+          alias={{ item.item.alias | quote }}
+
+          if docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$container_id" |
+              grep -Fq "\"$network\":"; then
+            exit 0
+          fi
+
+          docker network connect --alias "$alias" "$network" "$container_id"
+          printf 'connected'
+        executable: /bin/bash
+      loop: "{{ tuki_staging_data_containers.results }}"
+      loop_control:
+        label: "{{ item.item.service }}"
+      register: tuki_staging_network_connections
+      changed_when: tuki_staging_network_connections.stdout == 'connected'
+
+    - name: Build and update staging backend only
+      ansible.builtin.command:
+        cmd: "{{ tuki_staging_compose_command }} up -d --build --no-deps backend-staging"
+        chdir: "{{ tuki_staging_checkout }}"
+      changed_when: true
+
+    - name: Require healthy staging backend
+      block:
+        - name: Wait for staging backend health
+          ansible.builtin.shell:
+            cmd: |
+              set -eu
+              container_id="$({{ tuki_staging_compose_command }} ps -q backend-staging)"
+              test -n "$container_id"
+              docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+            chdir: "{{ tuki_staging_checkout }}"
+            executable: /bin/bash
+          register: tuki_staging_backend_health
+          changed_when: false
+          retries: 30
+          delay: 5
+          until: tuki_staging_backend_health.stdout == 'healthy'
+      rescue:
+        - name: Show staging backend logs
+          ansible.builtin.command:
+            cmd: "{{ tuki_staging_compose_command }} logs --no-color --tail 200 backend-staging"
+            chdir: "{{ tuki_staging_checkout }}"
+          changed_when: false
+        - name: Fail unhealthy staging backend deployment
+          ansible.builtin.fail:
+            msg: Staging backend failed its database and routing-data health check.
+
+    - name: Verify staging backend health response locally
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --silent
+          - --show-error
+          - --max-time
+          - "15"
+          - "http://127.0.0.1:{{ tuki_staging_backend_host_port }}/health"
+      register: tuki_staging_backend_health_response
+      changed_when: false
+
+    - name: Build and update staging admin only
+      ansible.builtin.command:
+        cmd: "{{ tuki_staging_compose_command }} up -d --build --no-deps admin-staging"
+        chdir: "{{ tuki_staging_checkout }}"
+      changed_when: true
+
+    - name: Require healthy staging admin
+      block:
+        - name: Wait for staging admin health
+          ansible.builtin.shell:
+            cmd: |
+              set -eu
+              container_id="$({{ tuki_staging_compose_command }} ps -q admin-staging)"
+              test -n "$container_id"
+              docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+            chdir: "{{ tuki_staging_checkout }}"
+            executable: /bin/bash
+          register: tuki_staging_admin_health
+          changed_when: false
+          retries: 30
+          delay: 5
+          until: tuki_staging_admin_health.stdout == 'healthy'
+      rescue:
+        - name: Show staging admin logs
+          ansible.builtin.command:
+            cmd: "{{ tuki_staging_compose_command }} logs --no-color --tail 200 admin-staging"
+            chdir: "{{ tuki_staging_checkout }}"
+          changed_when: false
+        - name: Fail unhealthy staging admin deployment
+          ansible.builtin.fail:
+            msg: Staging admin failed its application health check.
+
+    - name: Verify staging admin health response locally
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --silent
+          - --show-error
+          - --max-time
+          - "15"
+          - "http://127.0.0.1:{{ tuki_staging_admin_host_port }}/health"
+      changed_when: false
+
+    - name: Create Caddy fragment directory
+      ansible.builtin.file:
+        path: /etc/caddy/conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Render candidate staging Caddy fragment
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/caddy-staging.caddy.j2"
+        dest: "{{ tuki_caddy_staging_candidate_fragment }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy current Caddyfile for candidate validation
+      ansible.builtin.copy:
+        src: "{{ tuki_caddyfile_path }}"
+        dest: "{{ tuki_caddy_candidate_file }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Remove existing staging import from candidate Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddy_candidate_file }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI STAGING"
+        state: absent
+
+    - name: Add candidate staging import to candidate Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddy_candidate_file }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI STAGING"
+        block: "import {{ tuki_caddy_staging_candidate_fragment }}"
+        insertafter: EOF
+
+    - name: Validate candidate Caddy configuration
+      ansible.builtin.command:
+        argv:
+          - caddy
+          - validate
+          - --config
+          - "{{ tuki_caddy_candidate_file }}"
+          - --adapter
+          - caddyfile
+      changed_when: false
+
+    - name: Install validated staging Caddy fragment
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/caddy-staging.caddy.j2"
+        dest: "{{ tuki_caddy_staging_fragment }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: tuki_staging_caddy_fragment_install
+
+    - name: Import staging routes from host Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddyfile_path }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI STAGING"
+        block: "import {{ tuki_caddy_staging_fragment }}"
+        insertafter: EOF
+      register: tuki_staging_caddy_import
+
+    - name: Validate installed Caddy configuration
+      ansible.builtin.command:
+        argv:
+          - caddy
+          - validate
+          - --config
+          - "{{ tuki_caddyfile_path }}"
+          - --adapter
+          - caddyfile
+      changed_when: false
+
+    - name: Reload host Caddy without restarting production applications
+      ansible.builtin.systemd_service:
+        name: caddy
+        state: reloaded
+      when: >-
+        tuki_staging_caddy_fragment_install.changed
+        or tuki_staging_caddy_import.changed
+
+    - name: Remove candidate Caddy files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ tuki_caddy_candidate_file }}"
+        - "{{ tuki_caddy_staging_candidate_fragment }}"
+
+    - name: Verify public staging API HTTPS health
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --silent
+          - --show-error
+          - --location
+          - --max-time
+          - "30"
+          - "https://{{ tuki_staging_api_hostname }}/health"
+      register: tuki_staging_public_api_health
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: tuki_staging_public_api_health.rc == 0
+
+    - name: Verify public staging admin HTTPS health
+      ansible.builtin.command:
+        argv:
+          - curl
+          - --fail
+          - --silent
+          - --show-error
+          - --location
+          - --max-time
+          - "30"
+          - "https://{{ tuki_staging_admin_hostname }}/health"
+      register: tuki_staging_public_admin_health
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: tuki_staging_public_admin_health.rc == 0
+
+    - name: Show isolated staging service status
+      ansible.builtin.command:
+        cmd: "{{ tuki_staging_compose_command }} ps backend-staging admin-staging"
+        chdir: "{{ tuki_staging_checkout }}"
+      register: tuki_staging_service_status
+      changed_when: false
+
+    - name: Report staging deployment readiness
+      ansible.builtin.debug:
+        msg:
+          - "Staging commit: {{ tuki_staging_git_revision_value }}"
+          - "Staging API health: {{ tuki_staging_public_api_health.stdout }}"
+          - "Staging admin health: {{ tuki_staging_public_admin_health.stdout }}"
+          - "{{ tuki_staging_service_status.stdout_lines }}"

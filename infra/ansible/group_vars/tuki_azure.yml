@@ -3,3 +3,9 @@
 # Keep this host-specific so GCP/other Compose-managed hosts do not accidentally
 # target Azure's container naming convention.
 tuki_sql_container_fallback: tuki-sql
+
+# Azure's current Pelias and Valhalla stacks predate the repository Compose
+# project. Staging connects them to its private application network without
+# restarting or recreating the production containers.
+tuki_pelias_container_fallback: pelias_api
+tuki_valhalla_container_fallback: valhalla

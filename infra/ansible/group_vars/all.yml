@@ -1,6 +1,8 @@
 ---
 tuki_api_hostname: gcp-api.tuki.pawfect.bar
 tuki_admin_hostname: gcp-admin.tuki.pawfect.bar
+tuki_staging_api_hostname: staging-api.tuki.ph
+tuki_staging_admin_hostname: staging-admin.tuki.ph
 
 tuki_acme_email: batongbacalmark@gmail.com
 
@@ -9,6 +11,12 @@ tuki_staging_database_name: Tuki_Staging
 tuki_mssql_pid: Developer
 
 tuki_image_tag: dev
+tuki_staging_image_tag: staging
+tuki_staging_install_root: /opt/tuki/staging
+tuki_staging_network: tuki-staging-internal
+tuki_staging_backend_host_port: 5130
+tuki_staging_admin_host_port: 5031
+tuki_repository_url: https://github.com/Mark-Batongbacal/AUP.git
 tuki_valhalla_tile_urls: https://download.geofabrik.de/asia/philippines-latest.osm.pbf
 
 tuki_pelias_es_java_opts: "-Xms1g -Xmx1g"
@@ -32,6 +40,13 @@ tuki_gcp_compose_root: /opt/tuki/AUP
 tuki_gcp_backup_incoming_dir: /opt/tuki/backups/incoming
 tuki_compose_env: runtime/compose.env
 tuki_sql_container_fallback: ""
+
+# Existing data-service containers shared read-only/by network with staging.
+tuki_pelias_compose_service: pelias
+tuki_pelias_container_fallback: ""
+tuki_valhalla_compose_service: valhalla
+tuki_valhalla_container_fallback: ""
+tuki_caddyfile_path: /etc/caddy/Caddyfile
 
 # Automated SQL Server backups to Google Drive.
 tuki_rclone_remote: gdrive
