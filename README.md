@@ -171,6 +171,22 @@ restore, overwrite, or delete the production database. Follow
 `infra/ansible/README.md` for the GCP deployment and separate migration
 workflow.
 
+### Promotion and automated deployment
+
+Code is promoted only through reviewed pull requests:
+
+```text
+feature/* -> dev -> staging -> main (production)
+```
+
+A successful push to `staging` runs the existing isolated staging deployment.
+A successful push to `main` runs production deployment only after the .NET,
+Compose, and database CI jobs pass for that exact commit. Neither workflow
+merges branches. The production job uses the protected GitHub `production`
+environment and deploys SHA-tagged backend/admin images; it does not deploy a
+moving branch or `latest` tag. See [the Ansible operations guide](infra/ansible/README.md#production-cd) for secrets, host preparation, database safeguards,
+health checks, and rollback.
+
 ## Prerequisites
 
 - Android Studio, Android SDK Platform 36, and JDK 17 or later for the Android app.
@@ -272,6 +288,10 @@ cd AUP
 ```
 
 ## Team branch workflow
+
+The repository promotion path is `feature/* -> dev -> staging -> main`.
+Changes reach each protected branch through its pull-request and review rules;
+`main` represents the currently approved production source.
 
 Before starting work, update `dev`, switch to your own branch, and merge the current development changes:
 

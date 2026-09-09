@@ -1,5 +1,167 @@
 # Tuki Azure-to-GCP deployment and data migration
 
+## Production CD
+
+The supported promotion path is:
+
+```text
+feature/* -> dev -> staging -> main
+```
+
+`main` represents production. CI runs the .NET build/tests, Docker Compose
+validation, and disposable SQL schema/integration tests. On a push produced by
+merging a reviewed `staging -> main` pull request, and only after all three jobs
+succeed for the same `github.sha`, CI calls `deploy-production.yml`. The
+workflow never creates or merges a pull request and cannot run its deploy job
+for a pull-request event, another branch, or a SHA different from the caller's
+tested SHA. The separate promotion-source ruleset/check remains responsible
+for allowing only `dev -> staging` and `staging -> main` promotions.
+
+The reusable production workflow uses `contents: read`, the protected GitHub
+environment `production`, strict SSH host-key checking, and a production-only
+concurrency group with `cancel-in-progress: false`. The parent CI run is also
+not canceled once a `main` or `staging` deployment may have begun.
+
+### GitHub configuration
+
+Create the `production` GitHub environment and store these environment secrets:
+
+- `PRODUCTION_HOST`: SSH hostname or IP of the active production host.
+- `PRODUCTION_SSH_USER`: sudo-capable deployment account.
+- `PRODUCTION_SSH_PRIVATE_KEY_B64`: base64 of the private key as one line,
+  for example `base64 -w 0 /path/to/key` on GNU/Linux.
+- `PRODUCTION_SSH_HOST_KEY`: complete trusted `known_hosts` line for
+  `PRODUCTION_HOST`, obtained and verified out of band. Do not trust an
+  unverified `ssh-keyscan` result.
+- `ANSIBLE_VAULT_PASSWORD`: password for the tracked encrypted
+  `group_vars/vault.yml`.
+
+The production workflow deliberately uses provider-neutral secret, inventory,
+and project names. `group_vars/tuki_production.yml` contains only the current
+host's compatibility paths and legacy container fallbacks (`tuki-sql`,
+`pelias_api`, and `valhalla`). Change or override that file when production
+moves providers; do not rename the generic workflow secrets back to the older
+`AZURE_*` staging names.
+
+Configure the `production` environment with required reviewers/manual approval
+and restrict deployment branches to `main`. Keep the `main` ruleset configured
+for pull requests, required reviews, required CI checks, no bypasses, and the
+separate rule/check that permits only `staging` as the promotion source.
+Likewise, keep `staging` protected so only `dev` is promoted into it. Repository
+settings and environment approvals are intentionally not modified by code.
+
+### Production deployment sequence
+
+The production playbook uses a separate `/opt/tuki/production/AUP` checkout and
+verifies its `git rev-parse HEAD` against the exact 40-character main SHA. It
+then:
+
+1. renders production-only runtime files and validates that the backend points
+   to exactly `Tuki`, never `Tuki_Staging`;
+2. validates `docker-compose.production.yml`, creates the private
+   `tuki-production-internal` network, and attaches the already-running SQL
+   Server, Pelias, and Valhalla containers under production-only aliases;
+3. builds `tuki-backend-production:<sha>` and
+   `tuki-admin-production:<sha>` before changing the database;
+4. requires the existing `Tuki` database, the foundational schema, and a full
+   backup recorded by SQL Server within
+   `tuki_production_max_backup_age_hours` (24 by default);
+5. applies only new, ordered `database/migrations/*.sql` files and records each
+   filename plus SHA-256 in `dbo.__TukiSchemaMigrations`;
+6. updates only backend/admin with `--no-deps`, checks container health and
+   loopback `/health` endpoints (the backend health includes database and
+   routing-data checks), and restores the previous recorded app images if a
+   local app health check fails;
+7. renders a host-Caddy fragment for the existing production hostnames,
+   validates a candidate and the installed configuration, then reloads Caddy;
+8. verifies both public HTTPS `/health` routes with normal TLS validation and
+   records the successfully deployed commit.
+
+The app-only Compose project publishes ports `5140` and `5040` on
+`127.0.0.1` only. It does not define, recreate, restart, restore, or expose SQL
+Server, Pelias, or Valhalla. The legacy production containers and their volumes
+remain in place. Staging keeps its separate checkout, ports, database, network,
+and working deployment workflow.
+
+### Database safety and migration caveats
+
+Production CD never creates, restores, drops, or replaces `Tuki`, never reads
+from `Tuki_Staging`, and never runs the staging reference-data synchronization.
+It does not run the broad base/seed schema during a normal deployment. A host
+without the validated foundational tables fails before migration and requires
+an explicit operator-led baseline procedure.
+
+Migration files are scanned before any host mutation. A statement beginning
+with `DROP`, `TRUNCATE`, `DELETE FROM`, `RESTORE DATABASE`, or `ALTER DATABASE`
+causes deployment to fail. Review every new migration for locking, runtime, and
+data-conversion risk even when it passes this conservative scan. Applied
+migration files are immutable: changing a file whose filename is already in
+the ledger causes a checksum failure; add a new migration instead. Existing
+repository migrations are additive/idempotent, so the first ledger-enabled run
+can safely reconcile them, but it should still be rehearsed against a restored
+production backup before enabling CD.
+
+There are no automatic down-migrations or database rollbacks. Maintain and
+regularly test SQL Server full/log backups according to the recovery objective.
+If a schema release must be reversed, stop writes as appropriate and use the
+documented, operator-approved backup/restore procedure on an isolated recovery
+target before any production restore decision.
+
+### Application rollback
+
+Successful deployments leave exact SHA-tagged images in Docker and record:
+
+```text
+/opt/tuki/production/deployed-commit
+/opt/tuki/production/previous-deployed-commit
+```
+
+To roll back application code (not the database), read and verify the previous
+SHA, then run on the production host:
+
+```bash
+cd /opt/tuki/production/AUP
+previous="$(sudo cat /opt/tuki/production/previous-deployed-commit)"
+test "${#previous}" -eq 40
+sudo env TUKI_PRODUCTION_IMAGE_TAG="$previous" \
+  docker compose --env-file runtime/production-compose.env \
+  -f docker-compose.production.yml up -d --no-build --no-deps \
+  backend-production admin-production
+curl --fail http://127.0.0.1:5140/health
+curl --fail http://127.0.0.1:5040/health
+curl --fail "https://$(awk -F': ' '/^tuki_api_hostname:/{print $2}' infra/ansible/group_vars/all.yml)/health"
+curl --fail "https://$(awk -F': ' '/^tuki_admin_hostname:/{print $2}' infra/ansible/group_vars/all.yml)/health"
+```
+
+After verification, update `deployed-commit` deliberately or redeploy the
+desired main commit through the normal reviewed promotion path. Do not attempt
+an automatic database downgrade. Docker image pruning must retain at least the
+current and previous production SHA tags.
+
+### One-time production setup
+
+Before approving the first production job:
+
+- verify the production SSH key, host-key line, sudo access, and repository
+  read access from the host;
+- verify host Caddy is active and `tuki_caddyfile_path` is correct;
+- reconcile any unmanaged Caddy blocks for the existing production hostnames;
+  duplicate site definitions make candidate validation fail safely, so move
+  those routes into the managed fragment during a planned cutover;
+- verify the configured production hostnames already resolve to this host;
+- verify the existing SQL Server, Pelias, and Valhalla container names or
+  override the compatibility fallbacks in production inventory variables;
+- take and verify a full `Tuki` backup less than 24 hours before deployment;
+- rehearse all current migrations against a restored copy of that backup;
+- ensure loopback ports `5140` and `5040` are free and remain firewalled from
+  public access; and
+- configure the GitHub `production` environment, secrets, required reviewers,
+  deployment-branch restriction, and branch/ruleset checks described above.
+
+For a safe preflight from `infra/ansible`, run `deploy-production.yml` with
+`--syntax-check`; do not use Ansible check mode against production because
+shell/Compose discovery and migration semantics cannot be modeled reliably.
+
 The production workflow keeps host preparation, data-service startup, database
 migration, application deployment, and verification as separate operator-run
 phases:
@@ -41,8 +203,9 @@ private container network. It never copies live Elasticsearch filesystem data.
 ## Controller and inventory setup
 
 Run Ansible from the Debian control laptop. The committed `inventory.ini`
-contains only the aliases `azure` and `gcp`; it contains no public IPs, users,
-or private-key paths. Keep Azure and GCP credentials independent.
+contains only the aliases `azure`, `gcp`, and `production`; it contains no
+public IPs, users, or private-key paths. Keep provider and production
+credentials independent.
 
 Preferred option: configure both aliases in `~/.ssh/config`:
 
@@ -56,6 +219,11 @@ Host gcp
     HostName GCP_PUBLIC_IP
     User GCP_SSH_USER
     IdentityFile /absolute/path/to/gcp-private-key
+
+Host production
+    HostName PRODUCTION_PUBLIC_IP
+    User PRODUCTION_SSH_USER
+    IdentityFile /absolute/path/to/production-private-key
 ```
 
 Alternatively, copy the example inventory and keep the result local:

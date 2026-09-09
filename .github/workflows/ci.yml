@@ -18,7 +18,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/staging' }}
+  # Never cancel a run that may already be deploying staging or production.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/staging' && github.ref != 'refs/heads/main' }}
 
 jobs:
   dotnet:
@@ -109,6 +110,8 @@ jobs:
           touch runtime/admin.env
           touch runtime/backend-staging.env
           touch runtime/admin-staging.env
+          touch runtime/backend-production.env
+          touch runtime/admin-production.env
           touch runtime/sqlserver.env
           touch runtime/caddy.env
           cat > runtime/compose.env <<'EOF'
@@ -123,12 +126,21 @@ jobs:
           TUKI_STAGING_BACKEND_HOST_PORT=5130
           TUKI_STAGING_ADMIN_HOST_PORT=5031
           EOF
+          cat > runtime/production-compose.env <<'EOF'
+          TUKI_PRODUCTION_IMAGE_TAG=0000000000000000000000000000000000000000
+          TUKI_PRODUCTION_NETWORK=tuki-production-internal
+          TUKI_PRODUCTION_BACKEND_HOST_PORT=5140
+          TUKI_PRODUCTION_ADMIN_HOST_PORT=5040
+          EOF
 
       - name: Validate production Compose configuration
         run: docker compose --env-file runtime/compose.env config --quiet
 
       - name: Validate isolated staging Compose configuration
         run: docker compose --env-file runtime/staging-compose.env -f docker-compose.staging.yml config --quiet
+
+      - name: Validate isolated production Compose configuration
+        run: docker compose --env-file runtime/production-compose.env -f docker-compose.production.yml config --quiet
 
   database:
     name: Database schema and smoke tests
@@ -263,6 +275,18 @@ jobs:
       - compose
       - database
     uses: ./.github/workflows/deploy-staging.yml
+    with:
+      commit_sha: ${{ github.sha }}
+    secrets: inherit
+
+  deploy-production:
+    name: Production CD after CI
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - dotnet
+      - compose
+      - database
+    uses: ./.github/workflows/deploy-production.yml
     with:
       commit_sha: ${{ github.sha }}
     secrets: inherit
