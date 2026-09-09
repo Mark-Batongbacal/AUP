@@ -1,0 +1,9 @@
+{{ tuki_api_hostname }} {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:{{ tuki_production_backend_host_port }}
+}
+
+{{ tuki_admin_hostname }} {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:{{ tuki_production_admin_host_port }}
+}

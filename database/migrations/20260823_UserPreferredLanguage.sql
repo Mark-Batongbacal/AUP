@@ -1,3 +1,10 @@
+SET ANSI_NULLS ON;
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET ARITHABORT ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET NUMERIC_ROUNDABORT OFF;
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
@@ -10,10 +17,12 @@ BEGIN
             CONSTRAINT DF_UserProfiles_PreferredLanguage DEFAULT (N'English');
 END;
 
-UPDATE dbo.UserProfiles
-SET PreferredLanguage = N'English'
-WHERE PreferredLanguage IS NULL
-   OR LTRIM(RTRIM(PreferredLanguage)) = N'';
+EXEC sys.sp_executesql N'
+    UPDATE dbo.UserProfiles
+    SET PreferredLanguage = N''English''
+    WHERE PreferredLanguage IS NULL
+       OR LTRIM(RTRIM(PreferredLanguage)) = N'''';
+';
 
 IF NOT EXISTS (
     SELECT 1
@@ -21,9 +30,11 @@ IF NOT EXISTS (
     WHERE name = N'CK_UserProfiles_PreferredLanguage'
       AND parent_object_id = OBJECT_ID(N'dbo.UserProfiles'))
 BEGIN
-    ALTER TABLE dbo.UserProfiles
-        ADD CONSTRAINT CK_UserProfiles_PreferredLanguage
-            CHECK (PreferredLanguage IN (N'English', N'Filipino'));
+    EXEC sys.sp_executesql N'
+        ALTER TABLE dbo.UserProfiles
+            ADD CONSTRAINT CK_UserProfiles_PreferredLanguage
+                CHECK (PreferredLanguage IN (N''English'', N''Filipino''));
+    ';
 END;
 
 COMMIT TRANSACTION;

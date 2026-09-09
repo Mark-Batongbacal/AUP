@@ -1,0 +1,9 @@
+---
+# Compatibility defaults for the current production host. Compose discovery is
+# preferred; these fallbacks attach the legacy data containers without
+# restarting or recreating them. Override these inventory variables when the
+# production provider or container layout changes.
+tuki_production_compose_root: /home/AUP/AUP
+tuki_sql_container_fallback: tuki-sql
+tuki_pelias_container_fallback: pelias_api
+tuki_valhalla_container_fallback: valhalla
