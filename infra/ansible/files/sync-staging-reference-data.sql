@@ -105,6 +105,13 @@ BEGIN TRY
     IF DB_NAME() <> N'$(DestinationDatabase)'
         THROW 53009, 'Connected to the wrong destination database', 1;
 
+    DECLARE @UserProfilesBefore bigint = (SELECT COUNT_BIG(*) FROM dbo.UserProfiles);
+    DECLARE @ApiKeySessionsBefore bigint = (SELECT COUNT_BIG(*) FROM dbo.ApiKeySessions);
+    DECLARE @PassengerTripsBefore bigint = (SELECT COUNT_BIG(*) FROM dbo.PassengerTrips);
+    DECLARE @TripSessionsBefore bigint = (SELECT COUNT_BIG(*) FROM dbo.TripSessions);
+    DECLARE @ChatConversationsBefore bigint = (SELECT COUNT_BIG(*) FROM dbo.ChatConversations);
+    DECLARE @ChatMessagesBefore bigint = (SELECT COUNT_BIG(*) FROM dbo.ChatMessages);
+
     DELETE FROM dbo.TransferConnections;
     DELETE FROM dbo.FareRules;
     DELETE FROM dbo.RouteSegments;
@@ -281,18 +288,18 @@ BEGIN TRY
         <> (SELECT COUNT_BIG(*) FROM dbo.TransferConnections)
         THROW 53110, 'TransferConnections count verification failed', 1;
 
-    IF EXISTS (SELECT 1 FROM dbo.UserProfiles)
-        THROW 53201, 'Sensitive staging table UserProfiles is not empty', 1;
-    IF EXISTS (SELECT 1 FROM dbo.ApiKeySessions)
-        THROW 53202, 'Sensitive staging table ApiKeySessions is not empty', 1;
-    IF EXISTS (SELECT 1 FROM dbo.PassengerTrips)
-        THROW 53203, 'Sensitive staging table PassengerTrips is not empty', 1;
-    IF EXISTS (SELECT 1 FROM dbo.TripSessions)
-        THROW 53204, 'Sensitive staging table TripSessions is not empty', 1;
-    IF EXISTS (SELECT 1 FROM dbo.ChatConversations)
-        THROW 53205, 'Sensitive staging table ChatConversations is not empty', 1;
-    IF EXISTS (SELECT 1 FROM dbo.ChatMessages)
-        THROW 53206, 'Sensitive staging table ChatMessages is not empty', 1;
+    IF (SELECT COUNT_BIG(*) FROM dbo.UserProfiles) <> @UserProfilesBefore
+        THROW 53201, 'Sensitive staging table UserProfiles changed during reference sync', 1;
+    IF (SELECT COUNT_BIG(*) FROM dbo.ApiKeySessions) <> @ApiKeySessionsBefore
+        THROW 53202, 'Sensitive staging table ApiKeySessions changed during reference sync', 1;
+    IF (SELECT COUNT_BIG(*) FROM dbo.PassengerTrips) <> @PassengerTripsBefore
+        THROW 53203, 'Sensitive staging table PassengerTrips changed during reference sync', 1;
+    IF (SELECT COUNT_BIG(*) FROM dbo.TripSessions) <> @TripSessionsBefore
+        THROW 53204, 'Sensitive staging table TripSessions changed during reference sync', 1;
+    IF (SELECT COUNT_BIG(*) FROM dbo.ChatConversations) <> @ChatConversationsBefore
+        THROW 53205, 'Sensitive staging table ChatConversations changed during reference sync', 1;
+    IF (SELECT COUNT_BIG(*) FROM dbo.ChatMessages) <> @ChatMessagesBefore
+        THROW 53206, 'Sensitive staging table ChatMessages changed during reference sync', 1;
 
     COMMIT TRANSACTION;
 END TRY
