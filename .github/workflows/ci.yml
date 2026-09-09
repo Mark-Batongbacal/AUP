@@ -27,6 +27,32 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Validate promotion source
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          PR_HEAD_REF: ${{ github.head_ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          CURRENT_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "$PR_BASE_REF" = "staging" ]; then
+            if [ "$PR_HEAD_REF" != "dev" ] || [ "$PR_HEAD_REPO" != "$CURRENT_REPO" ]; then
+              echo "::error::Only the dev branch from $CURRENT_REPO may be merged into staging."
+              exit 1
+            fi
+          fi
+
+          if [ "$PR_BASE_REF" = "main" ]; then
+            if [ "$PR_HEAD_REF" != "staging" ] || [ "$PR_HEAD_REPO" != "$CURRENT_REPO" ]; then
+              echo "::error::Only the staging branch from $CURRENT_REPO may be merged into main."
+              exit 1
+            fi
+          fi
+
+          echo "Promotion source is valid: $PR_HEAD_REF -> $PR_BASE_REF"
+
       - name: Check out repository
         uses: actions/checkout@v4
 
