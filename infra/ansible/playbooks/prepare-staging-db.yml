@@ -1,0 +1,295 @@
+---
+- name: Prepare Tuki staging database
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    tuki_staging_schema_dir: /opt/tuki/staging-schema
+    tuki_target_compose_root: >-
+      {{ tuki_gcp_compose_root
+         if 'tuki_gcp' in group_names
+         else tuki_azure_compose_root }}
+
+  pre_tasks:
+    - name: Validate staging database configuration
+      ansible.builtin.assert:
+        that:
+          - tuki_staging_database_name is match('^[A-Za-z0-9_]+$')
+          - tuki_sql_compose_service is match('^[A-Za-z0-9_.-]+$')
+          - tuki_target_compose_root is match('^/[-A-Za-z0-9_./]+$')
+        fail_msg: Review staging database variables in group_vars/all.yml.
+
+    - name: Build ordered migration list on controller
+      ansible.builtin.set_fact:
+        tuki_staging_migration_files: >-
+          {{ query(
+               'ansible.builtin.fileglob',
+               playbook_dir ~ '/../../../database/migrations/*.sql'
+             ) | sort }}
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Require migration files to exist
+      ansible.builtin.assert:
+        that:
+          - tuki_staging_migration_files | length > 0
+        fail_msg: No database migration scripts were found under database/migrations.
+      run_once: true
+
+  tasks:
+    - name: Create restricted staging schema directory
+      ansible.builtin.file:
+        path: "{{ tuki_staging_schema_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Copy base schema scripts to staging host
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../database/{{ item }}"
+        dest: "{{ tuki_staging_schema_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0600"
+      loop:
+        - TukiDbSchema.sql
+        - TukiNavigationSchema.sql
+
+    - name: Copy ordered migration scripts to staging host
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ tuki_staging_schema_dir }}/{{ item | basename }}"
+        owner: root
+        group: root
+        mode: "0600"
+      loop: "{{ tuki_staging_migration_files }}"
+
+    - name: Resolve SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id=""
+
+          if [[ -d {{ tuki_target_compose_root | quote }} ]]; then
+            cd {{ tuki_target_compose_root | quote }}
+            if [[ -f {{ tuki_compose_env | quote }} ]]; then
+              container_id="$(docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all {{ tuki_sql_compose_service | quote }} 2>/dev/null || true)"
+            else
+              container_id="$(docker compose ps -q --all {{ tuki_sql_compose_service | quote }} 2>/dev/null || true)"
+            fi
+          fi
+
+          if [[ -z "$container_id" && -n {{ tuki_sql_container_fallback | default('') | quote }} ]]; then
+            container_id="$(docker inspect --format "{% raw %}{{.Id}}{% endraw %}" {{ tuki_sql_container_fallback | default('') | quote }} 2>/dev/null || true)"
+          fi
+
+          if [[ ! "$container_id" =~ ^[a-f0-9]{12,64}$ ]]; then
+            echo "could not resolve SQL Server container" >&2
+            exit 1
+          fi
+
+          printf '%s' "$container_id"
+        executable: /bin/bash
+      register: tuki_staging_sql_container
+      changed_when: false
+
+    - name: Resolve sqlcmd inside SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_staging_sql_container.stdout | quote }}
+
+          for candidate in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do
+            if docker exec "$container_id" test -x "$candidate"; then
+              printf '%s' "$candidate"
+              exit 0
+            fi
+          done
+
+          echo "sqlcmd was not found inside SQL Server container" >&2
+          exit 1
+        executable: /bin/bash
+      register: tuki_staging_sqlcmd
+      changed_when: false
+
+    - name: Ensure staging database exists
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_staging_sql_container.stdout | quote }}
+          sqlcmd={{ tuki_staging_sqlcmd.stdout | quote }}
+          database={{ tuki_staging_database_name | quote }}
+
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -Q "$2"
+          ' -- "$sqlcmd" "
+            IF DB_ID(N'$database') IS NULL
+            BEGIN
+              EXEC(N'CREATE DATABASE [$database]');
+            END;
+          "
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Copy schema scripts into SQL Server container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - cp
+          - "{{ tuki_staging_schema_dir }}/{{ item }}"
+          - "{{ tuki_staging_sql_container.stdout }}:/tmp/{{ item }}"
+      loop: >-
+        {{
+          ['TukiDbSchema.sql', 'TukiNavigationSchema.sql']
+          + (tuki_staging_migration_files | map('basename') | list)
+        }}
+      changed_when: true
+
+    - name: Make copied schema scripts readable by sqlcmd
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - --user
+          - "0"
+          - "{{ tuki_staging_sql_container.stdout }}"
+          - chmod
+          - "0644"
+          - "/tmp/{{ item }}"
+      loop: >-
+        {{
+          ['TukiDbSchema.sql', 'TukiNavigationSchema.sql']
+          + (tuki_staging_migration_files | map('basename') | list)
+        }}
+      changed_when: true
+
+    - name: Apply base schema scripts
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_staging_sql_container.stdout | quote }}
+          sqlcmd={{ tuki_staging_sqlcmd.stdout | quote }}
+          database={{ tuki_staging_database_name | quote }}
+          file={{ item | quote }}
+
+          echo "Applying $file"
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d "$2" -i "$3"
+          ' -- "$sqlcmd" "$database" "/tmp/$file"
+        executable: /bin/bash
+      loop:
+        - TukiDbSchema.sql
+        - TukiNavigationSchema.sql
+      loop_control:
+        label: "{{ item }}"
+      changed_when: true
+
+    - name: Apply ordered migration scripts
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_staging_sql_container.stdout | quote }}
+          sqlcmd={{ tuki_staging_sqlcmd.stdout | quote }}
+          database={{ tuki_staging_database_name | quote }}
+          file={{ item | basename | quote }}
+
+          echo "Applying $file"
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d "$2" -i "$3"
+          ' -- "$sqlcmd" "$database" "/tmp/$file"
+        executable: /bin/bash
+      loop: "{{ tuki_staging_migration_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      changed_when: true
+
+    - name: Verify staging database schema
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_staging_sql_container.stdout | quote }}
+          sqlcmd={{ tuki_staging_sqlcmd.stdout | quote }}
+          database={{ tuki_staging_database_name | quote }}
+
+          verification_query="$(cat <<'SQL'
+          SET NOCOUNT ON;
+
+          IF DB_NAME() <> N'{{ tuki_staging_database_name }}'
+              THROW 52001, 'Connected to the wrong database', 1;
+
+          IF NOT EXISTS (
+              SELECT 1
+              FROM sys.databases
+              WHERE name = DB_NAME()
+                AND state_desc = N'ONLINE'
+          )
+              THROW 52002, 'Staging database is not online', 1;
+
+          IF OBJECT_ID(N'dbo.UserProfiles', N'U') IS NULL
+              THROW 52003, 'dbo.UserProfiles is missing', 1;
+
+          IF OBJECT_ID(N'dbo.TransportRoutes', N'U') IS NULL
+              THROW 52004, 'dbo.TransportRoutes is missing', 1;
+
+          IF OBJECT_ID(N'dbo.TripSessions', N'U') IS NULL
+              THROW 52005, 'dbo.TripSessions is missing', 1;
+
+          SELECT
+              DB_NAME() AS DatabaseName,
+              (SELECT state_desc FROM sys.databases WHERE name = DB_NAME()) AS DatabaseState,
+              COUNT(*) AS DboTableCount
+          FROM sys.tables
+          WHERE schema_id = SCHEMA_ID(N'dbo');
+          SQL
+          )"
+
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d "$2" -Q "$3"
+          ' -- "$sqlcmd" "$database" "$verification_query"
+        executable: /bin/bash
+      register: tuki_staging_database_verify
+      changed_when: false
+
+    - name: Remove copied schema scripts from SQL Server container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - --user
+          - "0"
+          - "{{ tuki_staging_sql_container.stdout }}"
+          - rm
+          - -f
+          - "/tmp/{{ item }}"
+      loop: >-
+        {{
+          ['TukiDbSchema.sql', 'TukiNavigationSchema.sql']
+          + (tuki_staging_migration_files | map('basename') | list)
+        }}
+      changed_when: true
+
+    - name: Report staging database readiness
+      ansible.builtin.debug:
+        msg:
+          - "Staging database {{ tuki_staging_database_name }} is ready."
+          - "{{ tuki_staging_database_verify.stdout_lines }}"

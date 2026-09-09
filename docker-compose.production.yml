@@ -1,0 +1,62 @@
+name: tuki-production
+
+services:
+  backend-production:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tuki-backend-production:${TUKI_PRODUCTION_IMAGE_TAG:?set exact production SHA}
+    restart: unless-stopped
+    env_file:
+      - ./runtime/backend-production.env
+    ports:
+      - "127.0.0.1:${TUKI_PRODUCTION_BACKEND_HOST_PORT:-5140}:5129"
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/5129 &&
+          printf 'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          IFS= read -r status <&3 && [[ "$$status" == *" 200 "* ]]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - production-internal
+
+  admin-production:
+    build:
+      context: .
+      dockerfile: Tuki.Admin/Dockerfile
+    image: tuki-admin-production:${TUKI_PRODUCTION_IMAGE_TAG:?set exact production SHA}
+    restart: unless-stopped
+    env_file:
+      - ./runtime/admin-production.env
+    ports:
+      - "127.0.0.1:${TUKI_PRODUCTION_ADMIN_HOST_PORT:-5040}:5030"
+    depends_on:
+      backend-production:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/5030 &&
+          printf 'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          IFS= read -r status <&3 && [[ "$$status" == *" 200 "* ]]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - production-internal
+
+networks:
+  production-internal:
+    external: true
+    name: ${TUKI_PRODUCTION_NETWORK:-tuki-production-internal}

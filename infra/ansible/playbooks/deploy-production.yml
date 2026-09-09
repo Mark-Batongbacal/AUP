@@ -1,0 +1,718 @@
+---
+- name: Deploy isolated Tuki production application services
+  hosts: tuki_production
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - "{{ playbook_dir }}/../group_vars/vault.yml"
+
+  vars:
+    tuki_production_checkout: "{{ tuki_production_install_root }}/AUP"
+    tuki_production_runtime_dir: "{{ tuki_production_checkout }}/runtime"
+    tuki_production_schema_dir: "{{ tuki_production_install_root }}/schema"
+    tuki_production_compose_env: runtime/production-compose.env
+    tuki_production_compose_command: >-
+      docker compose --env-file {{ tuki_production_compose_env }}
+      -f docker-compose.production.yml
+    tuki_production_git_revision_value: "{{ tuki_production_git_revision | default('') }}"
+    tuki_caddy_production_fragment: /etc/caddy/conf.d/tuki-production.caddy
+    tuki_caddy_production_candidate_fragment: /etc/caddy/conf.d/tuki-production.caddy.candidate
+    tuki_caddy_production_candidate_file: /etc/caddy/Caddyfile.tuki-production.candidate
+
+  pre_tasks:
+    - name: Build ordered production migration list on controller
+      ansible.builtin.set_fact:
+        tuki_production_migration_files: >-
+          {{ query(
+               'ansible.builtin.fileglob',
+               playbook_dir ~ '/../../../database/migrations/*.sql'
+             ) | sort }}
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Validate production deployment configuration
+      ansible.builtin.assert:
+        that:
+          - tuki_production_git_revision_value is match('^[0-9a-f]{40}$')
+          - tuki_production_image_tag == tuki_production_git_revision_value
+          - tuki_database_name == 'Tuki'
+          - tuki_database_name | lower != 'tuki_staging'
+          - tuki_database_name | lower != tuki_staging_database_name | lower
+          - tuki_staging_database_name == 'Tuki_Staging'
+          - tuki_api_hostname is match('^[A-Za-z0-9.-]+$')
+          - tuki_admin_hostname is match('^[A-Za-z0-9.-]+$')
+          - tuki_production_install_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_production_compose_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_production_network is match('^[A-Za-z0-9_.-]+$')
+          - tuki_production_backend_host_port | int > 1024
+          - tuki_production_backend_host_port | int < 65536
+          - tuki_production_admin_host_port | int > 1024
+          - tuki_production_admin_host_port | int < 65536
+          - tuki_production_backend_host_port | int != tuki_production_admin_host_port | int
+          - tuki_production_backend_host_port | int != tuki_staging_backend_host_port | int
+          - tuki_production_admin_host_port | int != tuki_staging_admin_host_port | int
+          - tuki_production_max_backup_age_hours | int > 0
+          - tuki_repository_url | length > 0
+          - tuki_caddyfile_path == '/etc/caddy/Caddyfile'
+          - tuki_production_migration_files | length > 0
+          - tuki_mssql_sa_password | length > 0
+          - tuki_admin_login_username | length > 0
+          - tuki_admin_login_password | length > 0
+          - tuki_login_users | length > 0
+          - tuki_gemini_api_key | length > 0
+          - tuki_google_places_api_key | length > 0
+          - tuki_google_client_id | length > 0
+          - tuki_facebook_app_id | length > 0
+          - tuki_facebook_app_secret | length > 0
+          - tuki_email_connection_string | length > 0
+          - tuki_email_sender_address | length > 0
+        fail_msg: >-
+          Refusing production deployment. Supply the exact main commit, keep
+          the database exactly Tuki (never Tuki_Staging), and review production
+          paths, ports, hostnames, and encrypted Vault values.
+      no_log: true
+
+    - name: Validate production migration filenames
+      ansible.builtin.assert:
+        that:
+          - item | basename is match('^[0-9A-Za-z_.-]+[.]sql$')
+        fail_msg: "Unsafe production migration filename: {{ item | basename }}"
+      loop: "{{ tuki_production_migration_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: Refuse destructive production migration statements
+      ansible.builtin.command:
+        argv:
+          - grep
+          - --extended-regexp
+          - --ignore-case
+          - --line-number
+          - >-
+            (DROP[[:space:]]|TRUNCATE[[:space:]]+TABLE|DELETE[[:space:]]+FROM|RESTORE[[:space:]]+DATABASE|ALTER[[:space:]]+DATABASE)
+          - "{{ item }}"
+      delegate_to: localhost
+      become: false
+      register: tuki_production_destructive_sql
+      changed_when: false
+      failed_when: tuki_production_destructive_sql.rc == 0 or tuki_production_destructive_sql.rc > 1
+      loop: "{{ tuki_production_migration_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: Verify host Caddy service is active
+      ansible.builtin.command: systemctl is-active caddy
+      register: tuki_production_caddy_active
+      changed_when: false
+      failed_when: tuki_production_caddy_active.stdout != 'active'
+
+  tasks:
+    - name: Create isolated production directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ tuki_production_install_root }}", owner: "{{ ansible_user }}", group: "{{ ansible_user }}", mode: "0755" }
+        - { path: "{{ tuki_production_schema_dir }}", owner: root, group: root, mode: "0700" }
+
+    - name: Check out exact main commit separately from legacy production
+      ansible.builtin.git:
+        repo: "{{ tuki_repository_url }}"
+        dest: "{{ tuki_production_checkout }}"
+        version: "{{ tuki_production_git_revision_value }}"
+        refspec: +refs/heads/main:refs/remotes/origin/main
+        single_branch: true
+        update: true
+        force: false
+      become: false
+
+    - name: Verify production host checkout is the requested commit
+      ansible.builtin.command:
+        argv: [git, rev-parse, HEAD]
+        chdir: "{{ tuki_production_checkout }}"
+      register: tuki_production_checked_out_revision
+      changed_when: false
+      failed_when: tuki_production_checked_out_revision.stdout != tuki_production_git_revision_value
+
+    - name: Create private production runtime directory
+      ansible.builtin.file:
+        path: "{{ tuki_production_runtime_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0700"
+
+    - name: Render production service environment files
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/{{ item.template }}"
+        dest: "{{ tuki_production_runtime_dir }}/{{ item.destination }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+      loop:
+        - { template: backend-production.env.j2, destination: backend-production.env }
+        - { template: admin-production.env.j2, destination: admin-production.env }
+      no_log: true
+
+    - name: Render exact production Compose variables
+      ansible.builtin.copy:
+        content: |
+          TUKI_PRODUCTION_IMAGE_TAG={{ tuki_production_image_tag }}
+          TUKI_PRODUCTION_NETWORK={{ tuki_production_network }}
+          TUKI_PRODUCTION_BACKEND_HOST_PORT={{ tuki_production_backend_host_port }}
+          TUKI_PRODUCTION_ADMIN_HOST_PORT={{ tuki_production_admin_host_port }}
+        dest: "{{ tuki_production_runtime_dir }}/production-compose.env"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+
+    - name: Verify production connection string targets only Tuki
+      ansible.builtin.slurp:
+        src: "{{ tuki_production_runtime_dir }}/backend-production.env"
+      register: tuki_production_backend_environment
+      no_log: true
+
+    - name: Enforce production database connection isolation
+      ansible.builtin.assert:
+        that:
+          - >-
+            'Database=Tuki;'
+            in (tuki_production_backend_environment.content | b64decode)
+          - >-
+            'Database=Tuki_Staging;'
+            not in (tuki_production_backend_environment.content | b64decode)
+        fail_msg: Production backend connection string must target Tuki and never Tuki_Staging.
+      no_log: true
+
+    - name: Validate isolated production Compose configuration
+      ansible.builtin.command:
+        cmd: "{{ tuki_production_compose_command }} config --quiet"
+        chdir: "{{ tuki_production_checkout }}"
+      changed_when: false
+      no_log: true
+
+    - name: Create private production application network
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          network={{ tuki_production_network | quote }}
+          if docker network inspect "$network" >/dev/null 2>&1; then
+            exit 0
+          fi
+          docker network create --driver bridge "$network" >/dev/null
+          printf 'created'
+        executable: /bin/bash
+      register: tuki_production_network_create
+      changed_when: tuki_production_network_create.stdout == 'created'
+
+    - name: Resolve existing shared production data-service containers
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          service={{ item.service | quote }}
+          fallback={{ item.fallback | default('') | quote }}
+          container_id=""
+
+          if [[ -d {{ tuki_production_compose_root | quote }} ]]; then
+            cd {{ tuki_production_compose_root | quote }}
+            if [[ -f {{ tuki_compose_env | quote }} ]]; then
+              container_id="$(docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all "$service" 2>/dev/null || true)"
+            else
+              container_id="$(docker compose ps -q --all "$service" 2>/dev/null || true)"
+            fi
+          fi
+
+          if [[ -z "$container_id" && -n "$fallback" ]]; then
+            container_id="$(docker inspect --format "{% raw %}{{.Id}}{% endraw %}" "$fallback" 2>/dev/null || true)"
+          fi
+
+          if [[ ! "$container_id" =~ ^[a-f0-9]{12,64}$ ]]; then
+            echo "could not resolve existing $service production container" >&2
+            exit 1
+          fi
+          test "$(docker inspect --format "{% raw %}{{.State.Running}}{% endraw %}" "$container_id")" = true
+          printf '%s' "$container_id"
+        executable: /bin/bash
+      loop:
+        - service: "{{ tuki_sql_compose_service }}"
+          fallback: "{{ tuki_sql_container_fallback | default('') }}"
+          alias: sqlserver-production
+        - service: "{{ tuki_pelias_compose_service }}"
+          fallback: "{{ tuki_pelias_container_fallback | default('') }}"
+          alias: pelias-production
+        - service: "{{ tuki_valhalla_compose_service }}"
+          fallback: "{{ tuki_valhalla_container_fallback | default('') }}"
+          alias: valhalla-production
+      loop_control:
+        label: "{{ item.service }}"
+      register: tuki_production_data_containers
+      changed_when: false
+
+    - name: Connect shared data services to private production network
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ item.stdout | quote }}
+          network={{ tuki_production_network | quote }}
+          alias={{ item.item.alias | quote }}
+          if docker inspect --format '{% raw %}{{json .NetworkSettings.Networks}}{% endraw %}' "$container_id" | grep -Fq "\"$network\":"; then
+            exit 0
+          fi
+          docker network connect --alias "$alias" "$network" "$container_id"
+          printf 'connected'
+        executable: /bin/bash
+      loop: "{{ tuki_production_data_containers.results }}"
+      loop_control:
+        label: "{{ item.item.service }}"
+      register: tuki_production_network_connections
+      changed_when: tuki_production_network_connections.stdout == 'connected'
+
+    - name: Resolve sqlcmd inside production SQL Server container
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_production_data_containers.results[0].stdout | quote }}
+          for candidate in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do
+            if docker exec "$container_id" test -x "$candidate"; then
+              printf '%s' "$candidate"
+              exit 0
+            fi
+          done
+          echo "sqlcmd was not found inside the production SQL Server container" >&2
+          exit 1
+        executable: /bin/bash
+      register: tuki_production_sqlcmd
+      changed_when: false
+
+    - name: Require existing Tuki database and a recent full backup
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_production_data_containers.results[0].stdout | quote }}
+          sqlcmd={{ tuki_production_sqlcmd.stdout | quote }}
+          max_age={{ tuki_production_max_backup_age_hours | int }}
+          result="$(docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -h -1 -W -Q "$2"
+          ' -- "$sqlcmd" "
+            SET NOCOUNT ON;
+            IF DB_ID(N'Tuki') IS NULL THROW 53001, 'Production database Tuki does not exist; deployment will not create or restore it.', 1;
+            IF DB_ID(N'Tuki_Staging') = DB_ID(N'Tuki') THROW 53002, 'Production and staging database identities must differ.', 1;
+            IF NOT EXISTS (
+              SELECT 1 FROM msdb.dbo.backupset
+              WHERE database_name = N'Tuki' AND type = 'D'
+                AND backup_finish_date >= DATEADD(HOUR, -$max_age, GETDATE())
+            ) THROW 53003, 'No recent full Tuki backup is recorded; back up production before migration.', 1;
+            SELECT N'ready';
+          ")"
+          test "$(printf '%s' "$result" | tr -d '[:space:]')" = ready
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Require foundational production tables before migrations
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_production_data_containers.results[0].stdout | quote }}
+          sqlcmd={{ tuki_production_sqlcmd.stdout | quote }}
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d Tuki -Q "$2"
+          ' -- "$sqlcmd" "
+            SET NOCOUNT ON;
+            IF DB_NAME() <> N'Tuki' THROW 53004, 'Connected to the wrong production database.', 1;
+            IF OBJECT_ID(N'dbo.UserProfiles', N'U') IS NULL OR OBJECT_ID(N'dbo.ChatConversations', N'U') IS NULL
+              THROW 53005, 'Production baseline schema is missing; apply and validate it manually before CD.', 1;
+          "
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Build exact-SHA production images before database mutation
+      ansible.builtin.command:
+        cmd: "{{ tuki_production_compose_command }} build backend-production admin-production"
+        chdir: "{{ tuki_production_checkout }}"
+      changed_when: true
+
+    - name: Copy ordered production migrations to restricted host directory
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ tuki_production_schema_dir }}/{{ item | basename }}"
+        owner: root
+        group: root
+        mode: "0600"
+      loop: "{{ tuki_production_migration_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+
+    - name: Copy production migrations into SQL Server container
+      ansible.builtin.command:
+        argv:
+          - docker
+          - cp
+          - "{{ tuki_production_schema_dir }}/{{ item | basename }}"
+          - "{{ tuki_production_data_containers.results[0].stdout }}:/tmp/{{ item | basename }}"
+      loop: "{{ tuki_production_migration_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      changed_when: true
+
+    - name: Make production migration files readable by sqlcmd
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - --user
+          - "0"
+          - "{{ tuki_production_data_containers.results[0].stdout }}"
+          - chmod
+          - "0644"
+          - "/tmp/{{ item | basename }}"
+      loop: "{{ tuki_production_migration_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      changed_when: true
+
+    - name: Create production migration ledger if missing
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_production_data_containers.results[0].stdout | quote }}
+          sqlcmd={{ tuki_production_sqlcmd.stdout | quote }}
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d Tuki -Q "$2"
+          ' -- "$sqlcmd" "
+            SET NOCOUNT ON;
+            IF DB_NAME() <> N'Tuki' THROW 53006, 'Migration ledger targeted the wrong database.', 1;
+            IF OBJECT_ID(N'dbo.__TukiSchemaMigrations', N'U') IS NULL
+              CREATE TABLE dbo.__TukiSchemaMigrations (
+                MigrationName nvarchar(255) NOT NULL CONSTRAINT PK_TukiSchemaMigrations PRIMARY KEY,
+                Sha256 char(64) NOT NULL,
+                AppliedAtUtc datetime2(7) NOT NULL CONSTRAINT DF_TukiSchemaMigrations_Applied DEFAULT SYSUTCDATETIME()
+              );
+          "
+        executable: /bin/bash
+      changed_when: true
+      no_log: true
+
+    - name: Apply each new production migration exactly once
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_production_data_containers.results[0].stdout | quote }}
+          sqlcmd={{ tuki_production_sqlcmd.stdout | quote }}
+          migration={{ item | basename | quote }}
+          checksum="$(sha256sum {{ (tuki_production_schema_dir ~ '/' ~ (item | basename)) | quote }} | awk '{print $1}')"
+          recorded="$(docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -h -1 -W -d Tuki -Q "$2"
+          ' -- "$sqlcmd" "SET NOCOUNT ON; SELECT Sha256 FROM dbo.__TukiSchemaMigrations WHERE MigrationName = N'$migration';" | tr -d '[:space:]')"
+
+          if [[ -n "$recorded" ]]; then
+            if [[ "$recorded" != "$checksum" ]]; then
+              echo "Applied migration $migration was modified (recorded $recorded, current $checksum)." >&2
+              exit 1
+            fi
+            printf 'already-applied'
+            exit 0
+          fi
+
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d Tuki -i "$2"
+          ' -- "$sqlcmd" "/tmp/$migration"
+
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d Tuki -Q "$2"
+          ' -- "$sqlcmd" "
+            SET NOCOUNT ON;
+            IF DB_NAME() <> N'Tuki' THROW 53007, 'Migration record targeted the wrong database.', 1;
+            INSERT dbo.__TukiSchemaMigrations (MigrationName, Sha256) VALUES (N'$migration', '$checksum');
+          "
+          printf 'applied'
+        executable: /bin/bash
+      loop: "{{ tuki_production_migration_files }}"
+      loop_control:
+        label: "{{ item | basename }}"
+      register: tuki_production_migrations
+      changed_when: "'applied' in tuki_production_migrations.stdout and 'already-applied' not in tuki_production_migrations.stdout"
+      no_log: true
+
+    - name: Verify production database connectivity after migrations
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_production_data_containers.results[0].stdout | quote }}
+          sqlcmd={{ tuki_production_sqlcmd.stdout | quote }}
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d Tuki -Q "$2"
+          ' -- "$sqlcmd" "SET NOCOUNT ON; IF DB_NAME() <> N'Tuki' THROW 53008, 'Production health check reached the wrong database.', 1; SELECT COUNT_BIG(*) FROM dbo.__TukiSchemaMigrations;"
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Read previously deployed production commit
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          file={{ (tuki_production_install_root ~ '/deployed-commit') | quote }}
+          if [[ -f "$file" ]]; then cat "$file"; fi
+        executable: /bin/bash
+      register: tuki_previous_production_commit
+      changed_when: false
+
+    - name: Deploy and validate production backend
+      block:
+        - name: Update production backend only
+          ansible.builtin.command:
+            cmd: "{{ tuki_production_compose_command }} up -d --no-build --no-deps backend-production"
+            chdir: "{{ tuki_production_checkout }}"
+          changed_when: true
+
+        - name: Wait for production backend health
+          ansible.builtin.shell:
+            cmd: |
+              set -eu
+              container_id="$({{ tuki_production_compose_command }} ps -q backend-production)"
+              test -n "$container_id"
+              docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+            chdir: "{{ tuki_production_checkout }}"
+            executable: /bin/bash
+          register: tuki_production_backend_health
+          changed_when: false
+          retries: 30
+          delay: 5
+          until: tuki_production_backend_health.stdout == 'healthy'
+
+        - name: Verify production backend locally
+          ansible.builtin.command:
+            argv: [curl, --fail, --silent, --show-error, --max-time, "15", "http://127.0.0.1:{{ tuki_production_backend_host_port }}/health"]
+          changed_when: false
+      rescue:
+        - name: Show failed production backend logs
+          ansible.builtin.command:
+            cmd: "{{ tuki_production_compose_command }} logs --no-color --tail 200 backend-production"
+            chdir: "{{ tuki_production_checkout }}"
+          changed_when: false
+        - name: Restore previous production backend image when available
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              previous={{ tuki_previous_production_commit.stdout | quote }}
+              [[ "$previous" =~ ^[0-9a-f]{40}$ ]]
+              TUKI_PRODUCTION_IMAGE_TAG="$previous" {{ tuki_production_compose_command }} up -d --no-build --no-deps backend-production
+            chdir: "{{ tuki_production_checkout }}"
+            executable: /bin/bash
+          when: tuki_previous_production_commit.stdout is match('^[0-9a-f]{40}$')
+        - name: Fail unhealthy production backend deployment
+          ansible.builtin.fail:
+            msg: >-
+              Production backend health validation failed. The previous image
+              was restored when a recorded deployment existed; database
+              migrations were not rolled back.
+
+    - name: Deploy and validate production admin
+      block:
+        - name: Update production admin only
+          ansible.builtin.command:
+            cmd: "{{ tuki_production_compose_command }} up -d --no-build --no-deps admin-production"
+            chdir: "{{ tuki_production_checkout }}"
+          changed_when: true
+
+        - name: Wait for production admin health
+          ansible.builtin.shell:
+            cmd: |
+              set -eu
+              container_id="$({{ tuki_production_compose_command }} ps -q admin-production)"
+              test -n "$container_id"
+              docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
+            chdir: "{{ tuki_production_checkout }}"
+            executable: /bin/bash
+          register: tuki_production_admin_health
+          changed_when: false
+          retries: 30
+          delay: 5
+          until: tuki_production_admin_health.stdout == 'healthy'
+
+        - name: Verify production admin locally
+          ansible.builtin.command:
+            argv: [curl, --fail, --silent, --show-error, --max-time, "15", "http://127.0.0.1:{{ tuki_production_admin_host_port }}/health"]
+          changed_when: false
+      rescue:
+        - name: Show failed production admin logs
+          ansible.builtin.command:
+            cmd: "{{ tuki_production_compose_command }} logs --no-color --tail 200 admin-production"
+            chdir: "{{ tuki_production_checkout }}"
+          changed_when: false
+        - name: Restore previous production application images when available
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              previous={{ tuki_previous_production_commit.stdout | quote }}
+              [[ "$previous" =~ ^[0-9a-f]{40}$ ]]
+              TUKI_PRODUCTION_IMAGE_TAG="$previous" {{ tuki_production_compose_command }} up -d --no-build --no-deps backend-production admin-production
+            chdir: "{{ tuki_production_checkout }}"
+            executable: /bin/bash
+          when: tuki_previous_production_commit.stdout is match('^[0-9a-f]{40}$')
+        - name: Fail unhealthy production admin deployment
+          ansible.builtin.fail:
+            msg: >-
+              Production admin health validation failed. The previous
+              application images were restored when available; database
+              migrations were not rolled back.
+
+    - name: Create Caddy fragment directory
+      ansible.builtin.file:
+        path: /etc/caddy/conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Render candidate production Caddy fragment
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/caddy-production.caddy.j2"
+        dest: "{{ tuki_caddy_production_candidate_fragment }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copy current Caddyfile for production candidate validation
+      ansible.builtin.copy:
+        src: "{{ tuki_caddyfile_path }}"
+        dest: "{{ tuki_caddy_production_candidate_file }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Replace managed production import in candidate Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddy_production_candidate_file }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI PRODUCTION"
+        block: "import {{ tuki_caddy_production_candidate_fragment }}"
+        insertafter: EOF
+
+    - name: Validate candidate production Caddy configuration
+      ansible.builtin.command:
+        argv: [caddy, validate, --config, "{{ tuki_caddy_production_candidate_file }}", --adapter, caddyfile]
+      changed_when: false
+
+    - name: Install validated production Caddy fragment
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/caddy-production.caddy.j2"
+        dest: "{{ tuki_caddy_production_fragment }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: tuki_production_caddy_fragment_install
+
+    - name: Import production routes from host Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddyfile_path }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI PRODUCTION"
+        block: "import {{ tuki_caddy_production_fragment }}"
+        insertafter: EOF
+      register: tuki_production_caddy_import
+
+    - name: Validate installed production Caddy configuration
+      ansible.builtin.command:
+        argv: [caddy, validate, --config, "{{ tuki_caddyfile_path }}", --adapter, caddyfile]
+      changed_when: false
+
+    - name: Reload host Caddy only after validation
+      ansible.builtin.systemd_service:
+        name: caddy
+        state: reloaded
+      when: tuki_production_caddy_fragment_install.changed or tuki_production_caddy_import.changed
+
+    - name: Remove production Caddy candidate files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ tuki_caddy_production_candidate_file }}"
+        - "{{ tuki_caddy_production_candidate_fragment }}"
+
+    - name: Verify public production API HTTPS health
+      ansible.builtin.command:
+        argv: [curl, --fail, --silent, --show-error, --location, --max-time, "30", "https://{{ tuki_api_hostname }}/health"]
+      register: tuki_production_public_api_health
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: tuki_production_public_api_health.rc == 0
+
+    - name: Verify public production admin HTTPS health
+      ansible.builtin.command:
+        argv: [curl, --fail, --silent, --show-error, --location, --max-time, "30", "https://{{ tuki_admin_hostname }}/health"]
+      register: tuki_production_public_admin_health
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: tuki_production_public_admin_health.rc == 0
+
+    - name: Preserve previous deployed production commit
+      ansible.builtin.copy:
+        content: "{{ tuki_previous_production_commit.stdout }}\n"
+        dest: "{{ tuki_production_install_root }}/previous-deployed-commit"
+        owner: root
+        group: root
+        mode: "0644"
+      when:
+        - tuki_previous_production_commit.stdout is match('^[0-9a-f]{40}$')
+        - tuki_previous_production_commit.stdout != tuki_production_git_revision_value
+
+    - name: Record successfully deployed production commit
+      ansible.builtin.copy:
+        content: "{{ tuki_production_git_revision_value }}\n"
+        dest: "{{ tuki_production_install_root }}/deployed-commit"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Show isolated production service status
+      ansible.builtin.command:
+        cmd: "{{ tuki_production_compose_command }} ps backend-production admin-production"
+        chdir: "{{ tuki_production_checkout }}"
+      register: tuki_production_service_status
+      changed_when: false
+
+    - name: Report production deployment readiness
+      ansible.builtin.debug:
+        msg:
+          - "Production commit: {{ tuki_production_git_revision_value }}"
+          - "Production database: Tuki (connectivity and migration ledger verified)"
+          - "Production API health: {{ tuki_production_public_api_health.stdout }}"
+          - "Production admin health: {{ tuki_production_public_admin_health.stdout }}"
+          - "{{ tuki_production_service_status.stdout_lines }}"
