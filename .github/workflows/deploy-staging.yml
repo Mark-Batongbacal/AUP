@@ -61,7 +61,7 @@ jobs:
           azure_ip="$(getent ahostsv4 "$AZURE_HOST" | awk '$2 == "STREAM" { print $1; exit }')"
           test -n "$azure_ip"
 
-          for hostname in staging-api.tuki.ph staging-admin.tuki.ph; do
+          for hostname in staging-api.tuki.pawfect.bar staging-admin.tuki.pawfect.bar; do
             getent ahostsv4 "$hostname" |
               awk '$2 == "STREAM" { print $1 }' |
               grep -Fqx "$azure_ip" || {

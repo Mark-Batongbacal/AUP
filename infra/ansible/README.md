@@ -541,7 +541,7 @@ sync-staging-reference-data.yml
     ↓
 deploy-staging.yml
     ↓
-staging-api.tuki.ph + staging-admin.tuki.ph
+staging-api.tuki.pawfect.bar + staging-admin.tuki.pawfect.bar
     ↓ manual validation
 pull request from staging to main
 ```
@@ -563,10 +563,11 @@ secrets inherited by the caller are also supported):
 - `AZURE_SSH_HOST_KEY` (a trusted complete `known_hosts` entry)
 - `ANSIBLE_VAULT_PASSWORD`
 
-Both `staging-api.tuki.ph` and `staging-admin.tuki.ph` must resolve to the
-`AZURE_HOST` address before deployment. CD checks this before running Ansible,
-and the final HTTPS checks keep certificate verification enabled. Correct DNS
-and allow time for propagation before the first staging deployment.
+Both `staging-api.tuki.pawfect.bar` and `staging-admin.tuki.pawfect.bar` must
+resolve to the `AZURE_HOST` address before deployment. CD checks this before
+running Ansible, and the final HTTPS checks keep certificate verification
+enabled. Correct DNS and allow time for propagation before the first staging
+deployment.
 
 The staging application uses a separate checkout at `/opt/tuki/staging/AUP`
 and the dedicated `docker-compose.staging.yml` project. Only
@@ -633,8 +634,8 @@ ansible-playbook -i inventory.local.ini playbooks/deploy-staging.yml \
 Verify public application, database, and routing health:
 
 ```bash
-curl --fail --silent --show-error https://staging-api.tuki.ph/health
-curl --fail --silent --show-error https://staging-admin.tuki.ph/health
+curl --fail --silent --show-error https://staging-api.tuki.pawfect.bar/health
+curl --fail --silent --show-error https://staging-admin.tuki.pawfect.bar/health
 ```
 
 Inspect only the isolated staging containers:
