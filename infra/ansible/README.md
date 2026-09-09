@@ -87,6 +87,9 @@ Non-secret deployment and migration defaults live in `group_vars/all.yml`; the
 placeholder reference is `group_vars/all.example.yml`. Review these values:
 
 - `tuki_database_name`
+- `tuki_staging_database_name`
+- `tuki_staging_api_hostname`
+- `tuki_staging_admin_hostname`
 - `tuki_sql_compose_service`
 - `tuki_sql_backup_filename`
 - `tuki_azure_compose_root`
@@ -100,6 +103,8 @@ placeholder reference is `group_vars/all.example.yml`. Review these values:
 - `tuki_pelias_index_name`
 - `tuki_pelias_es_compose_service`
 - `tuki_pelias_es_container_fallback` (legacy Azure only; leave empty when Compose discovery works)
+- `tuki_pelias_container_fallback` (legacy Azure only)
+- `tuki_valhalla_container_fallback` (legacy Azure only)
 - `tuki_elasticdump_image` (digest-pinned)
 
 The migration prefers resolving the SQL container with:
@@ -432,3 +437,221 @@ the oldest files in that retention tier, and removes the local copy only after
 the upload verifies successfully. A failed upload leaves the completed local
 `.bak` available for operator recovery. A lock prevents overlapping daily,
 weekly, and monthly jobs.
+
+
+## Staging database
+
+The staging database is provisioned by Ansible rather than manually. The
+default database name is `Tuki_Staging`.
+
+Run from `infra/ansible`:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/prepare-staging-db.yml \
+  --limit azure
+```
+
+The playbook:
+
+```text
+resolve SQL Server container
+→ create Tuki_Staging only when missing
+→ copy TukiDbSchema.sql
+→ copy TukiNavigationSchema.sql
+→ copy every database/migrations/*.sql in filename order
+→ apply the full additive schema chain
+→ verify critical tables exist
+```
+
+It reads the SQL Server SA password only from the running SQL Server container
+and passes it to `sqlcmd` through `SQLCMDPASSWORD`; no SQL password is
+required on the command line or stored in this playbook.
+
+Azure currently uses the host-specific
+`group_vars/tuki_azure.yml` fallback `tuki-sql` for its legacy standalone
+SQL Server container. GCP and future Compose-managed hosts continue to prefer
+Compose service discovery.
+
+Because the schema scripts are additive/idempotent, rerunning the playbook is
+the normal way to bring `Tuki_Staging` up to the repository's current schema.
+It does not drop or recreate the staging database.
+
+### Staging reference data
+
+Prepare the staging schema before synchronizing transportation reference data,
+then deploy staging services in a later, separate phase:
+
+```text
+prepare-staging-db.yml
+    ↓
+sync-staging-reference-data.yml
+    ↓
+deploy staging services
+```
+
+The reference synchronization copies only these approved tables from `Tuki`
+to `Tuki_Staging`, in foreign-key-safe order:
+
+```text
+TransportModes
+TransportStops
+TransportRoutes
+RoutePoints
+RouteWaypoints
+RouteStops
+RouteSegments
+FareRules
+TricyclePoints
+TransferConnections
+```
+
+Run the synchronization from `infra/ansible` with its explicit confirmation:
+
+```bash
+ansible-playbook -i inventory.local.ini \
+  playbooks/sync-staging-reference-data.yml \
+  --limit azure \
+  -e tuki_confirm_staging_reference_sync=true
+```
+
+The playbook clears and repopulates only those approved tables in
+`Tuki_Staging`. It never writes to `Tuki`, refuses equal source and destination
+database names, preserves identity values and routing relationships, and wraps
+the destination refresh and verification in one transaction. Any SQL or count
+verification failure rolls back the staging changes. It also fails unless the
+staging user, API-key, passenger-trip, trip-session, chat-conversation, and
+chat-message tables remain empty.
+
+## Staging continuous deployment
+
+The staging release path is intentionally separate from production:
+
+```text
+feature branch
+    ↓ pull request
+dev
+    ↓ CI
+staging
+    ↓ CI (.NET, Compose, database)
+staging CD
+    ↓
+prepare-staging-db.yml
+    ↓
+sync-staging-reference-data.yml
+    ↓
+deploy-staging.yml
+    ↓
+staging-api.tuki.ph + staging-admin.tuki.ph
+    ↓ manual validation
+pull request from staging to main
+```
+
+The CI workflow calls `.github/workflows/deploy-staging.yml` only for a push to
+the `staging` branch and only after all three CI jobs succeed. Pull requests,
+manual CI runs, `dev`, `main`, and arbitrary feature branches cannot invoke the
+deployment job. The called workflow checks out and deploys the exact commit SHA
+tested by that CI run. Staging runs are serialized instead of canceling an
+in-progress deployment.
+
+Create and protect the GitHub Actions `staging` environment used by the deploy
+job. Configure these as that environment's secrets (repository or organization
+secrets inherited by the caller are also supported):
+
+- `AZURE_HOST`
+- `AZURE_SSH_USER`
+- `AZURE_SSH_PRIVATE_KEY`
+- `AZURE_SSH_HOST_KEY` (a trusted complete `known_hosts` entry)
+- `ANSIBLE_VAULT_PASSWORD`
+
+Both `staging-api.tuki.ph` and `staging-admin.tuki.ph` must resolve to the
+`AZURE_HOST` address before deployment. CD checks this before running Ansible,
+and the final HTTPS checks keep certificate verification enabled. Correct DNS
+and allow time for propagation before the first staging deployment.
+
+The staging application uses a separate checkout at `/opt/tuki/staging/AUP`
+and the dedicated `docker-compose.staging.yml` project. Only
+`backend-staging` and `admin-staging` belong to that project. Their host ports
+are bound to loopback (`127.0.0.1:5130` and `127.0.0.1:5031`), so only the
+host-managed Caddy service exposes them through HTTPS. No staging SQL Server,
+Pelias, Elasticsearch, or Valhalla container is created.
+
+The existing SQL Server, Pelias API, and Valhalla containers are connected to
+the private `tuki-staging-internal` bridge with staging-specific aliases. This
+does not restart or replace them. Azure uses the legacy names in
+`group_vars/tuki_azure.yml`; future Compose-managed data services are resolved
+by service name first. Production Compose service definitions and containers
+are not lifecycle-managed by `deploy-staging.yml`, and it never runs
+`docker compose down`.
+
+Staging environment files are rendered mode `0600` from the existing encrypted
+Vault values. The backend template hard-codes the configured staging database
+name (`Tuki_Staging`) while retaining Pelias, Valhalla, Google, Gemini, email,
+authentication, and admin-login settings. The playbook reads the rendered file
+under `no_log` and refuses deployment if it targets `Tuki`.
+
+The backend `/health` endpoint checks application liveness, SQL connectivity,
+and a real `TransportRoutes` query. It does not call Gemini, Google, email, or
+other paid/external APIs. The admin has a liveness-only `/health` endpoint. Both
+container health checks use these endpoints. Caddy configuration is validated
+as a candidate before the managed staging fragment is installed and the host
+Caddy service is safely reloaded; existing production site blocks remain
+unchanged.
+
+### Manual staging commands
+
+Run from `infra/ansible`. The full deploy requires the encrypted Vault password
+and an exact commit from the remote `staging` branch.
+
+Prepare or update the staging schema:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/prepare-staging-db.yml \
+  --limit azure
+```
+
+Refresh approved reference data:
+
+```bash
+ansible-playbook -i inventory.local.ini \
+  playbooks/sync-staging-reference-data.yml \
+  --limit azure \
+  -e tuki_confirm_staging_reference_sync=true
+```
+
+Run the complete staging deployment for the checked-out staging commit:
+
+```bash
+STAGING_COMMIT="$(git rev-parse HEAD)"
+ansible-playbook -i inventory.local.ini playbooks/deploy-staging.yml \
+  --limit azure \
+  --vault-password-file .vault-password \
+  -e tuki_confirm_staging_reference_sync=true \
+  -e "tuki_staging_git_revision=$STAGING_COMMIT" \
+  -e "tuki_staging_image_tag=$STAGING_COMMIT"
+```
+
+Verify public application, database, and routing health:
+
+```bash
+curl --fail --silent --show-error https://staging-api.tuki.ph/health
+curl --fail --silent --show-error https://staging-admin.tuki.ph/health
+```
+
+Inspect only the isolated staging containers:
+
+```bash
+ansible -i inventory.local.ini azure -b -m shell -a \
+  'cd /opt/tuki/staging/AUP && docker compose --env-file runtime/staging-compose.env -f docker-compose.staging.yml ps'
+```
+
+Inspect staging logs without touching production containers:
+
+```bash
+ansible -i inventory.local.ini azure -b -m shell -a \
+  'cd /opt/tuki/staging/AUP && docker compose --env-file runtime/staging-compose.env -f docker-compose.staging.yml logs --tail 200 backend-staging admin-staging'
+```
+
+The reference-data task prints source and staging counts for all ten approved
+tables and prints zero counts for the six protected sensitive tables. Any
+mismatch, sensitive row, SQL error, container health failure, Caddy validation
+error, TLS error, or non-2xx health response fails the deployment visibly.

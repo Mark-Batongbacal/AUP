@@ -1,0 +1,62 @@
+name: tuki-staging
+
+services:
+  backend-staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tuki-backend-staging:${TUKI_STAGING_IMAGE_TAG:-staging}
+    restart: unless-stopped
+    env_file:
+      - ./runtime/backend-staging.env
+    ports:
+      - "127.0.0.1:${TUKI_STAGING_BACKEND_HOST_PORT:-5130}:5129"
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/5129 &&
+          printf 'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          IFS= read -r status <&3 && [[ "$$status" == *" 200 "* ]]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - staging-internal
+
+  admin-staging:
+    build:
+      context: .
+      dockerfile: Tuki.Admin/Dockerfile
+    image: tuki-admin-staging:${TUKI_STAGING_IMAGE_TAG:-staging}
+    restart: unless-stopped
+    env_file:
+      - ./runtime/admin-staging.env
+    ports:
+      - "127.0.0.1:${TUKI_STAGING_ADMIN_HOST_PORT:-5031}:5030"
+    depends_on:
+      backend-staging:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/5030 &&
+          printf 'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          IFS= read -r status <&3 && [[ "$$status" == *" 200 "* ]]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - staging-internal
+
+networks:
+  staging-internal:
+    external: true
+    name: ${TUKI_STAGING_NETWORK:-tuki-staging-internal}
