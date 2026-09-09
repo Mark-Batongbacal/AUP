@@ -59,25 +59,42 @@ jobs:
               exit 1
             fi
           done
+          echo "✓ all production environment secrets are present"
 
           install -d -m 700 "$HOME/.ssh"
-          printf '%s' "$PRODUCTION_SSH_PRIVATE_KEY_B64" \
-            | base64 --decode \
-            > "$RUNNER_TEMP/production-key"
+
+          if ! printf '%s' "$PRODUCTION_SSH_PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/production-key"; then
+            echo "::error::PRODUCTION_SSH_PRIVATE_KEY_B64 is not valid base64."
+            exit 1
+          fi
+          echo "✓ production SSH private key decoded"
+
           chmod 600 "$RUNNER_TEMP/production-key"
-          ssh-keygen -y -f "$RUNNER_TEMP/production-key" >/dev/null
+          if ! ssh-keygen -y -f "$RUNNER_TEMP/production-key" >/dev/null; then
+            echo "::error::Decoded production SSH private key is not a valid SSH private key."
+            exit 1
+          fi
+          echo "✓ production SSH private key is valid"
 
           printf '%s\n' "$PRODUCTION_SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
-          ssh-keygen -F "$PRODUCTION_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null
+          echo "✓ production SSH known_hosts file written"
+
+          if ! ssh-keygen -F "$PRODUCTION_HOST" -f "$HOME/.ssh/known_hosts" >/dev/null; then
+            echo "::error::PRODUCTION_SSH_HOST_KEY does not contain an entry matching PRODUCTION_HOST. Regenerate it with ssh-keyscan using the exact PRODUCTION_HOST value."
+            exit 1
+          fi
+          echo "✓ production host key matches PRODUCTION_HOST"
 
           printf '%s\n' "$ANSIBLE_VAULT_PASSWORD" > "$RUNNER_TEMP/vault-password"
           chmod 600 "$RUNNER_TEMP/vault-password"
+          echo "✓ Ansible vault password file prepared"
 
           cat > infra/ansible/inventory.cd.ini <<EOF
           [tuki_production]
           production ansible_host=$PRODUCTION_HOST ansible_user=$PRODUCTION_SSH_USER ansible_ssh_private_key_file=$RUNNER_TEMP/production-key ansible_ssh_common_args='-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts'
           EOF
+          echo "✓ production Ansible inventory prepared"
 
       - name: Verify production SSH authentication
         env:
