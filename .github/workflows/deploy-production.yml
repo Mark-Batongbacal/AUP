@@ -151,6 +151,22 @@ jobs:
             "$PRODUCTION_SSH_USER@$PRODUCTION_HOST" \
             true
 
+      - name: Capture previous production deployment marker
+        env:
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$RUNNER_TEMP/production-key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$PRODUCTION_SSH_USER@$PRODUCTION_HOST" \
+            'sudo -n sh -c '\''test -f /opt/tuki/production/deployed-commit && cat /opt/tuki/production/deployed-commit || true'\''' \
+            > "$RUNNER_TEMP/previous-production-commit"
+
       - name: Deploy exact main commit to production
         env:
           PRODUCTION_COMMIT: ${{ inputs.commit_sha }}
@@ -168,12 +184,47 @@ jobs:
         env:
           PRODUCTION_COMMIT: ${{ inputs.commit_sha }}
           PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_SSH_USER: ${{ secrets.PRODUCTION_SSH_USER }}
           PRODUCTION_PUBLIC_HEALTH_MODE: ${{ vars.PRODUCTION_PUBLIC_HEALTH_MODE }}
           PRODUCTION_EXPECTED_ORIGIN_ADDRESS: ${{ vars.PRODUCTION_EXPECTED_ORIGIN_ADDRESS }}
           API_HOSTNAME: api.tuki.pawfect.bar
           ADMIN_HOSTNAME: admin.tuki.pawfect.bar
         run: |
           set -euo pipefail
+
+          restore_previous_marker() {
+            local previous
+            previous="$(tr -d '[:space:]' < "$RUNNER_TEMP/previous-production-commit")"
+            if [[ "$previous" =~ ^[0-9a-f]{40}$ ]]; then
+              ssh \
+                -i "$RUNNER_TEMP/production-key" \
+                -o BatchMode=yes \
+                -o IdentitiesOnly=yes \
+                -o StrictHostKeyChecking=yes \
+                -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+                "$PRODUCTION_SSH_USER@$PRODUCTION_HOST" \
+                "printf '%s\\n' '$previous' | sudo -n tee /opt/tuki/production/deployed-commit >/dev/null"
+            else
+              ssh \
+                -i "$RUNNER_TEMP/production-key" \
+                -o BatchMode=yes \
+                -o IdentitiesOnly=yes \
+                -o StrictHostKeyChecking=yes \
+                -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+                "$PRODUCTION_SSH_USER@$PRODUCTION_HOST" \
+                'sudo -n rm -f /opt/tuki/production/deployed-commit'
+            fi
+          }
+
+          on_exit() {
+            local rc=$?
+            if ((rc != 0)); then
+              echo "External verification failed; restoring the previous deployment marker." >&2
+              restore_previous_marker || echo "::warning::Failed to restore previous deployment marker."
+            fi
+            exit "$rc"
+          }
+          trap on_exit EXIT
 
           health_mode="${PRODUCTION_PUBLIC_HEALTH_MODE:-origin}"
 
