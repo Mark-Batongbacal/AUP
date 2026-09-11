@@ -87,6 +87,15 @@ jobs:
             exit 1
           fi
 
+          # In origin mode the playbook validates Caddy locally through 127.0.0.1
+          # with the real production hostname/SNI. The GitHub runner performs the
+          # external-origin and public-DNS checks after Ansible completes, avoiding
+          # any dependency on cloud-provider hairpin NAT.
+          playbook_connection_host="$PRODUCTION_HOST"
+          if [[ "$health_mode" == origin ]]; then
+            playbook_connection_host="127.0.0.1"
+          fi
+
           install -d -m 700 "$HOME/.ssh"
 
           if ! printf '%s' "$PRODUCTION_SSH_PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/production-key"; then
@@ -119,12 +128,9 @@ jobs:
           {
             printf '[tuki_production]\n'
             printf 'production ansible_host=%s ansible_user=%s ansible_ssh_private_key_file=%s tuki_production_connection_host=%s tuki_production_public_health_mode=%s' \
-              "$PRODUCTION_HOST" "$PRODUCTION_SSH_USER" "$RUNNER_TEMP/production-key" "$PRODUCTION_HOST" "$health_mode"
+              "$PRODUCTION_HOST" "$PRODUCTION_SSH_USER" "$RUNNER_TEMP/production-key" "$playbook_connection_host" "$health_mode"
             if [[ -n "$PRODUCTION_COMPOSE_ROOT" ]]; then
               printf ' tuki_production_compose_root=%s' "$PRODUCTION_COMPOSE_ROOT"
-            fi
-            if [[ -n "$PRODUCTION_EXPECTED_ORIGIN_ADDRESS" ]]; then
-              printf ' tuki_production_expected_origin_address=%s' "$PRODUCTION_EXPECTED_ORIGIN_ADDRESS"
             fi
             printf " ansible_ssh_common_args='-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%s/.ssh/known_hosts'\n" "$HOME"
           } > infra/ansible/inventory.cd.ini
@@ -157,3 +163,83 @@ jobs:
             --vault-password-file "$RUNNER_TEMP/vault-password" \
             -e "tuki_production_git_revision=$PRODUCTION_COMMIT" \
             -e "tuki_production_image_tag=$PRODUCTION_COMMIT"
+
+      - name: Verify production externally from GitHub runner
+        env:
+          PRODUCTION_COMMIT: ${{ inputs.commit_sha }}
+          PRODUCTION_HOST: ${{ secrets.PRODUCTION_HOST }}
+          PRODUCTION_PUBLIC_HEALTH_MODE: ${{ vars.PRODUCTION_PUBLIC_HEALTH_MODE }}
+          PRODUCTION_EXPECTED_ORIGIN_ADDRESS: ${{ vars.PRODUCTION_EXPECTED_ORIGIN_ADDRESS }}
+          API_HOSTNAME: api.tuki.pawfect.bar
+          ADMIN_HOSTNAME: admin.tuki.pawfect.bar
+        run: |
+          set -euo pipefail
+
+          health_mode="${PRODUCTION_PUBLIC_HEALTH_MODE:-origin}"
+
+          resolve_ipv4() {
+            local target="$1"
+            if [[ "$target" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+              printf '%s\n' "$target"
+            else
+              getent ahostsv4 "$target" | awk '$2 == "STREAM" { print $1 }' | sort -u
+            fi
+          }
+
+          assert_deployment_header() {
+            local headers="$1"
+            local actual
+            actual="$(awk -F': *' 'tolower($1) == "x-tuki-deployment" { gsub("\\r", "", $2); print $2 }' "$headers" | tail -n 1)"
+            if [[ "$actual" != "$PRODUCTION_COMMIT" ]]; then
+              echo "::error::Expected X-Tuki-Deployment=$PRODUCTION_COMMIT but received '${actual:-<missing>}'."
+              exit 1
+            fi
+          }
+
+          mapfile -t production_addresses < <(resolve_ipv4 "$PRODUCTION_HOST")
+          if ((${#production_addresses[@]} == 0)); then
+            echo "::error::Could not resolve PRODUCTION_HOST to an IPv4 address."
+            exit 1
+          fi
+
+          if [[ "$health_mode" == origin ]]; then
+            origin="$PRODUCTION_EXPECTED_ORIGIN_ADDRESS"
+            if [[ -z "$origin" ]]; then
+              if ((${#production_addresses[@]} != 1)); then
+                echo "::error::PRODUCTION_HOST resolves to multiple IPv4 addresses; set PRODUCTION_EXPECTED_ORIGIN_ADDRESS."
+                exit 1
+              fi
+              origin="${production_addresses[0]}"
+            fi
+
+            if ! printf '%s\n' "${production_addresses[@]}" | grep -Fxq "$origin"; then
+              echo "::error::PRODUCTION_EXPECTED_ORIGIN_ADDRESS does not belong to PRODUCTION_HOST."
+              exit 1
+            fi
+
+            for hostname in "$API_HOSTNAME" "$ADMIN_HOSTNAME"; do
+              headers="$RUNNER_TEMP/${hostname}.origin.headers"
+              curl --fail --silent --show-error --location --noproxy '*' \
+                --max-time 30 \
+                --resolve "$hostname:443:$origin" \
+                --dump-header "$headers" \
+                --output /dev/null \
+                "https://$hostname/health"
+              assert_deployment_header "$headers"
+            done
+            echo "✓ external origin HTTPS health matches the deployed commit"
+          fi
+
+          # Always verify the real public route too. The deployment SHA response
+          # header proves DNS/Cloudflare reached this deployment rather than a
+          # still-healthy previous provider.
+          for hostname in "$API_HOSTNAME" "$ADMIN_HOSTNAME"; do
+            headers="$RUNNER_TEMP/${hostname}.public.headers"
+            curl --fail --silent --show-error --location --noproxy '*' \
+              --max-time 30 \
+              --dump-header "$headers" \
+              --output /dev/null \
+              "https://$hostname/health"
+            assert_deployment_header "$headers"
+          done
+          echo "✓ public HTTPS health matches the deployed commit"
