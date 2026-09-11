@@ -1,0 +1,268 @@
+---
+- name: Preflight GCP host for production cutover
+  hosts: tuki_gcp
+  become: true
+  gather_facts: false
+
+  vars:
+    tuki_preflight_compose_root: "{{ tuki_production_compose_root }}"
+
+  pre_tasks:
+    - name: Validate immutable production preflight settings
+      ansible.builtin.assert:
+        that:
+          - tuki_database_name == 'Tuki'
+          - tuki_staging_database_name == 'Tuki_Staging'
+          - tuki_api_hostname == 'api.tuki.pawfect.bar'
+          - tuki_admin_hostname == 'admin.tuki.pawfect.bar'
+          - tuki_preflight_compose_root is match('^/[-A-Za-z0-9_./]+$')
+          - tuki_production_network is match('^[A-Za-z0-9_.-]+$')
+          - tuki_production_backend_host_port | int == 5140
+          - tuki_production_admin_host_port | int == 5040
+          - tuki_production_max_backup_age_hours | int > 0
+        fail_msg: >-
+          Refusing preflight: production identity, database, ports, Compose
+          root, network, or backup policy is not the reviewed configuration.
+
+  tasks:
+    - name: Verify Docker is installed
+      ansible.builtin.command: docker version
+      changed_when: false
+
+    - name: Verify Docker daemon is active
+      ansible.builtin.command: systemctl is-active docker
+      register: tuki_preflight_docker_active
+      changed_when: false
+      failed_when: tuki_preflight_docker_active.stdout != 'active'
+
+    - name: Verify host Caddy is installed
+      ansible.builtin.command: caddy version
+      changed_when: false
+
+    - name: Verify host Caddy is active
+      ansible.builtin.command: systemctl is-active caddy
+      register: tuki_preflight_caddy_active
+      changed_when: false
+      failed_when: tuki_preflight_caddy_active.stdout != 'active'
+
+    - name: Verify host Caddy is enabled
+      ansible.builtin.command: systemctl is-enabled caddy
+      register: tuki_preflight_caddy_enabled
+      changed_when: false
+      failed_when: tuki_preflight_caddy_enabled.stdout not in ['enabled', 'enabled-runtime']
+
+    - name: Inspect host Caddy paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/caddy/Caddyfile
+        - /etc/caddy/conf.d
+      register: tuki_preflight_caddy_paths
+
+    - name: Require host Caddy root and fragment directory
+      ansible.builtin.assert:
+        that:
+          - tuki_preflight_caddy_paths.results[0].stat.isreg | default(false)
+          - tuki_preflight_caddy_paths.results[1].stat.isdir | default(false)
+
+    - name: Validate current host Caddy configuration
+      ansible.builtin.command:
+        argv: [caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+      changed_when: false
+
+    - name: Refuse unmanaged production hostname definitions
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          found=false
+          while IFS= read -r -d '' file; do
+            case "$file" in
+              /etc/caddy/conf.d/tuki-production.caddy|*.candidate) continue ;;
+            esac
+            if grep -nE '(^|[[:space:],])({{ tuki_api_hostname | regex_escape }}|{{ tuki_admin_hostname | regex_escape }})([[:space:],]|$)' "$file"; then
+              found=true
+            fi
+          done < <(find /etc/caddy -type f -print0)
+          [[ "$found" == false ]]
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Refuse Docker-published HTTP or HTTPS ports
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          while IFS= read -r container_id; do
+            [[ -n "$container_id" ]] || continue
+            published="$(docker port "$container_id" 2>/dev/null || true)"
+            if grep -Eq '(^|[.:])80$|(^|[.:])80[[:space:]]|(^|[.:])443$|(^|[.:])443[[:space:]]' <<<"$published"; then
+              docker inspect --format '{% raw %}{{.Name}} {{.Config.Image}}{% endraw %}' "$container_id" >&2
+              exit 1
+            fi
+          done < <(docker ps -q)
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Refuse active containerized Caddy publishing production web ports
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          while IFS= read -r container_id; do
+            [[ -n "$container_id" ]] || continue
+            identity="$(docker inspect --format '{% raw %}{{.Name}} {{.Config.Image}}{% endraw %}' "$container_id")"
+            ports="$(docker port "$container_id" 2>/dev/null || true)"
+            if grep -Eqi 'caddy' <<<"$identity" && grep -Eq '(^|[.:])(80|443)($|[[:space:]])' <<<"$ports"; then
+              echo "$identity publishes a production web port" >&2
+              exit 1
+            fi
+          done < <(docker ps -q)
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify production loopback application ports are available
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          listeners="$(ss -H -ltn)"
+          for port in {{ tuki_production_backend_host_port | int }} {{ tuki_production_admin_host_port | int }}; do
+            if awk '{print $4}' <<<"$listeners" | grep -Eq "(^|:)$port$"; then
+              echo "TCP port $port is already listening" >&2
+              exit 1
+            fi
+          done
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify host web ports are not owned by Docker proxy processes
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          ss -H -ltnp | awk '$4 ~ /:(80|443)$/ { print }' | grep -Eqi 'docker-proxy|containerd-shim' && exit 1
+          exit 0
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Resolve each shared service unambiguously through Compose first
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          service={{ item.service | quote }}
+          fallback={{ item.fallback | default('') | quote }}
+          mapfile -t ids < <(
+            cd {{ tuki_preflight_compose_root | quote }}
+            if [[ -f {{ tuki_compose_env | quote }} ]]; then
+              docker compose --env-file {{ tuki_compose_env | quote }} ps -q --all "$service" 2>/dev/null
+            else
+              docker compose ps -q --all "$service" 2>/dev/null
+            fi
+          )
+          if ((${#ids[@]} == 0)) && [[ -n "$fallback" ]]; then
+            fallback_id="$(docker inspect --format '{% raw %}{{.Id}}{% endraw %}' "$fallback" 2>/dev/null || true)"
+            [[ -z "$fallback_id" ]] || ids=("$fallback_id")
+          fi
+          if ((${#ids[@]} != 1)) || [[ ! "${ids[0]}" =~ ^[a-f0-9]{12,64}$ ]]; then
+            echo "expected exactly one container for $service, found ${#ids[@]}" >&2
+            exit 1
+          fi
+          [[ "$(docker inspect --format '{% raw %}{{.State.Running}}{% endraw %}' "${ids[0]}")" == true ]]
+          printf '%s' "${ids[0]}"
+        executable: /bin/bash
+      loop:
+        - service: "{{ tuki_sql_compose_service }}"
+          fallback: "{{ tuki_sql_container_fallback | default('') }}"
+        - service: "{{ tuki_pelias_compose_service }}"
+          fallback: "{{ tuki_pelias_container_fallback | default('') }}"
+        - service: "{{ tuki_valhalla_compose_service }}"
+          fallback: "{{ tuki_valhalla_container_fallback | default('') }}"
+        - service: "{{ tuki_pelias_es_compose_service }}"
+          fallback: "{{ tuki_pelias_es_container_fallback | default('') }}"
+      loop_control:
+        label: "{{ item.service }}"
+      register: tuki_preflight_shared_containers
+      changed_when: false
+
+    - name: Resolve sqlcmd inside shared SQL Server
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          for candidate in /opt/mssql-tools18/bin/sqlcmd /opt/mssql-tools/bin/sqlcmd; do
+            if docker exec {{ tuki_preflight_shared_containers.results[0].stdout | quote }} test -x "$candidate"; then
+              printf '%s' "$candidate"
+              exit 0
+            fi
+          done
+          exit 1
+        executable: /bin/bash
+      register: tuki_preflight_sqlcmd
+      changed_when: false
+
+    - name: Verify Tuki database, baseline schema, and recent full backup
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          container_id={{ tuki_preflight_shared_containers.results[0].stdout | quote }}
+          sqlcmd={{ tuki_preflight_sqlcmd.stdout | quote }}
+          max_age={{ tuki_production_max_backup_age_hours | int }}
+          docker exec "$container_id" bash -c '
+            set -eu
+            password="${MSSQL_SA_PASSWORD:-${SA_PASSWORD:-}}"
+            test -n "$password"
+            export SQLCMDPASSWORD="$password"
+            exec "$1" -S localhost -U sa -C -b -d Tuki -Q "$2"
+          ' -- "$sqlcmd" "
+            SET NOCOUNT ON;
+            IF DB_NAME() <> N'Tuki' THROW 54001, 'Preflight connected to the wrong database.', 1;
+            IF DB_ID(N'Tuki') IS NULL THROW 54002, 'Production database Tuki does not exist.', 1;
+            IF DB_ID(N'Tuki_Staging') = DB_ID(N'Tuki') THROW 54003, 'Tuki_Staging must not be production.', 1;
+            IF OBJECT_ID(N'dbo.UserProfiles', N'U') IS NULL OR OBJECT_ID(N'dbo.ChatConversations', N'U') IS NULL
+              THROW 54004, 'Foundational production tables are missing.', 1;
+            IF NOT EXISTS (
+              SELECT 1 FROM msdb.dbo.backupset
+              WHERE database_name = N'Tuki' AND type = 'D'
+                AND backup_finish_date >= DATEADD(HOUR, -$max_age, GETDATE())
+            ) THROW 54005, 'No recent full Tuki backup is recorded.', 1;
+          "
+        executable: /bin/bash
+      changed_when: false
+      no_log: true
+
+    - name: Verify migrated Pelias index is non-empty
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          docker exec {{ tuki_preflight_shared_containers.results[3].stdout | quote }} curl --fail --silent \
+            http://127.0.0.1:9200/{{ tuki_pelias_index_name }}/_count |
+            python3 -c 'import json,sys; count=json.load(sys.stdin)["count"]; print(count); raise SystemExit(count < 1)'
+        executable: /bin/bash
+      register: tuki_preflight_pelias_count
+      changed_when: false
+
+    - name: Verify shared Valhalla status endpoint
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - "{{ tuki_preflight_shared_containers.results[2].stdout }}"
+          - curl
+          - --fail
+          - --silent
+          - http://127.0.0.1:8002/status
+      changed_when: false
+
+    - name: Verify production network exists or Docker can provide bridge networks
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          if docker network inspect {{ tuki_production_network | quote }} >/dev/null 2>&1; then
+            exit 0
+          fi
+          docker info --format '{% raw %}{{json .Plugins.Network}}{% endraw %}' | grep -Fq 'bridge'
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Report successful non-mutating production-host preflight
+      ansible.builtin.debug:
+        msg:
+          - GCP production-host preflight passed without deploying applications or changing data.
+          - "Tuki backup age policy: {{ tuki_production_max_backup_age_hours }} hours"
+          - "Pelias document count: {{ tuki_preflight_pelias_count.stdout }}"
+          - "Production network ready: {{ tuki_production_network }}"

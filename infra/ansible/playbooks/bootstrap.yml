@@ -4,7 +4,9 @@
   become: true
   vars:
     tuki_repository_url: https://github.com/Mark-Batongbacal/AUP.git
-    tuki_repository_branch: dev
+    # A migration target is prepared from production code by default. Operators
+    # may override this for testing, but bootstrap never silently selects dev.
+    tuki_repository_branch: main
     tuki_install_root: /opt/tuki
   vars_files:
     - "{{ playbook_dir }}/../group_vars/vault.yml"
@@ -19,8 +21,6 @@
           - tuki_admin_hostname | string | length > 0
           - tuki_acme_email is defined
           - tuki_acme_email | string | length > 0
-          - tuki_image_tag is defined
-          - tuki_image_tag | string | length > 0
           - tuki_valhalla_tile_urls is defined
           - tuki_valhalla_tile_urls | string | length > 0
           - tuki_pelias_es_java_opts is defined
@@ -68,8 +68,11 @@
     - name: Install base packages
       ansible.builtin.apt:
         name:
+          - apt-transport-https
           - ca-certificates
           - curl
+          - debian-archive-keyring
+          - debian-keyring
           - git
           - gnupg
           - rsync
@@ -79,13 +82,102 @@
         update_cache: true
         cache_valid_time: 3600
 
-    - name: Create Docker APT keyring directory
+    # Create the root configuration before installing the package so a fresh
+    # host never starts Caddy's packaged example site. Production deployment
+    # owns the site fragment; bootstrap owns only the import directory/root.
+    - name: Create host Caddy configuration directory
+      ansible.builtin.file:
+        path: /etc/caddy/conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Create minimal host Caddy root configuration when absent
+      ansible.builtin.copy:
+        content: |
+          # Site definitions are managed as validated fragments in conf.d.
+          # BEGIN ANSIBLE MANAGED TUKI FRAGMENTS
+          import /etc/caddy/conf.d/*.caddy
+          # END ANSIBLE MANAGED TUKI FRAGMENTS
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: root
+        mode: "0644"
+        force: false
+
+    - name: Ensure host Caddy root imports managed fragments
+      ansible.builtin.blockinfile:
+        path: /etc/caddy/Caddyfile
+        marker: "# {mark} ANSIBLE MANAGED TUKI FRAGMENTS"
+        block: "import /etc/caddy/conf.d/*.caddy"
+        insertafter: EOF
+
+    - name: Create APT keyring directory
       ansible.builtin.file:
         path: /etc/apt/keyrings
         state: directory
         owner: root
         group: root
         mode: "0755"
+
+    - name: Download official Caddy repository signing key
+      ansible.builtin.get_url:
+        url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+        dest: /etc/apt/keyrings/caddy-stable.asc
+        owner: root
+        group: root
+        mode: "0644"
+      register: tuki_caddy_repository_key
+
+    - name: Inspect installed Caddy binary keyring
+      ansible.builtin.stat:
+        path: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      register: tuki_caddy_binary_keyring
+
+    - name: Install Caddy repository binary keyring
+      ansible.builtin.command:
+        argv:
+          - gpg
+          - --dearmor
+          - --yes
+          - --output
+          - /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+          - /etc/apt/keyrings/caddy-stable.asc
+      when: tuki_caddy_repository_key.changed or not tuki_caddy_binary_keyring.stat.exists
+      changed_when: true
+
+    - name: Make Caddy repository keyring readable by APT
+      ansible.builtin.file:
+        path: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Configure official stable Caddy APT repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg]
+          https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main
+        filename: caddy-stable
+        state: present
+        update_cache: true
+
+    - name: Install host Caddy
+      ansible.builtin.apt:
+        name: caddy
+        state: present
+
+    - name: Validate minimal host Caddy configuration
+      ansible.builtin.command:
+        argv: [caddy, validate, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
+      changed_when: false
+
+    - name: Enable and start host Caddy
+      ansible.builtin.systemd_service:
+        name: caddy
+        enabled: true
+        state: started
 
     - name: Install Docker repository signing key
       ansible.builtin.get_url:
@@ -168,8 +260,8 @@
         - { path: "{{ tuki_install_root }}/data/valhalla", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/pelias", owner: "1000", group: "1000", mode: "0775" }
         - { path: "{{ tuki_install_root }}/data/pelias/elasticsearch", owner: "1000", group: "1000", mode: "0775" }
-        - { path: "{{ tuki_install_root }}/data/caddy/data", owner: "1000", group: "1000", mode: "0775" }
-        - { path: "{{ tuki_install_root }}/data/caddy/config", owner: "1000", group: "1000", mode: "0775" }
+        - { path: "{{ tuki_install_root }}/backups/incoming", owner: "root", group: "root", mode: "0700" }
+        - { path: "{{ tuki_install_root }}/backups/automated", owner: "root", group: "root", mode: "0700" }
 
     - name: Clone or update the configured repository branch
       ansible.builtin.git:
@@ -207,7 +299,8 @@
     - name: Render Docker Compose interpolation variables
       ansible.builtin.copy:
         content: |
-          TUKI_IMAGE_TAG={{ tuki_image_tag }}
+          # The broad Compose project is never the production application.
+          TUKI_IMAGE_TAG={{ tuki_bootstrap_nonproduction_image_tag | default('bootstrap-only') }}
           TUKI_DATA_ROOT={{ tuki_install_root }}/data
           VALHALLA_TILE_URLS={{ tuki_valhalla_tile_urls }}
           PELIAS_ES_JAVA_OPTS="{{ tuki_pelias_es_java_opts | replace('"', '\\"') }}"
@@ -227,5 +320,6 @@
       ansible.builtin.debug:
         msg: >-
           GCP host bootstrap is complete. Docker, persistent directories, repository,
-          runtime configuration, and Compose validation are ready. No application or
-          data-service containers were started; prepare/migrate data before deployment.
+          runtime configuration, host Caddy, backup directories, and Compose validation
+          are ready. No application or data-service containers were started; prepare
+          and migrate data before the normal production deployment.

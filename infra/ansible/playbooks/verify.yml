@@ -1,5 +1,5 @@
 ---
-- name: Verify Tuki deployment on GCP
+- name: Verify migrated Tuki shared data services on GCP
   hosts: tuki_gcp
   become: true
   vars:
@@ -13,9 +13,6 @@
       - pelias-interpolation
       - pelias
       - valhalla
-      - backend
-      - admin
-      - caddy
 
   tasks:
     - name: Validate Docker Compose configuration
@@ -88,47 +85,12 @@
       register: tuki_pelias_autocomplete
       changed_when: false
 
-    - name: Verify API HTTPS endpoint and certificate
+    - name: Show shared-service Compose status
       ansible.builtin.command:
         cmd: >-
-          curl --silent --show-error --location --max-time 20
-          --output /dev/null --write-out %{http_code}
-          https://{{ tuki_api_hostname }}/
-      register: tuki_api_http
-      changed_when: false
-
-    - name: Require a non-server-error API response
-      ansible.builtin.assert:
-        that:
-          - tuki_api_http.stdout | int >= 200
-          - tuki_api_http.stdout | int < 500
-        fail_msg: >-
-          The public API HTTPS endpoint did not return a usable HTTP response.
-          TLS validation is enabled by curl, so certificate failures also fail
-          the preceding task.
-
-    - name: Verify admin HTTPS endpoint and certificate
-      ansible.builtin.command:
-        cmd: >-
-          curl --silent --show-error --location --max-time 20
-          --output /dev/null --write-out %{http_code}
-          https://{{ tuki_admin_hostname }}/
-      register: tuki_admin_http
-      changed_when: false
-
-    - name: Require a non-server-error admin response
-      ansible.builtin.assert:
-        that:
-          - tuki_admin_http.stdout | int >= 200
-          - tuki_admin_http.stdout | int < 500
-        fail_msg: >-
-          The public admin HTTPS endpoint did not return a usable HTTP response.
-          TLS validation is enabled by curl, so certificate failures also fail
-          the preceding task.
-
-    - name: Show full Compose status
-      ansible.builtin.command:
-        cmd: "docker compose --env-file {{ tuki_compose_env }} ps"
+          docker compose --env-file {{ tuki_compose_env }} ps
+          sqlserver pelias-elasticsearch pelias-libpostal
+          pelias-placeholder pelias-interpolation pelias valhalla
         chdir: "{{ tuki_install_root }}/AUP"
       register: tuki_compose_status
       changed_when: false
@@ -136,8 +98,6 @@
     - name: Report verification result
       ansible.builtin.debug:
         msg:
-          - "API HTTPS status: {{ tuki_api_http.stdout }}"
-          - "Admin HTTPS status: {{ tuki_admin_http.stdout }}"
           - "Pelias documents|phrase matches: {{ tuki_pelias_verified_index.stdout }}"
           - "Pelias '{{ tuki_pelias_verify_query }}' autocomplete exact match: passed"
           - "{{ tuki_compose_status.stdout_lines }}"

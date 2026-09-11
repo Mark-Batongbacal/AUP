@@ -1,0 +1,7 @@
+---
+# Phase 1: prepare a fresh GCP migration target without moving production data.
+# This keeps bootstrap and initial shared-service startup as one operator action.
+
+- import_playbook: bootstrap.yml
+
+- import_playbook: prepare-services.yml

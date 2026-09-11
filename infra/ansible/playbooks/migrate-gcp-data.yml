@@ -1,0 +1,21 @@
+---
+# Phase 2: move production data to the prepared GCP host.
+# restore-gcp-sql.yml still requires the operator to pass
+# -e tuki_confirm_sql_restore=true. Existing replacement acknowledgements in
+# the underlying playbooks remain mandatory on reruns.
+
+- import_playbook: backup-azure-sql.yml
+
+- import_playbook: transfer-sql-backup.yml
+
+- import_playbook: restore-gcp-sql.yml
+
+- import_playbook: transfer-pelias-data.yml
+
+- import_playbook: transfer-pelias-index.yml
+
+# The Pelias API/supporting services are started only after both migration
+# playbooks above have succeeded.
+- import_playbook: prepare-services.yml
+  vars:
+    tuki_confirm_pelias_migrated: true

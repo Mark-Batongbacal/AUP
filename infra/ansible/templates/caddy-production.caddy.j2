@@ -1,9 +1,15 @@
 {{ tuki_api_hostname }} {
     encode zstd gzip
+    @health path /health
+    header @health X-Tuki-Deployment "{{ tuki_production_git_revision_value }}"
+    header @health Cache-Control "no-store"
     reverse_proxy 127.0.0.1:{{ tuki_production_backend_host_port }}
 }
 
 {{ tuki_admin_hostname }} {
     encode zstd gzip
+    @health path /health
+    header @health X-Tuki-Deployment "{{ tuki_production_git_revision_value }}"
+    header @health Cache-Control "no-store"
     reverse_proxy 127.0.0.1:{{ tuki_production_admin_host_port }}
 }
