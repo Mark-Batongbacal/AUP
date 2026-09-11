@@ -1,0 +1,8 @@
+---
+# Phase 3: verify migrated shared services, then run the read-only production
+# host cutover gate. Run the explicit GCP initial-backup command before this
+# phase so the recent-full-backup requirement can pass.
+
+- import_playbook: verify.yml
+
+- import_playbook: preflight-production-host.yml
