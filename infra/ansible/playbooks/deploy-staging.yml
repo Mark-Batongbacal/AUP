@@ -21,7 +21,8 @@
     tuki_staging_git_revision_value: "{{ tuki_staging_git_revision | default('') }}"
     tuki_target_compose_root: "{{ tuki_azure_compose_root }}"
     tuki_caddy_staging_fragment: /etc/caddy/conf.d/tuki-staging.caddy
-    tuki_caddy_staging_candidate_fragment: /etc/caddy/conf.d/tuki-staging.caddy.candidate
+    tuki_caddy_candidate_fragment_dir: /etc/caddy/conf.d.tuki-staging-candidate
+    tuki_caddy_staging_candidate_fragment: /etc/caddy/conf.d.tuki-staging-candidate/tuki-staging.caddy
     tuki_caddy_candidate_file: /etc/caddy/Caddyfile.tuki-staging.candidate
 
   pre_tasks:
@@ -321,6 +322,33 @@
         group: root
         mode: "0755"
 
+    - name: Reset staging candidate fragment directory
+      ansible.builtin.file:
+        path: "{{ tuki_caddy_candidate_fragment_dir }}"
+        state: absent
+
+    - name: Create staging candidate fragment directory
+      ansible.builtin.file:
+        path: "{{ tuki_caddy_candidate_fragment_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy current fragments into staging candidate directory
+      ansible.builtin.command:
+        argv:
+          - cp
+          - --archive
+          - /etc/caddy/conf.d/.
+          - "{{ tuki_caddy_candidate_fragment_dir }}/"
+      changed_when: true
+
+    - name: Remove current staging fragment from candidate directory
+      ansible.builtin.file:
+        path: "{{ tuki_caddy_candidate_fragment_dir }}/tuki-staging.caddy"
+        state: absent
+
     - name: Render candidate staging Caddy fragment
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/caddy-staging.caddy.j2"
@@ -344,11 +372,23 @@
         marker: "# {mark} ANSIBLE MANAGED TUKI STAGING"
         state: absent
 
+    - name: Remove existing production import from candidate Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddy_candidate_file }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI PRODUCTION"
+        state: absent
+
+    - name: Remove managed fragment import from candidate Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddy_candidate_file }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI FRAGMENTS"
+        state: absent
+
     - name: Add candidate staging import to candidate Caddyfile
       ansible.builtin.blockinfile:
         path: "{{ tuki_caddy_candidate_file }}"
-        marker: "# {mark} ANSIBLE MANAGED TUKI STAGING"
-        block: "import {{ tuki_caddy_staging_candidate_fragment }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI STAGING CANDIDATE"
+        block: "import {{ tuki_caddy_candidate_fragment_dir }}/*.caddy"
         insertafter: EOF
 
     - name: Validate candidate Caddy configuration
@@ -371,11 +411,25 @@
         mode: "0644"
       register: tuki_staging_caddy_fragment_install
 
-    - name: Import staging routes from host Caddyfile
+    - name: Remove legacy explicit staging import from host Caddyfile
       ansible.builtin.blockinfile:
         path: "{{ tuki_caddyfile_path }}"
         marker: "# {mark} ANSIBLE MANAGED TUKI STAGING"
-        block: "import {{ tuki_caddy_staging_fragment }}"
+        state: absent
+      register: tuki_staging_legacy_caddy_import
+
+    - name: Remove legacy explicit production import from host Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddyfile_path }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI PRODUCTION"
+        state: absent
+      register: tuki_staging_legacy_production_caddy_import
+
+    - name: Import managed routes from host Caddyfile
+      ansible.builtin.blockinfile:
+        path: "{{ tuki_caddyfile_path }}"
+        marker: "# {mark} ANSIBLE MANAGED TUKI FRAGMENTS"
+        block: "import /etc/caddy/conf.d/*.caddy"
         insertafter: EOF
       register: tuki_staging_caddy_import
 
@@ -396,6 +450,8 @@
         state: reloaded
       when: >-
         tuki_staging_caddy_fragment_install.changed
+        or tuki_staging_legacy_caddy_import.changed
+        or tuki_staging_legacy_production_caddy_import.changed
         or tuki_staging_caddy_import.changed
 
     - name: Remove candidate Caddy files
@@ -404,7 +460,7 @@
         state: absent
       loop:
         - "{{ tuki_caddy_candidate_file }}"
-        - "{{ tuki_caddy_staging_candidate_fragment }}"
+        - "{{ tuki_caddy_candidate_fragment_dir }}"
 
     - name: Verify public staging API HTTPS health
       ansible.builtin.command:

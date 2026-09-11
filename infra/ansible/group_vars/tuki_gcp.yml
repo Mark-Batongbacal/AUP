@@ -1,0 +1,10 @@
+---
+# GCP target layout. Production CD remains provider-neutral; set its protected
+# environment PRODUCTION_COMPOSE_ROOT variable to this path at cutover.
+tuki_production_compose_root: /opt/tuki/AUP
+
+# GCP shared services are Compose-managed. Never inherit Azure's legacy names.
+tuki_sql_container_fallback: ""
+tuki_pelias_container_fallback: ""
+tuki_valhalla_container_fallback: ""
+tuki_pelias_es_container_fallback: ""

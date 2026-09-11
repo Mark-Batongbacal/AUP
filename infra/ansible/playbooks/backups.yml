@@ -22,6 +22,8 @@
           - tuki_rclone_remote is match('^[A-Za-z0-9_.-]+$')
           - tuki_backup_remote_root | string | length > 0
           - tuki_database_name is match('^[A-Za-z0-9_]+$')
+          - tuki_database_name == 'Tuki'
+          - tuki_staging_database_name == 'Tuki_Staging'
           - tuki_sql_compose_service is match('^[A-Za-z0-9_.-]+$')
           - tuki_sql_container_backup_dir is match('^/[-A-Za-z0-9_./]+$')
           - tuki_backup_compose_root is match('^/[-A-Za-z0-9_./]+$')
@@ -297,6 +299,15 @@
         - daily
         - weekly
         - monthly
+
+    - name: Create and upload an explicitly requested initial GCP full backup
+      ansible.builtin.systemd_service:
+        name: tuki-db-backup@daily.service
+        state: started
+        no_block: false
+      when:
+        - "'tuki_gcp' in group_names"
+        - tuki_backup_run_initial_full | default(false) | bool
 
     - name: Report installed backup schedules
       ansible.builtin.command:

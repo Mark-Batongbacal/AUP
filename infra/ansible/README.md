@@ -37,11 +37,23 @@ Create the `production` GitHub environment and store these environment secrets:
   `group_vars/vault.yml`.
 
 The production workflow deliberately uses provider-neutral secret, inventory,
-and project names. `group_vars/tuki_production.yml` contains only the current
-host's compatibility paths and legacy container fallbacks (`tuki-sql`,
-`pelias_api`, and `valhalla`). Change or override that file when production
-moves providers; do not rename the generic workflow secrets back to the older
-`AZURE_*` staging names.
+and project names. `group_vars/tuki_production.yml` retains the current Azure
+layout only as a compatibility default. At cutover configure these protected
+GitHub environment variables; no workflow or playbook edit is required:
+
+- `PRODUCTION_COMPOSE_ROOT`: `/opt/tuki/AUP` on GCP. Leave unset while Azure is
+  production so `/home/AUP/AUP` remains the compatibility default.
+- `PRODUCTION_PUBLIC_HEALTH_MODE`: defaults to `origin`, which connects directly
+  to the SSH production host even when a proxy such as Cloudflare hides it. Use
+  `dns` only when the public names resolve directly to `PRODUCTION_HOST`.
+- `PRODUCTION_EXPECTED_ORIGIN_ADDRESS`: set this to the GCP origin IPv4 when
+  `PRODUCTION_HOST` resolves to multiple addresses. With one address, origin
+  mode safely derives it. The playbook proves the chosen address belongs to the
+  SSH target before curl `--resolve` with normal hostname/TLS verification.
+
+Compose discovery is always attempted before the Azure legacy fallback names
+(`tuki-sql`, `pelias_api`, and `valhalla`). The `tuki_gcp` inventory group
+overrides the root and clears all three fallbacks.
 
 Configure the `production` environment with required reviewers/manual approval
 and restrict deployment branches to `main`. Keep the `main` ruleset configured
@@ -74,8 +86,10 @@ then:
    local app health check fails;
 7. renders a host-Caddy fragment for the existing production hostnames,
    validates a candidate and the installed configuration, then reloads Caddy;
-8. verifies both public HTTPS `/health` routes with normal TLS validation and
-   records the successfully deployed commit.
+8. proves that both public checks target the SSH production host (direct DNS
+   intersection or an explicitly configured origin), verifies both HTTPS
+   `/health` routes with normal TLS validation, and only then records the
+   successfully deployed commit.
 
 The app-only Compose project publishes ports `5140` and `5040` on
 `127.0.0.1` only. It does not define, recreate, restart, restore, or expose SQL
@@ -148,7 +162,8 @@ Before approving the first production job:
 - reconcile any unmanaged Caddy blocks for the existing production hostnames;
   duplicate site definitions make candidate validation fail safely, so move
   those routes into the managed fragment during a planned cutover;
-- verify the configured production hostnames already resolve to this host;
+- choose and configure the `origin` or `dns` identity mode; direct-DNS mode
+  requires the production names to resolve to the SSH production host;
 - verify the existing SQL Server, Pelias, and Valhalla container names or
   override the compatibility fallbacks in production inventory variables;
 - take and verify a full `Tuki` backup less than 24 hours before deployment;
@@ -158,9 +173,10 @@ Before approving the first production job:
 - configure the GitHub `production` environment, secrets, required reviewers,
   deployment-branch restriction, and branch/ruleset checks described above.
 
-For a safe preflight from `infra/ansible`, run `deploy-production.yml` with
-`--syntax-check`; do not use Ansible check mode against production because
-shell/Compose discovery and migration semantics cannot be modeled reliably.
+For the non-mutating GCP cutover gate, run
+`playbooks/preflight-production-host.yml`. Do not use Ansible check mode as a
+substitute because shell, systemd, socket, SQL, and Compose discovery checks
+cannot be modeled reliably.
 
 The production workflow keeps host preparation, data-service startup, database
 migration, application deployment, and verification as separate operator-run
@@ -181,11 +197,19 @@ transfer-pelias-data.yml (shared placeholder/interpolation data; never Elasticse
     ↓
 transfer-pelias-index.yml (logical Elasticsearch export/import)
     ↓
-operator validates SQL Server, Pelias, and Valhalla data
+prepare-services.yml -e tuki_confirm_pelias_migrated=true
     ↓
-deploy.yml (backend → admin → Caddy)
+backups.yml -e tuki_backup_run_initial_full=true (GCP)
     ↓
-verify.yml
+verify.yml (shared data only)
+    ↓
+preflight-production-host.yml
+    ↓
+operator validates data and changes protected production SSH/DNS variables
+    ↓
+reviewed staging → main promotion
+    ↓
+.github/workflows/deploy-production.yml → playbooks/deploy-production.yml
 ```
 
 Database restore is intentionally absent from ordinary deployment. The restore
@@ -199,6 +223,13 @@ explicitly excludes `data/elasticsearch`, and publishes verified directories
 on GCP. Its index playbook uses a digest-pinned temporary elasticdump container
 to export/import settings, mappings, and documents through Elasticsearch's
 private container network. It never copies live Elasticsearch filesystem data.
+
+`deploy.yml` is retained only as an explicitly acknowledged legacy
+non-production smoke deployment. It does not start Docker Caddy and must never
+be used for production cutover. `docker-compose.yml` retains its Caddy service
+for local/dev compatibility, but every production migration command names
+services explicitly. Final production uses host Caddy plus
+`docker-compose.production.yml` only.
 
 ## Controller and inventory setup
 
@@ -333,9 +364,13 @@ ansible-playbook -i inventory.local.ini playbooks/bootstrap.yml \
   --vault-password-file .vault-password
 ```
 
-This installs Docker, creates `/opt/tuki`, persistent data directories, and
-mode-`0600` runtime configuration, updates the `dev` checkout, and validates
-Compose. It starts no containers.
+This installs Docker and host Caddy from their supported APT repositories,
+enables both systemd services, creates a minimal `/etc/caddy/Caddyfile` that
+imports `/etc/caddy/conf.d/*.caddy`, creates `/opt/tuki` data/backup paths,
+checks out `main` by default, renders mode-`0600` runtime configuration, and
+validates both Caddy and Compose. It defines no production hostname and starts
+no container. Production CD remains the sole owner of
+`/etc/caddy/conf.d/tuki-production.caddy`.
 
 ### 2. Start GCP data-service containers
 
@@ -344,10 +379,10 @@ ansible-playbook -i inventory.local.ini playbooks/prepare-services.yml \
   --vault-password-file .vault-password
 ```
 
-This starts SQL Server, Pelias Elasticsearch, Valhalla, and the libpostal,
-placeholder, and interpolation containers without restoring or replacing
-production data. The Pelias API remains stopped so an empty Elasticsearch node
-or missing support data is not presented as ready.
+This starts only SQL Server, Pelias Elasticsearch, Valhalla, and libpostal
+without restoring or replacing production data. Pelias API, placeholder, and
+interpolation remain stopped so incomplete migration data is not presented as
+ready. No command in this path starts Docker Caddy.
 
 ### 3. Back up Azure SQL Server
 
@@ -479,35 +514,81 @@ set the fallback locally (the known Azure default is already represented in
 -e tuki_pelias_es_container_fallback=pelias_elasticsearch
 ```
 
-### 7. Validate all migrated data
+### 7. Start and validate migrated shared services
 
-Before deploying applications, validate SQL row counts and application-critical
-queries manually. Also validate the Pelias index and Valhalla tiles/routes. The
-deployment acknowledgement means an operator has completed these checks.
-
-### 8. Deploy applications
+After both Pelias transfers have passed, explicitly start only its supporting
+services and API:
 
 ```bash
-ansible-playbook -i inventory.local.ini playbooks/deploy.yml \
+ansible-playbook -i inventory.local.ini playbooks/prepare-services.yml \
   --vault-password-file .vault-password \
-  -e tuki_confirm_data_ready=true
-```
+  -e tuki_confirm_pelias_migrated=true
 
-This requires healthy SQL Server, Elasticsearch, and Valhalla plus a non-empty
-Pelias index. It then requires healthy libpostal, placeholder, interpolation,
-and Pelias API before starting the backend, admin, and Caddy.
-
-### 9. Verify
-
-```bash
 ansible-playbook -i inventory.local.ini playbooks/verify.yml \
   --vault-password-file .vault-password
 ```
 
-Verification checks all ten service health states, Elasticsearch index health,
-a non-zero Pelias document count, a real `SM City Clark, Mabalacat, Pampanga`
-search with at least one feature, and both public HTTPS endpoints with
-certificate validation.
+`verify.yml` validates only shared data services, including a non-empty Pelias
+index and real autocomplete query. It does not deploy an application or test
+public DNS, which may still point to Azure.
+
+### 8. Configure and prove GCP backups
+
+Install timers and explicitly create a fresh full `Tuki` backup on GCP so the
+normal production CD 24-hour gate can succeed:
+
+```bash
+ansible-playbook -i inventory.local.ini playbooks/backups.yml \
+  --limit gcp \
+  --vault-password-file .vault-password \
+  -e tuki_backup_run_initial_full=true
+```
+
+The backup script resolves GCP SQL Server from `/opt/tuki/AUP` Compose, verifies
+the local/remote size, and records the full backup in SQL Server. Keep Azure
+timers disabled only when the write cutover makes GCP the active production
+database.
+
+### 9. Run the GCP production-host preflight
+
+Run this before changing the production SSH target or DNS:
+
+```bash
+ansible-playbook -i inventory.local.ini \
+  playbooks/preflight-production-host.yml \
+  --vault-password-file .vault-password
+```
+
+The preflight is read-only. It validates Docker; enabled/active host Caddy and
+its current configuration; host ownership of ports 80/443; absence of a
+Docker-published Caddy; unmanaged duplicate production sites; availability of
+loopback ports 5140/5040; unambiguous running SQL/Pelias/Valhalla containers;
+exactly `Tuki`, foundational tables, and a recent full backup; a non-empty
+Pelias index; Valhalla status; and availability of the production bridge
+network. It does not create the network, reload Caddy, deploy applications,
+restore/delete data, or touch DNS.
+
+### 10. Hand off to normal production CD
+
+After operator data validation, update the protected GitHub `production`
+environment SSH secrets to GCP and set `PRODUCTION_COMPOSE_ROOT=/opt/tuki/AUP`.
+Choose the health identity mode before the deployment:
+
+- Direct DNS: set `PRODUCTION_PUBLIC_HEALTH_MODE=dns`. Deployment fails until
+  both production names resolve to at least one IPv4 address also resolved from
+  `PRODUCTION_HOST`.
+- Proxied DNS: use the default `PRODUCTION_PUBLIC_HEALTH_MODE=origin`. If the
+  SSH hostname resolves to more than one IPv4 address, also set
+  `PRODUCTION_EXPECTED_ORIGIN_ADDRESS=<GCP static IPv4>`. Deployment verifies
+  the chosen origin belongs to `PRODUCTION_HOST`, then connects directly while
+  preserving the production hostname, SNI, and normal TLS certificate
+  validation. No `curl -k` is used.
+
+Perform the controlled DNS change at the planned step, then merge the reviewed
+`staging -> main` pull request. The ordinary production workflow deploys the
+exact tested main SHA using `docker-compose.production.yml`, attaches the
+shared services, installs the candidate-validated production Caddy fragment,
+and performs identity-bound public health checks before recording success.
 
 ## Rehearsal
 
@@ -526,18 +607,30 @@ done
 
 ## Final production cutover
 
-1. Stop or disable production writes on Azure.
-2. Create a fresh final Azure backup (explicitly archive the earlier rehearsal
-   backup if needed).
-3. Transfer it through the controller and verify all checksums.
-4. Restore it on GCP with the explicit acknowledgement.
-5. Transfer Pelias shared data and logically migrate its index; verify dynamic
-   source/destination counts and support-service health.
-6. Validate SQL data, Pelias searches, Valhalla, and application-critical queries.
-7. Run `deploy.yml`, then `verify.yml`.
-8. Switch public DNS to GCP only after verification passes.
-9. Keep Azure intact and unavailable for writes temporarily as a rollback
-   source until the cutover is accepted.
+1. Provision the GCP VM and run `bootstrap.yml`.
+2. Run `prepare-services.yml` for the initial shared containers.
+3. Stop or disable production writes on Azure and create the acknowledged final
+   Azure full backup.
+4. Run `transfer-sql-backup.yml`, verify its checksums, and run
+   `restore-gcp-sql.yml -e tuki_confirm_sql_restore=true`.
+5. Run `transfer-pelias-data.yml` and `transfer-pelias-index.yml`, retaining all
+   checksum, compatibility, and replacement-acknowledgement gates.
+6. Wait for/build Valhalla data as needed, then rerun `prepare-services.yml -e
+   tuki_confirm_pelias_migrated=true` and run shared-data `verify.yml`.
+7. Run `backups.yml --limit gcp -e tuki_backup_run_initial_full=true`, validate
+   the uploaded backup, then run `preflight-production-host.yml`.
+8. Have an operator validate SQL row counts, application-critical queries,
+   Pelias searches, Valhalla routes, and the retained Azure rollback source.
+9. Update the GitHub production SSH secrets and provider-neutral environment
+   variables to target GCP. Do not change repository code for the provider.
+10. Perform the controlled DNS change in the order chosen for direct or proxied
+    health mode, allow propagation where applicable, and merge reviewed
+    `staging -> main`.
+11. Let `.github/workflows/deploy-production.yml` call
+    `playbooks/deploy-production.yml`; do not run legacy `deploy.yml` and do not
+    start Docker Caddy.
+12. Accept cutover only after identity-bound public HTTPS health succeeds. Keep
+    Azure intact and unavailable for writes until the rollback window closes.
 
 
 ## Automated Google Drive database backups
@@ -709,7 +802,7 @@ sync-staging-reference-data.yml
     ↓
 deploy-staging.yml
     ↓
-staging-api.tuki.ph + staging-admin.tuki.ph
+staging-api.tuki.pawfect.bar + staging-admin.tuki.pawfect.bar
     ↓ manual validation
 pull request from staging to main
 ```
@@ -731,10 +824,11 @@ secrets inherited by the caller are also supported):
 - `AZURE_SSH_HOST_KEY` (a trusted complete `known_hosts` entry)
 - `ANSIBLE_VAULT_PASSWORD`
 
-Both `staging-api.tuki.ph` and `staging-admin.tuki.ph` must resolve to the
-`AZURE_HOST` address before deployment. CD checks this before running Ansible,
-and the final HTTPS checks keep certificate verification enabled. Correct DNS
-and allow time for propagation before the first staging deployment.
+Both `staging-api.tuki.pawfect.bar` and
+`staging-admin.tuki.pawfect.bar` must resolve to the `AZURE_HOST` address before
+deployment. CD checks this before running Ansible, and the final HTTPS checks
+keep certificate verification enabled. Correct DNS and allow time for
+propagation before the first staging deployment.
 
 The staging application uses a separate checkout at `/opt/tuki/staging/AUP`
 and the dedicated `docker-compose.staging.yml` project. Only
@@ -801,8 +895,8 @@ ansible-playbook -i inventory.local.ini playbooks/deploy-staging.yml \
 Verify public application, database, and routing health:
 
 ```bash
-curl --fail --silent --show-error https://staging-api.tuki.ph/health
-curl --fail --silent --show-error https://staging-admin.tuki.ph/health
+curl --fail --silent --show-error https://staging-api.tuki.pawfect.bar/health
+curl --fail --silent --show-error https://staging-admin.tuki.pawfect.bar/health
 ```
 
 Inspect only the isolated staging containers:

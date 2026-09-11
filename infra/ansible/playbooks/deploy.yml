@@ -1,5 +1,5 @@
 ---
-- name: Deploy Tuki application services on GCP
+- name: Run legacy non-production application smoke deployment on GCP
   hosts: tuki_gcp
   become: true
   vars:
@@ -11,11 +11,12 @@
       ansible.builtin.assert:
         that:
           - tuki_confirm_data_ready | default(false) | bool
+          - tuki_confirm_legacy_nonproduction_deploy | default(false) | bool
         fail_msg: >-
-          Refusing to deploy application services until data readiness is
-          explicitly confirmed. Validate the restored SQL Server database,
-          Pelias data, and Valhalla data, then run deploy.yml with
-          -e tuki_confirm_data_ready=true.
+          deploy.yml is a legacy non-production smoke deployment and never a
+          production cutover path. Confirm data readiness and explicitly set
+          tuki_confirm_legacy_nonproduction_deploy=true. Production must use
+          the reviewed main workflow and playbooks/deploy-production.yml.
 
     - name: Validate Docker Compose configuration
       ansible.builtin.command:
@@ -153,34 +154,11 @@
       delay: 5
       until: tuki_admin_health.stdout == "healthy"
 
-    - name: Start Caddy without starting dependencies
-      ansible.builtin.command:
-        cmd: >-
-          docker compose --env-file {{ tuki_compose_env }} up -d
-          --no-deps caddy
-        chdir: "{{ tuki_install_root }}/AUP"
-      changed_when: true
-
-    - name: Wait for Caddy to become healthy
-      ansible.builtin.shell:
-        cmd: |
-          set -eu
-          container_id="$(docker compose --env-file {{ tuki_compose_env }} ps -q caddy)"
-          test -n "$container_id"
-          docker inspect --format '{% raw %}{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}{% endraw %}' "$container_id"
-        chdir: "{{ tuki_install_root }}/AUP"
-        executable: /bin/bash
-      register: tuki_caddy_health
-      changed_when: false
-      retries: 30
-      delay: 5
-      until: tuki_caddy_health.stdout == "healthy"
-
     - name: Show application deployment status
       ansible.builtin.command:
         cmd: >-
           docker compose --env-file {{ tuki_compose_env }} ps
-          backend admin caddy
+          backend admin
         chdir: "{{ tuki_install_root }}/AUP"
       register: tuki_application_status
       changed_when: false

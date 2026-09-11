@@ -1,8 +1,8 @@
 ---
-# Compatibility defaults for the current production host. Compose discovery is
-# preferred; these fallbacks attach the legacy data containers without
-# restarting or recreating them. Override these inventory variables when the
-# production provider or container layout changes.
+# Azure legacy compatibility defaults for the current production host. Compose
+# discovery always runs first. At GCP cutover, the protected GitHub environment
+# supplies PRODUCTION_COMPOSE_ROOT=/opt/tuki/AUP; successful Compose discovery
+# means these legacy fallback names are never consulted.
 tuki_production_compose_root: /home/AUP/AUP
 tuki_sql_container_fallback: tuki-sql
 tuki_pelias_container_fallback: pelias_api

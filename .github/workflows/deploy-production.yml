@@ -50,6 +50,9 @@ jobs:
           PRODUCTION_SSH_PRIVATE_KEY_B64: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY_B64 }}
           PRODUCTION_SSH_HOST_KEY: ${{ secrets.PRODUCTION_SSH_HOST_KEY }}
           ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+          PRODUCTION_COMPOSE_ROOT: ${{ vars.PRODUCTION_COMPOSE_ROOT }}
+          PRODUCTION_PUBLIC_HEALTH_MODE: ${{ vars.PRODUCTION_PUBLIC_HEALTH_MODE }}
+          PRODUCTION_EXPECTED_ORIGIN_ADDRESS: ${{ vars.PRODUCTION_EXPECTED_ORIGIN_ADDRESS }}
         run: |
           set -euo pipefail
 
@@ -60,6 +63,29 @@ jobs:
             fi
           done
           echo "✓ all production environment secrets are present"
+
+          if [[ ! "$PRODUCTION_HOST" =~ ^[A-Za-z0-9.-]+$ ]]; then
+            echo "::error::PRODUCTION_HOST must be an IPv4 address or DNS hostname."
+            exit 1
+          fi
+          if [[ ! "$PRODUCTION_SSH_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]]; then
+            echo "::error::PRODUCTION_SSH_USER is not a valid account name."
+            exit 1
+          fi
+
+          health_mode="${PRODUCTION_PUBLIC_HEALTH_MODE:-origin}"
+          if [[ "$health_mode" != dns && "$health_mode" != origin ]]; then
+            echo "::error::PRODUCTION_PUBLIC_HEALTH_MODE must be dns or origin."
+            exit 1
+          fi
+          if [[ -n "$PRODUCTION_EXPECTED_ORIGIN_ADDRESS" && ! "$PRODUCTION_EXPECTED_ORIGIN_ADDRESS" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            echo "::error::PRODUCTION_EXPECTED_ORIGIN_ADDRESS must be an IPv4 address when set."
+            exit 1
+          fi
+          if [[ -n "$PRODUCTION_COMPOSE_ROOT" && ! "$PRODUCTION_COMPOSE_ROOT" =~ ^/[-A-Za-z0-9_./]+$ ]]; then
+            echo "::error::PRODUCTION_COMPOSE_ROOT must be an absolute path."
+            exit 1
+          fi
 
           install -d -m 700 "$HOME/.ssh"
 
@@ -90,10 +116,18 @@ jobs:
           chmod 600 "$RUNNER_TEMP/vault-password"
           echo "✓ Ansible vault password file prepared"
 
-          cat > infra/ansible/inventory.cd.ini <<EOF
-          [tuki_production]
-          production ansible_host=$PRODUCTION_HOST ansible_user=$PRODUCTION_SSH_USER ansible_ssh_private_key_file=$RUNNER_TEMP/production-key ansible_ssh_common_args='-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts'
-          EOF
+          {
+            printf '[tuki_production]\n'
+            printf 'production ansible_host=%s ansible_user=%s ansible_ssh_private_key_file=%s tuki_production_connection_host=%s tuki_production_public_health_mode=%s' \
+              "$PRODUCTION_HOST" "$PRODUCTION_SSH_USER" "$RUNNER_TEMP/production-key" "$PRODUCTION_HOST" "$health_mode"
+            if [[ -n "$PRODUCTION_COMPOSE_ROOT" ]]; then
+              printf ' tuki_production_compose_root=%s' "$PRODUCTION_COMPOSE_ROOT"
+            fi
+            if [[ -n "$PRODUCTION_EXPECTED_ORIGIN_ADDRESS" ]]; then
+              printf ' tuki_production_expected_origin_address=%s' "$PRODUCTION_EXPECTED_ORIGIN_ADDRESS"
+            fi
+            printf " ansible_ssh_common_args='-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%s/.ssh/known_hosts'\n" "$HOME"
+          } > infra/ansible/inventory.cd.ini
           echo "✓ production Ansible inventory prepared"
 
       - name: Verify production SSH authentication
