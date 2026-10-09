@@ -15,6 +15,26 @@
 
 @section Scripts {
     <link rel="stylesheet" href="~/lib/leaflet/leaflet.css" asp-append-version="true" />
+    <style>
+        #route-point-list {
+            max-height: 560px;
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
+            scrollbar-gutter: stable;
+            padding-right: 0.35rem;
+        }
+
+        #route-point-list:focus-visible {
+            outline: 2px solid #0D8B97;
+            outline-offset: 3px;
+        }
+
+        @@media (max-width: 820px) {
+            #route-point-list {
+                max-height: 420px;
+            }
+        }
+    </style>
     <script src="~/lib/leaflet/leaflet.js" asp-append-version="true"></script>
     <script>
         (() => {
@@ -41,7 +61,7 @@
                 latitude: Number(point.latitude),
                 longitude: Number(point.longitude)
             }));
-            let markers = [];
+            let focusMarker = null;
             let routeLine = null;
             let dirty = false;
             let submitting = false;
@@ -107,8 +127,31 @@
                     pointList?.children[index]?.scrollIntoView({ block: 'nearest' });
                     return;
                 }
+
                 map.setView([point.latitude, point.longitude], Math.max(map.getZoom(), 18));
-                markers[index]?.openTooltip();
+
+                if (focusMarker) {
+                    focusMarker.remove();
+                    focusMarker = null;
+                }
+
+                focusMarker = L.marker(
+                    [point.latitude, point.longitude],
+                    { draggable: canEdit, riseOnHover: true }
+                ).addTo(map);
+                focusMarker.bindTooltip(`Point ${index + 1}`, {
+                    permanent: false,
+                    direction: 'top',
+                    offset: [0, -10]
+                }).openTooltip();
+
+                if (canEdit) {
+                    focusMarker.on('dragend', event => {
+                        const position = event.target.getLatLng();
+                        points[index] = { latitude: position.lat, longitude: position.lng };
+                        render();
+                    });
+                }
             };
 
             const movePoint = (index, offset) => {
@@ -262,30 +305,28 @@
 
             const renderMap = () => {
                 if (!map || typeof L === 'undefined') return;
-                markers.forEach(marker => marker.remove());
-                markers = [];
+
+                if (focusMarker) {
+                    focusMarker.remove();
+                    focusMarker = null;
+                }
+
                 if (routeLine) {
                     routeLine.remove();
                     routeLine = null;
                 }
 
-                points.forEach((point, index) => {
-                    const marker = L.marker([point.latitude, point.longitude], { draggable: canEdit }).addTo(map);
-                    marker.bindTooltip(String(index + 1), { permanent: true, direction: 'top', offset: [0, -10] });
-                    if (canEdit) {
-                        marker.on('dragend', event => {
-                            const position = event.target.getLatLng();
-                            points[index] = { latitude: position.lat, longitude: position.lng };
-                            render();
-                        });
-                    }
-                    markers.push(marker);
-                });
-
                 if (points.length >= 2) {
                     routeLine = L.polyline(
                         points.map(point => [point.latitude, point.longitude]),
-                        { weight: 5, opacity: 0.85 }
+                        {
+                            color: '#0D8B97',
+                            weight: 6,
+                            opacity: 0.92,
+                            lineCap: 'round',
+                            lineJoin: 'round',
+                            interactive: false
+                        }
                     ).addTo(map);
                 }
             };
@@ -438,7 +479,7 @@
 else
 {
     <div class="review-alert review-alert-success">
-        Edit this inactive draft precisely: click to add points, drag markers, edit coordinates directly, insert between points, or import coordinate pairs. Changes remain local until you save.
+        Edit this inactive draft precisely: click to add points, use Show to inspect or drag one point at a time, edit coordinates directly, insert between points, or import coordinate pairs. Changes remain local until you save.
     </div>
 }
 
@@ -448,7 +489,7 @@ else
             <div>
                 <span class="card-kicker">MAP</span>
                 <h2>@(orderedGeometryPoints.Length > 0 ? "Edit route geometry" : "Plot route geometry")</h2>
-                <p>The line follows the exact point order shown in the editor.</p>
+                <p>The continuous line follows the exact stored point order. Individual points stay available in the editor and appear on the map only when you choose Show.</p>
             </div>
         </div>
         <div id="jeepney-route-map" class="review-map" style="min-height: 560px;"></div>
@@ -474,7 +515,11 @@ else
                 <p>Edit exact coordinates or change the order. Point 1 is the route start.</p>
             </div>
         </div>
-        <div id="route-point-list" class="d-grid gap-2">
+        <div id="route-point-list"
+             class="d-grid gap-2"
+             tabindex="0"
+             role="region"
+             aria-label="Scrollable ordered route points">
             @if (orderedGeometryPoints.Length == 0)
             {
                 <div class="duplicate-clear">
