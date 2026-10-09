@@ -15,6 +15,26 @@
 
 @section Scripts {
     <link rel="stylesheet" href="~/lib/leaflet/leaflet.css" asp-append-version="true" />
+    <style>
+        #route-point-list {
+            max-height: 560px;
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
+            scrollbar-gutter: stable;
+            padding-right: 0.35rem;
+        }
+
+        #route-point-list:focus-visible {
+            outline: 2px solid #0D8B97;
+            outline-offset: 3px;
+        }
+
+        @@media (max-width: 820px) {
+            #route-point-list {
+                max-height: 420px;
+            }
+        }
+    </style>
     <script src="~/lib/leaflet/leaflet.js" asp-append-version="true"></script>
     <script>
         (() => {
@@ -495,7 +515,11 @@ else
                 <p>Edit exact coordinates or change the order. Point 1 is the route start.</p>
             </div>
         </div>
-        <div id="route-point-list" class="d-grid gap-2">
+        <div id="route-point-list"
+             class="d-grid gap-2"
+             tabindex="0"
+             role="region"
+             aria-label="Scrollable ordered route points">
             @if (orderedGeometryPoints.Length == 0)
             {
                 <div class="duplicate-clear">
